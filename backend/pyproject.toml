@@ -10,6 +10,9 @@ dependencies = [
     "pydantic-settings>=2.15.0",
 ]
 
+[tool.vercel]
+entrypoint = "app.main:app"
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
@@ -24,6 +27,7 @@ select = ["E", "F", "I", "UP", "B", "ASYNC"]
 
 [dependency-groups]
 dev = [
+    "hypothesis>=6.168.3",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "ruff>=0.16.10",

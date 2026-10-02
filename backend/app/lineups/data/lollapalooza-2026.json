@@ -1,0 +1,1595 @@
+{
+ "id": "lollapalooza-2026",
+ "name": "Lollapalooza 2026",
+ "city": "Chicago, IL",
+ "venue": "Grant Park",
+ "timezone": "America/Chicago",
+ "dates": [
+  "2026-07-30",
+  "2026-07-31",
+  "2026-08-01",
+  "2026-08-02"
+ ],
+ "days": [
+  "Thu",
+  "Fri",
+  "Sat",
+  "Sun"
+ ],
+ "stages": [
+  {
+   "id": "t-mobile",
+   "name": "T-Mobile",
+   "tier": "main"
+  },
+  {
+   "id": "bud-light",
+   "name": "Bud Light",
+   "tier": "main"
+  },
+  {
+   "id": "perrys",
+   "name": "Perry's",
+   "tier": "main"
+  },
+  {
+   "id": "allianz",
+   "name": "Allianz",
+   "tier": "secondary"
+  },
+  {
+   "id": "airbnb",
+   "name": "Airbnb",
+   "tier": "secondary"
+  },
+  {
+   "id": "titos",
+   "name": "Tito's",
+   "tier": "secondary"
+  },
+  {
+   "id": "bmi",
+   "name": "BMI",
+   "tier": "minor"
+  },
+  {
+   "id": "kidzpalooza",
+   "name": "Kidzpalooza",
+   "tier": "minor"
+  }
+ ],
+ "sets": [
+  {
+   "act": "Asha Banks",
+   "stage": "t-mobile",
+   "day": "Thu",
+   "start": "12:45",
+   "end": "13:30"
+  },
+  {
+   "act": "Haute & Freddy",
+   "stage": "t-mobile",
+   "day": "Thu",
+   "start": "14:30",
+   "end": "15:30"
+  },
+  {
+   "act": "5 Seconds of Summer",
+   "stage": "t-mobile",
+   "day": "Thu",
+   "start": "16:30",
+   "end": "17:30"
+  },
+  {
+   "act": "Sombr",
+   "stage": "t-mobile",
+   "day": "Thu",
+   "start": "18:30",
+   "end": "19:30"
+  },
+  {
+   "act": "Lorde",
+   "stage": "t-mobile",
+   "day": "Thu",
+   "start": "20:30",
+   "end": "22:00",
+   "flags": [
+    "end_secondary_source"
+   ]
+  },
+  {
+   "act": "Bixby",
+   "stage": "bud-light",
+   "day": "Thu",
+   "start": "13:00",
+   "end": "13:45"
+  },
+  {
+   "act": "Between Friends",
+   "stage": "bud-light",
+   "day": "Thu",
+   "start": "14:45",
+   "end": "15:45"
+  },
+  {
+   "act": "Blood Orange",
+   "stage": "bud-light",
+   "day": "Thu",
+   "start": "16:45",
+   "end": "17:45"
+  },
+  {
+   "act": "Empire of the Sun",
+   "stage": "bud-light",
+   "day": "Thu",
+   "start": "18:30",
+   "end": "19:30",
+   "flags": [
+    "source_conflict"
+   ]
+  },
+  {
+   "act": "John Summit",
+   "stage": "bud-light",
+   "day": "Thu",
+   "start": "20:30",
+   "end": "22:00"
+  },
+  {
+   "act": "KLO",
+   "stage": "perrys",
+   "day": "Thu",
+   "start": "12:00",
+   "end": "12:30"
+  },
+  {
+   "act": "Know Good",
+   "stage": "perrys",
+   "day": "Thu",
+   "start": "12:45",
+   "end": "13:30"
+  },
+  {
+   "act": "Devault",
+   "stage": "perrys",
+   "day": "Thu",
+   "start": "13:45",
+   "end": "14:45"
+  },
+  {
+   "act": "MPH",
+   "stage": "perrys",
+   "day": "Thu",
+   "start": "15:00",
+   "end": "16:00"
+  },
+  {
+   "act": "Boys Noize",
+   "stage": "perrys",
+   "day": "Thu",
+   "start": "16:15",
+   "end": "17:15"
+  },
+  {
+   "act": "Boris Brejcha",
+   "stage": "perrys",
+   "day": "Thu",
+   "start": "17:45",
+   "end": "18:45"
+  },
+  {
+   "act": "Kettama",
+   "stage": "perrys",
+   "day": "Thu",
+   "start": "19:00",
+   "end": "20:00"
+  },
+  {
+   "act": "Worship",
+   "stage": "perrys",
+   "day": "Thu",
+   "start": "20:30",
+   "end": "21:45"
+  },
+  {
+   "act": "Pearly Drops",
+   "stage": "allianz",
+   "day": "Thu",
+   "start": "12:00",
+   "end": "12:45"
+  },
+  {
+   "act": "Bad Nerves",
+   "stage": "allianz",
+   "day": "Thu",
+   "start": "13:30",
+   "end": "14:30"
+  },
+  {
+   "act": "SB19",
+   "stage": "allianz",
+   "day": "Thu",
+   "start": "15:30",
+   "end": "16:30"
+  },
+  {
+   "act": "Audrey Hobert",
+   "stage": "allianz",
+   "day": "Thu",
+   "start": "17:30",
+   "end": "18:30"
+  },
+  {
+   "act": "Wet Leg",
+   "stage": "allianz",
+   "day": "Thu",
+   "start": "19:30",
+   "end": "20:30"
+  },
+  {
+   "act": "Kim Theory",
+   "stage": "airbnb",
+   "day": "Thu",
+   "start": "12:00",
+   "end": "12:30"
+  },
+  {
+   "act": "Penelope Road",
+   "stage": "airbnb",
+   "day": "Thu",
+   "start": "12:50",
+   "end": "13:30"
+  },
+  {
+   "act": "Marlon Funaki",
+   "stage": "airbnb",
+   "day": "Thu",
+   "start": "13:50",
+   "end": "14:30"
+  },
+  {
+   "act": "Ecca Vandal",
+   "stage": "airbnb",
+   "day": "Thu",
+   "start": "14:50",
+   "end": "15:30"
+  },
+  {
+   "act": "Ninajirachi",
+   "stage": "airbnb",
+   "day": "Thu",
+   "start": "16:00",
+   "end": "16:45"
+  },
+  {
+   "act": "Amble",
+   "stage": "airbnb",
+   "day": "Thu",
+   "start": "17:15",
+   "end": "18:00"
+  },
+  {
+   "act": "CMAT",
+   "stage": "airbnb",
+   "day": "Thu",
+   "start": "18:30",
+   "end": "19:15"
+  },
+  {
+   "act": "Snow Strippers",
+   "stage": "airbnb",
+   "day": "Thu",
+   "start": "19:45",
+   "end": "20:30"
+  },
+  {
+   "act": "Viagra Boys",
+   "stage": "airbnb",
+   "day": "Thu",
+   "start": "21:00",
+   "end": "22:00"
+  },
+  {
+   "act": "Faouzia",
+   "stage": "titos",
+   "day": "Thu",
+   "start": "12:15",
+   "end": "13:00"
+  },
+  {
+   "act": "Kingfishr",
+   "stage": "titos",
+   "day": "Thu",
+   "start": "13:45",
+   "end": "14:45"
+  },
+  {
+   "act": "Paris Paloma",
+   "stage": "titos",
+   "day": "Thu",
+   "start": "15:45",
+   "end": "16:45"
+  },
+  {
+   "act": "Little Simz",
+   "stage": "titos",
+   "day": "Thu",
+   "start": "17:45",
+   "end": "18:30",
+   "flags": [
+    "source_conflict"
+   ]
+  },
+  {
+   "act": "Devault",
+   "stage": "titos",
+   "day": "Thu",
+   "start": "19:30",
+   "end": "20:30",
+   "flags": [
+    "source_conflict"
+   ]
+  },
+  {
+   "act": "The Braymores",
+   "stage": "bmi",
+   "day": "Thu",
+   "start": "13:00",
+   "end": "13:40"
+  },
+  {
+   "act": "Simon Grossmann",
+   "stage": "bmi",
+   "day": "Thu",
+   "start": "14:10",
+   "end": "14:50"
+  },
+  {
+   "act": "Elizabeth Nichols",
+   "stage": "bmi",
+   "day": "Thu",
+   "start": "15:20",
+   "end": "16:00"
+  },
+  {
+   "act": "Bella Kay",
+   "stage": "bmi",
+   "day": "Thu",
+   "start": "16:30",
+   "end": "17:10"
+  },
+  {
+   "act": "Chalk",
+   "stage": "bmi",
+   "day": "Thu",
+   "start": "17:40",
+   "end": "18:20"
+  },
+  {
+   "act": "Evening Elephants",
+   "stage": "bmi",
+   "day": "Thu",
+   "start": "18:50",
+   "end": "19:30"
+  },
+  {
+   "act": "Mister G",
+   "stage": "kidzpalooza",
+   "day": "Thu",
+   "start": "12:00",
+   "end": "12:30"
+  },
+  {
+   "act": "School of Rock",
+   "stage": "kidzpalooza",
+   "day": "Thu",
+   "start": "13:30",
+   "end": "14:00"
+  },
+  {
+   "act": "Miss Tutti & The Fruity Band",
+   "stage": "kidzpalooza",
+   "day": "Thu",
+   "start": "15:00",
+   "end": "15:30"
+  },
+  {
+   "act": "Jazzy Ash",
+   "stage": "kidzpalooza",
+   "day": "Thu",
+   "start": "17:15",
+   "end": "17:45"
+  },
+  {
+   "act": "PartyOf2",
+   "stage": "t-mobile",
+   "day": "Fri",
+   "start": "12:55",
+   "end": "13:40"
+  },
+  {
+   "act": "i-dle",
+   "stage": "t-mobile",
+   "day": "Fri",
+   "start": "14:40",
+   "end": "15:40"
+  },
+  {
+   "act": "Zara Larsson",
+   "stage": "t-mobile",
+   "day": "Fri",
+   "start": "16:40",
+   "end": "17:40",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Lil Uzi Vert",
+   "stage": "t-mobile",
+   "day": "Fri",
+   "start": "18:40",
+   "end": "19:40",
+   "flags": [
+    "cancelled"
+   ]
+  },
+  {
+   "act": "Charli xcx",
+   "stage": "t-mobile",
+   "day": "Fri",
+   "start": "20:40",
+   "end": "22:00",
+   "flags": [
+    "end_secondary_source"
+   ]
+  },
+  {
+   "act": "High Vis",
+   "stage": "bud-light",
+   "day": "Fri",
+   "start": "13:15",
+   "end": "14:00"
+  },
+  {
+   "act": "Slayyyter",
+   "stage": "bud-light",
+   "day": "Fri",
+   "start": "14:45",
+   "end": "15:30",
+   "flags": [
+    "source_conflict"
+   ]
+  },
+  {
+   "act": "The Story So Far",
+   "stage": "bud-light",
+   "day": "Fri",
+   "start": "16:30",
+   "end": "17:30"
+  },
+  {
+   "act": "Yungblud",
+   "stage": "bud-light",
+   "day": "Fri",
+   "start": "18:30",
+   "end": "19:30"
+  },
+  {
+   "act": "The Smashing Pumpkins",
+   "stage": "bud-light",
+   "day": "Fri",
+   "start": "20:30",
+   "end": "22:00"
+  },
+  {
+   "act": "Bradeazy",
+   "stage": "perrys",
+   "day": "Fri",
+   "start": "12:00",
+   "end": "12:30"
+  },
+  {
+   "act": "Avello",
+   "stage": "perrys",
+   "day": "Fri",
+   "start": "12:45",
+   "end": "13:30"
+  },
+  {
+   "act": "Lyny",
+   "stage": "perrys",
+   "day": "Fri",
+   "start": "13:45",
+   "end": "14:45"
+  },
+  {
+   "act": "RØZ",
+   "stage": "perrys",
+   "day": "Fri",
+   "start": "15:00",
+   "end": "16:00"
+  },
+  {
+   "act": "Notion",
+   "stage": "perrys",
+   "day": "Fri",
+   "start": "16:15",
+   "end": "17:15"
+  },
+  {
+   "act": "SidePiece",
+   "stage": "perrys",
+   "day": "Fri",
+   "start": "17:45",
+   "end": "18:45"
+  },
+  {
+   "act": "Mustard",
+   "stage": "perrys",
+   "day": "Fri",
+   "start": "19:00",
+   "end": "20:00"
+  },
+  {
+   "act": "Major Lazer",
+   "stage": "perrys",
+   "day": "Fri",
+   "start": "20:30",
+   "end": "21:45"
+  },
+  {
+   "act": "The Army, The Navy",
+   "stage": "allianz",
+   "day": "Fri",
+   "start": "12:10",
+   "end": "12:55",
+   "flags": [
+    "source_conflict"
+   ]
+  },
+  {
+   "act": "Claire Rosinkranz",
+   "stage": "allianz",
+   "day": "Fri",
+   "start": "13:40",
+   "end": "14:40"
+  },
+  {
+   "act": "Skye Newman",
+   "stage": "allianz",
+   "day": "Fri",
+   "start": "15:40",
+   "end": "16:40"
+  },
+  {
+   "act": "Suki Waterhouse",
+   "stage": "allianz",
+   "day": "Fri",
+   "start": "17:40",
+   "end": "18:40"
+  },
+  {
+   "act": "Not For Radio",
+   "stage": "allianz",
+   "day": "Fri",
+   "start": "19:40",
+   "end": "20:40"
+  },
+  {
+   "act": "Beno",
+   "stage": "airbnb",
+   "day": "Fri",
+   "start": "12:00",
+   "end": "12:30"
+  },
+  {
+   "act": "Day We Ran",
+   "stage": "airbnb",
+   "day": "Fri",
+   "start": "12:50",
+   "end": "13:30"
+  },
+  {
+   "act": "Love Spells",
+   "stage": "airbnb",
+   "day": "Fri",
+   "start": "13:50",
+   "end": "14:30"
+  },
+  {
+   "act": "54 Ultra",
+   "stage": "airbnb",
+   "day": "Fri",
+   "start": "14:50",
+   "end": "15:30"
+  },
+  {
+   "act": "Finn Wolfhard",
+   "stage": "airbnb",
+   "day": "Fri",
+   "start": "16:00",
+   "end": "16:45"
+  },
+  {
+   "act": "Oklou",
+   "stage": "airbnb",
+   "day": "Fri",
+   "start": "17:30",
+   "end": "18:15"
+  },
+  {
+   "act": "Balu Brigada",
+   "stage": "airbnb",
+   "day": "Fri",
+   "start": "18:45",
+   "end": "19:30"
+  },
+  {
+   "act": "horsegiirL",
+   "stage": "airbnb",
+   "day": "Fri",
+   "start": "20:00",
+   "end": "20:45"
+  },
+  {
+   "act": "Freddie Gibbs",
+   "stage": "airbnb",
+   "day": "Fri",
+   "start": "21:15",
+   "end": "22:00"
+  },
+  {
+   "act": "Chicago Made",
+   "stage": "titos",
+   "day": "Fri",
+   "start": "12:30",
+   "end": "13:15"
+  },
+  {
+   "act": "Julia Wolf",
+   "stage": "titos",
+   "day": "Fri",
+   "start": "14:00",
+   "end": "14:45"
+  },
+  {
+   "act": "Mother Mother",
+   "stage": "titos",
+   "day": "Fri",
+   "start": "15:30",
+   "end": "16:30"
+  },
+  {
+   "act": "Loathe",
+   "stage": "titos",
+   "day": "Fri",
+   "start": "17:30",
+   "end": "18:30"
+  },
+  {
+   "act": "Nettspend",
+   "stage": "titos",
+   "day": "Fri",
+   "start": "19:30",
+   "end": "20:30"
+  },
+  {
+   "act": "Valencia Grace",
+   "stage": "bmi",
+   "day": "Fri",
+   "start": "13:00",
+   "end": "13:40"
+  },
+  {
+   "act": "Ella Boh",
+   "stage": "bmi",
+   "day": "Fri",
+   "start": "14:10",
+   "end": "14:50"
+  },
+  {
+   "act": "Emi Grace",
+   "stage": "bmi",
+   "day": "Fri",
+   "start": "15:20",
+   "end": "16:00"
+  },
+  {
+   "act": "Ivri",
+   "stage": "bmi",
+   "day": "Fri",
+   "start": "16:30",
+   "end": "17:10"
+  },
+  {
+   "act": "Ella Red",
+   "stage": "bmi",
+   "day": "Fri",
+   "start": "17:40",
+   "end": "18:20"
+  },
+  {
+   "act": "Whitney Whitney",
+   "stage": "bmi",
+   "day": "Fri",
+   "start": "18:50",
+   "end": "19:30"
+  },
+  {
+   "act": "Miss Tutti & The Fruity Band",
+   "stage": "kidzpalooza",
+   "day": "Fri",
+   "start": "12:00",
+   "end": "12:30"
+  },
+  {
+   "act": "Mister G",
+   "stage": "kidzpalooza",
+   "day": "Fri",
+   "start": "13:30",
+   "end": "14:00"
+  },
+  {
+   "act": "Jazzy Ash",
+   "stage": "kidzpalooza",
+   "day": "Fri",
+   "start": "15:00",
+   "end": "15:30"
+  },
+  {
+   "act": "School of Rock",
+   "stage": "kidzpalooza",
+   "day": "Fri",
+   "start": "17:15",
+   "end": "17:45"
+  },
+  {
+   "act": "Lucy Bedroque",
+   "stage": "t-mobile",
+   "day": "Sat",
+   "start": "13:10",
+   "end": "13:55",
+   "flags": [
+    "cancelled"
+   ]
+  },
+  {
+   "act": "Cortis",
+   "stage": "t-mobile",
+   "day": "Sat",
+   "start": "14:55",
+   "end": "15:45",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Leon Thomas",
+   "stage": "t-mobile",
+   "day": "Sat",
+   "start": "16:30",
+   "end": "17:30",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "The Neighbourhood",
+   "stage": "t-mobile",
+   "day": "Sat",
+   "start": "18:30",
+   "end": "19:30"
+  },
+  {
+   "act": "Olivia Dean",
+   "stage": "t-mobile",
+   "day": "Sat",
+   "start": "20:30",
+   "end": "22:00",
+   "flags": [
+    "end_secondary_source"
+   ]
+  },
+  {
+   "act": "Ric Wilson",
+   "stage": "bud-light",
+   "day": "Sat",
+   "start": "13:15",
+   "end": "14:00",
+   "flags": [
+    "cancelled"
+   ]
+  },
+  {
+   "act": "Wolf Alice",
+   "stage": "bud-light",
+   "day": "Sat",
+   "start": "15:00",
+   "end": "16:00",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Clipse",
+   "stage": "bud-light",
+   "day": "Sat",
+   "start": "17:00",
+   "end": "18:00",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Ethel Cain",
+   "stage": "bud-light",
+   "day": "Sat",
+   "start": "19:00",
+   "end": "20:00"
+  },
+  {
+   "act": "Jennie",
+   "stage": "bud-light",
+   "day": "Sat",
+   "start": "20:55",
+   "end": "22:00"
+  },
+  {
+   "act": "Peace Control",
+   "stage": "perrys",
+   "day": "Sat",
+   "start": "12:00",
+   "end": "12:30",
+   "flags": [
+    "cancelled"
+   ]
+  },
+  {
+   "act": "MC4D",
+   "stage": "perrys",
+   "day": "Sat",
+   "start": "12:45",
+   "end": "13:30",
+   "flags": [
+    "cancelled"
+   ]
+  },
+  {
+   "act": "Omnom",
+   "stage": "perrys",
+   "day": "Sat",
+   "start": "13:45",
+   "end": "14:45",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Ayybo",
+   "stage": "perrys",
+   "day": "Sat",
+   "start": "15:00",
+   "end": "16:00",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Whethan",
+   "stage": "perrys",
+   "day": "Sat",
+   "start": "16:15",
+   "end": "17:15",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Max Styler",
+   "stage": "perrys",
+   "day": "Sat",
+   "start": "17:45",
+   "end": "18:45",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Alison Wonderland",
+   "stage": "perrys",
+   "day": "Sat",
+   "start": "19:00",
+   "end": "20:00",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Disco Lines",
+   "stage": "perrys",
+   "day": "Sat",
+   "start": "20:30",
+   "end": "21:45"
+  },
+  {
+   "act": "Sunday (1994)",
+   "stage": "allianz",
+   "day": "Sat",
+   "start": "12:25",
+   "end": "13:10",
+   "flags": [
+    "cancelled"
+   ]
+  },
+  {
+   "act": "Wisp",
+   "stage": "allianz",
+   "day": "Sat",
+   "start": "13:55",
+   "end": "14:55",
+   "flags": [
+    "cancelled"
+   ]
+  },
+  {
+   "act": "Khamari",
+   "stage": "allianz",
+   "day": "Sat",
+   "start": "15:45",
+   "end": "16:30",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Spacey Jane",
+   "stage": "allianz",
+   "day": "Sat",
+   "start": "17:30",
+   "end": "18:30",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Geese",
+   "stage": "allianz",
+   "day": "Sat",
+   "start": "19:30",
+   "end": "20:30"
+  },
+  {
+   "act": "Nat Myers",
+   "stage": "airbnb",
+   "day": "Sat",
+   "start": "12:00",
+   "end": "12:30",
+   "flags": [
+    "cancelled"
+   ]
+  },
+  {
+   "act": "Villanelle",
+   "stage": "airbnb",
+   "day": "Sat",
+   "start": "12:50",
+   "end": "13:30",
+   "flags": [
+    "cancelled"
+   ]
+  },
+  {
+   "act": "Die Spitz",
+   "stage": "airbnb",
+   "day": "Sat",
+   "start": "13:50",
+   "end": "14:30",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Frost Children",
+   "stage": "airbnb",
+   "day": "Sat",
+   "start": "14:50",
+   "end": "15:30",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Quadeca",
+   "stage": "airbnb",
+   "day": "Sat",
+   "start": "16:00",
+   "end": "16:45",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Sienna Spiro",
+   "stage": "airbnb",
+   "day": "Sat",
+   "start": "17:15",
+   "end": "18:00",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "KWN",
+   "stage": "airbnb",
+   "day": "Sat",
+   "start": "18:30",
+   "end": "19:15",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Cameron Whitcomb",
+   "stage": "airbnb",
+   "day": "Sat",
+   "start": "19:45",
+   "end": "20:30",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "DJ Trixie Mattel",
+   "stage": "airbnb",
+   "day": "Sat",
+   "start": "21:00",
+   "end": "22:00",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Chezile",
+   "stage": "titos",
+   "day": "Sat",
+   "start": "12:30",
+   "end": "13:15",
+   "flags": [
+    "cancelled"
+   ]
+  },
+  {
+   "act": "Goldie Boutilier",
+   "stage": "titos",
+   "day": "Sat",
+   "start": "14:00",
+   "end": "15:00",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Momma",
+   "stage": "titos",
+   "day": "Sat",
+   "start": "16:00",
+   "end": "17:00",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "bbno$",
+   "stage": "titos",
+   "day": "Sat",
+   "start": "18:00",
+   "end": "19:00",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Chicago Youth Symphony Orchestra",
+   "stage": "titos",
+   "day": "Sat",
+   "start": "20:00",
+   "end": "20:55",
+   "flags": [
+    "cancelled"
+   ]
+  },
+  {
+   "act": "The Creekers",
+   "stage": "bmi",
+   "day": "Sat",
+   "start": "13:00",
+   "end": "13:40",
+   "flags": [
+    "cancelled"
+   ]
+  },
+  {
+   "act": "Next of Kin",
+   "stage": "bmi",
+   "day": "Sat",
+   "start": "14:10",
+   "end": "14:50",
+   "flags": [
+    "cancelled"
+   ]
+  },
+  {
+   "act": "Ink",
+   "stage": "bmi",
+   "day": "Sat",
+   "start": "15:20",
+   "end": "16:00",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Calder Allen",
+   "stage": "bmi",
+   "day": "Sat",
+   "start": "16:30",
+   "end": "17:10",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Jae Stephens",
+   "stage": "bmi",
+   "day": "Sat",
+   "start": "17:40",
+   "end": "18:20",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Ryman",
+   "stage": "bmi",
+   "day": "Sat",
+   "start": "18:50",
+   "end": "19:30",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Flor Bromley",
+   "stage": "kidzpalooza",
+   "day": "Sat",
+   "start": "12:00",
+   "end": "12:30",
+   "flags": [
+    "cancelled"
+   ]
+  },
+  {
+   "act": "Mega Ran",
+   "stage": "kidzpalooza",
+   "day": "Sat",
+   "start": "13:30",
+   "end": "14:00",
+   "flags": [
+    "cancelled"
+   ]
+  },
+  {
+   "act": "Lucky Diaz",
+   "stage": "kidzpalooza",
+   "day": "Sat",
+   "start": "15:00",
+   "end": "15:30",
+   "flags": [
+    "cancelled"
+   ]
+  },
+  {
+   "act": "The Happiness Club",
+   "stage": "kidzpalooza",
+   "day": "Sat",
+   "start": "16:00",
+   "end": "16:30"
+  },
+  {
+   "act": "Q Brothers",
+   "stage": "kidzpalooza",
+   "day": "Sat",
+   "start": "17:15",
+   "end": "17:45"
+  },
+  {
+   "act": "New Constellations",
+   "stage": "t-mobile",
+   "day": "Sun",
+   "start": "13:15",
+   "end": "14:00"
+  },
+  {
+   "act": "Adéla",
+   "stage": "t-mobile",
+   "day": "Sun",
+   "start": "15:00",
+   "end": "15:45"
+  },
+  {
+   "act": "MUNA",
+   "stage": "t-mobile",
+   "day": "Sun",
+   "start": "16:45",
+   "end": "17:45"
+  },
+  {
+   "act": "beabadoobee",
+   "stage": "t-mobile",
+   "day": "Sun",
+   "start": "18:45",
+   "end": "19:45"
+  },
+  {
+   "act": "Tate McRae",
+   "stage": "t-mobile",
+   "day": "Sun",
+   "start": "20:45",
+   "end": "22:00",
+   "flags": [
+    "end_secondary_source"
+   ]
+  },
+  {
+   "act": "Whatmore",
+   "stage": "bud-light",
+   "day": "Sun",
+   "start": "13:30",
+   "end": "14:15"
+  },
+  {
+   "act": "Waylon Wyatt",
+   "stage": "bud-light",
+   "day": "Sun",
+   "start": "15:00",
+   "end": "16:00"
+  },
+  {
+   "act": "YOASOBI",
+   "stage": "bud-light",
+   "day": "Sun",
+   "start": "17:00",
+   "end": "18:00"
+  },
+  {
+   "act": "Turnstile",
+   "stage": "bud-light",
+   "day": "Sun",
+   "start": "19:00",
+   "end": "20:00"
+  },
+  {
+   "act": "The xx",
+   "stage": "bud-light",
+   "day": "Sun",
+   "start": "20:45",
+   "end": "22:00"
+  },
+  {
+   "act": "Zack Martino",
+   "stage": "perrys",
+   "day": "Sun",
+   "start": "12:00",
+   "end": "12:30"
+  },
+  {
+   "act": "Jackie Hollander",
+   "stage": "perrys",
+   "day": "Sun",
+   "start": "12:45",
+   "end": "13:30"
+  },
+  {
+   "act": "Westend",
+   "stage": "perrys",
+   "day": "Sun",
+   "start": "13:45",
+   "end": "14:45"
+  },
+  {
+   "act": "Riordan",
+   "stage": "perrys",
+   "day": "Sun",
+   "start": "15:00",
+   "end": "16:00"
+  },
+  {
+   "act": "Dombresky",
+   "stage": "perrys",
+   "day": "Sun",
+   "start": "16:15",
+   "end": "17:15"
+  },
+  {
+   "act": "Duke Dumont",
+   "stage": "perrys",
+   "day": "Sun",
+   "start": "17:45",
+   "end": "18:45"
+  },
+  {
+   "act": "Eli Brown",
+   "stage": "perrys",
+   "day": "Sun",
+   "start": "19:00",
+   "end": "20:00"
+  },
+  {
+   "act": "The Chainsmokers",
+   "stage": "perrys",
+   "day": "Sun",
+   "start": "20:30",
+   "end": "21:45"
+  },
+  {
+   "act": "Squirrel Flower",
+   "stage": "allianz",
+   "day": "Sun",
+   "start": "12:30",
+   "end": "13:15",
+   "flags": [
+    "source_conflict"
+   ]
+  },
+  {
+   "act": "Destin Conrad",
+   "stage": "allianz",
+   "day": "Sun",
+   "start": "14:00",
+   "end": "15:00"
+  },
+  {
+   "act": "Amber Mark",
+   "stage": "allianz",
+   "day": "Sun",
+   "start": "15:45",
+   "end": "16:45"
+  },
+  {
+   "act": "Jade",
+   "stage": "allianz",
+   "day": "Sun",
+   "start": "17:45",
+   "end": "18:45"
+  },
+  {
+   "act": "aespa",
+   "stage": "allianz",
+   "day": "Sun",
+   "start": "19:45",
+   "end": "20:45"
+  },
+  {
+   "act": "Sunshine Benzi",
+   "stage": "airbnb",
+   "day": "Sun",
+   "start": "12:00",
+   "end": "12:30"
+  },
+  {
+   "act": "The Bends",
+   "stage": "airbnb",
+   "day": "Sun",
+   "start": "12:50",
+   "end": "13:30"
+  },
+  {
+   "act": "After",
+   "stage": "airbnb",
+   "day": "Sun",
+   "start": "13:50",
+   "end": "14:30"
+  },
+  {
+   "act": "Water From Your Eyes",
+   "stage": "airbnb",
+   "day": "Sun",
+   "start": "14:50",
+   "end": "15:30"
+  },
+  {
+   "act": "Inji",
+   "stage": "airbnb",
+   "day": "Sun",
+   "start": "16:00",
+   "end": "16:45"
+  },
+  {
+   "act": "Los Retros",
+   "stage": "airbnb",
+   "day": "Sun",
+   "start": "17:15",
+   "end": "18:00"
+  },
+  {
+   "act": "Monaleo",
+   "stage": "airbnb",
+   "day": "Sun",
+   "start": "18:30",
+   "end": "19:15"
+  },
+  {
+   "act": "Stella Lefty",
+   "stage": "airbnb",
+   "day": "Sun",
+   "start": "19:45",
+   "end": "20:30"
+  },
+  {
+   "act": "Ado",
+   "stage": "airbnb",
+   "day": "Sun",
+   "start": "21:15",
+   "end": "22:00"
+  },
+  {
+   "act": "Easy Honey",
+   "stage": "titos",
+   "day": "Sun",
+   "start": "12:45",
+   "end": "13:30"
+  },
+  {
+   "act": "Cruz Beckham and the Breakers",
+   "stage": "titos",
+   "day": "Sun",
+   "start": "14:15",
+   "end": "15:00"
+  },
+  {
+   "act": "Wunderhorse",
+   "stage": "titos",
+   "day": "Sun",
+   "start": "16:00",
+   "end": "17:00"
+  },
+  {
+   "act": "Hot Mulligan",
+   "stage": "titos",
+   "day": "Sun",
+   "start": "18:00",
+   "end": "19:00"
+  },
+  {
+   "act": "Vandelux",
+   "stage": "titos",
+   "day": "Sun",
+   "start": "20:00",
+   "end": "20:45"
+  },
+  {
+   "act": "Snacktime",
+   "stage": "bmi",
+   "day": "Sun",
+   "start": "13:00",
+   "end": "13:40"
+  },
+  {
+   "act": "Surfing for Daisy",
+   "stage": "bmi",
+   "day": "Sun",
+   "start": "14:10",
+   "end": "14:50"
+  },
+  {
+   "act": "Case Oats",
+   "stage": "bmi",
+   "day": "Sun",
+   "start": "15:20",
+   "end": "16:00"
+  },
+  {
+   "act": "Justine Skye",
+   "stage": "bmi",
+   "day": "Sun",
+   "start": "16:30",
+   "end": "17:10"
+  },
+  {
+   "act": "Porch Light",
+   "stage": "bmi",
+   "day": "Sun",
+   "start": "17:40",
+   "end": "18:20"
+  },
+  {
+   "act": "Will Swinton",
+   "stage": "bmi",
+   "day": "Sun",
+   "start": "18:50",
+   "end": "19:30"
+  },
+  {
+   "act": "Flor Bromley",
+   "stage": "kidzpalooza",
+   "day": "Sun",
+   "start": "12:00",
+   "end": "12:30"
+  },
+  {
+   "act": "Lucky Diaz",
+   "stage": "kidzpalooza",
+   "day": "Sun",
+   "start": "13:30",
+   "end": "14:00"
+  },
+  {
+   "act": "Q Brothers",
+   "stage": "kidzpalooza",
+   "day": "Sun",
+   "start": "15:00",
+   "end": "15:30"
+  },
+  {
+   "act": "The Happiness Club",
+   "stage": "kidzpalooza",
+   "day": "Sun",
+   "start": "16:00",
+   "end": "16:30"
+  },
+  {
+   "act": "Mega Ran",
+   "stage": "kidzpalooza",
+   "day": "Sun",
+   "start": "17:15",
+   "end": "17:45"
+  }
+ ],
+ "sources": [
+  {
+   "url": "https://www.timeout.com/chicago/news/lollapalooza-2026-lineup-updated-set-times-and-streaming-schedule-the-full-list-to-keep-track-of-072926",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://inmusicblog.com/festival/lollapalooza-2026-thursday-schedule-set-times/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://inmusicblog.com/festival/lollapalooza-2026-friday-schedule-set-times/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://inmusicblog.com/festival/lollapalooza-2026-saturday-schedule-set-times/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://inmusicblog.com/festival/lollapalooza-2026-sunday-schedule-lineup-set-times/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://seatgeek.com/blog/lollapalooza-set-times-daily-schedule-full-lineup-and-stages",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://www.festiplannr.com/festival/lollapalooza-chicago-2026",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://www.festivaldust.com/festivals/lollapalooza-2026-chicagoil/lineup",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://www.timeout.com/chicago/news/the-lollapalooza-daily-schedule-with-set-times-is-out-so-you-can-plan-your-itinerary-051526",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://blockclubchicago.org/2026/08/01/lollapalooza-delayed-saturday-due-to-rain/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://www.musictimes.com/articles/112472/20260801/lil-uzi-verts-lollapalooza-set-canceled-weather-forces-schedule-changes.htm",
+   "accessed": "2026-10-02"
+  }
+ ]
+}

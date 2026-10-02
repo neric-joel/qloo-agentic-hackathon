@@ -1,0 +1,1638 @@
+{
+ "id": "coachella-2026-w1",
+ "name": "Coachella 2026 Weekend 1",
+ "city": "Indio, CA",
+ "venue": "Empire Polo Club",
+ "timezone": "America/Los_Angeles",
+ "dates": [
+  "2026-04-10",
+  "2026-04-11",
+  "2026-04-12"
+ ],
+ "days": [
+  "Fri",
+  "Sat",
+  "Sun"
+ ],
+ "stages": [
+  {
+   "id": "coachella-stage",
+   "name": "Coachella Stage",
+   "tier": "main"
+  },
+  {
+   "id": "outdoor-theatre",
+   "name": "Outdoor Theatre",
+   "tier": "main"
+  },
+  {
+   "id": "sahara",
+   "name": "Sahara",
+   "tier": "main"
+  },
+  {
+   "id": "mojave",
+   "name": "Mojave",
+   "tier": "main"
+  },
+  {
+   "id": "gobi",
+   "name": "Gobi",
+   "tier": "main"
+  },
+  {
+   "id": "sonora",
+   "name": "Sonora",
+   "tier": "main"
+  },
+  {
+   "id": "quasar",
+   "name": "Quasar",
+   "tier": "secondary"
+  },
+  {
+   "id": "yuma",
+   "name": "Yuma",
+   "tier": "secondary"
+  },
+  {
+   "id": "do-lab",
+   "name": "Do LaB",
+   "tier": "secondary"
+  },
+  {
+   "id": "heineken-house",
+   "name": "Heineken House",
+   "tier": "minor"
+  }
+ ],
+ "sets": [
+  {
+   "act": "Record Safari",
+   "stage": "coachella-stage",
+   "day": "Fri",
+   "start": "16:15",
+   "end": "17:20"
+  },
+  {
+   "act": "Teddy Swims",
+   "stage": "coachella-stage",
+   "day": "Fri",
+   "start": "17:30",
+   "end": "18:20"
+  },
+  {
+   "act": "The xx",
+   "stage": "coachella-stage",
+   "day": "Fri",
+   "start": "19:00",
+   "end": "19:55"
+  },
+  {
+   "act": "Sabrina Carpenter",
+   "stage": "coachella-stage",
+   "day": "Fri",
+   "start": "21:05",
+   "end": "22:35"
+  },
+  {
+   "act": "Anyma",
+   "stage": "coachella-stage",
+   "day": "Fri",
+   "start": "24:00",
+   "end": "25:00",
+   "flags": [
+    "cancelled"
+   ]
+  },
+  {
+   "act": "Tiffany Tyson",
+   "stage": "outdoor-theatre",
+   "day": "Fri",
+   "start": "14:50",
+   "end": "15:50"
+  },
+  {
+   "act": "Dabeull",
+   "stage": "outdoor-theatre",
+   "day": "Fri",
+   "start": "16:00",
+   "end": "16:50"
+  },
+  {
+   "act": "Lykke Li",
+   "stage": "outdoor-theatre",
+   "day": "Fri",
+   "start": "17:20",
+   "end": "18:10"
+  },
+  {
+   "act": "Dijon",
+   "stage": "outdoor-theatre",
+   "day": "Fri",
+   "start": "18:40",
+   "end": "19:30"
+  },
+  {
+   "act": "Turnstile",
+   "stage": "outdoor-theatre",
+   "day": "Fri",
+   "start": "20:05",
+   "end": "21:00"
+  },
+  {
+   "act": "Disclosure",
+   "stage": "outdoor-theatre",
+   "day": "Fri",
+   "start": "22:35",
+   "end": "23:50"
+  },
+  {
+   "act": "Massio",
+   "stage": "sahara",
+   "day": "Fri",
+   "start": "14:30",
+   "end": "15:35"
+  },
+  {
+   "act": "Youna",
+   "stage": "sahara",
+   "day": "Fri",
+   "start": "15:45",
+   "end": "16:35"
+  },
+  {
+   "act": "Hugel",
+   "stage": "sahara",
+   "day": "Fri",
+   "start": "16:50",
+   "end": "17:50"
+  },
+  {
+   "act": "Marlon Hoffstadt",
+   "stage": "sahara",
+   "day": "Fri",
+   "start": "18:15",
+   "end": "19:15"
+  },
+  {
+   "act": "Katseye",
+   "stage": "sahara",
+   "day": "Fri",
+   "start": "20:00",
+   "end": "20:45"
+  },
+  {
+   "act": "Levity",
+   "stage": "sahara",
+   "day": "Fri",
+   "start": "21:15",
+   "end": "22:20"
+  },
+  {
+   "act": "Swae Lee",
+   "stage": "sahara",
+   "day": "Fri",
+   "start": "22:50",
+   "end": "23:40"
+  },
+  {
+   "act": "Sexyy Red",
+   "stage": "sahara",
+   "day": "Fri",
+   "start": "24:05",
+   "end": "24:55"
+  },
+  {
+   "act": "Novasoul",
+   "stage": "mojave",
+   "day": "Fri",
+   "start": "14:00",
+   "end": "14:50"
+  },
+  {
+   "act": "Slayyyter",
+   "stage": "mojave",
+   "day": "Fri",
+   "start": "15:00",
+   "end": "15:45"
+  },
+  {
+   "act": "BINI",
+   "stage": "mojave",
+   "day": "Fri",
+   "start": "16:15",
+   "end": "17:00"
+  },
+  {
+   "act": "Central Cee",
+   "stage": "mojave",
+   "day": "Fri",
+   "start": "17:30",
+   "end": "18:15"
+  },
+  {
+   "act": "Devo",
+   "stage": "mojave",
+   "day": "Fri",
+   "start": "18:45",
+   "end": "19:40"
+  },
+  {
+   "act": "Moby",
+   "stage": "mojave",
+   "day": "Fri",
+   "start": "20:10",
+   "end": "21:00"
+  },
+  {
+   "act": "Ethel Cain",
+   "stage": "mojave",
+   "day": "Fri",
+   "start": "22:35",
+   "end": "23:25"
+  },
+  {
+   "act": "Blood Orange",
+   "stage": "mojave",
+   "day": "Fri",
+   "start": "23:55",
+   "end": "24:45"
+  },
+  {
+   "act": "Cahuilla Bird Singers and Dancers",
+   "stage": "gobi",
+   "day": "Fri",
+   "start": "14:15",
+   "end": "14:45"
+  },
+  {
+   "act": "Bob Baker Marionettes",
+   "stage": "gobi",
+   "day": "Fri",
+   "start": "14:55",
+   "end": "15:35"
+  },
+  {
+   "act": "NewDad",
+   "stage": "gobi",
+   "day": "Fri",
+   "start": "16:00",
+   "end": "16:40"
+  },
+  {
+   "act": "Joyce Manor",
+   "stage": "gobi",
+   "day": "Fri",
+   "start": "17:10",
+   "end": "17:50"
+  },
+  {
+   "act": "CMAT",
+   "stage": "gobi",
+   "day": "Fri",
+   "start": "18:15",
+   "end": "18:55"
+  },
+  {
+   "act": "fakemink",
+   "stage": "gobi",
+   "day": "Fri",
+   "start": "19:20",
+   "end": "20:00"
+  },
+  {
+   "act": "Holly Humberstone",
+   "stage": "gobi",
+   "day": "Fri",
+   "start": "20:25",
+   "end": "21:10"
+  },
+  {
+   "act": "Joost",
+   "stage": "gobi",
+   "day": "Fri",
+   "start": "21:50",
+   "end": "22:35"
+  },
+  {
+   "act": "Creepy Nuts",
+   "stage": "gobi",
+   "day": "Fri",
+   "start": "23:05",
+   "end": "23:55"
+  },
+  {
+   "act": "Doom Dave",
+   "stage": "sonora",
+   "day": "Fri",
+   "start": "13:00",
+   "end": "13:40"
+  },
+  {
+   "act": "Febuary",
+   "stage": "sonora",
+   "day": "Fri",
+   "start": "13:40",
+   "end": "14:10"
+  },
+  {
+   "act": "Carolina Durante",
+   "stage": "sonora",
+   "day": "Fri",
+   "start": "14:35",
+   "end": "15:15"
+  },
+  {
+   "act": "Wednesday",
+   "stage": "sonora",
+   "day": "Fri",
+   "start": "15:40",
+   "end": "16:20"
+  },
+  {
+   "act": "Fleshwater",
+   "stage": "sonora",
+   "day": "Fri",
+   "start": "16:50",
+   "end": "17:30"
+  },
+  {
+   "act": "The Two Lips",
+   "stage": "sonora",
+   "day": "Fri",
+   "start": "18:00",
+   "end": "18:40"
+  },
+  {
+   "act": "Ninajirachi",
+   "stage": "sonora",
+   "day": "Fri",
+   "start": "19:10",
+   "end": "20:00"
+  },
+  {
+   "act": "Cachirula & Loojan",
+   "stage": "sonora",
+   "day": "Fri",
+   "start": "20:25",
+   "end": "21:05"
+  },
+  {
+   "act": "Hot Mulligan",
+   "stage": "sonora",
+   "day": "Fri",
+   "start": "22:00",
+   "end": "22:45"
+  },
+  {
+   "act": "Not For Radio",
+   "stage": "sonora",
+   "day": "Fri",
+   "start": "23:50",
+   "end": "24:50"
+  },
+  {
+   "act": "Tiga",
+   "stage": "quasar",
+   "day": "Fri",
+   "start": "17:00",
+   "end": "19:00"
+  },
+  {
+   "act": "Deep Dish",
+   "stage": "quasar",
+   "day": "Fri",
+   "start": "19:00",
+   "end": "21:00"
+  },
+  {
+   "act": "PAWSA",
+   "stage": "quasar",
+   "day": "Fri",
+   "start": "21:00",
+   "end": "23:00"
+  },
+  {
+   "act": "Disco Lines",
+   "stage": "quasar",
+   "day": "Fri",
+   "start": "23:00",
+   "end": "25:00",
+   "flags": [
+    "single_source"
+   ]
+  },
+  {
+   "act": "Sahar Z",
+   "stage": "yuma",
+   "day": "Fri",
+   "start": "13:00",
+   "end": "13:45"
+  },
+  {
+   "act": "Jessica Brankka",
+   "stage": "yuma",
+   "day": "Fri",
+   "start": "13:45",
+   "end": "14:45"
+  },
+  {
+   "act": "Arodes",
+   "stage": "yuma",
+   "day": "Fri",
+   "start": "14:45",
+   "end": "15:45"
+  },
+  {
+   "act": "Groove Armada",
+   "stage": "yuma",
+   "day": "Fri",
+   "start": "15:45",
+   "end": "16:45"
+  },
+  {
+   "act": "Chloe Caillet b2b Rossi.",
+   "stage": "yuma",
+   "day": "Fri",
+   "start": "16:45",
+   "end": "18:00"
+  },
+  {
+   "act": "Kettama",
+   "stage": "yuma",
+   "day": "Fri",
+   "start": "18:00",
+   "end": "19:15"
+  },
+  {
+   "act": "Prospa",
+   "stage": "yuma",
+   "day": "Fri",
+   "start": "19:15",
+   "end": "20:30"
+  },
+  {
+   "act": "Max Dean b2b Luke Dean",
+   "stage": "yuma",
+   "day": "Fri",
+   "start": "20:30",
+   "end": "21:45"
+  },
+  {
+   "act": "Max Styler",
+   "stage": "yuma",
+   "day": "Fri",
+   "start": "21:45",
+   "end": "23:15"
+  },
+  {
+   "act": "Gordo",
+   "stage": "yuma",
+   "day": "Fri",
+   "start": "23:15",
+   "end": "24:55"
+  },
+  {
+   "act": "Soraya",
+   "stage": "do-lab",
+   "day": "Fri",
+   "start": "13:00",
+   "end": "14:00"
+  },
+  {
+   "act": "Fifi",
+   "stage": "do-lab",
+   "day": "Fri",
+   "start": "14:00",
+   "end": "15:00"
+  },
+  {
+   "act": "1TBSP",
+   "stage": "do-lab",
+   "day": "Fri",
+   "start": "15:00",
+   "end": "16:00"
+  },
+  {
+   "act": "Bullet Tooth",
+   "stage": "do-lab",
+   "day": "Fri",
+   "start": "16:00",
+   "end": "17:00"
+  },
+  {
+   "act": "MCR-T",
+   "stage": "do-lab",
+   "day": "Fri",
+   "start": "17:00",
+   "end": "18:00"
+  },
+  {
+   "act": "Jazzy",
+   "stage": "do-lab",
+   "day": "Fri",
+   "start": "18:00",
+   "end": "19:05",
+   "flags": [
+    "single_source"
+   ]
+  },
+  {
+   "act": "Effin",
+   "stage": "do-lab",
+   "day": "Fri",
+   "start": "19:05",
+   "end": "20:05"
+  },
+  {
+   "act": "John Summit",
+   "stage": "do-lab",
+   "day": "Fri",
+   "start": "20:10",
+   "end": "21:10",
+   "flags": [
+    "single_source"
+   ]
+  },
+  {
+   "act": "Jigitz",
+   "stage": "do-lab",
+   "day": "Fri",
+   "start": "21:15",
+   "end": "22:30",
+   "flags": [
+    "cancelled"
+   ]
+  },
+  {
+   "act": "Andy C",
+   "stage": "do-lab",
+   "day": "Fri",
+   "start": "22:30",
+   "end": "23:45",
+   "flags": [
+    "cancelled"
+   ]
+  },
+  {
+   "act": "Sander Kleinenberg",
+   "stage": "heineken-house",
+   "day": "Fri",
+   "start": "14:00",
+   "end": "16:00"
+  },
+  {
+   "act": "Kryptogram",
+   "stage": "heineken-house",
+   "day": "Fri",
+   "start": "16:00",
+   "end": "17:30"
+  },
+  {
+   "act": "Robin Schulz",
+   "stage": "heineken-house",
+   "day": "Fri",
+   "start": "17:30",
+   "end": "19:00"
+  },
+  {
+   "act": "Wale",
+   "stage": "heineken-house",
+   "day": "Fri",
+   "start": "19:15",
+   "end": "20:00"
+  },
+  {
+   "act": "Zerb",
+   "stage": "heineken-house",
+   "day": "Fri",
+   "start": "20:15",
+   "end": "22:00"
+  },
+  {
+   "act": "Jaqck Glam",
+   "stage": "coachella-stage",
+   "day": "Sat",
+   "start": "16:15",
+   "end": "17:20"
+  },
+  {
+   "act": "Addison Rae",
+   "stage": "coachella-stage",
+   "day": "Sat",
+   "start": "17:30",
+   "end": "18:20"
+  },
+  {
+   "act": "Giveon",
+   "stage": "coachella-stage",
+   "day": "Sat",
+   "start": "19:00",
+   "end": "19:50"
+  },
+  {
+   "act": "The Strokes",
+   "stage": "coachella-stage",
+   "day": "Sat",
+   "start": "21:00",
+   "end": "22:10"
+  },
+  {
+   "act": "Justin Bieber",
+   "stage": "coachella-stage",
+   "day": "Sat",
+   "start": "23:25",
+   "end": "24:55",
+   "flags": [
+    "source_conflict"
+   ]
+  },
+  {
+   "act": "Blondshell",
+   "stage": "outdoor-theatre",
+   "day": "Sat",
+   "start": "14:40",
+   "end": "15:25"
+  },
+  {
+   "act": "Los Hermanos Flores",
+   "stage": "outdoor-theatre",
+   "day": "Sat",
+   "start": "15:55",
+   "end": "16:45"
+  },
+  {
+   "act": "Alex G",
+   "stage": "outdoor-theatre",
+   "day": "Sat",
+   "start": "17:10",
+   "end": "18:00"
+  },
+  {
+   "act": "SOMBR",
+   "stage": "outdoor-theatre",
+   "day": "Sat",
+   "start": "19:05",
+   "end": "19:55"
+  },
+  {
+   "act": "Labrinth",
+   "stage": "outdoor-theatre",
+   "day": "Sat",
+   "start": "20:30",
+   "end": "21:25"
+  },
+  {
+   "act": "David Byrne",
+   "stage": "outdoor-theatre",
+   "day": "Sat",
+   "start": "22:20",
+   "end": "23:20"
+  },
+  {
+   "act": "Seek-One",
+   "stage": "sahara",
+   "day": "Sat",
+   "start": "14:00",
+   "end": "14:45"
+  },
+  {
+   "act": "TEED",
+   "stage": "sahara",
+   "day": "Sat",
+   "start": "14:50",
+   "end": "15:50",
+   "flags": [
+    "source_conflict"
+   ]
+  },
+  {
+   "act": "Zulan",
+   "stage": "sahara",
+   "day": "Sat",
+   "start": "16:00",
+   "end": "16:50"
+  },
+  {
+   "act": "Hamdi",
+   "stage": "sahara",
+   "day": "Sat",
+   "start": "17:00",
+   "end": "17:55"
+  },
+  {
+   "act": "Yousuke Yukimatsu",
+   "stage": "sahara",
+   "day": "Sat",
+   "start": "18:15",
+   "end": "19:10"
+  },
+  {
+   "act": "Nine Inch Noize",
+   "stage": "sahara",
+   "day": "Sat",
+   "start": "20:00",
+   "end": "20:45"
+  },
+  {
+   "act": "Rezz",
+   "stage": "sahara",
+   "day": "Sat",
+   "start": "21:10",
+   "end": "22:05"
+  },
+  {
+   "act": "Adriatique",
+   "stage": "sahara",
+   "day": "Sat",
+   "start": "22:30",
+   "end": "23:25"
+  },
+  {
+   "act": "Worship",
+   "stage": "sahara",
+   "day": "Sat",
+   "start": "23:55",
+   "end": "24:55"
+  },
+  {
+   "act": "Jack White",
+   "stage": "mojave",
+   "day": "Sat",
+   "start": "15:00",
+   "end": "15:45"
+  },
+  {
+   "act": "Fujii Kaze",
+   "stage": "mojave",
+   "day": "Sat",
+   "start": "16:30",
+   "end": "17:20"
+  },
+  {
+   "act": "Royel Otis",
+   "stage": "mojave",
+   "day": "Sat",
+   "start": "17:50",
+   "end": "18:35"
+  },
+  {
+   "act": "Taemin",
+   "stage": "mojave",
+   "day": "Sat",
+   "start": "19:30",
+   "end": "20:20"
+  },
+  {
+   "act": "PinkPantheress",
+   "stage": "mojave",
+   "day": "Sat",
+   "start": "20:55",
+   "end": "21:45"
+  },
+  {
+   "act": "Interpol",
+   "stage": "mojave",
+   "day": "Sat",
+   "start": "22:15",
+   "end": "23:15"
+  },
+  {
+   "act": "Noga Erez",
+   "stage": "gobi",
+   "day": "Sat",
+   "start": "14:05",
+   "end": "14:50"
+  },
+  {
+   "act": "Whatmore",
+   "stage": "gobi",
+   "day": "Sat",
+   "start": "16:05",
+   "end": "16:45"
+  },
+  {
+   "act": "Luisa Sonza",
+   "stage": "gobi",
+   "day": "Sat",
+   "start": "17:10",
+   "end": "17:50"
+  },
+  {
+   "act": "Geese",
+   "stage": "gobi",
+   "day": "Sat",
+   "start": "18:15",
+   "end": "19:00"
+  },
+  {
+   "act": "Davido",
+   "stage": "gobi",
+   "day": "Sat",
+   "start": "19:50",
+   "end": "20:35"
+  },
+  {
+   "act": "BIA",
+   "stage": "gobi",
+   "day": "Sat",
+   "start": "21:00",
+   "end": "21:45"
+  },
+  {
+   "act": "Morat",
+   "stage": "gobi",
+   "day": "Sat",
+   "start": "22:10",
+   "end": "23:00"
+  },
+  {
+   "act": "Triste Juventud",
+   "stage": "sonora",
+   "day": "Sat",
+   "start": "13:00",
+   "end": "14:00"
+  },
+  {
+   "act": "Die Spitz",
+   "stage": "sonora",
+   "day": "Sat",
+   "start": "14:00",
+   "end": "14:40"
+  },
+  {
+   "act": "Freak Slug",
+   "stage": "sonora",
+   "day": "Sat",
+   "start": "15:10",
+   "end": "15:50"
+  },
+  {
+   "act": "Ecca Vandal",
+   "stage": "sonora",
+   "day": "Sat",
+   "start": "16:20",
+   "end": "17:00"
+  },
+  {
+   "act": "Ceremony",
+   "stage": "sonora",
+   "day": "Sat",
+   "start": "17:30",
+   "end": "18:10"
+  },
+  {
+   "act": "Rusowsky",
+   "stage": "sonora",
+   "day": "Sat",
+   "start": "18:40",
+   "end": "19:20"
+  },
+  {
+   "act": "54 Ultra",
+   "stage": "sonora",
+   "day": "Sat",
+   "start": "19:50",
+   "end": "20:30"
+  },
+  {
+   "act": "Mind Enterprises",
+   "stage": "sonora",
+   "day": "Sat",
+   "start": "21:45",
+   "end": "22:35"
+  },
+  {
+   "act": "Joezi",
+   "stage": "quasar",
+   "day": "Sat",
+   "start": "17:00",
+   "end": "19:00"
+  },
+  {
+   "act": "Afrojack x Shimza",
+   "stage": "quasar",
+   "day": "Sat",
+   "start": "19:00",
+   "end": "21:00"
+  },
+  {
+   "act": "David Guetta",
+   "stage": "quasar",
+   "day": "Sat",
+   "start": "21:00",
+   "end": "23:00"
+  },
+  {
+   "act": "Yamagucci",
+   "stage": "yuma",
+   "day": "Sat",
+   "start": "13:00",
+   "end": "14:00"
+  },
+  {
+   "act": "Genesi",
+   "stage": "yuma",
+   "day": "Sat",
+   "start": "14:00",
+   "end": "15:00"
+  },
+  {
+   "act": "Riordan",
+   "stage": "yuma",
+   "day": "Sat",
+   "start": "15:00",
+   "end": "16:15"
+  },
+  {
+   "act": "Mahmut Orhan",
+   "stage": "yuma",
+   "day": "Sat",
+   "start": "16:15",
+   "end": "17:30"
+  },
+  {
+   "act": "Ben Sterling",
+   "stage": "yuma",
+   "day": "Sat",
+   "start": "17:30",
+   "end": "18:45"
+  },
+  {
+   "act": "SOSA",
+   "stage": "yuma",
+   "day": "Sat",
+   "start": "18:45",
+   "end": "20:15"
+  },
+  {
+   "act": "Bedouin",
+   "stage": "yuma",
+   "day": "Sat",
+   "start": "20:15",
+   "end": "21:45"
+  },
+  {
+   "act": "Boys Noize",
+   "stage": "yuma",
+   "day": "Sat",
+   "start": "21:45",
+   "end": "23:00"
+  },
+  {
+   "act": "Armin van Buuren b2b Adam Beyer",
+   "stage": "yuma",
+   "day": "Sat",
+   "start": "23:00",
+   "end": "24:55"
+  },
+  {
+   "act": "Lumia",
+   "stage": "do-lab",
+   "day": "Sat",
+   "start": "13:00",
+   "end": "14:05"
+  },
+  {
+   "act": "Baalti",
+   "stage": "do-lab",
+   "day": "Sat",
+   "start": "14:05",
+   "end": "15:10"
+  },
+  {
+   "act": "Roddy Lima",
+   "stage": "do-lab",
+   "day": "Sat",
+   "start": "15:10",
+   "end": "16:15"
+  },
+  {
+   "act": "Baby J",
+   "stage": "do-lab",
+   "day": "Sat",
+   "start": "16:15",
+   "end": "17:20"
+  },
+  {
+   "act": "Starjunk 95",
+   "stage": "do-lab",
+   "day": "Sat",
+   "start": "17:20",
+   "end": "18:25"
+  },
+  {
+   "act": "Tinashe (DJ set)",
+   "stage": "do-lab",
+   "day": "Sat",
+   "start": "18:25",
+   "end": "19:30"
+  },
+  {
+   "act": "Romy",
+   "stage": "do-lab",
+   "day": "Sat",
+   "start": "19:30",
+   "end": "20:35",
+   "flags": [
+    "single_source"
+   ]
+  },
+  {
+   "act": "Andhim",
+   "stage": "do-lab",
+   "day": "Sat",
+   "start": "20:35",
+   "end": "21:40"
+  },
+  {
+   "act": "Anfisa Letyago",
+   "stage": "do-lab",
+   "day": "Sat",
+   "start": "21:40",
+   "end": "22:40"
+  },
+  {
+   "act": "Kettama b2b Yousuke Yukimatsu",
+   "stage": "do-lab",
+   "day": "Sat",
+   "start": "22:40",
+   "end": "23:50",
+   "flags": [
+    "single_source"
+   ]
+  },
+  {
+   "act": "Prospa b2b Josh Baker",
+   "stage": "do-lab",
+   "day": "Sat",
+   "start": "23:50",
+   "end": "25:00",
+   "flags": [
+    "single_source"
+   ]
+  },
+  {
+   "act": "Redke",
+   "stage": "heineken-house",
+   "day": "Sat",
+   "start": "14:00",
+   "end": "16:00"
+  },
+  {
+   "act": "Niiko b2b Swae",
+   "stage": "heineken-house",
+   "day": "Sat",
+   "start": "16:00",
+   "end": "17:30"
+  },
+  {
+   "act": "Joshwa",
+   "stage": "heineken-house",
+   "day": "Sat",
+   "start": "17:30",
+   "end": "19:00"
+  },
+  {
+   "act": "Coi Leray",
+   "stage": "heineken-house",
+   "day": "Sat",
+   "start": "19:15",
+   "end": "20:00"
+  },
+  {
+   "act": "Sean Paul",
+   "stage": "heineken-house",
+   "day": "Sat",
+   "start": "20:15",
+   "end": "21:15"
+  },
+  {
+   "act": "Andruss",
+   "stage": "heineken-house",
+   "day": "Sat",
+   "start": "21:15",
+   "end": "22:00"
+  },
+  {
+   "act": "Gabe Real",
+   "stage": "coachella-stage",
+   "day": "Sun",
+   "start": "14:45",
+   "end": "15:30"
+  },
+  {
+   "act": "Tijuana Panthers",
+   "stage": "coachella-stage",
+   "day": "Sun",
+   "start": "15:40",
+   "end": "16:15"
+  },
+  {
+   "act": "Wet Leg",
+   "stage": "coachella-stage",
+   "day": "Sun",
+   "start": "16:45",
+   "end": "17:30"
+  },
+  {
+   "act": "Major Lazer",
+   "stage": "coachella-stage",
+   "day": "Sun",
+   "start": "18:10",
+   "end": "19:10"
+  },
+  {
+   "act": "Young Thug",
+   "stage": "coachella-stage",
+   "day": "Sun",
+   "start": "19:50",
+   "end": "20:40"
+  },
+  {
+   "act": "Karol G",
+   "stage": "coachella-stage",
+   "day": "Sun",
+   "start": "21:55",
+   "end": "23:55"
+  },
+  {
+   "act": "Juicewon",
+   "stage": "outdoor-theatre",
+   "day": "Sun",
+   "start": "15:00",
+   "end": "15:50"
+  },
+  {
+   "act": "Gigi Perez",
+   "stage": "outdoor-theatre",
+   "day": "Sun",
+   "start": "16:00",
+   "end": "16:45"
+  },
+  {
+   "act": "Clipse",
+   "stage": "outdoor-theatre",
+   "day": "Sun",
+   "start": "17:15",
+   "end": "18:10"
+  },
+  {
+   "act": "Foster the People",
+   "stage": "outdoor-theatre",
+   "day": "Sun",
+   "start": "18:45",
+   "end": "19:40"
+  },
+  {
+   "act": "Laufey",
+   "stage": "outdoor-theatre",
+   "day": "Sun",
+   "start": "20:40",
+   "end": "21:40"
+  },
+  {
+   "act": "BIGBANG",
+   "stage": "outdoor-theatre",
+   "day": "Sun",
+   "start": "22:30",
+   "end": "23:30"
+  },
+  {
+   "act": "Loboman",
+   "stage": "sahara",
+   "day": "Sun",
+   "start": "14:30",
+   "end": "15:30"
+  },
+  {
+   "act": "Girl Math (VNSSA x NALA)",
+   "stage": "sahara",
+   "day": "Sun",
+   "start": "15:35",
+   "end": "16:35"
+  },
+  {
+   "act": "Bunt.",
+   "stage": "sahara",
+   "day": "Sun",
+   "start": "16:45",
+   "end": "17:45"
+  },
+  {
+   "act": "Duke Dumont",
+   "stage": "sahara",
+   "day": "Sun",
+   "start": "18:10",
+   "end": "19:10"
+  },
+  {
+   "act": "Mochakk",
+   "stage": "sahara",
+   "day": "Sun",
+   "start": "19:25",
+   "end": "20:25"
+  },
+  {
+   "act": "Subtronics",
+   "stage": "sahara",
+   "day": "Sun",
+   "start": "21:05",
+   "end": "22:05"
+  },
+  {
+   "act": "Kaskade",
+   "stage": "sahara",
+   "day": "Sun",
+   "start": "22:45",
+   "end": "23:55"
+  },
+  {
+   "act": "Wyldeflower",
+   "stage": "mojave",
+   "day": "Sun",
+   "start": "14:30",
+   "end": "15:10"
+  },
+  {
+   "act": "Samia",
+   "stage": "mojave",
+   "day": "Sun",
+   "start": "15:15",
+   "end": "15:55"
+  },
+  {
+   "act": "Little Simz",
+   "stage": "mojave",
+   "day": "Sun",
+   "start": "16:25",
+   "end": "17:10"
+  },
+  {
+   "act": "Suicidal Tendencies",
+   "stage": "mojave",
+   "day": "Sun",
+   "start": "17:35",
+   "end": "18:25"
+  },
+  {
+   "act": "Iggy Pop",
+   "stage": "mojave",
+   "day": "Sun",
+   "start": "19:10",
+   "end": "20:10"
+  },
+  {
+   "act": "FKA twigs",
+   "stage": "mojave",
+   "day": "Sun",
+   "start": "20:45",
+   "end": "22:00"
+  },
+  {
+   "act": "Flowerovlove",
+   "stage": "gobi",
+   "day": "Sun",
+   "start": "14:05",
+   "end": "14:35"
+  },
+  {
+   "act": "The Chats",
+   "stage": "gobi",
+   "day": "Sun",
+   "start": "15:00",
+   "end": "15:40"
+  },
+  {
+   "act": "Cobrah",
+   "stage": "gobi",
+   "day": "Sun",
+   "start": "16:05",
+   "end": "16:50"
+  },
+  {
+   "act": "Oklou",
+   "stage": "gobi",
+   "day": "Sun",
+   "start": "17:15",
+   "end": "18:00"
+  },
+  {
+   "act": "Black Flag",
+   "stage": "gobi",
+   "day": "Sun",
+   "start": "18:30",
+   "end": "19:05"
+  },
+  {
+   "act": "Tomora",
+   "stage": "gobi",
+   "day": "Sun",
+   "start": "19:45",
+   "end": "20:35"
+  },
+  {
+   "act": "The Rapture",
+   "stage": "gobi",
+   "day": "Sun",
+   "start": "21:05",
+   "end": "21:55"
+  },
+  {
+   "act": "Panda & Chok",
+   "stage": "sonora",
+   "day": "Sun",
+   "start": "13:00",
+   "end": "14:00"
+  },
+  {
+   "act": "Glitterer",
+   "stage": "sonora",
+   "day": "Sun",
+   "start": "14:00",
+   "end": "15:00",
+   "flags": [
+    "source_conflict"
+   ]
+  },
+  {
+   "act": "Model/Actriz",
+   "stage": "sonora",
+   "day": "Sun",
+   "start": "15:10",
+   "end": "15:50"
+  },
+  {
+   "act": "Jane Remover",
+   "stage": "sonora",
+   "day": "Sun",
+   "start": "16:20",
+   "end": "17:00"
+  },
+  {
+   "act": "Los Retros",
+   "stage": "sonora",
+   "day": "Sun",
+   "start": "17:30",
+   "end": "18:10"
+  },
+  {
+   "act": "RØZ",
+   "stage": "sonora",
+   "day": "Sun",
+   "start": "18:40",
+   "end": "19:30"
+  },
+  {
+   "act": "Drain",
+   "stage": "sonora",
+   "day": "Sun",
+   "start": "20:00",
+   "end": "20:40"
+  },
+  {
+   "act": "French Police",
+   "stage": "sonora",
+   "day": "Sun",
+   "start": "21:10",
+   "end": "22:00"
+  },
+  {
+   "act": "Jazzy",
+   "stage": "quasar",
+   "day": "Sun",
+   "start": "16:00",
+   "end": "18:00"
+  },
+  {
+   "act": "Joy (Anonymous)",
+   "stage": "quasar",
+   "day": "Sun",
+   "start": "18:00",
+   "end": "20:00"
+  },
+  {
+   "act": "Fatboy Slim",
+   "stage": "quasar",
+   "day": "Sun",
+   "start": "20:00",
+   "end": "22:00"
+  },
+  {
+   "act": "Le Yora",
+   "stage": "yuma",
+   "day": "Sun",
+   "start": "13:00",
+   "end": "14:00"
+  },
+  {
+   "act": "Azzecca",
+   "stage": "yuma",
+   "day": "Sun",
+   "start": "14:00",
+   "end": "15:00"
+  },
+  {
+   "act": "&friends",
+   "stage": "yuma",
+   "day": "Sun",
+   "start": "15:00",
+   "end": "16:15"
+  },
+  {
+   "act": "Mestiza",
+   "stage": "yuma",
+   "day": "Sun",
+   "start": "16:15",
+   "end": "17:30"
+  },
+  {
+   "act": "Carlita b2b Josh Baker",
+   "stage": "yuma",
+   "day": "Sun",
+   "start": "17:30",
+   "end": "19:00"
+  },
+  {
+   "act": "Royksopp",
+   "stage": "yuma",
+   "day": "Sun",
+   "start": "19:00",
+   "end": "20:30"
+  },
+  {
+   "act": "WhoMadeWho",
+   "stage": "yuma",
+   "day": "Sun",
+   "start": "20:30",
+   "end": "22:00"
+  },
+  {
+   "act": "Green Velvet b2b AYYBO",
+   "stage": "yuma",
+   "day": "Sun",
+   "start": "22:00",
+   "end": "23:55"
+  },
+  {
+   "act": "Soul Purpose",
+   "stage": "do-lab",
+   "day": "Sun",
+   "start": "13:00",
+   "end": "14:00"
+  },
+  {
+   "act": "Cincity",
+   "stage": "do-lab",
+   "day": "Sun",
+   "start": "14:00",
+   "end": "15:00"
+  },
+  {
+   "act": "Jackie Hollander",
+   "stage": "do-lab",
+   "day": "Sun",
+   "start": "15:00",
+   "end": "16:00"
+  },
+  {
+   "act": "Brunello",
+   "stage": "do-lab",
+   "day": "Sun",
+   "start": "16:00",
+   "end": "17:00"
+  },
+  {
+   "act": "Poolside's Daytime Disco",
+   "stage": "do-lab",
+   "day": "Sun",
+   "start": "17:00",
+   "end": "18:00"
+  },
+  {
+   "act": "Isaiah Rashad & Kal Banx",
+   "stage": "do-lab",
+   "day": "Sun",
+   "start": "18:00",
+   "end": "18:40",
+   "flags": [
+    "single_source"
+   ]
+  },
+  {
+   "act": "Deer Jade",
+   "stage": "do-lab",
+   "day": "Sun",
+   "start": "18:40",
+   "end": "19:40"
+  },
+  {
+   "act": "Omar+",
+   "stage": "do-lab",
+   "day": "Sun",
+   "start": "19:40",
+   "end": "20:45"
+  },
+  {
+   "act": "Omnom",
+   "stage": "do-lab",
+   "day": "Sun",
+   "start": "20:45",
+   "end": "21:45"
+  },
+  {
+   "act": "Whethan",
+   "stage": "do-lab",
+   "day": "Sun",
+   "start": "21:45",
+   "end": "22:45"
+  },
+  {
+   "act": "Anyma b2b Marlon Hoffstadt",
+   "stage": "do-lab",
+   "day": "Sun",
+   "start": "22:45",
+   "end": "24:00",
+   "flags": [
+    "single_source"
+   ]
+  },
+  {
+   "act": "Mild Minds",
+   "stage": "heineken-house",
+   "day": "Sun",
+   "start": "15:00",
+   "end": "16:00",
+   "flags": [
+    "single_source"
+   ]
+  },
+  {
+   "act": "Oskar Med K",
+   "stage": "heineken-house",
+   "day": "Sun",
+   "start": "16:00",
+   "end": "17:30"
+  },
+  {
+   "act": "Less Than Jake",
+   "stage": "heineken-house",
+   "day": "Sun",
+   "start": "17:45",
+   "end": "18:45"
+  },
+  {
+   "act": "Motion City Soundtrack",
+   "stage": "heineken-house",
+   "day": "Sun",
+   "start": "19:00",
+   "end": "20:00"
+  },
+  {
+   "act": "Nimino",
+   "stage": "heineken-house",
+   "day": "Sun",
+   "start": "20:15",
+   "end": "22:00"
+  }
+ ],
+ "sources": [
+  {
+   "url": "https://www.festivaldust.com/festivals/coachella-weekend-1-2026-indioca/lineup",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://www.nme.com/news/music/coachella-2026-set-times-jack-white-surprise-last-minute-line-up-addition-watch-online-3938820",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://thescenestar.com/2026/04/06/complete-coachella-2026-music-festival-lineup-and-set-times-buy-tickets/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://blog.youtube/news-and-events/coachella-livestream-schedule-weekend-one-2026/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://www.hellomagazine.com/us/894953/coachella-2026-watch-live-streams-weekend-1-lineup-schedule-times/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://variety.com/2026/music/news/coachella-announces-set-times-2026-jack-white-addition-1236710074/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://au.rollingstone.com/music/music-news/coachella-2026-set-times-drop-93304/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://www.vice.com/en/via/coachella-2026-set-times-just-announced-conflicts-surprises-and-more/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://variety.com/2026/music/news/anyma-coachella-set-canceled-1236719446/",
+   "accessed": "2026-10-02"
+  }
+ ]
+}

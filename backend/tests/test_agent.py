@@ -32,7 +32,7 @@ def qloo_client(handler=None) -> QlooClient:
             return httpx.Response(200, json=SEARCH)
         return httpx.Response(200, json=INSIGHTS)
 
-    return QlooClient("test-key", backoff=0, transport=httpx.MockTransport(handler or default))
+    return QlooClient("test-key", backoff=0, max_rps=None, transport=httpx.MockTransport(handler or default))
 
 
 HAPPY_SCRIPT = [
@@ -206,6 +206,7 @@ def test_runs_endpoint_streams_the_whole_run():
             )
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("text/event-stream")
+        assert response.headers["cache-control"] == "no-cache, no-transform"
         events = parse_sse(response.text)
         types = [e["type"] for e in events]
         assert types[0] == "run_started" and types[-1] == "run_finished"

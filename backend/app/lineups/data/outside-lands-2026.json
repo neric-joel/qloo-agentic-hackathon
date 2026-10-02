@@ -1,0 +1,1198 @@
+{
+ "id": "outside-lands-2026",
+ "name": "Outside Lands 2026",
+ "city": "San Francisco, CA",
+ "venue": "Golden Gate Park",
+ "timezone": "America/Los_Angeles",
+ "dates": [
+  "2026-08-07",
+  "2026-08-08",
+  "2026-08-09"
+ ],
+ "days": [
+  "Fri",
+  "Sat",
+  "Sun"
+ ],
+ "stages": [
+  {
+   "id": "lands-end",
+   "name": "Lands End",
+   "tier": "main"
+  },
+  {
+   "id": "twin-peaks",
+   "name": "Twin Peaks",
+   "tier": "main"
+  },
+  {
+   "id": "sutro",
+   "name": "Sutro",
+   "tier": "main"
+  },
+  {
+   "id": "soma",
+   "name": "SOMA",
+   "tier": "main"
+  },
+  {
+   "id": "panhandle",
+   "name": "Panhandle",
+   "tier": "secondary"
+  },
+  {
+   "id": "dolores",
+   "name": "Dolores' (Hot Goth GF Fri, Oasis Sat, Polyamorous Sun)",
+   "tier": "minor"
+  },
+  {
+   "id": "duboce-triangle",
+   "name": "Duboce Triangle",
+   "tier": "minor"
+  },
+  {
+   "id": "cocktail-magic",
+   "name": "Cocktail Magic",
+   "tier": "minor"
+  }
+ ],
+ "sets": [
+  {
+   "act": "Faouzia",
+   "stage": "lands-end",
+   "day": "Fri",
+   "start": "12:05",
+   "end": "12:50"
+  },
+  {
+   "act": "Grace Ives",
+   "stage": "lands-end",
+   "day": "Fri",
+   "start": "13:20",
+   "end": "14:05"
+  },
+  {
+   "act": "Durand Bernarr",
+   "stage": "lands-end",
+   "day": "Fri",
+   "start": "14:35",
+   "end": "15:25"
+  },
+  {
+   "act": "Wet Leg",
+   "stage": "lands-end",
+   "day": "Fri",
+   "start": "15:55",
+   "end": "16:45"
+  },
+  {
+   "act": "GloRilla",
+   "stage": "lands-end",
+   "day": "Fri",
+   "start": "17:15",
+   "end": "18:15",
+   "flags": [
+    "source_conflict"
+   ]
+  },
+  {
+   "act": "Labrinth",
+   "stage": "lands-end",
+   "day": "Fri",
+   "start": "18:45",
+   "end": "19:55",
+   "flags": [
+    "source_conflict"
+   ]
+  },
+  {
+   "act": "Charli xcx",
+   "stage": "lands-end",
+   "day": "Fri",
+   "start": "20:40",
+   "end": "21:55",
+   "flags": [
+    "source_conflict"
+   ]
+  },
+  {
+   "act": "Nezza",
+   "stage": "twin-peaks",
+   "day": "Fri",
+   "start": "12:35",
+   "end": "13:20",
+   "flags": [
+    "source_conflict"
+   ]
+  },
+  {
+   "act": "Kerala Dust",
+   "stage": "twin-peaks",
+   "day": "Fri",
+   "start": "14:05",
+   "end": "14:50"
+  },
+  {
+   "act": "Alleycvt",
+   "stage": "twin-peaks",
+   "day": "Fri",
+   "start": "15:35",
+   "end": "16:25"
+  },
+  {
+   "act": "Tinashe",
+   "stage": "twin-peaks",
+   "day": "Fri",
+   "start": "17:10",
+   "end": "18:00"
+  },
+  {
+   "act": "Clipse",
+   "stage": "twin-peaks",
+   "day": "Fri",
+   "start": "18:45",
+   "end": "19:35"
+  },
+  {
+   "act": "GRiZTRONICS",
+   "stage": "twin-peaks",
+   "day": "Fri",
+   "start": "20:25",
+   "end": "21:50",
+   "flags": [
+    "source_conflict"
+   ]
+  },
+  {
+   "act": "Bad Nerves",
+   "stage": "sutro",
+   "day": "Fri",
+   "start": "12:25",
+   "end": "13:10"
+  },
+  {
+   "act": "Die Spitz",
+   "stage": "sutro",
+   "day": "Fri",
+   "start": "13:40",
+   "end": "14:25"
+  },
+  {
+   "act": "The Story So Far",
+   "stage": "sutro",
+   "day": "Fri",
+   "start": "14:55",
+   "end": "15:40"
+  },
+  {
+   "act": "Sierra Ferrell",
+   "stage": "sutro",
+   "day": "Fri",
+   "start": "16:10",
+   "end": "17:10"
+  },
+  {
+   "act": "Geese",
+   "stage": "sutro",
+   "day": "Fri",
+   "start": "17:50",
+   "end": "18:50"
+  },
+  {
+   "act": "Turnstile",
+   "stage": "sutro",
+   "day": "Fri",
+   "start": "19:20",
+   "end": "20:20"
+  },
+  {
+   "act": "Modest Mouse",
+   "stage": "sutro",
+   "day": "Fri",
+   "start": "20:50",
+   "end": "21:50"
+  },
+  {
+   "act": "Vertigo",
+   "stage": "soma",
+   "day": "Fri",
+   "start": "12:00",
+   "end": "12:55"
+  },
+  {
+   "act": "Luke Alessi",
+   "stage": "soma",
+   "day": "Fri",
+   "start": "12:55",
+   "end": "14:25"
+  },
+  {
+   "act": "Tobiahs",
+   "stage": "soma",
+   "day": "Fri",
+   "start": "14:25",
+   "end": "15:55"
+  },
+  {
+   "act": "MPH",
+   "stage": "soma",
+   "day": "Fri",
+   "start": "15:55",
+   "end": "17:25"
+  },
+  {
+   "act": "KI/KI",
+   "stage": "soma",
+   "day": "Fri",
+   "start": "17:25",
+   "end": "18:55"
+  },
+  {
+   "act": "Yousuke Yukimatsu",
+   "stage": "soma",
+   "day": "Fri",
+   "start": "18:55",
+   "end": "20:25"
+  },
+  {
+   "act": "Hyperbeam (Odd Mob & Omnom)",
+   "stage": "soma",
+   "day": "Fri",
+   "start": "20:25",
+   "end": "21:55"
+  },
+  {
+   "act": "Dani Satin + Always Hallways",
+   "stage": "panhandle",
+   "day": "Fri",
+   "start": "12:00",
+   "end": "12:30"
+  },
+  {
+   "act": "Chezile",
+   "stage": "panhandle",
+   "day": "Fri",
+   "start": "13:20",
+   "end": "14:00"
+  },
+  {
+   "act": "Sawyer Hill",
+   "stage": "panhandle",
+   "day": "Fri",
+   "start": "14:50",
+   "end": "15:30"
+  },
+  {
+   "act": "Billie Marten",
+   "stage": "panhandle",
+   "day": "Fri",
+   "start": "16:25",
+   "end": "17:05"
+  },
+  {
+   "act": "Goldie Boutilier",
+   "stage": "panhandle",
+   "day": "Fri",
+   "start": "18:00",
+   "end": "18:40"
+  },
+  {
+   "act": "Dylan Brady",
+   "stage": "panhandle",
+   "day": "Fri",
+   "start": "19:35",
+   "end": "20:20"
+  },
+  {
+   "act": "DJ Erinyes",
+   "stage": "dolores",
+   "day": "Fri",
+   "start": "12:30",
+   "end": "13:15"
+  },
+  {
+   "act": "DJ Dolomedes",
+   "stage": "dolores",
+   "day": "Fri",
+   "start": "13:15",
+   "end": "14:00"
+  },
+  {
+   "act": "Pink Stiletto",
+   "stage": "dolores",
+   "day": "Fri",
+   "start": "14:00",
+   "end": "14:30"
+  },
+  {
+   "act": "DJ Starr Noir",
+   "stage": "dolores",
+   "day": "Fri",
+   "start": "14:30",
+   "end": "15:20"
+  },
+  {
+   "act": "Hot Goth Freak Show",
+   "stage": "dolores",
+   "day": "Fri",
+   "start": "15:20",
+   "end": "15:50"
+  },
+  {
+   "act": "Soltera",
+   "stage": "dolores",
+   "day": "Fri",
+   "start": "15:50",
+   "end": "16:35"
+  },
+  {
+   "act": "DJ Hopeless & Hot Goth Pole Show",
+   "stage": "dolores",
+   "day": "Fri",
+   "start": "16:35",
+   "end": "17:20"
+  },
+  {
+   "act": "Ms. Boan",
+   "stage": "dolores",
+   "day": "Fri",
+   "start": "17:20",
+   "end": "18:05"
+  },
+  {
+   "act": "Hot Goth Freak Show",
+   "stage": "dolores",
+   "day": "Fri",
+   "start": "18:05",
+   "end": "18:35"
+  },
+  {
+   "act": "Light Asylum",
+   "stage": "dolores",
+   "day": "Fri",
+   "start": "18:45",
+   "end": "19:30"
+  },
+  {
+   "act": "Romy (DJ set)",
+   "stage": "dolores",
+   "day": "Fri",
+   "start": "19:30",
+   "end": "20:30"
+  },
+  {
+   "act": "Nezza",
+   "stage": "duboce-triangle",
+   "day": "Fri",
+   "start": "14:05",
+   "end": "14:35"
+  },
+  {
+   "act": "Chezile",
+   "stage": "duboce-triangle",
+   "day": "Fri",
+   "start": "15:25",
+   "end": "15:55"
+  },
+  {
+   "act": "Luke Alessi",
+   "stage": "duboce-triangle",
+   "day": "Fri",
+   "start": "16:45",
+   "end": "17:15"
+  },
+  {
+   "act": "Alleycvt",
+   "stage": "duboce-triangle",
+   "day": "Fri",
+   "start": "18:15",
+   "end": "18:45"
+  },
+  {
+   "act": "Tobiahs",
+   "stage": "duboce-triangle",
+   "day": "Fri",
+   "start": "19:55",
+   "end": "20:40"
+  },
+  {
+   "act": "Bingo Loco",
+   "stage": "cocktail-magic",
+   "day": "Fri",
+   "start": "12:30",
+   "end": "13:15"
+  },
+  {
+   "act": "Bingo Loco",
+   "stage": "cocktail-magic",
+   "day": "Fri",
+   "start": "13:40",
+   "end": "14:25"
+  },
+  {
+   "act": "Bingo Loco",
+   "stage": "cocktail-magic",
+   "day": "Fri",
+   "start": "14:50",
+   "end": "15:35"
+  },
+  {
+   "act": "Open Mic hosted by Rainbow Girls",
+   "stage": "cocktail-magic",
+   "day": "Fri",
+   "start": "16:05",
+   "end": "16:50"
+  },
+  {
+   "act": "Bootie Mashup: Diva Pop with DJ Tyme",
+   "stage": "cocktail-magic",
+   "day": "Fri",
+   "start": "17:05",
+   "end": "18:05"
+  },
+  {
+   "act": "The Emo Night Tour",
+   "stage": "cocktail-magic",
+   "day": "Fri",
+   "start": "18:20",
+   "end": "19:20"
+  },
+  {
+   "act": "Bandalos Chinos",
+   "stage": "lands-end",
+   "day": "Sat",
+   "start": "12:10",
+   "end": "12:55"
+  },
+  {
+   "act": "Haute & Freddy",
+   "stage": "lands-end",
+   "day": "Sat",
+   "start": "13:25",
+   "end": "14:10"
+  },
+  {
+   "act": "Audrey Hobert",
+   "stage": "lands-end",
+   "day": "Sat",
+   "start": "14:40",
+   "end": "15:30"
+  },
+  {
+   "act": "Lucy Dacus",
+   "stage": "lands-end",
+   "day": "Sat",
+   "start": "16:00",
+   "end": "16:50"
+  },
+  {
+   "act": "Ethel Cain",
+   "stage": "lands-end",
+   "day": "Sat",
+   "start": "17:20",
+   "end": "18:20"
+  },
+  {
+   "act": "Djo",
+   "stage": "lands-end",
+   "day": "Sat",
+   "start": "18:50",
+   "end": "19:50"
+  },
+  {
+   "act": "The Strokes",
+   "stage": "lands-end",
+   "day": "Sat",
+   "start": "20:35",
+   "end": "21:55"
+  },
+  {
+   "act": "Red Leather",
+   "stage": "twin-peaks",
+   "day": "Sat",
+   "start": "12:30",
+   "end": "13:10"
+  },
+  {
+   "act": "After",
+   "stage": "twin-peaks",
+   "day": "Sat",
+   "start": "13:55",
+   "end": "14:35"
+  },
+  {
+   "act": "Laszewo",
+   "stage": "twin-peaks",
+   "day": "Sat",
+   "start": "15:10",
+   "end": "16:00"
+  },
+  {
+   "act": "Malcolm Todd",
+   "stage": "twin-peaks",
+   "day": "Sat",
+   "start": "16:45",
+   "end": "17:45"
+  },
+  {
+   "act": "Dijon",
+   "stage": "twin-peaks",
+   "day": "Sat",
+   "start": "18:30",
+   "end": "19:20"
+  },
+  {
+   "act": "The xx",
+   "stage": "twin-peaks",
+   "day": "Sat",
+   "start": "20:10",
+   "end": "21:25"
+  },
+  {
+   "act": "Rio Kosta",
+   "stage": "sutro",
+   "day": "Sat",
+   "start": "12:35",
+   "end": "13:20"
+  },
+  {
+   "act": "Wunderhorse",
+   "stage": "sutro",
+   "day": "Sat",
+   "start": "13:50",
+   "end": "14:35"
+  },
+  {
+   "act": "Sienna Spiro",
+   "stage": "sutro",
+   "day": "Sat",
+   "start": "15:05",
+   "end": "15:50"
+  },
+  {
+   "act": "Yard Act",
+   "stage": "sutro",
+   "day": "Sat",
+   "start": "16:20",
+   "end": "17:05"
+  },
+  {
+   "act": "Snow Strippers",
+   "stage": "sutro",
+   "day": "Sat",
+   "start": "17:35",
+   "end": "18:20"
+  },
+  {
+   "act": "It's Murph",
+   "stage": "sutro",
+   "day": "Sat",
+   "start": "18:50",
+   "end": "20:00"
+  },
+  {
+   "act": "PinkPantheress",
+   "stage": "sutro",
+   "day": "Sat",
+   "start": "20:45",
+   "end": "21:45"
+  },
+  {
+   "act": "Bad Juuju",
+   "stage": "soma",
+   "day": "Sat",
+   "start": "12:35",
+   "end": "13:55"
+  },
+  {
+   "act": "1-800 Girls",
+   "stage": "soma",
+   "day": "Sat",
+   "start": "13:55",
+   "end": "15:25"
+  },
+  {
+   "act": "Camoufly",
+   "stage": "soma",
+   "day": "Sat",
+   "start": "15:25",
+   "end": "16:55"
+  },
+  {
+   "act": "Sultan + Shepard",
+   "stage": "soma",
+   "day": "Sat",
+   "start": "16:55",
+   "end": "18:25"
+  },
+  {
+   "act": "Ben Böhmer",
+   "stage": "soma",
+   "day": "Sat",
+   "start": "18:40",
+   "end": "20:10"
+  },
+  {
+   "act": "Lane 8",
+   "stage": "soma",
+   "day": "Sat",
+   "start": "20:25",
+   "end": "21:55"
+  },
+  {
+   "act": "Ryman",
+   "stage": "panhandle",
+   "day": "Sat",
+   "start": "12:00",
+   "end": "12:30"
+  },
+  {
+   "act": "Racing Mount Pleasant",
+   "stage": "panhandle",
+   "day": "Sat",
+   "start": "13:10",
+   "end": "13:50"
+  },
+  {
+   "act": "Ally Evenson",
+   "stage": "panhandle",
+   "day": "Sat",
+   "start": "14:35",
+   "end": "15:05"
+  },
+  {
+   "act": "Automatic",
+   "stage": "panhandle",
+   "day": "Sat",
+   "start": "16:00",
+   "end": "16:40"
+  },
+  {
+   "act": "Silvana Estrada",
+   "stage": "panhandle",
+   "day": "Sat",
+   "start": "17:45",
+   "end": "18:25"
+  },
+  {
+   "act": "DJ Trixie Mattel",
+   "stage": "panhandle",
+   "day": "Sat",
+   "start": "19:20",
+   "end": "20:05"
+  },
+  {
+   "act": "Beverly Chills (Oasis DJ set)",
+   "stage": "dolores",
+   "day": "Sat",
+   "start": "12:30",
+   "end": "13:15"
+  },
+  {
+   "act": "Out Tonight: A Musical Singalong feat. D'Arcy Drollinger",
+   "stage": "dolores",
+   "day": "Sat",
+   "start": "13:15",
+   "end": "14:15"
+  },
+  {
+   "act": "Reparations w/ Nicki Jizz feat. Kori King",
+   "stage": "dolores",
+   "day": "Sat",
+   "start": "15:15",
+   "end": "16:45"
+  },
+  {
+   "act": "DJ Ion the Prize (Oasis DJ set)",
+   "stage": "dolores",
+   "day": "Sat",
+   "start": "16:45",
+   "end": "17:45"
+  },
+  {
+   "act": "Princess w/ Tito Soto feat. Lydia B Kollins",
+   "stage": "dolores",
+   "day": "Sat",
+   "start": "17:45",
+   "end": "19:15"
+  },
+  {
+   "act": "DJ Vrok (Princess DJ set)",
+   "stage": "dolores",
+   "day": "Sat",
+   "start": "19:15",
+   "end": "20:30"
+  },
+  {
+   "act": "Tycho (DJ set)",
+   "stage": "duboce-triangle",
+   "day": "Sat",
+   "start": "12:15",
+   "end": "13:45",
+   "flags": [
+    "source_conflict"
+   ]
+  },
+  {
+   "act": "Bandalos Chinos",
+   "stage": "duboce-triangle",
+   "day": "Sat",
+   "start": "14:10",
+   "end": "14:40"
+  },
+  {
+   "act": "Racing Mount Pleasant",
+   "stage": "duboce-triangle",
+   "day": "Sat",
+   "start": "15:30",
+   "end": "16:00"
+  },
+  {
+   "act": "Rio Kosta (DJ set)",
+   "stage": "duboce-triangle",
+   "day": "Sat",
+   "start": "16:50",
+   "end": "17:20"
+  },
+  {
+   "act": "Laszewo",
+   "stage": "duboce-triangle",
+   "day": "Sat",
+   "start": "18:20",
+   "end": "18:50"
+  },
+  {
+   "act": "Bad Juuju",
+   "stage": "duboce-triangle",
+   "day": "Sat",
+   "start": "19:50",
+   "end": "20:35"
+  },
+  {
+   "act": "Bingo Loco",
+   "stage": "cocktail-magic",
+   "day": "Sat",
+   "start": "12:30",
+   "end": "13:15"
+  },
+  {
+   "act": "Bingo Loco",
+   "stage": "cocktail-magic",
+   "day": "Sat",
+   "start": "13:40",
+   "end": "14:25"
+  },
+  {
+   "act": "Bingo Loco",
+   "stage": "cocktail-magic",
+   "day": "Sat",
+   "start": "14:50",
+   "end": "15:35"
+  },
+  {
+   "act": "Open Mic hosted by Rainbow Girls",
+   "stage": "cocktail-magic",
+   "day": "Sat",
+   "start": "16:05",
+   "end": "16:50"
+  },
+  {
+   "act": "Bootie Mashup: Hip Hop Fuego with DJ Airsun",
+   "stage": "cocktail-magic",
+   "day": "Sat",
+   "start": "17:05",
+   "end": "18:05"
+  },
+  {
+   "act": "Electric Feels",
+   "stage": "cocktail-magic",
+   "day": "Sat",
+   "start": "18:20",
+   "end": "19:20"
+  },
+  {
+   "act": "San Francisco Gay Men's Chorus",
+   "stage": "lands-end",
+   "day": "Sun",
+   "start": "12:00",
+   "end": "12:40"
+  },
+  {
+   "act": "Sports",
+   "stage": "lands-end",
+   "day": "Sun",
+   "start": "13:10",
+   "end": "13:55"
+  },
+  {
+   "act": "Balu Brigada",
+   "stage": "lands-end",
+   "day": "Sun",
+   "start": "14:25",
+   "end": "15:15"
+  },
+  {
+   "act": "JADE",
+   "stage": "lands-end",
+   "day": "Sun",
+   "start": "15:45",
+   "end": "16:45"
+  },
+  {
+   "act": "Disco Lines",
+   "stage": "lands-end",
+   "day": "Sun",
+   "start": "17:15",
+   "end": "18:15"
+  },
+  {
+   "act": "Empire of the Sun",
+   "stage": "lands-end",
+   "day": "Sun",
+   "start": "18:45",
+   "end": "19:45"
+  },
+  {
+   "act": "RÜFÜS DU SOL",
+   "stage": "lands-end",
+   "day": "Sun",
+   "start": "20:25",
+   "end": "21:55"
+  },
+  {
+   "act": "Magnus Ferrell",
+   "stage": "twin-peaks",
+   "day": "Sun",
+   "start": "12:45",
+   "end": "13:25"
+  },
+  {
+   "act": "Sosocamo",
+   "stage": "twin-peaks",
+   "day": "Sun",
+   "start": "14:10",
+   "end": "14:55"
+  },
+  {
+   "act": "Destin Conrad",
+   "stage": "twin-peaks",
+   "day": "Sun",
+   "start": "15:40",
+   "end": "16:30"
+  },
+  {
+   "act": "KWN",
+   "stage": "twin-peaks",
+   "day": "Sun",
+   "start": "17:15",
+   "end": "18:05"
+  },
+  {
+   "act": "Mariah the Scientist",
+   "stage": "twin-peaks",
+   "day": "Sun",
+   "start": "18:50",
+   "end": "19:50"
+  },
+  {
+   "act": "Baby Keem",
+   "stage": "twin-peaks",
+   "day": "Sun",
+   "start": "20:40",
+   "end": "21:55"
+  },
+  {
+   "act": "Death Cab for Cutie",
+   "stage": "sutro",
+   "day": "Sun",
+   "start": "12:40",
+   "end": "13:30"
+  },
+  {
+   "act": "Marlon Funaki",
+   "stage": "sutro",
+   "day": "Sun",
+   "start": "13:50",
+   "end": "14:30"
+  },
+  {
+   "act": "Momma",
+   "stage": "sutro",
+   "day": "Sun",
+   "start": "15:00",
+   "end": "15:45"
+  },
+  {
+   "act": "Kingfishr",
+   "stage": "sutro",
+   "day": "Sun",
+   "start": "16:15",
+   "end": "17:05"
+  },
+  {
+   "act": "The Temper Trap",
+   "stage": "sutro",
+   "day": "Sun",
+   "start": "17:35",
+   "end": "18:25"
+  },
+  {
+   "act": "Not for Radio",
+   "stage": "sutro",
+   "day": "Sun",
+   "start": "19:05",
+   "end": "19:55"
+  },
+  {
+   "act": "Death Cab for Cutie",
+   "stage": "sutro",
+   "day": "Sun",
+   "start": "20:25",
+   "end": "21:40"
+  },
+  {
+   "act": "Etari",
+   "stage": "soma",
+   "day": "Sun",
+   "start": "12:05",
+   "end": "13:35"
+  },
+  {
+   "act": "X Club.",
+   "stage": "soma",
+   "day": "Sun",
+   "start": "13:35",
+   "end": "15:10"
+  },
+  {
+   "act": "Carlita",
+   "stage": "soma",
+   "day": "Sun",
+   "start": "15:10",
+   "end": "16:45"
+  },
+  {
+   "act": "Boys Noize",
+   "stage": "soma",
+   "day": "Sun",
+   "start": "16:45",
+   "end": "18:20"
+  },
+  {
+   "act": "Miss Monique",
+   "stage": "soma",
+   "day": "Sun",
+   "start": "18:20",
+   "end": "19:55"
+  },
+  {
+   "act": "Boris Brejcha",
+   "stage": "soma",
+   "day": "Sun",
+   "start": "19:55",
+   "end": "21:55"
+  },
+  {
+   "act": "Cruz Beckham",
+   "stage": "panhandle",
+   "day": "Sun",
+   "start": "12:00",
+   "end": "12:40"
+  },
+  {
+   "act": "Day We Ran",
+   "stage": "panhandle",
+   "day": "Sun",
+   "start": "13:25",
+   "end": "14:05"
+  },
+  {
+   "act": "Amble",
+   "stage": "panhandle",
+   "day": "Sun",
+   "start": "14:55",
+   "end": "15:35"
+  },
+  {
+   "act": "Night Tapes",
+   "stage": "panhandle",
+   "day": "Sun",
+   "start": "16:30",
+   "end": "17:10"
+  },
+  {
+   "act": "Infinity Song",
+   "stage": "panhandle",
+   "day": "Sun",
+   "start": "18:05",
+   "end": "18:45"
+  },
+  {
+   "act": "Frost Children",
+   "stage": "panhandle",
+   "day": "Sun",
+   "start": "19:50",
+   "end": "20:35"
+  },
+  {
+   "act": "Charles Hawthorne",
+   "stage": "dolores",
+   "day": "Sun",
+   "start": "12:45",
+   "end": "14:25"
+  },
+  {
+   "act": "Mark O'Brien",
+   "stage": "dolores",
+   "day": "Sun",
+   "start": "14:25",
+   "end": "15:45"
+  },
+  {
+   "act": "Grace Towers & Friends",
+   "stage": "dolores",
+   "day": "Sun",
+   "start": "15:45",
+   "end": "16:05"
+  },
+  {
+   "act": "Stanley Frank Sensation",
+   "stage": "dolores",
+   "day": "Sun",
+   "start": "16:05",
+   "end": "17:05"
+  },
+  {
+   "act": "Beya",
+   "stage": "dolores",
+   "day": "Sun",
+   "start": "17:05",
+   "end": "18:05"
+  },
+  {
+   "act": "Grace Towers & Friends",
+   "stage": "dolores",
+   "day": "Sun",
+   "start": "18:05",
+   "end": "18:25"
+  },
+  {
+   "act": "Elaine & Robin",
+   "stage": "dolores",
+   "day": "Sun",
+   "start": "18:25",
+   "end": "19:25"
+  },
+  {
+   "act": "DJ Minx",
+   "stage": "dolores",
+   "day": "Sun",
+   "start": "19:25",
+   "end": "20:25"
+  },
+  {
+   "act": "Britton",
+   "stage": "duboce-triangle",
+   "day": "Sun",
+   "start": "14:05",
+   "end": "14:35"
+  },
+  {
+   "act": "Day We Ran",
+   "stage": "duboce-triangle",
+   "day": "Sun",
+   "start": "15:25",
+   "end": "15:55"
+  },
+  {
+   "act": "Frost Children (DJ set)",
+   "stage": "duboce-triangle",
+   "day": "Sun",
+   "start": "16:45",
+   "end": "17:30"
+  },
+  {
+   "act": "Marlon Funaki",
+   "stage": "duboce-triangle",
+   "day": "Sun",
+   "start": "18:15",
+   "end": "18:45"
+  },
+  {
+   "act": "Bingo Loco",
+   "stage": "cocktail-magic",
+   "day": "Sun",
+   "start": "12:30",
+   "end": "13:15"
+  },
+  {
+   "act": "Bingo Loco",
+   "stage": "cocktail-magic",
+   "day": "Sun",
+   "start": "13:40",
+   "end": "14:25"
+  },
+  {
+   "act": "Bingo Loco",
+   "stage": "cocktail-magic",
+   "day": "Sun",
+   "start": "14:50",
+   "end": "15:35"
+  },
+  {
+   "act": "Open Mic hosted by Rainbow Girls",
+   "stage": "cocktail-magic",
+   "day": "Sun",
+   "start": "16:05",
+   "end": "16:50"
+  },
+  {
+   "act": "Aidan Corcoran",
+   "stage": "cocktail-magic",
+   "day": "Sun",
+   "start": "17:15",
+   "end": "17:45"
+  },
+  {
+   "act": "Help Me Lose My Mind: UK Garage & House with MPH",
+   "stage": "cocktail-magic",
+   "day": "Sun",
+   "start": "18:00",
+   "end": "19:00"
+  }
+ ],
+ "sources": [
+  {
+   "url": "https://riffmagazine.com/festivals/outside-lands-music-festival-2026-set-times/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://inmusicblog.com/festival/outside-lands-2026-friday-lineup-set-times/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://inmusicblog.com/festival/outside-lands-2026-saturday-schedule-set-times/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://inmusicblog.com/festival/outside-lands-2026-sunday-schedule-set-times-lineup/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://www.sfchronicle.com/entertainment/festivals/article/outside-lands-2026-set-times-22367442.php",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://www.festivaldust.com/festivals/outside-lands-2026-sanfranciscoca/lineup",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://rockcellarmagazine.com/outside-lands-2026-set-times-live-stream-info/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://clashfinder.com/m/osl26/",
+   "accessed": "2026-10-02"
+  }
+ ]
+}

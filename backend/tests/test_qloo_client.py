@@ -16,6 +16,7 @@ from app.qloo.client import (
 
 def make_client(handler, **kwargs) -> QlooClient:
     kwargs.setdefault("backoff", 0)
+    kwargs.setdefault("max_rps", None)
     return QlooClient("test-key", transport=httpx.MockTransport(handler), **kwargs)
 
 
@@ -128,6 +129,42 @@ async def test_without_key_uses_fixtures_or_fails_clearly(tmp_path):
     assert await client.get("/search", {"query": "x"}) == {"hit": True}
     with pytest.raises(QlooError):
         await client.get("/search", {"query": "missing"})
+    await client.aclose()
+
+
+async def test_fixtures_first_serves_saved_response_without_calling_the_api(tmp_path):
+    key = request_key("/search", {"query": "x"})
+    (tmp_path / f"{key}.json").write_text(json.dumps({"request": {}, "response": {"saved": True}}))
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, json={"saved": False})
+
+    client = make_client(handler, fixtures_dir=tmp_path, fixtures_first=True, record_fixtures=True)
+    with record_requests() as log:
+        assert await client.get("/search", {"query": "x"}) == {"saved": True}
+        assert await client.get("/search", {"query": "y"}) == {"saved": False}
+    assert len(calls) == 1
+    assert [r.cached for r in log] == [True, False]
+    assert len(list(tmp_path.glob("*.json"))) == 2  # the miss was saved for next time
+    await client.aclose()
+
+
+async def test_rate_limit_spaces_request_starts():
+    starts = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        starts.append(asyncio.get_running_loop().time())
+        return httpx.Response(200, json={})
+
+    client = make_client(handler, max_rps=20)
+    t0 = asyncio.get_running_loop().time()
+    await asyncio.gather(*(client.get("/search", {"query": str(i)}) for i in range(5)))
+    # The k-th request may not start before k intervals have passed (timer resolution slack allowed).
+    assert len(starts) == 5
+    for k, started in enumerate(sorted(starts)):
+        assert started - t0 >= k * 0.05 - 0.02
     await client.aclose()
 
 

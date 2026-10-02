@@ -29,6 +29,7 @@ log = logging.getLogger(__name__)
 
 HACKATHON_BASE_URL = "https://hackathon.api.qloo.com"
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
+DEFAULT_MAX_RPS = 4.5  # hackathon keys allow 5 requests per second
 
 Params = Mapping[str, Any]
 
@@ -155,6 +156,8 @@ class QlooClient:
         cache: TTLCache | None = None,
         fixtures_dir: Path | None = None,
         record_fixtures: bool = False,
+        fixtures_first: bool = False,
+        max_rps: float | None = DEFAULT_MAX_RPS,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.api_key = api_key
@@ -163,6 +166,11 @@ class QlooClient:
         self.cache = cache if cache is not None else TTLCache()
         self.fixtures_dir = fixtures_dir
         self.record_fixtures = record_fixtures
+        # Serve a saved response before calling the API (a persistent cache that saves monthly quota).
+        self.fixtures_first = fixtures_first
+        self._min_interval = 1.0 / max_rps if max_rps else 0.0
+        self._next_slot = 0.0
+        self._slot_lock = asyncio.Lock()
         headers = {"Accept": "application/json"}
         if api_key:
             headers["X-Api-Key"] = api_key
@@ -228,6 +236,8 @@ class QlooClient:
     async def _fetch(
         self, path: str, query: dict[str, str], key: str
     ) -> tuple[dict[str, Any], dict[str, Any]]:
+        if self.fixtures_first and self.api_key and (saved := self._load_fixture(key)) is not None:
+            return saved, {"status": 200, "cached": True}
         if not self.api_key:
             data = self._load_fixture(key)
             if data is None:
@@ -253,6 +263,7 @@ class QlooClient:
         attempt = 0
         while True:
             retry_after: float | None = None
+            await self._wait_for_slot()
             try:
                 response = await self._http.get(path, params=query)
             except httpx.HTTPError as exc:
@@ -278,6 +289,17 @@ class QlooClient:
             attempt += 1
             delay = self.backoff * (2 ** (attempt - 1)) * (1 + random.random() / 2)
             await asyncio.sleep(min(retry_after if retry_after is not None else delay, 10.0))
+
+    async def _wait_for_slot(self) -> None:
+        """Space request starts so the client stays under the per-second rate limit."""
+        if not self._min_interval:
+            return
+        async with self._slot_lock:
+            now = time.monotonic()
+            wait = self._next_slot - now
+            self._next_slot = max(now, self._next_slot) + self._min_interval
+        if wait > 0:
+            await asyncio.sleep(wait)
 
     # -------------------------------------------------------------- fixtures
 

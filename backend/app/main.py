@@ -10,8 +10,10 @@ from .agent.llm import LLMBackend, build_backend
 from .config import get_settings
 from .qloo.client import QlooClient
 from .runs import RunRequest, execute_run
+from .schedule.api import router as schedule_router
 
 app = FastAPI(title="Agent API", version="0.1.0")
+app.include_router(schedule_router)
 
 _qloo: QlooClient | None = None
 
@@ -70,5 +72,5 @@ async def create_run(
     return StreamingResponse(
         frames(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
     )

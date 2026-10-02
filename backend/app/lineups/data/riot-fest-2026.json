@@ -1,0 +1,833 @@
+{
+ "id": "riot-fest-2026",
+ "name": "Riot Fest 2026",
+ "city": "Chicago, IL",
+ "venue": "Douglass Park",
+ "timezone": "America/Chicago",
+ "dates": [
+  "2026-09-18",
+  "2026-09-19",
+  "2026-09-20"
+ ],
+ "days": [
+  "Fri",
+  "Sat",
+  "Sun"
+ ],
+ "stages": [
+  {
+   "id": "riot",
+   "name": "Riot",
+   "tier": "main"
+  },
+  {
+   "id": "roots",
+   "name": "Roots",
+   "tier": "main"
+  },
+  {
+   "id": "rebel",
+   "name": "Rebel",
+   "tier": "main"
+  },
+  {
+   "id": "rise",
+   "name": "Rise",
+   "tier": "main"
+  },
+  {
+   "id": "radical",
+   "name": "Radical",
+   "tier": "main"
+  }
+ ],
+ "sets": [
+  {
+   "act": "Cardinals",
+   "stage": "riot",
+   "day": "Fri",
+   "start": "12:00",
+   "end": "12:30"
+  },
+  {
+   "act": "JMSN",
+   "stage": "riot",
+   "day": "Fri",
+   "start": "13:10",
+   "end": "13:40"
+  },
+  {
+   "act": "Violet Grohl",
+   "stage": "riot",
+   "day": "Fri",
+   "start": "14:20",
+   "end": "14:50"
+  },
+  {
+   "act": "The Paradox",
+   "stage": "riot",
+   "day": "Fri",
+   "start": "15:30",
+   "end": "16:00"
+  },
+  {
+   "act": "Joey Valence & Brae",
+   "stage": "riot",
+   "day": "Fri",
+   "start": "16:40",
+   "end": "17:20"
+  },
+  {
+   "act": "The All-American Rejects",
+   "stage": "riot",
+   "day": "Fri",
+   "start": "18:30",
+   "end": "19:30"
+  },
+  {
+   "act": "Twenty One Pilots",
+   "stage": "riot",
+   "day": "Fri",
+   "start": "20:40",
+   "end": "22:00"
+  },
+  {
+   "act": "Teen Mortgage",
+   "stage": "roots",
+   "day": "Fri",
+   "start": "12:35",
+   "end": "13:05"
+  },
+  {
+   "act": "Fleshwater",
+   "stage": "roots",
+   "day": "Fri",
+   "start": "13:45",
+   "end": "14:15"
+  },
+  {
+   "act": "3OH!3",
+   "stage": "roots",
+   "day": "Fri",
+   "start": "14:55",
+   "end": "15:25"
+  },
+  {
+   "act": "Bayside",
+   "stage": "roots",
+   "day": "Fri",
+   "start": "16:05",
+   "end": "16:35"
+  },
+  {
+   "act": "Alkaline Trio",
+   "stage": "roots",
+   "day": "Fri",
+   "start": "17:25",
+   "end": "18:25"
+  },
+  {
+   "act": "Rise Against",
+   "stage": "roots",
+   "day": "Fri",
+   "start": "19:35",
+   "end": "20:35"
+  },
+  {
+   "act": "Glixen",
+   "stage": "rebel",
+   "day": "Fri",
+   "start": "12:15",
+   "end": "12:45"
+  },
+  {
+   "act": "División Minúscula",
+   "stage": "rebel",
+   "day": "Fri",
+   "start": "13:15",
+   "end": "13:45"
+  },
+  {
+   "act": "Radio Free Alice",
+   "stage": "rebel",
+   "day": "Fri",
+   "start": "14:15",
+   "end": "14:45"
+  },
+  {
+   "act": "Tricky",
+   "stage": "rebel",
+   "day": "Fri",
+   "start": "15:15",
+   "end": "16:00"
+  },
+  {
+   "act": "Motion City Soundtrack",
+   "stage": "rebel",
+   "day": "Fri",
+   "start": "16:45",
+   "end": "17:25"
+  },
+  {
+   "act": "Santigold",
+   "stage": "rebel",
+   "day": "Fri",
+   "start": "18:15",
+   "end": "19:15"
+  },
+  {
+   "act": "Pixies",
+   "stage": "rebel",
+   "day": "Fri",
+   "start": "20:15",
+   "end": "21:15"
+  },
+  {
+   "act": "Panic Shack",
+   "stage": "rise",
+   "day": "Fri",
+   "start": "12:30",
+   "end": "13:00"
+  },
+  {
+   "act": "Soul Glo",
+   "stage": "rise",
+   "day": "Fri",
+   "start": "13:30",
+   "end": "14:00"
+  },
+  {
+   "act": "Mariachi El Bronx",
+   "stage": "rise",
+   "day": "Fri",
+   "start": "14:30",
+   "end": "15:00"
+  },
+  {
+   "act": "Bratmobile",
+   "stage": "rise",
+   "day": "Fri",
+   "start": "15:30",
+   "end": "16:00"
+  },
+  {
+   "act": "Guttermouth",
+   "stage": "rise",
+   "day": "Fri",
+   "start": "16:30",
+   "end": "17:00"
+  },
+  {
+   "act": "Slick Rick",
+   "stage": "rise",
+   "day": "Fri",
+   "start": "17:30",
+   "end": "18:15"
+  },
+  {
+   "act": "Sex Pistols feat. Frank Carter",
+   "stage": "rise",
+   "day": "Fri",
+   "start": "19:00",
+   "end": "20:00"
+  },
+  {
+   "act": "Iggy Pop",
+   "stage": "rise",
+   "day": "Fri",
+   "start": "20:45",
+   "end": "21:45"
+  },
+  {
+   "act": "Almost There But Not Really",
+   "stage": "radical",
+   "day": "Fri",
+   "start": "12:15",
+   "end": "12:45"
+  },
+  {
+   "act": "Greet Death",
+   "stage": "radical",
+   "day": "Fri",
+   "start": "13:15",
+   "end": "13:45"
+  },
+  {
+   "act": "Slothrust",
+   "stage": "radical",
+   "day": "Fri",
+   "start": "14:15",
+   "end": "14:45"
+  },
+  {
+   "act": "Worry Club",
+   "stage": "radical",
+   "day": "Fri",
+   "start": "15:15",
+   "end": "15:45"
+  },
+  {
+   "act": "Stephen Egerton",
+   "stage": "radical",
+   "day": "Fri",
+   "start": "16:15",
+   "end": "16:45"
+  },
+  {
+   "act": "The Callous Daoboys",
+   "stage": "radical",
+   "day": "Fri",
+   "start": "17:15",
+   "end": "17:45"
+  },
+  {
+   "act": "DeathbyRomy",
+   "stage": "radical",
+   "day": "Fri",
+   "start": "18:15",
+   "end": "18:45"
+  },
+  {
+   "act": "Foxy Shazam",
+   "stage": "radical",
+   "day": "Fri",
+   "start": "19:15",
+   "end": "19:45"
+  },
+  {
+   "act": "GWAR",
+   "stage": "radical",
+   "day": "Fri",
+   "start": "20:55",
+   "end": "21:55"
+  },
+  {
+   "act": "ASAVA",
+   "stage": "riot",
+   "day": "Sat",
+   "start": "12:30",
+   "end": "13:00"
+  },
+  {
+   "act": "Melt-Banana",
+   "stage": "riot",
+   "day": "Sat",
+   "start": "13:35",
+   "end": "14:05"
+  },
+  {
+   "act": "Angine de Poitrine",
+   "stage": "riot",
+   "day": "Sat",
+   "start": "14:45",
+   "end": "15:15"
+  },
+  {
+   "act": "Public Image Ltd",
+   "stage": "riot",
+   "day": "Sat",
+   "start": "16:05",
+   "end": "16:45"
+  },
+  {
+   "act": "Social Distortion",
+   "stage": "riot",
+   "day": "Sat",
+   "start": "17:55",
+   "end": "18:55"
+  },
+  {
+   "act": "Tool",
+   "stage": "riot",
+   "day": "Sat",
+   "start": "20:20",
+   "end": "22:00",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Kiwi Jr.",
+   "stage": "roots",
+   "day": "Sat",
+   "start": "12:00",
+   "end": "12:30"
+  },
+  {
+   "act": "Yard Act",
+   "stage": "roots",
+   "day": "Sat",
+   "start": "13:00",
+   "end": "13:30"
+  },
+  {
+   "act": "Brian Fallon",
+   "stage": "roots",
+   "day": "Sat",
+   "start": "14:10",
+   "end": "14:40"
+  },
+  {
+   "act": "Bright Eyes",
+   "stage": "roots",
+   "day": "Sat",
+   "start": "15:20",
+   "end": "16:00"
+  },
+  {
+   "act": "Sugar",
+   "stage": "roots",
+   "day": "Sat",
+   "start": "16:50",
+   "end": "17:50"
+  },
+  {
+   "act": "Morrissey",
+   "stage": "roots",
+   "day": "Sat",
+   "start": "19:00",
+   "end": "20:15",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Nobro",
+   "stage": "rebel",
+   "day": "Sat",
+   "start": "12:05",
+   "end": "12:35"
+  },
+  {
+   "act": "Strike Anywhere",
+   "stage": "rebel",
+   "day": "Sat",
+   "start": "13:00",
+   "end": "13:30"
+  },
+  {
+   "act": "The Chats",
+   "stage": "rebel",
+   "day": "Sat",
+   "start": "13:55",
+   "end": "14:25"
+  },
+  {
+   "act": "Destroy Boys",
+   "stage": "rebel",
+   "day": "Sat",
+   "start": "14:55",
+   "end": "15:25"
+  },
+  {
+   "act": "Thrice",
+   "stage": "rebel",
+   "day": "Sat",
+   "start": "15:50",
+   "end": "16:30"
+  },
+  {
+   "act": "Descendents",
+   "stage": "rebel",
+   "day": "Sat",
+   "start": "16:55",
+   "end": "17:55"
+  },
+  {
+   "act": "Bad Religion",
+   "stage": "rebel",
+   "day": "Sat",
+   "start": "19:20",
+   "end": "20:20",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Whispers",
+   "stage": "rise",
+   "day": "Sat",
+   "start": "12:00",
+   "end": "12:30"
+  },
+  {
+   "act": "Show Me the Body",
+   "stage": "rise",
+   "day": "Sat",
+   "start": "13:00",
+   "end": "13:30"
+  },
+  {
+   "act": "The Suicide Machines",
+   "stage": "rise",
+   "day": "Sat",
+   "start": "14:00",
+   "end": "14:50"
+  },
+  {
+   "act": "Less Than Jake",
+   "stage": "rise",
+   "day": "Sat",
+   "start": "15:20",
+   "end": "16:00"
+  },
+  {
+   "act": "PUP",
+   "stage": "rise",
+   "day": "Sat",
+   "start": "16:30",
+   "end": "17:15"
+  },
+  {
+   "act": "Gogol Bordello",
+   "stage": "rise",
+   "day": "Sat",
+   "start": "18:30",
+   "end": "19:30"
+  },
+  {
+   "act": "Nas",
+   "stage": "rise",
+   "day": "Sat",
+   "start": "21:00",
+   "end": "22:00",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Aim High",
+   "stage": "radical",
+   "day": "Sat",
+   "start": "12:00",
+   "end": "12:30"
+  },
+  {
+   "act": "The Iron Roses",
+   "stage": "radical",
+   "day": "Sat",
+   "start": "12:45",
+   "end": "13:15"
+  },
+  {
+   "act": "Burning Airlines",
+   "stage": "radical",
+   "day": "Sat",
+   "start": "13:45",
+   "end": "14:15"
+  },
+  {
+   "act": "Hot Rod Circuit",
+   "stage": "radical",
+   "day": "Sat",
+   "start": "14:45",
+   "end": "15:15"
+  },
+  {
+   "act": "Gurriers",
+   "stage": "radical",
+   "day": "Sat",
+   "start": "15:45",
+   "end": "16:15"
+  },
+  {
+   "act": "Frankie & the Witch Fingers",
+   "stage": "radical",
+   "day": "Sat",
+   "start": "16:45",
+   "end": "17:15"
+  },
+  {
+   "act": "Vana",
+   "stage": "radical",
+   "day": "Sat",
+   "start": "17:45",
+   "end": "18:15"
+  },
+  {
+   "act": "Chat Pile",
+   "stage": "radical",
+   "day": "Sat",
+   "start": "18:45",
+   "end": "19:30"
+  },
+  {
+   "act": "Afroman",
+   "stage": "radical",
+   "day": "Sat",
+   "start": "20:00",
+   "end": "21:00",
+   "flags": [
+    "cancelled"
+   ]
+  },
+  {
+   "act": "Stomach Book",
+   "stage": "riot",
+   "day": "Sun",
+   "start": "12:40",
+   "end": "13:10"
+  },
+  {
+   "act": "Holding Absence",
+   "stage": "riot",
+   "day": "Sun",
+   "start": "13:50",
+   "end": "14:20"
+  },
+  {
+   "act": "Arm's Length",
+   "stage": "riot",
+   "day": "Sun",
+   "start": "15:00",
+   "end": "15:30"
+  },
+  {
+   "act": "Pennywise",
+   "stage": "riot",
+   "day": "Sun",
+   "start": "16:25",
+   "end": "17:05"
+  },
+  {
+   "act": "Taking Back Sunday",
+   "stage": "riot",
+   "day": "Sun",
+   "start": "18:15",
+   "end": "19:15"
+  },
+  {
+   "act": "Pierce the Veil",
+   "stage": "riot",
+   "day": "Sun",
+   "start": "20:25",
+   "end": "21:55"
+  },
+  {
+   "act": "Remember Sports",
+   "stage": "roots",
+   "day": "Sun",
+   "start": "12:05",
+   "end": "12:35"
+  },
+  {
+   "act": "Daisy Grenade",
+   "stage": "roots",
+   "day": "Sun",
+   "start": "13:15",
+   "end": "13:45"
+  },
+  {
+   "act": "Sincere Engineer",
+   "stage": "roots",
+   "day": "Sun",
+   "start": "14:25",
+   "end": "14:55"
+  },
+  {
+   "act": "The Beths",
+   "stage": "roots",
+   "day": "Sun",
+   "start": "15:35",
+   "end": "16:20"
+  },
+  {
+   "act": "The Format",
+   "stage": "roots",
+   "day": "Sun",
+   "start": "17:10",
+   "end": "18:10"
+  },
+  {
+   "act": "Alanis Morissette",
+   "stage": "roots",
+   "day": "Sun",
+   "start": "19:20",
+   "end": "20:20"
+  },
+  {
+   "act": "Largemouth",
+   "stage": "rebel",
+   "day": "Sun",
+   "start": "12:00",
+   "end": "12:30"
+  },
+  {
+   "act": "Algernon Cadwallader",
+   "stage": "rebel",
+   "day": "Sun",
+   "start": "13:05",
+   "end": "13:35"
+  },
+  {
+   "act": "Pretty Girls Make Graves",
+   "stage": "rebel",
+   "day": "Sun",
+   "start": "14:05",
+   "end": "14:35"
+  },
+  {
+   "act": "Jejune",
+   "stage": "rebel",
+   "day": "Sun",
+   "start": "15:05",
+   "end": "15:45"
+  },
+  {
+   "act": "This Is Lorelei",
+   "stage": "rebel",
+   "day": "Sun",
+   "start": "16:15",
+   "end": "16:55"
+  },
+  {
+   "act": "William Shatner",
+   "stage": "rebel",
+   "day": "Sun",
+   "start": "17:25",
+   "end": "18:00"
+  },
+  {
+   "act": "Twin Peaks",
+   "stage": "rebel",
+   "day": "Sun",
+   "start": "18:30",
+   "end": "19:30"
+  },
+  {
+   "act": "Macseal",
+   "stage": "rise",
+   "day": "Sun",
+   "start": "12:50",
+   "end": "13:20"
+  },
+  {
+   "act": "Ben Quad",
+   "stage": "rise",
+   "day": "Sun",
+   "start": "13:50",
+   "end": "14:20"
+  },
+  {
+   "act": "Saturdays at Your Place",
+   "stage": "rise",
+   "day": "Sun",
+   "start": "14:50",
+   "end": "15:20"
+  },
+  {
+   "act": "Cartel",
+   "stage": "rise",
+   "day": "Sun",
+   "start": "15:50",
+   "end": "16:30"
+  },
+  {
+   "act": "Mom Jeans",
+   "stage": "rise",
+   "day": "Sun",
+   "start": "17:00",
+   "end": "17:40"
+  },
+  {
+   "act": "Patti Smith and Her Band",
+   "stage": "rise",
+   "day": "Sun",
+   "start": "18:10",
+   "end": "19:10"
+  },
+  {
+   "act": "Elvis Costello & The Imposters",
+   "stage": "rise",
+   "day": "Sun",
+   "start": "20:30",
+   "end": "21:30"
+  },
+  {
+   "act": "Rose of Demise",
+   "stage": "radical",
+   "day": "Sun",
+   "start": "12:35",
+   "end": "13:05"
+  },
+  {
+   "act": "Murphy's Law",
+   "stage": "radical",
+   "day": "Sun",
+   "start": "13:35",
+   "end": "14:15"
+  },
+  {
+   "act": "Haywire",
+   "stage": "radical",
+   "day": "Sun",
+   "start": "14:45",
+   "end": "15:25"
+  },
+  {
+   "act": "Dead to Me",
+   "stage": "radical",
+   "day": "Sun",
+   "start": "15:55",
+   "end": "16:35"
+  },
+  {
+   "act": "The Flatliners",
+   "stage": "radical",
+   "day": "Sun",
+   "start": "17:05",
+   "end": "17:45"
+  },
+  {
+   "act": "Good Riddance",
+   "stage": "radical",
+   "day": "Sun",
+   "start": "18:15",
+   "end": "18:55"
+  },
+  {
+   "act": "Bowling for Soup",
+   "stage": "radical",
+   "day": "Sun",
+   "start": "19:25",
+   "end": "20:05"
+  },
+  {
+   "act": "Insane Clown Posse",
+   "stage": "radical",
+   "day": "Sun",
+   "start": "20:55",
+   "end": "21:55"
+  }
+ ],
+ "sources": [
+  {
+   "url": "https://www.timeout.com/chicago/news/riot-fest-2026-lineup-and-set-times-the-full-list-to-keep-track-of-091726",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://festivalpilot.app/en/festivals/riot-fest-2026/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://fstvl.app/festival/riot-fest/2026/lineup",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://lambgoat.com/news/54213/riot-fest-share-daily-schedules-for-2026-fans-complain/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://riotfest.org/2026-daily-schedules/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://blockclubchicago.org/2026/09/20/rain-on-riot-fest-day-2-leads-to-schedule-shifts-for-acts-like-morrissey-bad-religion-and-nas/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://www.cbsnews.com/chicago/news/day-2-riot-fest-iending-early-weather/",
+   "accessed": "2026-10-02"
+  }
+ ]
+}

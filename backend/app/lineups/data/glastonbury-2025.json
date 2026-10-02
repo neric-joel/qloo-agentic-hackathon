@@ -1,0 +1,2173 @@
+{
+ "id": "glastonbury-2025",
+ "name": "Glastonbury Festival 2025",
+ "city": "Pilton, Somerset, UK",
+ "venue": "Worthy Farm",
+ "timezone": "Europe/London",
+ "dates": [
+  "2025-06-27",
+  "2025-06-28",
+  "2025-06-29"
+ ],
+ "days": [
+  "Fri",
+  "Sat",
+  "Sun"
+ ],
+ "stages": [
+  {
+   "id": "pyramid",
+   "name": "Pyramid",
+   "tier": "main"
+  },
+  {
+   "id": "other",
+   "name": "Other",
+   "tier": "main"
+  },
+  {
+   "id": "west-holts",
+   "name": "West Holts",
+   "tier": "main"
+  },
+  {
+   "id": "woodsies",
+   "name": "Woodsies",
+   "tier": "main"
+  },
+  {
+   "id": "park",
+   "name": "The Park",
+   "tier": "main"
+  },
+  {
+   "id": "avalon",
+   "name": "Avalon",
+   "tier": "secondary"
+  },
+  {
+   "id": "arcadia",
+   "name": "Arcadia",
+   "tier": "secondary"
+  },
+  {
+   "id": "glade",
+   "name": "Glade",
+   "tier": "secondary"
+  },
+  {
+   "id": "levels",
+   "name": "Levels",
+   "tier": "secondary"
+  },
+  {
+   "id": "acoustic",
+   "name": "Acoustic",
+   "tier": "minor"
+  },
+  {
+   "id": "left-field",
+   "name": "Left Field",
+   "tier": "minor"
+  }
+ ],
+ "sets": [
+  {
+   "act": "Supergrass",
+   "stage": "pyramid",
+   "day": "Fri",
+   "start": "12:00",
+   "end": "13:00"
+  },
+  {
+   "act": "CMAT",
+   "stage": "pyramid",
+   "day": "Fri",
+   "start": "13:30",
+   "end": "14:30"
+  },
+  {
+   "act": "Burning Spear",
+   "stage": "pyramid",
+   "day": "Fri",
+   "start": "15:00",
+   "end": "16:00"
+  },
+  {
+   "act": "Lewis Capaldi",
+   "stage": "pyramid",
+   "day": "Fri",
+   "start": "16:55",
+   "end": "17:30",
+   "flags": [
+    "secret_set"
+   ]
+  },
+  {
+   "act": "Alanis Morissette",
+   "stage": "pyramid",
+   "day": "Fri",
+   "start": "18:15",
+   "end": "19:15"
+  },
+  {
+   "act": "Biffy Clyro",
+   "stage": "pyramid",
+   "day": "Fri",
+   "start": "20:15",
+   "end": "21:15"
+  },
+  {
+   "act": "The 1975",
+   "stage": "pyramid",
+   "day": "Fri",
+   "start": "22:15",
+   "end": "23:45"
+  },
+  {
+   "act": "Fabio & Grooverider and the Outlook Orchestra",
+   "stage": "other",
+   "day": "Fri",
+   "start": "11:30",
+   "end": "12:30"
+  },
+  {
+   "act": "Rizzle Kicks",
+   "stage": "other",
+   "day": "Fri",
+   "start": "13:00",
+   "end": "13:45"
+  },
+  {
+   "act": "Inhaler",
+   "stage": "other",
+   "day": "Fri",
+   "start": "14:15",
+   "end": "15:15"
+  },
+  {
+   "act": "Wet Leg",
+   "stage": "other",
+   "day": "Fri",
+   "start": "15:45",
+   "end": "16:45"
+  },
+  {
+   "act": "Franz Ferdinand",
+   "stage": "other",
+   "day": "Fri",
+   "start": "17:15",
+   "end": "18:15"
+  },
+  {
+   "act": "Gracie Abrams",
+   "stage": "other",
+   "day": "Fri",
+   "start": "18:45",
+   "end": "19:45"
+  },
+  {
+   "act": "Busta Rhymes",
+   "stage": "other",
+   "day": "Fri",
+   "start": "20:30",
+   "end": "21:30"
+  },
+  {
+   "act": "Loyle Carner",
+   "stage": "other",
+   "day": "Fri",
+   "start": "22:30",
+   "end": "23:45"
+  },
+  {
+   "act": "Corto.Alto",
+   "stage": "west-holts",
+   "day": "Fri",
+   "start": "11:30",
+   "end": "12:30"
+  },
+  {
+   "act": "Ca7riel & Paco Amoroso",
+   "stage": "west-holts",
+   "day": "Fri",
+   "start": "13:00",
+   "end": "14:00"
+  },
+  {
+   "act": "Glass Beams",
+   "stage": "west-holts",
+   "day": "Fri",
+   "start": "14:30",
+   "end": "15:25"
+  },
+  {
+   "act": "Vieux Farka Toure",
+   "stage": "west-holts",
+   "day": "Fri",
+   "start": "16:00",
+   "end": "17:00"
+  },
+  {
+   "act": "En Vogue",
+   "stage": "west-holts",
+   "day": "Fri",
+   "start": "17:30",
+   "end": "18:30"
+  },
+  {
+   "act": "Denzel Curry",
+   "stage": "west-holts",
+   "day": "Fri",
+   "start": "19:00",
+   "end": "20:00"
+  },
+  {
+   "act": "Badbadnotgood",
+   "stage": "west-holts",
+   "day": "Fri",
+   "start": "20:30",
+   "end": "21:30"
+  },
+  {
+   "act": "Maribou State",
+   "stage": "west-holts",
+   "day": "Fri",
+   "start": "22:15",
+   "end": "23:45"
+  },
+  {
+   "act": "Lorde",
+   "stage": "woodsies",
+   "day": "Fri",
+   "start": "11:30",
+   "end": "12:15",
+   "flags": [
+    "secret_set"
+   ]
+  },
+  {
+   "act": "Myles Smith",
+   "stage": "woodsies",
+   "day": "Fri",
+   "start": "12:45",
+   "end": "13:30"
+  },
+  {
+   "act": "Fat Dog",
+   "stage": "woodsies",
+   "day": "Fri",
+   "start": "14:00",
+   "end": "14:45"
+  },
+  {
+   "act": "Shed Seven",
+   "stage": "woodsies",
+   "day": "Fri",
+   "start": "15:15",
+   "end": "16:00"
+  },
+  {
+   "act": "Lola Young",
+   "stage": "woodsies",
+   "day": "Fri",
+   "start": "16:30",
+   "end": "17:30"
+  },
+  {
+   "act": "Blossoms",
+   "stage": "woodsies",
+   "day": "Fri",
+   "start": "18:00",
+   "end": "19:00"
+  },
+  {
+   "act": "Pinkpantheress",
+   "stage": "woodsies",
+   "day": "Fri",
+   "start": "19:30",
+   "end": "20:30"
+  },
+  {
+   "act": "Floating Points",
+   "stage": "woodsies",
+   "day": "Fri",
+   "start": "21:00",
+   "end": "22:00"
+  },
+  {
+   "act": "Four Tet",
+   "stage": "woodsies",
+   "day": "Fri",
+   "start": "22:30",
+   "end": "23:45"
+  },
+  {
+   "act": "Horsegirl",
+   "stage": "park",
+   "day": "Fri",
+   "start": "11:30",
+   "end": "12:10"
+  },
+  {
+   "act": "John Glacier",
+   "stage": "park",
+   "day": "Fri",
+   "start": "12:45",
+   "end": "13:30"
+  },
+  {
+   "act": "Jalen Ngonda",
+   "stage": "park",
+   "day": "Fri",
+   "start": "14:00",
+   "end": "14:45"
+  },
+  {
+   "act": "Faye Webster",
+   "stage": "park",
+   "day": "Fri",
+   "start": "15:15",
+   "end": "16:00"
+  },
+  {
+   "act": "English Teacher",
+   "stage": "park",
+   "day": "Fri",
+   "start": "16:30",
+   "end": "17:30"
+  },
+  {
+   "act": "Osees",
+   "stage": "park",
+   "day": "Fri",
+   "start": "18:00",
+   "end": "19:00"
+  },
+  {
+   "act": "Wunderhorse",
+   "stage": "park",
+   "day": "Fri",
+   "start": "19:30",
+   "end": "20:30"
+  },
+  {
+   "act": "Self Esteem",
+   "stage": "park",
+   "day": "Fri",
+   "start": "21:15",
+   "end": "22:15"
+  },
+  {
+   "act": "Anohni and the Johnsons",
+   "stage": "park",
+   "day": "Fri",
+   "start": "23:00",
+   "end": "24:15"
+  },
+  {
+   "act": "Beans On Toast",
+   "stage": "avalon",
+   "day": "Fri",
+   "start": "12:50",
+   "end": "13:40"
+  },
+  {
+   "act": "Rumba De Bodas",
+   "stage": "avalon",
+   "day": "Fri",
+   "start": "14:10",
+   "end": "15:05"
+  },
+  {
+   "act": "Paris Paloma",
+   "stage": "avalon",
+   "day": "Fri",
+   "start": "15:35",
+   "end": "16:35"
+  },
+  {
+   "act": "Ash",
+   "stage": "avalon",
+   "day": "Fri",
+   "start": "17:05",
+   "end": "18:05"
+  },
+  {
+   "act": "Orla Gartland",
+   "stage": "avalon",
+   "day": "Fri",
+   "start": "18:35",
+   "end": "19:35"
+  },
+  {
+   "act": "The Magic Numbers",
+   "stage": "avalon",
+   "day": "Fri",
+   "start": "20:05",
+   "end": "21:05"
+  },
+  {
+   "act": "Terrorvision",
+   "stage": "avalon",
+   "day": "Fri",
+   "start": "21:35",
+   "end": "22:35"
+  },
+  {
+   "act": "The Fratellis",
+   "stage": "avalon",
+   "day": "Fri",
+   "start": "23:05",
+   "end": "24:20"
+  },
+  {
+   "act": "Logic 1000",
+   "stage": "arcadia",
+   "day": "Fri",
+   "start": "21:00",
+   "end": "21:55"
+  },
+  {
+   "act": "Optimo (Espacio)",
+   "stage": "arcadia",
+   "day": "Fri",
+   "start": "21:55",
+   "end": "22:50"
+  },
+  {
+   "act": "Max Cooper",
+   "stage": "arcadia",
+   "day": "Fri",
+   "start": "22:50",
+   "end": "23:50"
+  },
+  {
+   "act": "Dragonfly Show",
+   "stage": "arcadia",
+   "day": "Fri",
+   "start": "23:50",
+   "end": "24:00"
+  },
+  {
+   "act": "Sonny Fodera",
+   "stage": "arcadia",
+   "day": "Fri",
+   "start": "24:00",
+   "end": "25:00"
+  },
+  {
+   "act": "Romy",
+   "stage": "arcadia",
+   "day": "Fri",
+   "start": "25:00",
+   "end": "26:00"
+  },
+  {
+   "act": "Job Jobse B2B Palms Trax",
+   "stage": "arcadia",
+   "day": "Fri",
+   "start": "26:00",
+   "end": "27:00"
+  },
+  {
+   "act": "Bel Cobain",
+   "stage": "glade",
+   "day": "Fri",
+   "start": "12:00",
+   "end": "13:00"
+  },
+  {
+   "act": "Crazy P (DJ)",
+   "stage": "glade",
+   "day": "Fri",
+   "start": "13:10",
+   "end": "14:10"
+  },
+  {
+   "act": "Carl Cox & Eric Powell's Mobile Disco Feat Julie Mcknight",
+   "stage": "glade",
+   "day": "Fri",
+   "start": "14:25",
+   "end": "17:25"
+  },
+  {
+   "act": "K Klass",
+   "stage": "glade",
+   "day": "Fri",
+   "start": "17:45",
+   "end": "18:25"
+  },
+  {
+   "act": "Fish56octogan",
+   "stage": "glade",
+   "day": "Fri",
+   "start": "18:30",
+   "end": "19:30"
+  },
+  {
+   "act": "Daniel Avery B2B Imogen",
+   "stage": "glade",
+   "day": "Fri",
+   "start": "19:30",
+   "end": "20:45"
+  },
+  {
+   "act": "Kettama B2B Interplanetary Criminal",
+   "stage": "glade",
+   "day": "Fri",
+   "start": "20:45",
+   "end": "22:00"
+  },
+  {
+   "act": "Shygirl Presents: Club Shy",
+   "stage": "glade",
+   "day": "Fri",
+   "start": "22:10",
+   "end": "23:10"
+  },
+  {
+   "act": "Skepta B2B Mochakk B2B Carlita",
+   "stage": "glade",
+   "day": "Fri",
+   "start": "23:15",
+   "end": "24:30"
+  },
+  {
+   "act": "Seth Troxler",
+   "stage": "glade",
+   "day": "Fri",
+   "start": "24:30",
+   "end": "25:45"
+  },
+  {
+   "act": "Damian Lazarus",
+   "stage": "glade",
+   "day": "Fri",
+   "start": "25:45",
+   "end": "26:55"
+  },
+  {
+   "act": "Bad B!tch Dubz",
+   "stage": "levels",
+   "day": "Fri",
+   "start": "12:00",
+   "end": "13:30"
+  },
+  {
+   "act": "G33",
+   "stage": "levels",
+   "day": "Fri",
+   "start": "13:30",
+   "end": "15:00"
+  },
+  {
+   "act": "DJ Ez",
+   "stage": "levels",
+   "day": "Fri",
+   "start": "15:00",
+   "end": "16:15"
+  },
+  {
+   "act": "Katy B (Live)",
+   "stage": "levels",
+   "day": "Fri",
+   "start": "16:15",
+   "end": "16:35"
+  },
+  {
+   "act": "Arthi",
+   "stage": "levels",
+   "day": "Fri",
+   "start": "16:35",
+   "end": "17:45"
+  },
+  {
+   "act": "Oppidan B2B Sicaria",
+   "stage": "levels",
+   "day": "Fri",
+   "start": "17:45",
+   "end": "19:15"
+  },
+  {
+   "act": "Conducta",
+   "stage": "levels",
+   "day": "Fri",
+   "start": "19:15",
+   "end": "20:30"
+  },
+  {
+   "act": "Notion",
+   "stage": "levels",
+   "day": "Fri",
+   "start": "20:30",
+   "end": "21:45"
+  },
+  {
+   "act": "Lens w/ Dread MC",
+   "stage": "levels",
+   "day": "Fri",
+   "start": "21:45",
+   "end": "23:00"
+  },
+  {
+   "act": "Ltj Bukem",
+   "stage": "levels",
+   "day": "Fri",
+   "start": "23:00",
+   "end": "24:15"
+  },
+  {
+   "act": "Goldie B2B Special Request",
+   "stage": "levels",
+   "day": "Fri",
+   "start": "24:15",
+   "end": "25:45"
+  },
+  {
+   "act": "Calibre",
+   "stage": "levels",
+   "day": "Fri",
+   "start": "25:45",
+   "end": "27:00"
+  },
+  {
+   "act": "Our Man in the Field",
+   "stage": "acoustic",
+   "day": "Fri",
+   "start": "11:30",
+   "end": "12:00"
+  },
+  {
+   "act": "Nadia Reid",
+   "stage": "acoustic",
+   "day": "Fri",
+   "start": "12:10",
+   "end": "12:40"
+  },
+  {
+   "act": "Tift Merritt",
+   "stage": "acoustic",
+   "day": "Fri",
+   "start": "13:00",
+   "end": "13:40"
+  },
+  {
+   "act": "Gabrielle Aplin",
+   "stage": "acoustic",
+   "day": "Fri",
+   "start": "14:00",
+   "end": "14:40"
+  },
+  {
+   "act": "Hugh Cornwell",
+   "stage": "acoustic",
+   "day": "Fri",
+   "start": "15:00",
+   "end": "15:40"
+  },
+  {
+   "act": "Skerryvore",
+   "stage": "acoustic",
+   "day": "Fri",
+   "start": "16:00",
+   "end": "16:40"
+  },
+  {
+   "act": "Billie Marten",
+   "stage": "acoustic",
+   "day": "Fri",
+   "start": "17:00",
+   "end": "18:00"
+  },
+  {
+   "act": "Dhani Harrison",
+   "stage": "acoustic",
+   "day": "Fri",
+   "start": "18:30",
+   "end": "19:30"
+  },
+  {
+   "act": "The Searchers",
+   "stage": "acoustic",
+   "day": "Fri",
+   "start": "20:00",
+   "end": "21:00"
+  },
+  {
+   "act": "Ani Difranco",
+   "stage": "acoustic",
+   "day": "Fri",
+   "start": "21:30",
+   "end": "22:45"
+  },
+  {
+   "act": "Panel: What Next for the Left: Politics, Organising and Power with Ash Sarkar, Chantelle Lunt, Gary Younge, Harriet Protheroe-Soltani, Ayeisha Thomas Smith",
+   "stage": "left-field",
+   "day": "Fri",
+   "start": "12:00",
+   "end": "13:00",
+   "flags": [
+    "talk"
+   ]
+  },
+  {
+   "act": "Panel: Feminism in the Age of the Manosphere with Beyond Equality, Carys Afoko, Marai Larasi, Susie Mcdonald, Nim Ralph",
+   "stage": "left-field",
+   "day": "Fri",
+   "start": "13:30",
+   "end": "14:30",
+   "flags": [
+    "talk"
+   ]
+  },
+  {
+   "act": "Radical Round Up: with Billy Bragg, Jasmine.4.T, Holly Carter",
+   "stage": "left-field",
+   "day": "Fri",
+   "start": "15:00",
+   "end": "16:00",
+   "flags": [
+    "talk"
+   ]
+  },
+  {
+   "act": "The Meffs",
+   "stage": "left-field",
+   "day": "Fri",
+   "start": "16:30",
+   "end": "17:05"
+  },
+  {
+   "act": "Gurriers",
+   "stage": "left-field",
+   "day": "Fri",
+   "start": "17:35",
+   "end": "18:10"
+  },
+  {
+   "act": "Jasmine.4.T",
+   "stage": "left-field",
+   "day": "Fri",
+   "start": "18:40",
+   "end": "19:20"
+  },
+  {
+   "act": "Antony Szmierek",
+   "stage": "left-field",
+   "day": "Fri",
+   "start": "19:50",
+   "end": "20:30"
+  },
+  {
+   "act": "Billy Bragg",
+   "stage": "left-field",
+   "day": "Fri",
+   "start": "21:00",
+   "end": "22:00"
+  },
+  {
+   "act": "Kaiser Chiefs",
+   "stage": "pyramid",
+   "day": "Sat",
+   "start": "12:00",
+   "end": "13:00"
+  },
+  {
+   "act": "Brandi Carlile",
+   "stage": "pyramid",
+   "day": "Sat",
+   "start": "13:30",
+   "end": "14:30"
+  },
+  {
+   "act": "The Script",
+   "stage": "pyramid",
+   "day": "Sat",
+   "start": "15:00",
+   "end": "16:00"
+  },
+  {
+   "act": "John Fogerty",
+   "stage": "pyramid",
+   "day": "Sat",
+   "start": "16:30",
+   "end": "17:30"
+  },
+  {
+   "act": "Pulp",
+   "stage": "pyramid",
+   "day": "Sat",
+   "start": "18:15",
+   "end": "19:15",
+   "flags": [
+    "secret_set"
+   ]
+  },
+  {
+   "act": "Raye",
+   "stage": "pyramid",
+   "day": "Sat",
+   "start": "20:00",
+   "end": "21:00"
+  },
+  {
+   "act": "Neil Young and the Chrome Hearts",
+   "stage": "pyramid",
+   "day": "Sat",
+   "start": "22:00",
+   "end": "23:45"
+  },
+  {
+   "act": "Alessi Rose",
+   "stage": "other",
+   "day": "Sat",
+   "start": "11:30",
+   "end": "12:15"
+  },
+  {
+   "act": "Good Neighbours",
+   "stage": "other",
+   "day": "Sat",
+   "start": "12:45",
+   "end": "13:30"
+  },
+  {
+   "act": "Beabadoobee",
+   "stage": "other",
+   "day": "Sat",
+   "start": "14:00",
+   "end": "15:00"
+  },
+  {
+   "act": "Weezer",
+   "stage": "other",
+   "day": "Sat",
+   "start": "15:30",
+   "end": "16:30"
+  },
+  {
+   "act": "Amyl & the Sniffers",
+   "stage": "other",
+   "day": "Sat",
+   "start": "17:00",
+   "end": "18:00"
+  },
+  {
+   "act": "Ezra Collective",
+   "stage": "other",
+   "day": "Sat",
+   "start": "18:45",
+   "end": "19:45",
+   "flags": [
+    "rescheduled"
+   ]
+  },
+  {
+   "act": "Deftones",
+   "stage": "other",
+   "day": "Sat",
+   "start": "20:30",
+   "end": "21:30",
+   "flags": [
+    "cancelled"
+   ]
+  },
+  {
+   "act": "Skepta",
+   "stage": "other",
+   "day": "Sat",
+   "start": "21:00",
+   "end": "21:30",
+   "flags": [
+    "replacement"
+   ]
+  },
+  {
+   "act": "Charli XCX",
+   "stage": "other",
+   "day": "Sat",
+   "start": "22:30",
+   "end": "23:45"
+  },
+  {
+   "act": "Infinity Song",
+   "stage": "west-holts",
+   "day": "Sat",
+   "start": "11:30",
+   "end": "12:30"
+  },
+  {
+   "act": "Nilüfer Yanya",
+   "stage": "west-holts",
+   "day": "Sat",
+   "start": "13:00",
+   "end": "14:00"
+  },
+  {
+   "act": "Bob Vylan",
+   "stage": "west-holts",
+   "day": "Sat",
+   "start": "14:30",
+   "end": "15:30"
+  },
+  {
+   "act": "Kneecap",
+   "stage": "west-holts",
+   "day": "Sat",
+   "start": "16:00",
+   "end": "17:00"
+  },
+  {
+   "act": "Yussef Dayes",
+   "stage": "west-holts",
+   "day": "Sat",
+   "start": "17:30",
+   "end": "18:30"
+  },
+  {
+   "act": "Greentea Peng",
+   "stage": "west-holts",
+   "day": "Sat",
+   "start": "19:00",
+   "end": "20:00"
+  },
+  {
+   "act": "Amaarae",
+   "stage": "west-holts",
+   "day": "Sat",
+   "start": "20:30",
+   "end": "21:30"
+  },
+  {
+   "act": "Doechii",
+   "stage": "west-holts",
+   "day": "Sat",
+   "start": "22:45",
+   "end": "23:30",
+   "flags": [
+    "source_conflict"
+   ]
+  },
+  {
+   "act": "The Amazons",
+   "stage": "woodsies",
+   "day": "Sat",
+   "start": "11:30",
+   "end": "12:15"
+  },
+  {
+   "act": "Sorry",
+   "stage": "woodsies",
+   "day": "Sat",
+   "start": "12:45",
+   "end": "13:30"
+  },
+  {
+   "act": "Fcukers",
+   "stage": "woodsies",
+   "day": "Sat",
+   "start": "14:00",
+   "end": "14:45"
+  },
+  {
+   "act": "Jade",
+   "stage": "woodsies",
+   "day": "Sat",
+   "start": "15:15",
+   "end": "16:00"
+  },
+  {
+   "act": "Nova Twins",
+   "stage": "woodsies",
+   "day": "Sat",
+   "start": "16:30",
+   "end": "17:30"
+  },
+  {
+   "act": "TV On the Radio",
+   "stage": "woodsies",
+   "day": "Sat",
+   "start": "18:00",
+   "end": "19:00"
+  },
+  {
+   "act": "Father John Misty",
+   "stage": "woodsies",
+   "day": "Sat",
+   "start": "19:30",
+   "end": "20:30"
+  },
+  {
+   "act": "Tom Odell",
+   "stage": "woodsies",
+   "day": "Sat",
+   "start": "21:00",
+   "end": "22:00"
+  },
+  {
+   "act": "Scissor Sisters",
+   "stage": "woodsies",
+   "day": "Sat",
+   "start": "22:30",
+   "end": "23:45"
+  },
+  {
+   "act": "Yann Tiersen",
+   "stage": "park",
+   "day": "Sat",
+   "start": "11:10",
+   "end": "12:10"
+  },
+  {
+   "act": "Ichiko Aoba",
+   "stage": "park",
+   "day": "Sat",
+   "start": "12:45",
+   "end": "13:30"
+  },
+  {
+   "act": "Japanese Breakfast",
+   "stage": "park",
+   "day": "Sat",
+   "start": "14:00",
+   "end": "15:00",
+   "flags": [
+    "source_conflict"
+   ]
+  },
+  {
+   "act": "Lucy Dacus",
+   "stage": "park",
+   "day": "Sat",
+   "start": "15:30",
+   "end": "16:15"
+  },
+  {
+   "act": "Pa Salieu",
+   "stage": "park",
+   "day": "Sat",
+   "start": "16:45",
+   "end": "17:30"
+  },
+  {
+   "act": "Gary Numan",
+   "stage": "park",
+   "day": "Sat",
+   "start": "18:00",
+   "end": "19:00"
+  },
+  {
+   "act": "HAIM",
+   "stage": "park",
+   "day": "Sat",
+   "start": "19:30",
+   "end": "20:30",
+   "flags": [
+    "secret_set"
+   ]
+  },
+  {
+   "act": "Beth Gibbons",
+   "stage": "park",
+   "day": "Sat",
+   "start": "21:15",
+   "end": "22:15"
+  },
+  {
+   "act": "Caribou",
+   "stage": "park",
+   "day": "Sat",
+   "start": "23:00",
+   "end": "24:15"
+  },
+  {
+   "act": "Fülü",
+   "stage": "avalon",
+   "day": "Sat",
+   "start": "11:30",
+   "end": "12:20"
+  },
+  {
+   "act": "Bess Atwell",
+   "stage": "avalon",
+   "day": "Sat",
+   "start": "12:50",
+   "end": "13:45"
+  },
+  {
+   "act": "Stephen Wilson Jr.",
+   "stage": "avalon",
+   "day": "Sat",
+   "start": "14:15",
+   "end": "15:10"
+  },
+  {
+   "act": "Jamie Cullum",
+   "stage": "avalon",
+   "day": "Sat",
+   "start": "15:40",
+   "end": "16:40"
+  },
+  {
+   "act": "The Amy Winehouse Band",
+   "stage": "avalon",
+   "day": "Sat",
+   "start": "17:10",
+   "end": "18:10"
+  },
+  {
+   "act": "Jade Bird",
+   "stage": "avalon",
+   "day": "Sat",
+   "start": "18:40",
+   "end": "19:40"
+  },
+  {
+   "act": "Rachel Chinouriri",
+   "stage": "avalon",
+   "day": "Sat",
+   "start": "20:10",
+   "end": "21:10"
+  },
+  {
+   "act": "Tom Walker",
+   "stage": "avalon",
+   "day": "Sat",
+   "start": "21:40",
+   "end": "22:40"
+  },
+  {
+   "act": "Hard-Fi",
+   "stage": "avalon",
+   "day": "Sat",
+   "start": "23:10",
+   "end": "24:20"
+  },
+  {
+   "act": "Danny Howard",
+   "stage": "arcadia",
+   "day": "Sat",
+   "start": "21:00",
+   "end": "21:55"
+  },
+  {
+   "act": "Hannah Wants",
+   "stage": "arcadia",
+   "day": "Sat",
+   "start": "21:55",
+   "end": "22:50"
+  },
+  {
+   "act": "Michael Bibi B2B Solomun",
+   "stage": "arcadia",
+   "day": "Sat",
+   "start": "22:50",
+   "end": "23:50"
+  },
+  {
+   "act": "Dragonfly Show",
+   "stage": "arcadia",
+   "day": "Sat",
+   "start": "23:50",
+   "end": "24:00"
+  },
+  {
+   "act": "Four Tet",
+   "stage": "arcadia",
+   "day": "Sat",
+   "start": "24:00",
+   "end": "25:00"
+  },
+  {
+   "act": "Annie Mac B2B Jamz Supernova",
+   "stage": "arcadia",
+   "day": "Sat",
+   "start": "25:00",
+   "end": "26:00"
+  },
+  {
+   "act": "Groove Armada B2B Jungle (DJ Set)",
+   "stage": "arcadia",
+   "day": "Sat",
+   "start": "26:00",
+   "end": "27:00"
+  },
+  {
+   "act": "Channel One Sound System",
+   "stage": "glade",
+   "day": "Sat",
+   "start": "12:00",
+   "end": "13:00"
+  },
+  {
+   "act": "Electric Jalaba",
+   "stage": "glade",
+   "day": "Sat",
+   "start": "13:30",
+   "end": "14:30"
+  },
+  {
+   "act": "Tunng",
+   "stage": "glade",
+   "day": "Sat",
+   "start": "15:00",
+   "end": "16:00"
+  },
+  {
+   "act": "Dele Sosimi Afrobeat Experience",
+   "stage": "glade",
+   "day": "Sat",
+   "start": "16:30",
+   "end": "17:30"
+  },
+  {
+   "act": "Nabihah Iqbal (DJ)",
+   "stage": "glade",
+   "day": "Sat",
+   "start": "17:40",
+   "end": "18:55"
+  },
+  {
+   "act": "Annie Mac",
+   "stage": "glade",
+   "day": "Sat",
+   "start": "18:55",
+   "end": "20:10"
+  },
+  {
+   "act": "Max Cooper (Live A/V)",
+   "stage": "glade",
+   "day": "Sat",
+   "start": "20:30",
+   "end": "22:00"
+  },
+  {
+   "act": "Leftfield",
+   "stage": "glade",
+   "day": "Sat",
+   "start": "22:30",
+   "end": "23:45"
+  },
+  {
+   "act": "Richie Hawtin",
+   "stage": "glade",
+   "day": "Sat",
+   "start": "24:00",
+   "end": "25:30"
+  },
+  {
+   "act": "Amelie Lens",
+   "stage": "glade",
+   "day": "Sat",
+   "start": "25:30",
+   "end": "26:55"
+  },
+  {
+   "act": "Ella Knight",
+   "stage": "levels",
+   "day": "Sat",
+   "start": "12:00",
+   "end": "13:30"
+  },
+  {
+   "act": "DJ Paulette",
+   "stage": "levels",
+   "day": "Sat",
+   "start": "13:30",
+   "end": "15:00"
+  },
+  {
+   "act": "Jungle (DJ)",
+   "stage": "levels",
+   "day": "Sat",
+   "start": "15:00",
+   "end": "16:30"
+  },
+  {
+   "act": "Berlioz",
+   "stage": "levels",
+   "day": "Sat",
+   "start": "16:30",
+   "end": "18:00"
+  },
+  {
+   "act": "Chaos in the Cbd",
+   "stage": "levels",
+   "day": "Sat",
+   "start": "18:00",
+   "end": "19:30"
+  },
+  {
+   "act": "Haai B2B Romy",
+   "stage": "levels",
+   "day": "Sat",
+   "start": "19:30",
+   "end": "21:00"
+  },
+  {
+   "act": "Erol Alkan B2B Ewan Mcvicar",
+   "stage": "levels",
+   "day": "Sat",
+   "start": "21:00",
+   "end": "22:30"
+  },
+  {
+   "act": "Modeselektor (DJ)",
+   "stage": "levels",
+   "day": "Sat",
+   "start": "22:30",
+   "end": "24:00"
+  },
+  {
+   "act": "Skream & Benga w/ Sgt Pokes",
+   "stage": "levels",
+   "day": "Sat",
+   "start": "24:00",
+   "end": "25:15"
+  },
+  {
+   "act": "Jyoty",
+   "stage": "levels",
+   "day": "Sat",
+   "start": "25:15",
+   "end": "27:00"
+  },
+  {
+   "act": "Henry Grace",
+   "stage": "acoustic",
+   "day": "Sat",
+   "start": "11:30",
+   "end": "12:00"
+  },
+  {
+   "act": "Lorraine Nash",
+   "stage": "acoustic",
+   "day": "Sat",
+   "start": "12:10",
+   "end": "12:40"
+  },
+  {
+   "act": "Oisin Leech",
+   "stage": "acoustic",
+   "day": "Sat",
+   "start": "13:00",
+   "end": "13:40"
+  },
+  {
+   "act": "Sophie B. Hawkins",
+   "stage": "acoustic",
+   "day": "Sat",
+   "start": "14:00",
+   "end": "14:40"
+  },
+  {
+   "act": "Not Completely Unknown a Celebration of the Songs of Bob Dylan Featuring: Paul Carrack, Sid Griffin, Katya, Ralph Mctell, Liam O Maonlai",
+   "stage": "acoustic",
+   "day": "Sat",
+   "start": "15:00",
+   "end": "16:00"
+  },
+  {
+   "act": "The Bluebells",
+   "stage": "acoustic",
+   "day": "Sat",
+   "start": "16:10",
+   "end": "16:50"
+  },
+  {
+   "act": "The Coronas",
+   "stage": "acoustic",
+   "day": "Sat",
+   "start": "17:10",
+   "end": "18:00"
+  },
+  {
+   "act": "Jeremy Loops",
+   "stage": "acoustic",
+   "day": "Sat",
+   "start": "18:30",
+   "end": "19:30"
+  },
+  {
+   "act": "Hothouse Flowers",
+   "stage": "acoustic",
+   "day": "Sat",
+   "start": "20:00",
+   "end": "21:00"
+  },
+  {
+   "act": "Nick Lowe",
+   "stage": "acoustic",
+   "day": "Sat",
+   "start": "21:30",
+   "end": "22:45"
+  },
+  {
+   "act": "Panel: Confronting the Rise of the Far Right with Adam Green, Carol Cadwalladr, Hope Not Hate, Zarah Sultana MP, John Harris",
+   "stage": "left-field",
+   "day": "Sat",
+   "start": "12:00",
+   "end": "13:00",
+   "flags": [
+    "talk"
+   ]
+  },
+  {
+   "act": "Panel: Saving the Planet But Not Leaving the Workers Behind with Caroline Lucas, New Economics Foundation, Port Talbot Steel Worker, Unite the Union, Gracie Mae Bradley",
+   "stage": "left-field",
+   "day": "Sat",
+   "start": "13:30",
+   "end": "14:30",
+   "flags": [
+    "talk"
+   ]
+  },
+  {
+   "act": "Radical Round Up: with Billy Bragg, Rianne Downey, Andy White",
+   "stage": "left-field",
+   "day": "Sat",
+   "start": "15:00",
+   "end": "16:00",
+   "flags": [
+    "talk"
+   ]
+  },
+  {
+   "act": "Girlband!",
+   "stage": "left-field",
+   "day": "Sat",
+   "start": "16:30",
+   "end": "17:05"
+  },
+  {
+   "act": "Chloe Slater",
+   "stage": "left-field",
+   "day": "Sat",
+   "start": "17:35",
+   "end": "18:10"
+  },
+  {
+   "act": "The Guest List",
+   "stage": "left-field",
+   "day": "Sat",
+   "start": "18:40",
+   "end": "19:20"
+  },
+  {
+   "act": "Lambrini Girls",
+   "stage": "left-field",
+   "day": "Sat",
+   "start": "19:50",
+   "end": "20:30"
+  },
+  {
+   "act": "Kate Nash",
+   "stage": "left-field",
+   "day": "Sat",
+   "start": "21:00",
+   "end": "22:00"
+  },
+  {
+   "act": "The Selecter",
+   "stage": "pyramid",
+   "day": "Sun",
+   "start": "11:15",
+   "end": "12:00"
+  },
+  {
+   "act": "Celeste",
+   "stage": "pyramid",
+   "day": "Sun",
+   "start": "12:30",
+   "end": "13:30"
+  },
+  {
+   "act": "The Libertines",
+   "stage": "pyramid",
+   "day": "Sun",
+   "start": "14:00",
+   "end": "15:00"
+  },
+  {
+   "act": "Rod Stewart",
+   "stage": "pyramid",
+   "day": "Sun",
+   "start": "15:45",
+   "end": "17:15"
+  },
+  {
+   "act": "Nile Rodgers & Chic",
+   "stage": "pyramid",
+   "day": "Sun",
+   "start": "18:00",
+   "end": "19:00"
+  },
+  {
+   "act": "Noah Kahan",
+   "stage": "pyramid",
+   "day": "Sun",
+   "start": "19:45",
+   "end": "20:45"
+  },
+  {
+   "act": "Olivia Rodrigo",
+   "stage": "pyramid",
+   "day": "Sun",
+   "start": "21:45",
+   "end": "23:15"
+  },
+  {
+   "act": "Louis Dunford",
+   "stage": "other",
+   "day": "Sun",
+   "start": "11:15",
+   "end": "12:00"
+  },
+  {
+   "act": "Nadine Shah",
+   "stage": "other",
+   "day": "Sun",
+   "start": "12:30",
+   "end": "13:15"
+  },
+  {
+   "act": "Shaboozey",
+   "stage": "other",
+   "day": "Sun",
+   "start": "13:45",
+   "end": "14:30"
+  },
+  {
+   "act": "Joy Crookes",
+   "stage": "other",
+   "day": "Sun",
+   "start": "15:00",
+   "end": "15:45"
+  },
+  {
+   "act": "Turnstile",
+   "stage": "other",
+   "day": "Sun",
+   "start": "16:30",
+   "end": "17:30"
+  },
+  {
+   "act": "Snow Patrol",
+   "stage": "other",
+   "day": "Sun",
+   "start": "18:00",
+   "end": "19:00"
+  },
+  {
+   "act": "Wolf Alice",
+   "stage": "other",
+   "day": "Sun",
+   "start": "19:45",
+   "end": "20:45"
+  },
+  {
+   "act": "The Prodigy",
+   "stage": "other",
+   "day": "Sun",
+   "start": "21:45",
+   "end": "23:15"
+  },
+  {
+   "act": "Thandii",
+   "stage": "west-holts",
+   "day": "Sun",
+   "start": "11:00",
+   "end": "12:00"
+  },
+  {
+   "act": "Abel Selaocoe & the Bantu Ensemble",
+   "stage": "west-holts",
+   "day": "Sun",
+   "start": "12:30",
+   "end": "13:30"
+  },
+  {
+   "act": "Cymande",
+   "stage": "west-holts",
+   "day": "Sun",
+   "start": "14:00",
+   "end": "15:00"
+  },
+  {
+   "act": "Black Uhuru",
+   "stage": "west-holts",
+   "day": "Sun",
+   "start": "15:30",
+   "end": "16:30"
+  },
+  {
+   "act": "Goat",
+   "stage": "west-holts",
+   "day": "Sun",
+   "start": "17:00",
+   "end": "18:00"
+  },
+  {
+   "act": "The Brian Jonestown Massacre",
+   "stage": "west-holts",
+   "day": "Sun",
+   "start": "18:30",
+   "end": "19:30"
+  },
+  {
+   "act": "Parcels",
+   "stage": "west-holts",
+   "day": "Sun",
+   "start": "20:00",
+   "end": "21:00"
+  },
+  {
+   "act": "Overmono",
+   "stage": "west-holts",
+   "day": "Sun",
+   "start": "21:45",
+   "end": "23:15"
+  },
+  {
+   "act": "Westside Cowboy",
+   "stage": "woodsies",
+   "day": "Sun",
+   "start": "11:15",
+   "end": "12:00"
+  },
+  {
+   "act": "Gurriers",
+   "stage": "woodsies",
+   "day": "Sun",
+   "start": "12:30",
+   "end": "13:30"
+  },
+  {
+   "act": "Sprints",
+   "stage": "woodsies",
+   "day": "Sun",
+   "start": "14:00",
+   "end": "15:00"
+  },
+  {
+   "act": "Djo",
+   "stage": "woodsies",
+   "day": "Sun",
+   "start": "15:30",
+   "end": "16:30"
+  },
+  {
+   "act": "Black Country, New Road",
+   "stage": "woodsies",
+   "day": "Sun",
+   "start": "17:00",
+   "end": "18:00"
+  },
+  {
+   "act": "St. Vincent",
+   "stage": "woodsies",
+   "day": "Sun",
+   "start": "18:30",
+   "end": "19:30"
+  },
+  {
+   "act": "AJ Tracey",
+   "stage": "woodsies",
+   "day": "Sun",
+   "start": "20:00",
+   "end": "21:00"
+  },
+  {
+   "act": "Jorja Smith",
+   "stage": "woodsies",
+   "day": "Sun",
+   "start": "21:30",
+   "end": "22:45"
+  },
+  {
+   "act": "Melin Melyn",
+   "stage": "park",
+   "day": "Sun",
+   "start": "11:30",
+   "end": "12:15"
+  },
+  {
+   "act": "Geordie Greep",
+   "stage": "park",
+   "day": "Sun",
+   "start": "12:45",
+   "end": "13:30"
+  },
+  {
+   "act": "Katy J Pearson",
+   "stage": "park",
+   "day": "Sun",
+   "start": "14:00",
+   "end": "14:45"
+  },
+  {
+   "act": "Royel Otis",
+   "stage": "park",
+   "day": "Sun",
+   "start": "15:15",
+   "end": "16:00"
+  },
+  {
+   "act": "Girl in Red",
+   "stage": "park",
+   "day": "Sun",
+   "start": "16:30",
+   "end": "17:30"
+  },
+  {
+   "act": "Kae Tempest",
+   "stage": "park",
+   "day": "Sun",
+   "start": "18:00",
+   "end": "19:00"
+  },
+  {
+   "act": "Future Islands",
+   "stage": "park",
+   "day": "Sun",
+   "start": "19:35",
+   "end": "20:35"
+  },
+  {
+   "act": "The Maccabees",
+   "stage": "park",
+   "day": "Sun",
+   "start": "21:15",
+   "end": "22:30"
+  },
+  {
+   "act": "Dea Matrona",
+   "stage": "avalon",
+   "day": "Sun",
+   "start": "11:25",
+   "end": "12:05"
+  },
+  {
+   "act": "Talisk",
+   "stage": "avalon",
+   "day": "Sun",
+   "start": "12:30",
+   "end": "13:25"
+  },
+  {
+   "act": "Brooke Combe",
+   "stage": "avalon",
+   "day": "Sun",
+   "start": "13:55",
+   "end": "14:50"
+  },
+  {
+   "act": "The Horne Section",
+   "stage": "avalon",
+   "day": "Sun",
+   "start": "15:20",
+   "end": "16:20"
+  },
+  {
+   "act": "My Baby",
+   "stage": "avalon",
+   "day": "Sun",
+   "start": "16:50",
+   "end": "17:50"
+  },
+  {
+   "act": "The Big Moon",
+   "stage": "avalon",
+   "day": "Sun",
+   "start": "18:20",
+   "end": "19:20"
+  },
+  {
+   "act": "Sam Ryder",
+   "stage": "avalon",
+   "day": "Sun",
+   "start": "19:50",
+   "end": "20:50"
+  },
+  {
+   "act": "Bear's Den",
+   "stage": "avalon",
+   "day": "Sun",
+   "start": "21:20",
+   "end": "22:20"
+  },
+  {
+   "act": "Alabama 3",
+   "stage": "avalon",
+   "day": "Sun",
+   "start": "22:50",
+   "end": "23:50"
+  },
+  {
+   "act": "Jeremiah Asiamah",
+   "stage": "arcadia",
+   "day": "Sun",
+   "start": "20:00",
+   "end": "21:00"
+  },
+  {
+   "act": "Eva Lazarus",
+   "stage": "arcadia",
+   "day": "Sun",
+   "start": "21:00",
+   "end": "21:30"
+  },
+  {
+   "act": "Dr Banana B2B Gallegos",
+   "stage": "arcadia",
+   "day": "Sun",
+   "start": "21:30",
+   "end": "22:30"
+  },
+  {
+   "act": "Girls Dont Sync",
+   "stage": "arcadia",
+   "day": "Sun",
+   "start": "22:30",
+   "end": "23:30"
+  },
+  {
+   "act": "Dragonfly Show",
+   "stage": "arcadia",
+   "day": "Sun",
+   "start": "23:30",
+   "end": "23:40"
+  },
+  {
+   "act": "Becky Hill",
+   "stage": "arcadia",
+   "day": "Sun",
+   "start": "23:40",
+   "end": "24:10"
+  },
+  {
+   "act": "Shy Fx B2B Eats Everything",
+   "stage": "arcadia",
+   "day": "Sun",
+   "start": "24:10",
+   "end": "25:30"
+  },
+  {
+   "act": "Basslayerz B2B Born On Road",
+   "stage": "arcadia",
+   "day": "Sun",
+   "start": "25:30",
+   "end": "26:30"
+  },
+  {
+   "act": "Don Letts DJ Set",
+   "stage": "glade",
+   "day": "Sun",
+   "start": "12:00",
+   "end": "13:15"
+  },
+  {
+   "act": "Channel One Sound System",
+   "stage": "glade",
+   "day": "Sun",
+   "start": "13:15",
+   "end": "14:30"
+  },
+  {
+   "act": "K.O.G",
+   "stage": "glade",
+   "day": "Sun",
+   "start": "15:00",
+   "end": "16:00"
+  },
+  {
+   "act": "Omega Nebula",
+   "stage": "glade",
+   "day": "Sun",
+   "start": "16:30",
+   "end": "17:30"
+  },
+  {
+   "act": "Third World",
+   "stage": "glade",
+   "day": "Sun",
+   "start": "18:00",
+   "end": "19:00"
+  },
+  {
+   "act": "The Orb",
+   "stage": "glade",
+   "day": "Sun",
+   "start": "19:15",
+   "end": "20:15"
+  },
+  {
+   "act": "Deep Dish",
+   "stage": "glade",
+   "day": "Sun",
+   "start": "20:15",
+   "end": "21:15"
+  },
+  {
+   "act": "A Guy Called Gerald + the Jungle Drummer (Live)",
+   "stage": "glade",
+   "day": "Sun",
+   "start": "21:45",
+   "end": "22:45"
+  },
+  {
+   "act": "Goldie (Live)",
+   "stage": "glade",
+   "day": "Sun",
+   "start": "23:15",
+   "end": "24:15"
+  },
+  {
+   "act": "Sherelle",
+   "stage": "glade",
+   "day": "Sun",
+   "start": "24:30",
+   "end": "26:00"
+  },
+  {
+   "act": "Dani Whylie",
+   "stage": "levels",
+   "day": "Sun",
+   "start": "12:00",
+   "end": "13:15"
+  },
+  {
+   "act": "Rio Tashan",
+   "stage": "levels",
+   "day": "Sun",
+   "start": "13:15",
+   "end": "14:45"
+  },
+  {
+   "act": "Jazzy",
+   "stage": "levels",
+   "day": "Sun",
+   "start": "14:45",
+   "end": "16:00"
+  },
+  {
+   "act": "Kilimanjaro B2B Tsha",
+   "stage": "levels",
+   "day": "Sun",
+   "start": "16:00",
+   "end": "17:30"
+  },
+  {
+   "act": "Adriatique B2B Carlita",
+   "stage": "levels",
+   "day": "Sun",
+   "start": "17:30",
+   "end": "19:00"
+  },
+  {
+   "act": "Chloe Caillet",
+   "stage": "levels",
+   "day": "Sun",
+   "start": "19:00",
+   "end": "20:30"
+  },
+  {
+   "act": "Pawsa",
+   "stage": "levels",
+   "day": "Sun",
+   "start": "20:30",
+   "end": "22:00"
+  },
+  {
+   "act": "Josh Baker",
+   "stage": "levels",
+   "day": "Sun",
+   "start": "22:00",
+   "end": "23:30"
+  },
+  {
+   "act": "Seth Troxler",
+   "stage": "levels",
+   "day": "Sun",
+   "start": "23:30",
+   "end": "25:00"
+  },
+  {
+   "act": "Groove Armada",
+   "stage": "levels",
+   "day": "Sun",
+   "start": "25:00",
+   "end": "26:30"
+  },
+  {
+   "act": "Dawn Landes & Friends Perform the Liberated Woman’s Songbook",
+   "stage": "acoustic",
+   "day": "Sun",
+   "start": "11:30",
+   "end": "12:00"
+  },
+  {
+   "act": "Toby Lee",
+   "stage": "acoustic",
+   "day": "Sun",
+   "start": "12:10",
+   "end": "12:40"
+  },
+  {
+   "act": "The Henry Girls",
+   "stage": "acoustic",
+   "day": "Sun",
+   "start": "13:00",
+   "end": "13:40"
+  },
+  {
+   "act": "Michele Stodart",
+   "stage": "acoustic",
+   "day": "Sun",
+   "start": "14:00",
+   "end": "14:40"
+  },
+  {
+   "act": "The Riptide Movement",
+   "stage": "acoustic",
+   "day": "Sun",
+   "start": "15:00",
+   "end": "15:40"
+  },
+  {
+   "act": "Pp Arnold",
+   "stage": "acoustic",
+   "day": "Sun",
+   "start": "16:00",
+   "end": "16:40"
+  },
+  {
+   "act": "London Community Gospel Choir",
+   "stage": "acoustic",
+   "day": "Sun",
+   "start": "17:00",
+   "end": "18:00"
+  },
+  {
+   "act": "Rhiannon Giddens with Dirk Powell",
+   "stage": "acoustic",
+   "day": "Sun",
+   "start": "18:30",
+   "end": "19:30"
+  },
+  {
+   "act": "The Bootleg Beatles",
+   "stage": "acoustic",
+   "day": "Sun",
+   "start": "20:00",
+   "end": "21:00"
+  },
+  {
+   "act": "Roy Harper",
+   "stage": "acoustic",
+   "day": "Sun",
+   "start": "21:30",
+   "end": "22:30"
+  },
+  {
+   "act": "Panel: How To Fix the Crisis of Care with Ashley John-Baptiste, Daisy-May Hudson, Emily Kenway, Filipino Domestic Workers Assoc., Minnie Rahman",
+   "stage": "left-field",
+   "day": "Sun",
+   "start": "12:00",
+   "end": "13:00",
+   "flags": [
+    "talk"
+   ]
+  },
+  {
+   "act": "Panel: Disability Cuts: the Fight Back with Ady, My Life My Choice, Andy Burnham, Disabled People Against the Cuts, Layla Steadman-Bevan, John Harris",
+   "stage": "left-field",
+   "day": "Sun",
+   "start": "13:30",
+   "end": "14:30",
+   "flags": [
+    "talk"
+   ]
+  },
+  {
+   "act": "Radical Round Up: with Billy Bragg, Grandson, Jamie Webster",
+   "stage": "left-field",
+   "day": "Sun",
+   "start": "15:00",
+   "end": "16:00",
+   "flags": [
+    "talk"
+   ]
+  },
+  {
+   "act": "The Halfway Kid",
+   "stage": "left-field",
+   "day": "Sun",
+   "start": "16:30",
+   "end": "17:05"
+  },
+  {
+   "act": "Du Blonde",
+   "stage": "left-field",
+   "day": "Sun",
+   "start": "17:35",
+   "end": "18:10"
+  },
+  {
+   "act": "Red Rum Club",
+   "stage": "left-field",
+   "day": "Sun",
+   "start": "18:40",
+   "end": "19:20"
+  },
+  {
+   "act": "Reverend and the Makers",
+   "stage": "left-field",
+   "day": "Sun",
+   "start": "19:50",
+   "end": "20:30"
+  },
+  {
+   "act": "Grandson",
+   "stage": "left-field",
+   "day": "Sun",
+   "start": "21:00",
+   "end": "22:00"
+  }
+ ],
+ "sources": [
+  {
+   "url": "https://www.glastofestfeed.com/news/lineups/glastonbury-2025-friday-line-up-set-times-schedule/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://www.glastofestfeed.com/news/lineups/glastonbury-2025-saturday-lineup-set-times-schedule/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://www.glastofestfeed.com/news/lineups/glastonbury-2025-sunday-lineup-set-times-schedule/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://clashfinder.com/m/g2025/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://www.scotsman.com/whats-on/glastonbury-2025-set-times-here-are-all-the-confirmed-stage-times-for-the-festivals-main-stages-5195935",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://www.radiox.co.uk/festivals/glastonbury/2025-headliners-line-up-stage-times-info/",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://www.nme.com/features/music-features/glastonbury-2025-set-clash-guide-3868475",
+   "accessed": "2026-10-02"
+  },
+  {
+   "url": "https://www.nme.com/news/music/glastonbury-2025-deftones-pull-out-of-other-stage-performance-skepta-to-step-in-3873855",
+   "accessed": "2026-10-02"
+  }
+ ]
+}

@@ -1,0 +1,417 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * State variants used by the shadcn/ui components in `components/ui`. They match both the Radix
+ * attributes (`data-state`) and the boolean data attributes other primitives emit.
+ */
+@custom-variant data-open {
+  &:where([data-state="open"]),
+  &:where([data-open]:not([data-open="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-closed {
+  &:where([data-state="closed"]),
+  &:where([data-closed]:not([data-closed="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-checked {
+  &:where([data-state="checked"]),
+  &:where([data-checked]:not([data-checked="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-unchecked {
+  &:where([data-state="unchecked"]),
+  &:where([data-unchecked]:not([data-unchecked="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-selected {
+  &:where([data-selected="true"]) {
+    @slot;
+  }
+}
+
+@custom-variant data-disabled {
+  &:where([data-disabled="true"]),
+  &:where([data-disabled]:not([data-disabled="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-active {
+  &:where([data-state="active"]),
+  &:where([data-active]:not([data-active="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-horizontal {
+  &:where([data-orientation="horizontal"]) {
+    @slot;
+  }
+}
+
+@custom-variant data-vertical {
+  &:where([data-orientation="vertical"]) {
+    @slot;
+  }
+}
+
+/*
+ * Design tokens.
+ * Light is "paper and ink": warm paper, near-black ink, one vermilion accent and a saffron marker.
+ * Dark is "midnight stage": the same hues pulled down to a warm near-black.
+ * Every text/background pair below is checked against WCAG AA (most reach AAA); chips and
+ * statuses also carry an icon and a text label, so meaning never rests on colour alone.
+ */
+:root {
+  color-scheme: light;
+
+  --background: oklch(0.972 0.011 85);
+  --foreground: oklch(0.215 0.02 55);
+  --card: oklch(0.992 0.006 85);
+  --card-foreground: oklch(0.215 0.02 55);
+  --popover: oklch(0.992 0.006 85);
+  --popover-foreground: oklch(0.215 0.02 55);
+  --primary: oklch(0.56 0.2 33);
+  --primary-hover: oklch(0.5 0.19 33);
+  --primary-foreground: oklch(0.99 0.005 85);
+  --secondary: oklch(0.94 0.013 85);
+  --secondary-foreground: oklch(0.215 0.02 55);
+  --muted: oklch(0.94 0.013 85);
+  --muted-foreground: oklch(0.47 0.02 60);
+  --accent: oklch(0.93 0.02 70);
+  --accent-foreground: oklch(0.215 0.02 55);
+  --destructive: oklch(0.5 0.2 27);
+  --border: oklch(0.86 0.015 80);
+  --border-strong: oklch(0.58 0.02 65);
+  --input: oklch(0.58 0.02 65);
+  --ring: oklch(0.5 0.19 262);
+  --radius: 0.5rem;
+
+  --highlight: oklch(0.89 0.16 92);
+  --highlight-foreground: oklch(0.215 0.02 55);
+
+  --danger-bg: oklch(0.96 0.025 25);
+  --success: oklch(0.45 0.12 150);
+  --success-bg: oklch(0.955 0.04 150);
+  --warning: oklch(0.47 0.1 70);
+  --warning-bg: oklch(0.96 0.05 90);
+  --info: oklch(0.45 0.14 255);
+  --info-bg: oklch(0.95 0.025 255);
+
+  /* Provenance: where a value came from. */
+  --prov-qloo: oklch(0.4 0.08 185);
+  --prov-qloo-bg: oklch(0.945 0.035 185);
+  --prov-qloo-border: oklch(0.62 0.09 185);
+  --prov-derived: oklch(0.42 0.15 258);
+  --prov-derived-bg: oklch(0.945 0.025 258);
+  --prov-derived-border: oklch(0.62 0.12 258);
+  --prov-llm: oklch(0.44 0.17 322);
+  --prov-llm-bg: oklch(0.95 0.03 322);
+  --prov-llm-border: oklch(0.62 0.15 322);
+  --prov-recorded: oklch(0.4 0.02 60);
+  --prov-recorded-bg: oklch(0.935 0.012 80);
+  --prov-recorded-border: oklch(0.6 0.02 60);
+
+  --ticket-bg: var(--background);
+}
+
+.dark {
+  color-scheme: dark;
+
+  --background: oklch(0.17 0.012 55);
+  --foreground: oklch(0.95 0.01 85);
+  --card: oklch(0.21 0.014 55);
+  --card-foreground: oklch(0.95 0.01 85);
+  --popover: oklch(0.21 0.014 55);
+  --popover-foreground: oklch(0.95 0.01 85);
+  --primary: oklch(0.72 0.18 40);
+  --primary-hover: oklch(0.78 0.16 42);
+  --primary-foreground: oklch(0.17 0.012 55);
+  --secondary: oklch(0.26 0.015 55);
+  --secondary-foreground: oklch(0.95 0.01 85);
+  --muted: oklch(0.26 0.015 55);
+  --muted-foreground: oklch(0.74 0.015 80);
+  --accent: oklch(0.27 0.02 55);
+  --accent-foreground: oklch(0.95 0.01 85);
+  --destructive: oklch(0.75 0.15 25);
+  --border: oklch(0.32 0.015 55);
+  --border-strong: oklch(0.55 0.02 60);
+  --input: oklch(0.55 0.02 60);
+  --ring: oklch(0.75 0.12 255);
+
+  --highlight: oklch(0.86 0.16 92);
+  --highlight-foreground: oklch(0.2 0.02 55);
+
+  --danger-bg: oklch(0.27 0.06 25);
+  --success: oklch(0.78 0.14 150);
+  --success-bg: oklch(0.26 0.05 150);
+  --warning: oklch(0.8 0.12 85);
+  --warning-bg: oklch(0.28 0.05 85);
+  --info: oklch(0.78 0.11 255);
+  --info-bg: oklch(0.27 0.05 255);
+
+  --prov-qloo: oklch(0.82 0.1 185);
+  --prov-qloo-bg: oklch(0.27 0.04 185);
+  --prov-qloo-border: oklch(0.57 0.08 185);
+  --prov-derived: oklch(0.8 0.1 258);
+  --prov-derived-bg: oklch(0.27 0.045 258);
+  --prov-derived-border: oklch(0.58 0.1 258);
+  --prov-llm: oklch(0.8 0.12 322);
+  --prov-llm-bg: oklch(0.27 0.05 322);
+  --prov-llm-border: oklch(0.58 0.12 322);
+  --prov-recorded: oklch(0.78 0.02 80);
+  --prov-recorded-bg: oklch(0.27 0.012 70);
+  --prov-recorded-border: oklch(0.56 0.02 70);
+}
+
+@theme inline {
+  --font-sans: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-heading: var(--font-sans);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-highlight: var(--highlight);
+  --color-highlight-foreground: var(--highlight-foreground);
+  --color-danger-bg: var(--danger-bg);
+  --color-success: var(--success);
+  --color-success-bg: var(--success-bg);
+  --color-warning: var(--warning);
+  --color-warning-bg: var(--warning-bg);
+  --color-info: var(--info);
+  --color-info-bg: var(--info-bg);
+
+  --color-prov-qloo: var(--prov-qloo);
+  --color-prov-qloo-bg: var(--prov-qloo-bg);
+  --color-prov-qloo-border: var(--prov-qloo-border);
+  --color-prov-derived: var(--prov-derived);
+  --color-prov-derived-bg: var(--prov-derived-bg);
+  --color-prov-derived-border: var(--prov-derived-border);
+  --color-prov-llm: var(--prov-llm);
+  --color-prov-llm-bg: var(--prov-llm-bg);
+  --color-prov-llm-border: var(--prov-llm-border);
+  --color-prov-recorded: var(--prov-recorded);
+  --color-prov-recorded-bg: var(--prov-recorded-bg);
+  --color-prov-recorded-border: var(--prov-recorded-border);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    @apply font-sans;
+    -webkit-text-size-adjust: 100%;
+    scroll-padding-top: 5rem;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--highlight);
+    color: var(--highlight-foreground);
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+}
+
+/*
+ * Type styles. The display face is Archivo's condensed width at heavy weight, set in capitals,
+ * like a festival poster. Body copy uses the same family at normal width.
+ */
+/*
+ * Hero type. Sized from the width of the nearest `@container` ancestor so the longest word
+ * always fits (the widest line, "CONTROL", is about 3.4em wide at this width setting).
+ */
+@utility type-display {
+  font-weight: 800;
+  font-variation-settings: "wdth" 62;
+  text-transform: uppercase;
+  line-height: 0.86;
+  letter-spacing: -0.01em;
+  font-size: min(29cqw, 15rem);
+}
+
+@utility type-headline {
+  font-weight: 800;
+  font-variation-settings: "wdth" 68;
+  text-transform: uppercase;
+  line-height: 0.95;
+  letter-spacing: 0;
+  font-size: clamp(2.25rem, 1.6rem + 3.2vw, 4rem);
+}
+
+@utility type-title {
+  font-weight: 700;
+  font-variation-settings: "wdth" 80;
+  line-height: 1.1;
+  letter-spacing: -0.005em;
+  font-size: clamp(1.375rem, 1.2rem + 0.8vw, 1.75rem);
+}
+
+@utility type-numeral {
+  font-weight: 800;
+  font-variation-settings: "wdth" 66;
+  font-variant-numeric: lining-nums tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+@utility type-wordmark {
+  font-weight: 800;
+  font-variation-settings: "wdth" 68;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  line-height: 1;
+}
+
+@utility type-kicker {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+@utility container-page {
+  width: 100%;
+  max-width: 80rem;
+  margin-inline: auto;
+  padding-inline: 1rem;
+
+  @media (min-width: 40rem) {
+    padding-inline: 1.5rem;
+  }
+
+  @media (min-width: 64rem) {
+    padding-inline: 2.5rem;
+  }
+}
+
+/* A faint column grid, like the time axis of a printed timetable. */
+@utility bg-timegrid {
+  background-image: linear-gradient(
+    to right,
+    color-mix(in oklab, var(--foreground) 9%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: calc(100% / 12) 100%;
+}
+
+@layer components {
+  /* Result card styled as a ticket: perforation line with a notch bitten out of each edge. */
+  .ticket-perforation {
+    position: relative;
+    height: 0;
+    border-top: 2px dashed var(--border-strong);
+  }
+
+  .ticket-perforation::before,
+  .ticket-perforation::after {
+    content: "";
+    position: absolute;
+    top: -0.9rem;
+    width: 1.8rem;
+    height: 1.8rem;
+    border-radius: 9999px;
+    background: var(--ticket-bg);
+    border: 1px solid var(--border);
+  }
+
+  .ticket-perforation::before {
+    left: -0.9rem;
+    clip-path: inset(0 0 0 50%);
+  }
+
+  .ticket-perforation::after {
+    right: -0.9rem;
+    clip-path: inset(0 50% 0 0);
+  }
+
+  /* Blinking caret shown while prose is still streaming in. */
+  .stream-caret::after {
+    content: "";
+    display: inline-block;
+    width: 0.5ch;
+    height: 1.05em;
+    margin-left: 0.15em;
+    vertical-align: -0.15em;
+    background: currentColor;
+    animation: caret-blink 1.05s steps(1) infinite;
+  }
+}
+
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .stream-caret::after {
+    animation: none;
+  }
+}

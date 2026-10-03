@@ -4,7 +4,7 @@ Clash Control helps a festival programmer decide which set-time clash is worth m
 
 **Live demo:** [clash-control.vercel.app](https://clash-control.vercel.app) · [How we know](https://clash-control.vercel.app/method)
 
-Taste overlap is a rank from 0 to 100 among the acts on one day's bill. It is not the share of fans two acts have in common, an attendance estimate or a money figure. The Clash Budget Index compares a day's taste-overlap cost with random valid reorderings of the same lineup (100 is their average; lower is lower cost). It is a reading of one measure, not a verdict on a real festival's programming.
+Taste overlap is a rank from 0 to 100 among the acts compared for this bill. It is not the share of fans two acts have in common, an attendance estimate or a money figure. The Clash Budget Index compares a day's taste-overlap cost with random valid reorderings of the same lineup (100 is their average; lower is lower cost). It is a reading of one measure, not a verdict on a real festival's programming.
 
 ## What the app does
 
@@ -14,10 +14,10 @@ Taste overlap is a rank from 0 to 100 among the acts on one day's bill. It is no
 - **One-page brief.** `/brief` prints the day's figures and the kept plan.
 - **Check a grid (`/check`).** Paste one day of a draft timetable and list its rule breaks and the sets that share time. It runs in the browser: nothing pasted is sent anywhere, and it shows no Qloo-derived value for pasted acts.
 - **How we know (`/method`).** The backtest against press-flagged clashes, including the pre-set test that failed and the exploratory follow-up run afterwards.
-- **Live pair check.** For one displayed pair, the server asks Qloo again and shows the fresh reading beside the saved one. It needs a Qloo key and `PAIR_CHECK_ENABLED`; it is on in the public deployment and stops calling Qloo when the month's remaining allowance falls below `QLOO_QUOTA_FLOOR`.
-- **Agent.** An optional agent explains a clash, tests a move or records a rule through the same engine. It needs a language-model provider, which is off by default and off in the public deployment outside test windows. Recorded runs replay without a model call, with their captured status shown.
+- **Live pair check.** For one displayed pair, the server asks Qloo again and shows the fresh reading beside the saved one. In the code it is off unless `PAIR_CHECK_ENABLED` is set and a Qloo key is present, and it stops calling Qloo when the month's remaining allowance falls below `QLOO_QUOTA_FLOOR`. Whether it is on in the public deployment is a deployment setting, not something this repository fixes.
+- **Agent.** An optional agent explains a clash, tests a move or records a rule through the same engine. In the code it has no language-model provider unless one is configured, and live runs answer 503 until then. Whether the public deployment has one, and in which windows, is a deployment setting. Recorded runs replay without a model call, with their captured status shown.
 
-The backend computes everything on the page. Qloo returns popularity and audience affinities; it does not return the taste-overlap rank, the clash price or the index.
+The backend computes the figures on `/`, `/brief` and in the plan, move and rule routes. `/check` is the exception: it runs in the browser and calls no backend. Qloo returns popularity and audience affinities; it does not return the taste-overlap rank, the clash price or the index.
 
 ## Qloo usage
 
@@ -29,15 +29,15 @@ The code calls three Qloo endpoints and no others. The API key stays on the back
 | `GET /v2/insights` | Rank the other acts on a bill for one act's audience (the affinity readings behind taste overlap). |
 | `GET /v2/analysis/compare` | Read the taste tags two audiences share (clash receipts, `explain_clash`, the live pair check). |
 
-| Where it happens | Requests |
+| Where it happens | Client request records |
 | --- | --- |
 | Building the Glastonbury 2025 Sunday preset | 104 (45 `/search`, 36 `/v2/insights`, 23 `/v2/analysis/compare`) |
 | Building the Riot Fest 2026 Sunday preset | 70 (39 `/search`, 31 `/v2/insights`) |
-| One live pair check | 3 (two `/v2/insights`, one `/v2/analysis/compare`), private, never retried |
+| One live pair check | 3 requests (two `/v2/insights`, one `/v2/analysis/compare`), private, never retried |
 | One `explain_clash` agent tool call | 1 (`/v2/analysis/compare`), only when both acts have a Qloo id |
 | Everything else (decision, moves, rule search, plans, brief, `/check`, recorded runs) | 0 |
 
-The preset counts are the lengths of each preset's saved `requests` list, which holds one record per request the build sent. An agent run is capped at 12 Qloo requests (`AGENT_MAX_QLOO_CALLS_PER_RUN`). A generic explore scenario for the agent (`ALLOW_EXPLORE`, off by default) calls `/search` and `/v2/insights` once per lookup within that cap. Qloo's month allowance is shared across all of this, so the live pair check and the agent's Qloo-backed tools stop calling Qloo below the quota floor.
+The preset counts are the lengths of each preset's saved `requests` list: client request records, one per call the build made through the Qloo client. A call answered from the cache may send no HTTP request and a retried call may send several, so a record is not a count of HTTP requests. The live pair check's three requests are exact: they are private and retries are off. An agent run is capped at 12 Qloo requests (`AGENT_MAX_QLOO_CALLS_PER_RUN`). A generic explore scenario for the agent (`ALLOW_EXPLORE`, off by default) calls `/search` and `/v2/insights` once per lookup within that cap. Qloo's month allowance is shared across all of this, so the live pair check and the agent's Qloo-backed tools stop calling Qloo below the quota floor.
 
 ## Run it locally
 
@@ -78,13 +78,13 @@ cd web && npm run lint && npm run typecheck && npm test
 node --test scripts/*.test.mjs        # from the repository root
 ```
 
-The backend tests use fakes and `httpx.MockTransport`; none calls Qloo or a model.
+The backend tests use fakes and `httpx.MockTransport`; none calls Qloo or a model. Tests run on synthetic days; a claims test also reads the local presets when that folder exists, and a few web tests use public act names as labels. No test holds a Qloo value.
 
 ## How it fits together
 
 - `backend/app/schedule/`: the timetable engine. Layout and rule checks, scoring, the Clash Budget Index baseline (random valid timetables), the move search and the rule search.
 - `backend/app/qloo/`: the Qloo client (cache, retries, request records, an allowance guard) and the construction of taste overlap from affinity rankings.
-- `backend/app/presets.py`, `decision.py`, `whatif.py`, `audit.py`, `pair.py`, `recordings.py`: the read-only API over saved days, plus `POST /api/pair` and `POST /api/presets/{id}/whatif`. The full overlap matrix stays on the server.
+- `backend/app/presets.py`, `decision.py`, `whatif.py`, `audit.py`, `pair.py`, `recordings.py`: the read-only API over saved days, plus `POST /api/pair` and `POST /api/presets/{id}/whatif`. The full overlap matrix stays on the server. Computed move and plan answers share caps of 300 per visitor-hour, 1,500 per visitor-day and 5,000 per day (`WHATIF_PER_VISITOR_HOUR`, `WHATIF_PER_VISITOR_DAY`, `WHATIF_PER_DAY` in `backend/app/config.py`); a plan already computed costs nothing to ask again.
 - `backend/app/agent/`, `runs.py`: the optional agent and its tools, which call the same engine.
 - `web/`: a Next.js 16 app (App Router, Tailwind v4). Pages: `/`, `/method`, `/brief`, `/check`. `next.config.ts` rewrites `/api/*` to the backend; `src/proxy.ts` signs the caller's address for the API's per-visitor caps.
 

@@ -9,7 +9,7 @@
  * a gap is the difference of two printed figures. Pure functions, so they are unit tested.
  */
 
-import { budgetDelta } from "./agent-session";
+import { budgetDelta, oneDecimal } from "./agent-session";
 import { rangeVerdict, type ScaleRange } from "./stack";
 
 /** Shown under every plan and printed under the brief's kept moves: a plan is graded by the measure that found it. */
@@ -35,7 +35,7 @@ function usable(range: ScaleRange): range is NonNullable<ScaleRange> {
  * "0.30000000000001".
  */
 function gapText(value: number, edge: number): string {
-  const tenths = Math.abs(Math.round(value * 10) - edge * 10);
+  const tenths = Math.abs(Math.round(oneDecimal(value) * 10) - edge * 10);
   return (tenths / 10).toFixed(1);
 }
 
@@ -53,18 +53,43 @@ export function rangeLead(range: ScaleRange): string | null {
  * Where a plan's index sits against that band: "This plan scores inside that range.", "...below
  * that range." or "This plan scores 0.3 index points above that range." When the plan is above it
  * and the published timetable is too, the published gap follows, so a plan 0.3 above the band after
- * a 7-point drop never reads as a plan that failed: "The published timetable is 7.7 above it." Null
- * when the band is unknown.
+ * a 7-point drop never reads as a plan that failed: "The published timetable is 7.7 above it." When
+ * the plan's index is higher than the published timetable's, a plain fact is added beside the range
+ * sentence, so a plan that raises the index never reads as good news: "This plan’s index is 2.3
+ * higher than the published timetable’s." Null when the band is unknown.
+ *
+ * `standalone` states the band in the same sentence ("The middle 80% of random valid timetables of
+ * this lineup score 92 to 109; this plan scores below that range."), for the brief, where the band
+ * has not been printed yet when the plan is read.
  */
-export function planVerdict(plan: number, published: number | null, range: ScaleRange): string | null {
+export function planVerdict(
+  plan: number,
+  published: number | null,
+  range: ScaleRange,
+  options: { standalone?: boolean } = {},
+): string | null {
   const verdict = rangeVerdict(plan, range);
   if (!verdict || !usable(range)) return null;
-  if (verdict === "below") return "This plan scores below that range.";
-  if (verdict === "inside") return "This plan scores inside that range.";
-  const { high } = printedBand(range);
-  const sentence = `This plan scores ${gapText(plan, high)} index points above that range.`;
-  if (published === null || rangeVerdict(published, range) !== "above") return sentence;
-  return `${sentence} The published timetable is ${gapText(published, high)} above it.`;
+  const { low, high } = printedBand(range);
+  const clause =
+    verdict === "below"
+      ? "scores below that range"
+      : verdict === "inside"
+        ? "scores inside that range"
+        : `scores ${gapText(plan, high)} index points above that range`;
+  const parts = [
+    options.standalone
+      ? `The middle 80% of random valid timetables of this lineup score ${low} to ${high}; this plan ${clause}.`
+      : `This plan ${clause}.`,
+  ];
+  if (verdict === "above" && published !== null && rangeVerdict(published, range) === "above") {
+    parts.push(`The published timetable is ${gapText(published, high)} above it.`);
+  }
+  const delta = budgetDelta(published, plan);
+  if (delta !== null && delta > 0) {
+    parts.push(`This plan’s index is ${delta.toFixed(1)} higher than the published timetable’s.`);
+  }
+  return parts.join(" ");
 }
 
 /**

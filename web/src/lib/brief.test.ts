@@ -27,8 +27,11 @@ import {
   planClashLines,
   planClashesTitle,
   planSummary,
+  planVerdictSentence,
   savedDate,
   sourceHosts,
+  tableClashes,
+  type BriefStep,
 } from "./brief";
 import { PLAN_CAVEAT } from "./plan-copy";
 import type { PairClash, Preset, SetSlot } from "./preset";
@@ -299,6 +302,55 @@ describe("the day's figures", () => {
   });
 });
 
+describe("how many published-day clashes the table lists", () => {
+  const move = (n: number): BriefStep => ({ n, act: "A", place: "P", shift: "s", before: "1.0", after: "0.9", raises: false });
+  const change = (n: number): BriefStep => ({ n, line: "L", before: "1.0", after: "0.9", raises: false, receipt: "r" });
+
+  it("lists five, as the brief always did, unless the kept steps are long", () => {
+    expect(tableClashes([], 1)).toBe(5);
+    expect(tableClashes([move(1), move(2), move(3)], 1)).toBe(5);
+    // Four singles and two kept changes, as a visitor can keep, in two columns.
+    expect(tableClashes([move(1), move(2), move(3), move(4)], 2)).toBe(5);
+    expect(tableClashes([0, 1, 2, 3, 4, 5].map((i) => move(i + 1)), 2)).toBe(5);
+  });
+
+  it("lists three when three long kept changes, or four singles with two of them, would spill past one page", () => {
+    expect(tableClashes([change(1), change(2), change(3)], 1)).toBe(3);
+    // Two long kept changes and a move already reach the foot of a Letter page.
+    expect(tableClashes([change(1), change(2), move(3)], 1)).toBe(3);
+    expect(tableClashes([change(1), move(2), move(3)], 1)).toBe(5);
+    expect(tableClashes([move(1), move(2), move(3), move(4), change(5), change(6)], 2)).toBe(3);
+    // Eight single moves in two columns reach the foot of a Letter page.
+    expect(tableClashes([0, 1, 2, 3, 4, 5, 6, 7].map((i) => move(i + 1)), 2)).toBe(3);
+  });
+
+  it("says how many it lists in the heading", () => {
+    expect(clashesTitle(3, true)).toBe("The three costliest clashes on the published day, before these moves");
+  });
+});
+
+describe("the plan's verdict in the brief", () => {
+  const band = { low: 92.1568, high: 108.5582 };
+
+  it("states the band in the same sentence, since the plan is read before the day's own band", () => {
+    expect(planVerdictSentence({ publishedBudget: 116.71, budget: 109.3 }, band)).toBe(
+      "The middle 80% of random valid timetables of this lineup score 92 to 109; this plan scores 0.3 index points above that range. The published timetable is 7.7 above it.",
+    );
+    expect(planVerdictSentence({ publishedBudget: 116.71, budget: 100 }, band)).toBe(
+      "The middle 80% of random valid timetables of this lineup score 92 to 109; this plan scores inside that range.",
+    );
+    expect(planVerdictSentence({ publishedBudget: 116.71, budget: 100 }, null)).toBeNull();
+  });
+
+  it("states a raised index as a fact, never as a plan that scores well", () => {
+    const sentence = planVerdictSentence({ publishedBudget: 86.5, budget: 88.8 }, band) ?? "";
+    expect(sentence).toBe(
+      "The middle 80% of random valid timetables of this lineup score 92 to 109; this plan scores below that range. This plan’s index is 2.3 higher than the published timetable’s.",
+    );
+    expect(sentence).not.toMatch(/good|better|improve/i);
+  });
+});
+
 describe("kept moves", () => {
   it("sums up the plan from the server's two readings", () => {
     expect(planSummary(PLAN)).toBe("3 kept moves: Clash Budget Index 116.7 → 106.6, 10.1 lower.");
@@ -412,7 +464,7 @@ describe("the brief sheet", () => {
   it("leads with the plan, then the plan's own clashes and the line to decide, then the unmoved day", () => {
     const text = sheetText(makePreset(), PLAN);
     const plan = text.indexOf("Your plan");
-    const verdict = text.indexOf("This plan scores");
+    const verdict = text.indexOf("this plan scores");
     const steps = text.indexOf("1. Act One");
     const own = text.indexOf("The costliest clash with these moves");
     const decide = text.indexOf(TO_DECIDE);
@@ -554,7 +606,7 @@ describe("kept changes in the brief", () => {
   it("sums up a plan with a kept change as steps, and a plan of moves as before", () => {
     expect(planSummary(MIXED_PLAN)).toBe("6 kept steps: Clash Budget Index 116.7 → 100.1, 16.6 lower.");
     expect(planSummary({ ...MIXED_PLAN, steps: [ruleStep(111.85)], budget: 111.85 })).toBe(
-      "1 kept step: Clash Budget Index 116.7 → 111.8, 4.8 lower.",
+      "1 kept step: Clash Budget Index 116.7 → 111.8, 4.9 lower.",
     );
     expect(planSummary(PLAN)).toBe("3 kept moves: Clash Budget Index 116.7 → 106.6, 10.1 lower.");
   });
@@ -566,11 +618,11 @@ describe("kept changes in the brief", () => {
     expect(isBriefRuleStep(second)).toBe(true);
     expect(second).toEqual({
       n: 2,
-      line: "Keep Act One and Act Two apart: Act Two → The Barn 15:30–16:30; Act Three → South Tent 14:15–15:15",
+      line: "Change to keep Act One and Act Two apart: Act Two → The Barn 15:30–16:30; Act Three → South Tent 14:15–15:15",
       before: "110.2",
       after: "111.8",
       raises: true,
-      receipt: "After this plan they share no time, and the plan adds no rule break.",
+      receipt: "Confirmed: after this plan they share no time, and the plan adds no rule break.",
     });
     // A single move keeps its own shape.
     expect(isBriefRuleStep(steps[0])).toBe(false);
@@ -580,7 +632,7 @@ describe("kept changes in the brief", () => {
   it("prints a kept change, its index and its receipt in Your plan", () => {
     const text = sheetText(makePreset(), MIXED_PLAN);
     expect(text).toContain(
-      "2. Keep Act One and Act Two apart: Act Two → The Barn 15:30–16:30; Act Three → South Tent 14:15–15:15 110.2 → 111.8 · raises the index · After this plan they share no time, and the plan adds no rule break.",
+      "2. Change to keep Act One and Act Two apart: Act Two → The Barn 15:30–16:30; Act Three → South Tent 14:15–15:15 110.2 → 111.8 · raises the index · Confirmed: after this plan they share no time, and the plan adds no rule break.",
     );
     expect(text).toContain("1. Act One · North Field 14:30–15:30 30 minutes later, same stage · 116.7 → 110.2");
     expect(text).toContain("6 kept steps: Clash Budget Index 116.7 → 100.1, 16.6 lower.");
@@ -589,9 +641,9 @@ describe("kept changes in the brief", () => {
 
   it("prints the receipt as the server gave it when the pair still shares time or a break was added", () => {
     const still: Plan = { ...PLAN, steps: [ruleStep(108, { ruleHoldsAfter: false })], budget: 108 };
-    expect(sheetText(makePreset(), still)).toContain("After this plan they still share time.");
+    expect(sheetText(makePreset(), still)).toContain("Not confirmed: after this plan they still share time.");
     const broken: Plan = { ...PLAN, steps: [ruleStep(108, { newBreaks: 2 })], budget: 108 };
-    expect(sheetText(makePreset(), broken)).toContain("The plan adds 2 rule breaks.");
+    expect(sheetText(makePreset(), broken)).toContain("After this plan they share no time, but the plan adds 2 rule breaks.");
   });
 
   it("keeps print type at 9 pt or more with four moves and two kept changes", () => {

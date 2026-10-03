@@ -29,7 +29,7 @@ import { drawerRank, drawerRankOf } from "@/lib/lenses";
 import type { PairClash, Preset, PresetSummary } from "@/lib/preset";
 import type { RulePreview } from "@/lib/rule-fix";
 import type { ServerSummary } from "@/lib/server-summary";
-import type { PlanPreview, StackStep } from "@/lib/stack";
+import { isRuleStackStep, sameStep, seedOutcome, type PlanPreview, type StackStep } from "@/lib/stack";
 import { cn } from "@/lib/utils";
 
 import { AgentPanel } from "./agent-panel";
@@ -76,6 +76,15 @@ const PROOF_LINE =
 export const SYNTHETIC_PROOF_LINE =
   "Shown here on an invented day: the server has no built festival day, so the acts, times and readings are made up and no Qloo request was made.";
 
+/**
+ * What a card button adds to its announcement when it takes the place of a plan that is not empty:
+ * "It replaced your earlier 2 kept steps." Null when it adds to nothing or the plan already holds it.
+ */
+function replacedNote(plan: readonly StackStep[], seed: StackStep): string | null {
+  const outcome = seedOutcome(plan, seed);
+  return outcome.kind === "replace" ? `It replaced your earlier ${pluralize(outcome.dropped, "kept step")}.` : null;
+}
+
 /** The proof line sits under the actions on a wide screen and after the card on a phone. */
 function ProofLine({ className, synthetic = false }: { className: string; synthetic?: boolean }) {
   return (
@@ -107,7 +116,7 @@ function HeroActions({ seeDecision, tryMove }: { seeDecision: boolean; tryMove: 
       ) : null}
       {CHECK_LIVE ? (
         <Link href="/check" className={HERO_LINK}>
-          Check your own grid
+          Check a draft grid
         </Link>
       ) : null}
     </div>
@@ -259,11 +268,12 @@ function LoadingView({
     <>
       <HeroLayout
         intro={intro}
+        synthetic={summary?.synthetic === true}
         actions={<HeroActions seeDecision={summary?.decision != null} tryMove={false} />}
         aside={
           <div className="space-y-4">
             {summary?.decision ? <DecisionCard copy={summary.decision} /> : null}
-            <ProofLine className="lg:hidden" />
+            <ProofLine className="lg:hidden" synthetic={summary?.synthetic === true} />
             {summary ? <SummaryScore summary={summary} /> : <ScoreSkeleton />}
             {status}
           </div>
@@ -451,6 +461,8 @@ function PresetView({
   // new nonce replays it, the same one never does.
   const [seedStep, setSeedStep] = useState<{ nonce: number; step: StackStep } | null>(null);
   const [seedRule, setSeedRule] = useState<{ nonce: number; aId: string; bId: string } | null>(null);
+  // The steps the plan holds now, reported by "Try a move", so the decision card can show what is already kept.
+  const [keptSteps, setKeptSteps] = useState<readonly StackStep[]>([]);
 
   const { festival, report } = preset;
   const dayLabel = festival.days[day] ?? `Day ${day + 1}`;
@@ -480,6 +492,16 @@ function PresetView({
   const decisionCopy = useMemo(
     () => (decisionState.status === "ready" ? buildDecisionCopy(preset, decisionState.decision) : null),
     [preset, decisionState],
+  );
+  // What the plan already holds of the card: its move and line 3's change, so the buttons can say so.
+  const seedMove = decisionCopy?.seedMove ?? null;
+  const seedChange = decisionCopy?.seedChange ?? null;
+  const cardKept = useMemo(
+    () => ({
+      move: seedMove !== null && keptSteps.some((step) => !isRuleStackStep(step) && sameStep(step, seedMove)),
+      change: seedChange !== null && keptSteps.some((step) => sameStep(step, seedChange)),
+    }),
+    [seedMove, seedChange, keptSteps],
   );
   const lenses = useLenses(preset.id, day);
   const lensRank = useMemo(() => drawerRank(lenses), [lenses]);
@@ -524,11 +546,15 @@ function PresetView({
             {decisionCopy ? (
               <DecisionCard
                 copy={decisionCopy}
+                kept={cardKept}
                 onOpenMove={
                   decisionCopy.seedMove
                     ? () => {
                         const move = decisionCopy.seedMove;
-                        if (move) setSeedStep((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, step: move }));
+                        if (!move) return null;
+                        const note = replacedNote(keptSteps, move);
+                        setSeedStep((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, step: move }));
+                        return note;
                       }
                     : undefined
                 }
@@ -544,7 +570,10 @@ function PresetView({
                   decisionCopy.seedChange
                     ? () => {
                         const change = decisionCopy.seedChange;
-                        if (change) setSeedStep((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, step: change }));
+                        if (!change) return null;
+                        const note = replacedNote(keptSteps, change);
+                        setSeedStep((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, step: change }));
+                        return note;
                       }
                     : undefined
                 }
@@ -556,7 +585,13 @@ function PresetView({
             ) : null}
             <ProofLine className="lg:hidden" synthetic={preset.synthetic === true} />
             <Scorecard>
-              <BudgetDial index={index} baseline={report.baseline} reach={reach} compact />
+              <BudgetDial
+                index={index}
+                baseline={report.baseline}
+                reach={reach}
+                compact
+                synthetic={preset.synthetic === true}
+              />
             </Scorecard>
           </div>
         }
@@ -583,7 +618,11 @@ function PresetView({
               toolCalls={allCalls}
               mode="recorded"
               triggerVariant="ink"
-              description={`Every Qloo request behind ${preset.title}, replayed from the saved preset rather than fetched live. The API key stays on the server and is never sent to the browser.`}
+              description={
+                preset.synthetic === true
+                  ? `${preset.title} is an invented day: no Qloo request was made for it, so there is nothing to replay.`
+                  : `Every Qloo request behind ${preset.title}, replayed from the saved preset rather than fetched live. The API key stays on the server and is never sent to the browser.`
+              }
               footnote={`Preset ${preset.id}${preset.built_at ? ` · built ${preset.built_at.slice(0, 10)}` : ""}`}
             />
           </div>
@@ -594,8 +633,8 @@ function PresetView({
           <div className="max-md:hidden">
             <TimetableLegend planShown={planPreview !== null || rulePreview !== null} />
             <p className="mt-2.5 text-xs text-muted-foreground">
-              Lines join the {links.length} costliest clashes; draw on each set is its Qloo
-              popularity. Hover or focus a set to see its clashes, and open any clash for the figures
+              Lines join the {links.length} costliest clashes; draw on each set is its{" "}
+              {preset.synthetic === true ? "invented popularity" : "Qloo popularity"}. Hover or focus a set to see its clashes, and open any clash for the figures
               behind it.
             </p>
           </div>
@@ -628,6 +667,7 @@ function PresetView({
               dimmed={highlight !== null}
               onOpen={openClash}
               onHighlight={(key) => setHighlight(key ? { kind: "clash", key } : null)}
+              synthetic={preset.synthetic === true}
             />
           </div>
           <div className="min-w-0">
@@ -678,6 +718,7 @@ function PresetView({
         onRulePreview={setRulePreview}
         seedStep={seedStep}
         seedRule={seedRule}
+        onKeptChange={setKeptSteps}
       />
 
       <AgentPanel preset={preset} day={day} agentStatus={agentStatus} />

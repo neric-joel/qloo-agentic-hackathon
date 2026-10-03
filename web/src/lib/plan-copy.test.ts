@@ -31,7 +31,9 @@ describe("planVerdict", () => {
   });
 
   it("leaves the published gap out when the published timetable is not above the band", () => {
-    expect(planVerdict(109.3, 104.2, range)).toBe("This plan scores 0.3 index points above that range.");
+    expect(planVerdict(109.3, 104.2, range)).toBe(
+      "This plan scores 0.3 index points above that range. This plan’s index is 5.1 higher than the published timetable’s.",
+    );
   });
 
   it("reads exactly the printed high as inside", () => {
@@ -43,6 +45,29 @@ describe("planVerdict", () => {
   it("reads below the printed low as below", () => {
     expect(planVerdict(91.9, 116.71, range)).toBe("This plan scores below that range.");
     expect(planVerdict(91.96, 116.71, range)).toBe("This plan scores inside that range.");
+  });
+
+  it("states a raised index as a plain fact beside the range sentence, never as good news", () => {
+    // Below the band, and higher than the published index: both are said.
+    expect(planVerdict(88.8, 86.5, range)).toBe(
+      "This plan scores below that range. This plan’s index is 2.3 higher than the published timetable’s.",
+    );
+    expect(planVerdict(100, 98.4, range)).toBe(
+      "This plan scores inside that range. This plan’s index is 1.6 higher than the published timetable’s.",
+    );
+    // A lower or equal index adds nothing.
+    expect(planVerdict(85.5, 86.5, range)).toBe("This plan scores below that range.");
+    expect(planVerdict(86.5, 86.5, range)).toBe("This plan scores below that range.");
+  });
+
+  it("can state the band in the same sentence, for a reader who has not seen it", () => {
+    expect(planVerdict(109.3, 116.71, range, { standalone: true })).toBe(
+      "The middle 80% of random valid timetables of this lineup score 92 to 109; this plan scores 0.3 index points above that range. The published timetable is 7.7 above it.",
+    );
+    expect(planVerdict(88.8, 86.5, range, { standalone: true })).toBe(
+      "The middle 80% of random valid timetables of this lineup score 92 to 109; this plan scores below that range. This plan’s index is 2.3 higher than the published timetable’s.",
+    );
+    expect(planVerdict(100, 116.71, null, { standalone: true })).toBeNull();
   });
 
   it("returns no sentence without a band", () => {

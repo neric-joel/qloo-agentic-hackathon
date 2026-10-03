@@ -53,6 +53,45 @@ export const HOW_TO_READ: readonly string[] = [
   "The Clash Budget Index is 100 for the average random valid timetable of this lineup; lower is better; it counts only what clashes cost: taste overlap, time shared and draw. It is a reading, not a verdict on the festival: real programming weighs much more than taste overlap.",
 ];
 
+/** The same block on an invented day: nothing here credits Qloo, because no Qloo request was made. */
+export const HOW_TO_READ_SYNTHETIC: readonly string[] = [
+  "Taste overlap here is an invented figure for an invented day: a rank among the acts compared for this bill, 0 to 100. It stands for no real audience.",
+  "Combined draw is the two acts’ invented popularity, 0 to 100.",
+  HOW_TO_READ[2],
+];
+
+/** The block for this day: the invented day's wording when the server serves one. */
+export function howToRead(synthetic: boolean): readonly string[] {
+  return synthetic ? HOW_TO_READ_SYNTHETIC : HOW_TO_READ;
+}
+
+/** Under the title: where the figures come from, for a published day and for the invented one. */
+export function briefIntro(festival: string, synthetic: boolean): string {
+  return synthetic
+    ? "Scored by this app on an invented festival day, not a published timetable. No real festival is described."
+    : `Scored by this app from the published timetable. ${festival} does not use Clash Control.`;
+}
+
+/** In place of the table when a day has no priced clash. */
+export function noPricedClashes(synthetic: boolean): string {
+  return synthetic
+    ? "No priced clashes on this day: no two priced acts play at the same time."
+    : "No priced clashes on this day: no two acts with a Qloo signal play at the same time.";
+}
+
+/**
+ * The footer's attribution. A real day: figures calculated from the Qloo audience data saved on a date.
+ * The invented day: said to be invented, with no Qloo request behind it. Then the independence line,
+ * which names the festival only when it is a real one.
+ */
+export function figuresAttribution(preset: Pick<Preset, "built_at" | "synthetic">, festival: string): string {
+  if (preset.synthetic === true) {
+    return "Figures are calculated by this app from an invented day: its acts, times and figures are made up, and no Qloo request was made. This is an independent hackathon entry, not endorsed by Qloo. Prepared for visitors and judges of this demo; not for redistribution.";
+  }
+  const saved = savedDate(preset);
+  return `${saved ? `Figures are calculated by this app from Qloo audience data saved ${saved}.` : "Figures are calculated by this app from saved Qloo audience data."} This is an independent hackathon entry, not endorsed by Qloo or ${festival}. Prepared for visitors and judges of this demo; not for redistribution.`;
+}
+
 /** The Clash Budget Index as the brief prints it: one decimal, as the cards show it. */
 export function formatIndex(value: number): string {
   return value.toFixed(1);
@@ -115,8 +154,16 @@ export function indexSentence(index: number | null): string {
 }
 
 /** "Taste overlap is priced for 36 of 39 sets; 3 have no usable Qloo signal and are not priced." */
-export function coverageSentence(figures: Pick<DayFigures, "scored" | "total" | "unpriced">): string {
+export function coverageSentence(
+  figures: Pick<DayFigures, "scored" | "total" | "unpriced">,
+  synthetic = false,
+): string {
   const { scored, total, unpriced } = figures;
+  if (synthetic) {
+    return unpriced === 0
+      ? `Taste overlap is invented for all ${pluralize(total, "set")}.`
+      : `Taste overlap is invented for ${scored} of ${pluralize(total, "set")}; ${unpriced === 1 ? "1 is" : `${unpriced} are`} not priced.`;
+  }
   if (unpriced === 0) return `Taste overlap is priced for all ${pluralize(total, "set")}.`;
   const rest = unpriced === 1 ? "1 has no usable Qloo signal and is not priced" : `${unpriced} have no usable Qloo signal and are not priced`;
   return `Taste overlap is priced for ${scored} of ${pluralize(total, "set")}; ${rest}.`;
@@ -256,6 +303,30 @@ function dashRange(start: string, end: string): string {
 }
 
 /**
+ * Printed lines a step takes at most. A single move is its heading and its shift line. A kept change is
+ * its heading (two sets are named), the index line and the receipt: three lines in one column, and
+ * about four and a half in half a column, where the same sentences wrap more.
+ */
+function stepLines(step: BriefStep, columns: 1 | 2): number {
+  return isBriefRuleStep(step) ? (columns === 2 ? 4.5 : 3) : 2;
+}
+
+/** A plan that takes this many printed lines or more down its tallest column shortens the published-day table. */
+const HEAVY_PLAN_LINES = 8;
+
+/**
+ * How many of the published day's costliest clashes the table lists. Five, unless the kept steps are so
+ * long (three long two-set changes, in one column, take nine printed lines; eight single moves, in two
+ * columns, take eight) that the sheet would run to the bottom of a Letter page or spill onto a second: then
+ * three, and the heading says "three". `columns` is how many columns
+ * the steps print in (two from four steps).
+ */
+export function tableClashes(steps: readonly BriefStep[], columns: 1 | 2): number {
+  const lines = steps.reduce((sum, step) => sum + stepLines(step, columns), 0);
+  return lines / columns >= HEAVY_PLAN_LINES ? 3 : BRIEF_CLASHES;
+}
+
+/**
  * The plan's steps in order, each with where the set now plays, how far it moved from its
  * published place, and the index before and after it (the server's figures, never recomputed).
  */
@@ -289,14 +360,17 @@ export function briefSteps(preset: Pick<Preset, "festival">, plan: Pick<Plan, "p
 }
 
 /**
- * Where the plan's index sits against the middle 80% of random valid timetables: "This plan scores
- * 5.3 index points above that range. The published timetable is 7.7 above it." Null without a band.
+ * Where the plan's index sits against the middle 80% of random valid timetables, with the band stated
+ * in the same sentence because the plan is read before the day's own band: "The middle 80% of random
+ * valid timetables of this lineup score 92 to 109; this plan scores 5.3 index points above that
+ * range. The published timetable is 7.7 above it." When the plan's index is higher than the
+ * published one, a plain sentence says so. Null without a band.
  */
 export function planVerdictSentence(
   plan: Pick<Plan, "publishedBudget" | "budget">,
   range: ScaleRange,
 ): string | null {
-  return planVerdict(plan.budget, plan.publishedBudget, range);
+  return planVerdict(plan.budget, plan.publishedBudget, range, { standalone: true });
 }
 
 /**

@@ -1,14 +1,21 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ALREADY_KEPT,
   BOTH_LOCKED,
   NO_RESULT,
   fixGhosts,
   fixIndexLine,
   fixStep,
   fixSummary,
+  changeSummaryLine,
   keepAnnouncement,
+  keepChangeLabel,
+  keptChangeAnnouncement,
   lockedNote,
+  plannedNote,
+  replacedChangeAnnouncement,
+  STAGE_FIT_GLOSS,
   moveLine,
   parsePlace,
   parseRuleFixes,
@@ -263,11 +270,48 @@ describe("fixStep", () => {
 });
 
 describe("keeping a change", () => {
-  it("announces what was kept and that the plan is being priced", () => {
+  it("announces a change as meant to keep the pair apart, before the plan's receipt says whether it does", () => {
     const rule = parseRuleFixes(rawRule())!;
-    expect(keepAnnouncement(rule, rule.fixes[0])).toBe(
-      "Kept the change that keeps Ann Arbor and Bo Diddly Squat apart: Ann Arbor at Side 21:30 and Bo Diddly Squat at Main 20:00. Pricing your plan.",
+    const text = "Kept a change meant to keep Ann Arbor and Bo Diddly Squat apart. Pricing your plan.";
+    expect(keepAnnouncement(rule)).toBe(text);
+    expect(keptChangeAnnouncement("Ann Arbor", "Bo Diddly Squat")).toBe(text);
+    expect(replacedChangeAnnouncement("Ann Arbor", "Bo Diddly Squat")).toBe(
+      "Replaced the earlier change for Ann Arbor and Bo Diddly Squat. Pricing your plan.",
     );
+    expect(ALREADY_KEPT).toBe("Already in your plan.");
+  });
+
+  it("labels the decision card's button by what it keeps, and says it in one line with the index", () => {
+    expect(keepChangeLabel(2)).toBe("Keep the two-set change");
+    expect(keepChangeLabel(1)).toBe("Keep the single-set change");
+    const rule = parseRuleFixes(rawRule())!;
+    expect(changeSummaryLine(rule, rule.fixes[0], 104.2)).toBe(
+      "To keep Ann Arbor and Bo Diddly Squat apart: Ann Arbor to Side 21:30–23:00 and Bo Diddly Squat to Main 20:00–21:30; index 104.2 → 98.4.",
+    );
+    // An index that goes up is said to, as a plain word.
+    const higher = parseRuleFixes(rawRule({ fixes: [rawFix({ budget_after: 106.04 })] }))!;
+    expect(changeSummaryLine(higher, higher.fixes[0], 104.2)).toMatch(/; index 104.2 → 106.0, higher.$/);
+    const none = parseRuleFixes(rawRule({ fixes: [rawFix({ budget_after: null })] }))!;
+    expect(changeSummaryLine(none, none.fixes[0], 104.2)).toMatch(/Main 20:00–21:30.$/);
+  });
+
+  it("warns on a row when the plan already moves one of its sets or the pair", () => {
+    const rule = parseRuleFixes(rawRule())!;
+    const fix = rule.fixes[0];
+    expect(plannedNote(rule, fix, new Set())).toBeNull();
+    expect(plannedNote(rule, fix, new Set(["zed"]))).toBeNull();
+    expect(plannedNote(rule, fix, new Set(["ann"]))).toBe(
+      "Found on the published day; your plan already moves Ann Arbor, so the receipt after pricing is what counts.",
+    );
+    expect(plannedNote(rule, fix, new Set(["bo", "ann"]))).toBe(
+      "Found on the published day; your plan already moves Ann Arbor and Bo Diddly Squat, so the receipt after pricing is what counts.",
+    );
+  });
+
+  it("glosses a stage-fit flag as the engine reads it", () => {
+    expect(STAGE_FIT_GLOSS).toMatch(/draw rank/);
+    expect(STAGE_FIT_GLOSS).toMatch(/size tier of its stage/);
+    expect(STAGE_FIT_GLOSS).toMatch(/as this app reads it/);
   });
 
   it("says why a change has no room in the plan", () => {

@@ -31,6 +31,8 @@ type ClashListProps = {
   dimmed: boolean;
   onOpen: (clash: PairClash, trigger: HTMLElement) => void;
   onHighlight: (key: string | null) => void;
+  /** The invented day: its draw and taste figures are invented, not Qloo's. */
+  synthetic?: boolean;
   className?: string;
 };
 
@@ -46,6 +48,7 @@ export function ClashList({
   dimmed,
   onOpen,
   onHighlight,
+  synthetic = false,
   className,
 }: ClashListProps) {
   const maxShare = Math.max(...clashes.map((clash) => clash.regret_share), 0.0001);
@@ -67,13 +70,17 @@ export function ClashList({
               cannot move.
             </>
           ) : null}{" "}
-          Draw is Qloo popularity; taste overlap is a rank on this bill.
+          {synthetic
+            ? "Draw and taste overlap are invented figures; taste overlap is a rank on this bill."
+            : "Draw is Qloo popularity; taste overlap is a rank on this bill."}
         </p>
       </div>
 
       {clashes.length === 0 ? (
         <p className="mt-4 rounded-lg border-2 border-dashed border-border-strong p-4 text-sm text-muted-foreground">
-          No priced clashes on this day: no two acts with a Qloo signal play at the same time.
+          {synthetic
+            ? "No priced clashes on this day: no two priced acts play at the same time."
+            : "No priced clashes on this day: no two acts with a Qloo signal play at the same time."}
         </p>
       ) : (
         <ol className="divide-y divide-border">
@@ -156,7 +163,7 @@ export function ClashList({
                         {formatOverlap(clash.audience_overlap)}
                         <span className="sr-only"> taste overlap, rank on this bill</span>
                       </span>
-                      <span title="Draw (Qloo popularity) of the two acts combined">
+                      <span title={synthetic ? "Draw (invented popularity) of the two acts combined" : "Draw (Qloo popularity) of the two acts combined"}>
                         <span className="text-muted-foreground">Draw </span>
                         {formatDraw(clash.draw)}
                       </span>

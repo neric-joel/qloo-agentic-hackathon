@@ -18,16 +18,28 @@ Answers are kept in small in-process caches, since a preset only changes on rede
 public compute, so computed answers (not cache hits, not refusals) are capped per visitor and per day, per
 server instance. A plan takes its slot before it is priced, so an illegal plan costs one too; the step it
 failed on is remembered, and the same illegal plan again is answered from that with no slot and no work.
+
+Identical plans are single-flight: concurrent first requests for one plan wait on one lock per plan, and all
+but the first find its answer in the cache (or its illegal step remembered) once they hold it, so a plan is
+priced once and takes one slot. A plan is keyed canonically (the two moves of a rule step in a fixed order,
+the pair label unordered); the answer echoes the order the request used. A body over ``MAX_BODY_BYTES`` to
+this route or to the pair check is refused with 413 before it is parsed or takes a slot.
 """
 
 from __future__ import annotations
 
+import re
 import threading
 from collections import OrderedDict
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag, model_validator
+from starlette.datastructures import Headers
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from .agent.clash_tools import (
     GroupStep,
@@ -40,6 +52,7 @@ from .agent.clash_tools import (
 )
 from .config import Settings, get_settings
 from .limits import LimitMessages, RunLimiter, visitor_key
+from .pair import PAIR_PATH
 from .presets import CACHE_CONTROL, Preset, Presets
 from .runs import published_state
 from .schedule.models import format_minutes, parse_minutes
@@ -58,6 +71,9 @@ NO_STORE = {"Cache-Control": "no-store"}
 NOT_ON_THIS_DAY = "That set is not on this festival day."
 PICK_ONCE = "Pick each set once."
 ILLEGAL_STEP = "Step {n} is not a legal place for that set after the steps before it."
+RULE_MOVES_A_SET = "A rule step moves at least one of its two sets."
+TOO_LARGE = "Request too large."
+MAX_BODY_BYTES = 16 * 1024  # the largest legal plan is a few KB; this leaves room for any whitespace
 
 ILLEGAL_CACHE_SIZE = 256
 
@@ -78,6 +94,8 @@ _cache: OrderedDict[tuple[str, str, int], tuple[Preset, dict[str, Any]]] = Order
 _plans: OrderedDict[PlanKey, tuple[Preset, dict[str, Any]]] = OrderedDict()
 _illegal: OrderedDict[PlanKey, tuple[Preset, int]] = OrderedDict()  # the plan's failing step
 _cache_lock = threading.Lock()
+_flights: dict[PlanKey, list[Any]] = {}  # plan key -> [its lock, the requests holding or waiting for it]
+_flights_lock = threading.Lock()
 _limiter: RunLimiter | None = None
 _limiter_lock = threading.Lock()
 
@@ -160,8 +178,12 @@ def get_moves(
         raise HTTPException(status_code=404, detail=NOT_ON_THIS_DAY)
     options = cached_move_options(preset, act, limit)
     if options is None:
-        _take_slot(request, limiter, settings)
-        options = move_options(preset, act, limit)
+        # One computation and one slot for identical first requests; the others read what it stored.
+        with _single_flight(("moves", id(preset), act, limit)):  # type: ignore[arg-type]
+            options = cached_move_options(preset, act, limit)
+            if options is None:
+                _take_slot(request, limiter, settings)
+                options = move_options(preset, act, limit)
     response.headers["Cache-Control"] = CACHE_CONTROL
     return options
 
@@ -249,6 +271,51 @@ def _store_illegal(preset: Preset, key: PlanKey, step: int) -> None:
         _illegal.move_to_end(key)
         while len(_illegal) > ILLEGAL_CACHE_SIZE:
             _illegal.popitem(last=False)
+
+
+@contextmanager
+def _single_flight(key: PlanKey) -> Iterator[None]:
+    """One request at a time per plan: the others wait here, then read what the first stored."""
+    with _flights_lock:
+        flight = _flights.setdefault(key, [threading.Lock(), 0])
+        flight[1] += 1
+    try:
+        with flight[0]:
+            yield
+    finally:
+        with _flights_lock:
+            flight[1] -= 1
+            if flight[1] == 0:
+                del _flights[key]
+
+
+def _canonical(step: PlanMove | PlanGroup) -> PlanMove | PlanGroup:
+    """The step as the cache keys it: a rule step's moves in a fixed order and its pair unordered."""
+    if not isinstance(step, PlanGroup):
+        return step
+    ordered = sorted(step.moves, key=lambda m: (m.act_id, m.stage_id, m.day, m.start))
+    return PlanGroup(moves=tuple(ordered), rule=(min(step.rule), max(step.rule)))
+
+
+def _in_request_order(answer: dict[str, Any], given: list[KeptMove | RuleStep]) -> dict[str, Any]:
+    """The answer with each rule step's pair and moves in the order the request wrote them (the cache holds
+    them in the canonical order). The cached object is never changed."""
+    steps = list(answer["plan"]["steps"])
+    changed = False
+    for n, (asked, kept) in enumerate(zip(given, steps, strict=True)):
+        if not isinstance(asked, RuleStep):
+            continue
+        rule = kept["rule"]
+        if rule["a"]["act_id"] != asked.rule.a:
+            rule = {"a": rule["b"], "b": rule["a"]}
+        order = {m.act: i for i, m in enumerate(asked.moves)}
+        moves = sorted(kept["moves"], key=lambda m: order[m["act_id"]])
+        if rule is not kept["rule"] or moves != kept["moves"]:
+            steps[n] = {**kept, "rule": rule, "moves": moves}
+            changed = True
+    if not changed:
+        return answer
+    return {**answer, "plan": {**answer["plan"], "steps": steps}}
 
 
 def _step_answer(plan: PlanResult, step: Any) -> dict[str, Any]:
@@ -363,20 +430,83 @@ def post_whatif(
     # priced on the timetable that step left), but never one set twice inside one step
     if len(set(plain)) != len(plain) or any(len(set(acts)) != len(acts) for acts in inside):
         raise _refuse(422, PICK_ONCE)
-    moves = tuple(_plan_step(step) for step in body.moves)
+    # A rule step must move one of the two sets it names, so a hand-built link cannot print a pair the moves
+    # do not serve (every change ``/rule-fixes`` lists moves at least one of its pair)
+    if any({m.act for m in step.moves}.isdisjoint((step.rule.a, step.rule.b)) for step in rule_steps):
+        raise _refuse(422, RULE_MOVES_A_SET)
+    moves = tuple(_canonical(_plan_step(step)) for step in body.moves)
     key: PlanKey = (preset.id, moves, body.act, body.limit if body.act is not None else None)
     answer = _cached_plan(preset, key)
     if answer is None:
         if (step := _known_illegal(preset, key)) is not None:
             raise _refuse(422, ILLEGAL_STEP.format(n=step))
-        _take_slot(request, limiter, settings)  # before any engine work: an illegal plan costs a slot too
-        state = published_state(preset)
-        try:
-            plan = apply_plan(state["festival"], state["matrix"], state["config"], moves)
-        except IllegalStep as exc:
-            _store_illegal(preset, key, exc.step)
-            raise _refuse(422, ILLEGAL_STEP.format(n=exc.step)) from None
-        answer = plan_answer(preset, state, plan, body.act, body.limit)
-        _store_plan(preset, key, answer)
+        with _single_flight(key):
+            # With the lock held an identical request may have stored the answer, or its illegal step
+            answer = _cached_plan(preset, key)
+            if answer is None:
+                if (step := _known_illegal(preset, key)) is not None:
+                    raise _refuse(422, ILLEGAL_STEP.format(n=step))
+                _take_slot(
+                    request, limiter, settings
+                )  # before any engine work: an illegal plan costs one too
+                state = published_state(preset)
+                try:
+                    plan = apply_plan(state["festival"], state["matrix"], state["config"], moves)
+                except IllegalStep as exc:
+                    _store_illegal(preset, key, exc.step)
+                    raise _refuse(422, ILLEGAL_STEP.format(n=exc.step)) from None
+                answer = plan_answer(preset, state, plan, body.act, body.limit)
+                _store_plan(preset, key, answer)
     response.headers.update(NO_STORE)
-    return answer
+    return _in_request_order(answer, body.moves)
+
+
+# -------------------------------------------------------------------------------------- the size cap
+
+_CAPPED = re.compile(r"/api/presets/[^/]+/whatif")
+
+
+class BodyLimit:
+    """Refuses a POST to the what-if route or the pair check whose body is over ``MAX_BODY_BYTES`` with 413,
+    before anything parses it or takes a slot. The body is counted as it arrives (a chunked body or a wrong
+    ``Content-Length`` cannot get past) and at most that much is held; a body within the cap is replayed to
+    the app unchanged."""
+
+    def __init__(self, app: ASGIApp, *, limit: int = MAX_BODY_BYTES) -> None:
+        self.app = app
+        self.limit = limit
+
+    def _capped(self, scope: Scope) -> bool:
+        if scope["type"] != "http" or scope["method"] != "POST":
+            return False
+        path = scope["path"].rstrip("/")
+        return path == PAIR_PATH or _CAPPED.fullmatch(path) is not None
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if not self._capped(scope):
+            await self.app(scope, receive, send)
+            return
+        refusal = JSONResponse(status_code=413, content={"detail": TOO_LARGE}, headers=NO_STORE)
+        declared = Headers(scope=scope).get("content-length", "")
+        if declared.isdigit() and int(declared) > self.limit:
+            await refusal(scope, receive, send)
+            return
+        held: list[Message] = []
+        size = 0
+        while True:
+            message = await receive()
+            held.append(message)
+            if message["type"] != "http.request":
+                break
+            size += len(message.get("body", b""))
+            if size > self.limit:
+                await refusal(scope, receive, send)
+                return
+            if not message.get("more_body", False):
+                break
+        replay = iter(held)
+
+        async def replayed() -> Message:
+            return next(replay, None) or await receive()
+
+        await self.app(scope, replayed, send)

@@ -862,7 +862,7 @@ def test_hostile_bodies_are_refused_before_any_request_and_echo_nothing(tmp_path
     serve(tmp_path, fake.client(), limiter)
     a, b = day.pair()
     shapes = [
-        {"preset": "day", "a": "x" * 100_000, "b": b},
+        {"preset": "day", "a": "x" * 10_000, "b": b},  # past the id cap, under the 16 KB body cap
         {"preset": "day", "a": a, "b": b, "extra": True},
         {"preset": "day", "a": 7, "b": b},
         {"preset": ["day", "other"], "a": a, "b": b},

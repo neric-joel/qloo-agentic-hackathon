@@ -54,6 +54,11 @@ const UNREADABLE = /[\p{Cc}\p{Cf}]/u;
 const JOINERS = /[‌‍]/g;
 const SOFT_HYPHEN = /­/g;
 
+/** Fields joined as "3:abc4:wxyz": each is length-prefixed, so a name holding "@" or "|" cannot run into its neighbour. */
+function lengthPrefixed(...fields: string[]): string {
+  return fields.map((field) => `${field.length}:${field}`).join("");
+}
+
 export type CheckSet = {
   /** Line number in the paste, counting from 1. */
   row: number;
@@ -116,7 +121,7 @@ export type CheckOutcome = { ok: true; report: CheckReport } | { ok: false; erro
 
 /** The page's set wording. */
 export const CHECK_COPY = {
-  kicker: "Check your own grid",
+  kicker: "Check a draft grid",
   title: "Check a draft grid against your rules",
   lede: "Paste one day of a draft timetable. This page lists the rule breaks and the sets that share time. It runs in your browser: nothing you paste is sent anywhere, including to Qloo.",
   printTitle: "Draft check, not a verdict",
@@ -407,7 +412,7 @@ export function parseGrid(raw: string): { ok: true; sets: CheckSet[] } | { ok: f
         `Line ${d.row}: starts before 06:00 while other sets start in the afternoon or evening. Write after-midnight times as 24:30 or later so the day reads in order.`,
       );
     }
-    const key = `${normalizeName(d.act)}|${normalizeName(d.stage)}|${d.start}|${d.end}`;
+    const key = lengthPrefixed(normalizeName(d.act), normalizeName(d.stage), String(d.start), String(d.end));
     const first = seen.get(key);
     if (first === undefined) seen.set(key, d.row);
     else problems.add(`Line ${d.row}: the same set as line ${first} (same act, stage and times).`);
@@ -616,6 +621,11 @@ export function findBreaks(sets: readonly CheckSet[], settings: CheckSettings): 
   return [...doubled, ...stacked, ...tight, ...late, ...apart];
 }
 
+/** One set as a pair-id part: act, stage and times, length-prefixed so no field can bleed into the next. */
+function setIdentity(set: CheckSet): string {
+  return lengthPrefixed(set.actKey, set.stageKey, String(set.start), String(set.end));
+}
+
 /** Every two different acts that share a minute, longest first. The same act twice is a rule-1 break, not a pair. */
 export function findShared(sets: readonly CheckSet[]): SharedPair[] {
   const found: SharedPair[] = [];
@@ -627,8 +637,9 @@ export function findShared(sets: readonly CheckSet[]): SharedPair[] {
       if (minutes === 0) continue;
       const windowStart = Math.max(a.start, b.start);
       found.push({
-        // Act, stage and both times: one act booked on two stages at once must not share an id.
-        id: `${a.actKey}@${a.stageKey}@${a.start}-${a.end}|${b.actKey}@${b.stageKey}@${b.start}-${b.end}`,
+        // Act, stage and both times, each field length-prefixed: one act booked on two stages at once
+        // must not share an id, and a name that holds "@" or "|" cannot run into the next field.
+        id: [a, b].map(setIdentity).join("|"),
         a,
         b,
         minutes,

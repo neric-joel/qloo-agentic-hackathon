@@ -34,6 +34,7 @@ NO_STORE = "no-store"
 STEP_1 = {"detail": "Step 1 is not a legal place for that set after the steps before it."}
 STEP_2 = {"detail": "Step 2 is not a legal place for that set after the steps before it."}
 PICK_ONCE = {"detail": "Pick each set once."}
+REQUIRES_A_SET = {"detail": "A rule step moves at least one of its two sets."}
 NOT_ON_DAY = {"detail": "That set is not on this festival day."}
 RECEIPT_KEYS = {"rule", "moves", "budget_after", "rule_holds_after", "new_breaks"}
 MOVED_KEYS = {"act", "act_id", "move", "stage", "stage_id", "day", "start", "end"}
@@ -113,6 +114,11 @@ def step_of(fix: dict, a: str = "a", b: str = "b") -> dict:
 def fixes_of(festival, matrix, config, sets_moved: int | None = None, **kw) -> list[dict]:
     found = search(festival, matrix, config, **kw)["fixes"]
     return [f for f in found if sets_moved is None or f["sets_moved"] == sets_moved]
+
+
+def moved_as_fix(move: dict) -> dict:
+    """A kept move body as the ``act_id`` shape ``plan_move`` reads."""
+    return {"act_id": move["act"], "stage_id": move["stage_id"], "day": move["day"], "start": move["start"]}
 
 
 def plan_move(m: dict) -> PlanMove:
@@ -331,14 +337,24 @@ def test_a_rule_step_may_move_a_set_an_earlier_step_moved_and_is_priced_on_what_
         assert inside.status_code == 422 and inside.json() == PICK_ONCE
 
 
-def test_the_pair_may_be_named_by_a_step_that_moves_neither_of_its_sets(day):
+def test_a_step_that_moves_neither_of_its_sets_is_refused_before_any_slot(day):
+    festival, matrix, config, _ = day
     with TestClient(app) as client:
         elsewhere = post(client, [], act="g").json()["options"]["options"][0]
-        named = rule_step([one("g", elsewhere["stage_id"], elsewhere["start"])])
-        ok = post(client, [named])
-    assert ok.status_code == 200
-    (step,) = ok.json()["plan"]["steps"]
-    assert step["rule_holds_after"] is False and step["new_breaks"] == 0
+        assert visits(client) == 1
+        moved = one("g", elsewhere["stage_id"], elsewhere["start"])
+        refused = post(client, [rule_step([moved])])
+        assert refused.status_code == 422 and refused.json() == REQUIRES_A_SET
+        assert refused.headers["cache-control"] == NO_STORE
+        assert visits(client) == 1
+        # one of the two moves serving the pair is enough, as is the pair naming the moved set
+        named = post(client, [rule_step([moved], "a", "g")])
+        assert visits(client) == 2
+    assert named.status_code == 200
+    (step,) = named.json()["plan"]["steps"]
+    plan = apply_plan(festival, matrix, config, [PlanGroup((plan_move(moved_as_fix(moved)),), ("a", "g"))])
+    assert step["rule_holds_after"] is (shared_after(plan.festival, "a", "g") == 0)
+    assert step["new_breaks"] == 0
 
 
 def test_the_day_may_already_break_a_rule_and_a_step_may_not_add_one(tmp_path, monkeypatch):
@@ -371,7 +387,7 @@ def test_places_that_break_a_rule_or_are_not_places_are_illegal_steps(day):
     festival, matrix, config, _ = day
     fix = fixes_of(festival, matrix, config, 1)[0]
     bad_steps = [
-        rule_step([one("i", "tent", "15:00")]),  # a locked set
+        rule_step([one("i", "tent", "15:00")], "i", "b"),  # a locked set
         rule_step([one("a", "nowhere", "11:00")]),  # no such stage
         rule_step([one("a", "side", "10:00", 1)]),  # a day the festival does not have
         rule_step([one("a", "main", "10:00")]),  # where it already is
@@ -530,7 +546,7 @@ def test_the_cache_key_covers_the_grouping(day, monkeypatch):
     with TestClient(app) as client:
         plain = post(client, [single])
         grouped = post(client, [rule_step([single])])
-        other_pair = post(client, [rule_step([single], "a", "g")])
+        other_pair = post(client, [rule_step([single], "b", "g")])
         again = post(client, [rule_step([single])])
         assert visits(client) == 3
     assert [type(c[0]).__name__ for c in calls] == ["PlanMove", "PlanGroup", "PlanGroup"]

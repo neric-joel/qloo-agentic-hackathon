@@ -53,6 +53,7 @@ function stubHandler(broken = {}) {
       let text = "";
       req.on("data", (chunk) => (text += chunk));
       req.on("end", () => {
+        if (text.length > 16 * 1024) return send(broken.bigBodyStatus ?? 413, { detail: "Request too large." }, "application/json");
         const status = text.includes('"rule"') ? (broken.ruleStepStatus ?? 422) : (broken.whatifStatus ?? 422);
         send(status, { detail: [] }, "application/json");
       });
@@ -96,7 +97,7 @@ describe("runSmoke against a stub deployment", () => {
     assert.deepEqual(failures(results), []);
     assert.equal(lines.length, results.length);
     assert.ok(lines.every((line) => line.startsWith("ok ")), lines.join("\n"));
-    assert.equal(results.length, 15);
+    assert.equal(results.length, 16);
   });
 
   it("skips the API checks when no API origin is given", async () => {
@@ -140,6 +141,8 @@ describe("runSmoke against a stub deployment", () => {
       [{ whatifStatus: 404 }, "web POST first preset what-if with a malformed plan is 422"],
       [{ ruleStepStatus: 200 }, "web POST first preset what-if with a malformed rule step is 422"],
       [{ ruleStepStatus: 404 }, "web POST first preset what-if with a malformed rule step is 422"],
+      [{ bigBodyStatus: 200 }, "web POST first preset what-if with a 20 KB padded body is 413"],
+      [{ bigBodyStatus: 422 }, "web POST first preset what-if with a 20 KB padded body is 413"],
       [{ pairGet: 200 }, "web GET /api/pair is 405"],
       [{ pairPost: 200 }, "web POST /api/pair with an empty body is 422"],
       [{ docsOn: true }, "api /docs is off (404)"],
@@ -216,7 +219,7 @@ describe("the command line", () => {
     const { code, out } = await run([good, "--api", good, "--pair-check", "off"]);
     assert.equal(code, 0, out);
     assert.match(out, /smoke: all checks passed/);
-    assert.equal(out.split("\n").filter((line) => line.startsWith("ok ")).length, 15);
+    assert.equal(out.split("\n").filter((line) => line.startsWith("ok ")).length, 16);
   });
 
   it("exits 1 and names the failing check", async () => {

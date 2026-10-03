@@ -291,6 +291,20 @@ function placesText(fix: RuleFix): string {
 }
 
 /**
+ * One visible line under the decision card's Keep button: what the change does and its index beside
+ * the published one, so a phone reader sees what "this change" is with the reasoning folded: "To keep
+ * Sprints and Katy J Pearson apart: Sprints to The Park 15:00–16:00 and Royel Otis to Woodsies
+ * 14:30–15:15; index 116.7 → 111.8." The index is printed as the route gave it, and is marked when it
+ * is higher than the published one.
+ */
+export function changeSummaryLine(rule: Pick<RuleFixes, "a" | "b">, fix: RuleFix, before: number | null): string {
+  const head = `To keep ${rule.a.act} and ${rule.b.act} apart: ${placesText(fix)}`;
+  if (fix.budgetAfter === null || before === null) return `${head}.`;
+  const raises = Number(fix.budgetAfter.toFixed(1)) > Number(before.toFixed(1));
+  return `${head}; index ${before.toFixed(1)} → ${fix.budgetAfter.toFixed(1)}${raises ? ", higher" : ""}.`;
+}
+
+/**
  * The decision card's rule line: the lead, then what this search found. The single-place count is
  * said first, then the first change as "the smallest change this search found that ends it", with
  * the sets and start-time minutes it moves and its index beside the published one (the index may go
@@ -365,10 +379,58 @@ export function fixStep(rule: Pick<RuleFixes, "a" | "b">, fix: RuleFix): RuleSta
   return { rule: { aId, bId }, moves };
 }
 
-/** What the status region says when a change is kept as one step of the plan. */
-export function keepAnnouncement(rule: Pick<RuleFixes, "a" | "b">, fix: RuleFix): string {
-  const where = fix.moves.map((move) => `${move.act} at ${move.stage} ${move.start}`).join(" and ");
-  return `Kept the change that keeps ${rule.a.act} and ${rule.b.act} apart: ${where}. Pricing your plan.`;
+/**
+ * What the status region says when a change is kept as one step of the plan (the panel's row and the
+ * decision card's button say the same). The change is meant to keep the pair apart; the plan's own
+ * receipt says whether it does, so the words claim no outcome yet.
+ */
+export function keptChangeAnnouncement(aAct: string, bAct: string): string {
+  return `Kept a change meant to keep ${aAct} and ${bAct} apart. Pricing your plan.`;
+}
+
+/** The same for a row of the panel. */
+export function keepAnnouncement(rule: Pick<RuleFixes, "a" | "b">): string {
+  return keptChangeAnnouncement(rule.a.act, rule.b.act);
+}
+
+/** What the status region says when the kept change took the place of the plan's earlier one for the pair. */
+export function replacedChangeAnnouncement(aAct: string, bAct: string): string {
+  return `Replaced the earlier change for ${aAct} and ${bAct}. Pricing your plan.`;
+}
+
+/** What the status region says when Keep is pressed for a step the plan already holds. */
+export const ALREADY_KEPT = "Already in your plan.";
+
+/**
+ * Under a row whose change was found on the published day while the plan already moves one of its
+ * sets or the pair itself: the listed figures are the published day's, so the receipt after pricing
+ * is what counts. Null when the plan moves none of them. `moved` holds the ids the plan moves
+ * (without the step this row would replace).
+ */
+export function plannedNote(rule: Pick<RuleFixes, "a" | "b">, fix: RuleFix, moved: ReadonlySet<string>): string | null {
+  const touched = [
+    ...new Map(
+      [
+        ...fix.moves.map((move) => ({ id: move.actId, name: move.act })),
+        { id: rule.a.actId, name: rule.a.act },
+        { id: rule.b.actId, name: rule.b.act },
+      ]
+        .filter((item) => moved.has(item.id))
+        .map((item) => [item.id, item.name] as const),
+    ).values(),
+  ];
+  if (touched.length === 0) return null;
+  const names = touched.length === 1 ? touched[0] : `${touched.slice(0, -1).join(", ")} and ${touched.at(-1)}`;
+  return `Found on the published day; your plan already moves ${names}, so the receipt after pricing is what counts.`;
+}
+
+/** A plain gloss for "stage-fit flag", worded from the engine: draw rank against the size tier of the stage. */
+export const STAGE_FIT_GLOSS =
+  "A stage-fit flag marks a set whose draw rank does not match the size tier of its stage, beyond a slack of 10% of the lineup, as this app reads it.";
+
+/** "Keep the two-set change" or "Keep the single-set change": what the decision card's button keeps. */
+export function keepChangeLabel(movesInChange: number): string {
+  return movesInChange === 1 ? "Keep the single-set change" : "Keep the two-set change";
 }
 
 /** Under a change that cannot be kept: why the plan has no room for it (a two-set change counts 2 of the 8 moves). */

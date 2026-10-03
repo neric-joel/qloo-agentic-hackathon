@@ -257,6 +257,20 @@ describe("pair ids", () => {
     expect(r.shared).toHaveLength(2);
     expect(new Set(r.shared.map((p) => p.id)).size).toBe(2);
   });
+
+  it("do not collide when a name holds the old delimiters (x@y on z, and x on y@z)", () => {
+    const r = report(["x@y,z,18:00,19:00", "x,y@z,18:00,19:00", "T,Third,18:00,19:00"].join("\n"));
+    expect(r.shared).toHaveLength(3);
+    expect(new Set(r.shared.map((p) => p.id)).size).toBe(3);
+    const bar = report(["a|b,m,18:00,19:00", "a,b|m,18:00,19:00", "T,Third,18:00,19:00"].join("\n"));
+    expect(new Set(bar.shared.map((p) => p.id)).size).toBe(3);
+  });
+
+  it("stay the same for the same pair across a re-check, whatever its row", () => {
+    const first = report(["A,Main,18:00,19:00", "B,Side,18:30,19:30"].join("\n"));
+    const again = report(["Z,Other,10:00,11:00", "A,Main,18:00,19:00", "B,Side,18:30,19:30"].join("\n"));
+    expect(again.shared[0].id).toBe(first.shared[0].id);
+  });
 });
 
 describe("spreadsheet and copy-paste tolerance", () => {

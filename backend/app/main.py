@@ -25,6 +25,7 @@ from .qloo.client import QlooClient
 from .recordings import router as recordings_router
 from .runs import ClashInput, ExploreInput, RunRequest, SessionError, clash_state, execute_run
 from .schedule.api import router as schedule_router
+from .whatif import BodyLimit
 from .whatif import router as whatif_router
 
 MAX_ERRORS = 10  # validation errors returned in one 422 body
@@ -67,6 +68,7 @@ app.include_router(whatif_router)
 app.include_router(audit_router)
 app.include_router(decision_router)
 app.add_middleware(NoStoreOnPairRoute)
+app.add_middleware(BodyLimit)  # outermost: a body over 16 KB to /whatif or /api/pair is a 413 unread
 install_probe(app, get_settings())
 
 _limiter: RunLimiter | None = None

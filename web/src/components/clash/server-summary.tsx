@@ -43,13 +43,16 @@ export function SummaryBoard({ summary }: { summary: ServerSummary }) {
           {summary.clashes.length === 1 ? "the costliest clash" : `the ${summary.clashes.length} costliest clashes`}
         </h2>
         <p className="mt-1.5 text-sm text-muted-foreground">
-          Draw is Qloo popularity; taste overlap is a rank out of 100 on this bill, derived from Qloo
-          data. It is not attendance.
+          {summary.synthetic
+            ? "Draw and taste overlap are invented figures for an invented day, each out of 100 on this bill. No Qloo data is behind them."
+            : "Draw is Qloo popularity; taste overlap is a rank out of 100 on this bill, derived from Qloo data. It is not attendance."}
         </p>
       </div>
       {summary.clashes.length === 0 ? (
         <p className="mt-4 rounded-lg border-2 border-dashed border-border-strong p-4 text-sm text-muted-foreground">
-          No priced clashes on this day: no two acts with a Qloo signal play at the same time.
+          {summary.synthetic
+            ? "No priced clashes on this day: no two priced acts play at the same time."
+            : "No priced clashes on this day: no two acts with a Qloo signal play at the same time."}
         </p>
       ) : (
         <ol className="divide-y divide-border">

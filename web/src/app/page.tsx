@@ -8,7 +8,7 @@ import { loadServerSummary } from "@/lib/server-summary";
  * The pitch. Static, so it paints before any festival data arrives. The actions and the proof line
  * that follow it are drawn by the interactive page, which knows whether a decision card exists.
  */
-function Intro() {
+function Intro({ synthetic = false }: { synthetic?: boolean }) {
   return (
     <>
       <p className="type-kicker text-muted-foreground">For heads of programming, before set times go out</p>
@@ -25,10 +25,13 @@ function Intro() {
         <mark className="-mx-0.5 bg-highlight px-0.5 text-highlight-foreground [box-decoration-break:clone]">
           how much their audiences overlap in taste
         </mark>
-        , from Qloo. Move one set, see what it does to the rest of the day, print the one-page brief.
+        {synthetic ? " (invented on this day)" : ", from Qloo"}. Move one set, see what it does to the rest of the day,
+        print the one-page brief.
       </p>
       <p className="mt-3 max-w-2xl text-xs leading-[1.4] text-muted-foreground sm:text-sm">
-        Taste overlap is derived from Qloo data and ranked within each day&rsquo;s lineup. It is not attendance.
+        {synthetic
+          ? "On this invented day, taste overlap is an invented figure ranked within the day’s lineup. It is not attendance."
+          : "Taste overlap is derived from Qloo data and ranked within each day’s lineup. It is not attendance."}
       </p>
     </>
   );
@@ -60,9 +63,10 @@ export async function generateMetadata({ searchParams }: HomeProps): Promise<Met
 export default async function Home({ searchParams }: HomeProps) {
   // Null when the API does not answer: the page then renders exactly as it does without it.
   const summary = await loadServerSummary(await requestedPreset(searchParams));
+  const synthetic = summary?.synthetic === true;
   return (
-    <Suspense fallback={<ClashControlFallback intro={<Intro />} summary={summary} />}>
-      <ClashControl intro={<Intro />} summary={summary} />
+    <Suspense fallback={<ClashControlFallback intro={<Intro synthetic={synthetic} />} summary={summary} />}>
+      <ClashControl intro={<Intro synthetic={synthetic} />} summary={summary} />
     </Suspense>
   );
 }

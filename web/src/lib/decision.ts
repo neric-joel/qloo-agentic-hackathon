@@ -16,7 +16,18 @@ import { pluralize } from "./format";
 import { clockMinutes } from "./moves";
 import { planVerdict, rangeLead } from "./plan-copy";
 import type { Preset } from "./preset";
-import { fixStep, lowerFirst, parseRuleFixes, ruleSentence, shiftBrief, shiftWords, type RuleFixes } from "./rule-fix";
+import {
+  changeSummaryLine,
+  fixStep,
+  keepChangeLabel,
+  keptChangeAnnouncement,
+  lowerFirst,
+  parseRuleFixes,
+  ruleSentence,
+  shiftBrief,
+  shiftWords,
+  type RuleFixes,
+} from "./rule-fix";
 import { isSafeId, type RuleStackStep, type ScaleRange, type StackMove } from "./stack";
 import { formatClock, formatRange, overlapWindow } from "./timetable";
 
@@ -206,8 +217,12 @@ export type DecisionCopy = {
   seedRule: { aId: string; bId: string } | null;
   /** What "Keep this change" keeps: line 3's change as one step of a plan; null without that change. */
   seedChange: RuleStackStep | null;
-  /** The status line a kept change announces first, "Testing the change that keeps A and B apart." */
+  /** The status line a kept change announces first, "Kept a change meant to keep A and B apart. Pricing your plan." */
   testingChange: string | null;
+  /** What the Keep button's label says it keeps, "Keep the two-set change"; null without that change. */
+  changeLabel: string | null;
+  /** One line under the button saying what that change is and its index, visible on a phone; null without it. */
+  changeSummary: string | null;
   /** The status line a seeded move announces first, "Testing Sprints at 14:15." */
   testing: string | null;
 };
@@ -378,7 +393,13 @@ export function buildDecisionCopy(preset: Preset, decision: Decision | null): De
       seedMove,
       seedRule: tryable ? { aId: clash.aId, bId: clash.bId } : null,
       seedChange: change,
-      testingChange: change && decision.rule ? `Testing the change that keeps ${decision.rule.a.act} and ${decision.rule.b.act} apart.` : null,
+      testingChange:
+        change && decision.rule ? keptChangeAnnouncement(decision.rule.a.act, decision.rule.b.act) : null,
+      changeLabel: change ? keepChangeLabel(change.moves.length) : null,
+      changeSummary:
+        change && decision.rule && decision.rule.fixes[0]
+          ? changeSummaryLine(decision.rule, decision.rule.fixes[0], published)
+          : null,
       testing,
     };
   } catch {

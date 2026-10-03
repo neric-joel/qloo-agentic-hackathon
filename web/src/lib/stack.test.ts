@@ -26,7 +26,11 @@ import {
   requestPlan,
   ruleReceipt,
   ruleStepLine,
+  keepChangeInPlan,
+  sameRulePair,
   sameRuleStep,
+  sameStep,
+  seedOutcome,
   shiftText,
   stepMoves,
   storeMoves,
@@ -510,6 +514,33 @@ describe("requestPlan and fetchPlan", () => {
     expect((await fetchPlan("example-sun", [one], null))?.budget).toBe(110.2);
   });
 
+  it("refuses an answer for another day or another start time, for a move and for a change", async () => {
+    // The same set and stage, but 21:00 instead of the 20:30 asked for.
+    answer(200, body({}, { steps: [step({ start: "21:00", end: "22:00" })] }));
+    expect(await requestPlan("example-sun", [one], null)).toEqual({ status: "error" });
+    // The same set, stage and time on another day.
+    answer(200, body({}, { steps: [step({ day: 1 })] }));
+    expect(await requestPlan("example-sun", [one], null)).toEqual({ status: "error" });
+    // The same time is the same time however it is written ("9:05" asked, "09:05" answered).
+    answer(200, body({}, { steps: [step({ act: "Act Two", act_id: "act-two", stage_id: "east-stage", start: "09:05" })] }));
+    expect((await requestPlan("example-sun", [two], null)).status).toBe("ready");
+    // A rule step: each of its moves is held to its day and start too.
+    answer(200, body({}, { steps: [ruleStep()] }));
+    expect((await requestPlan("example-sun", [change], null)).status).toBe("ready");
+    const later = ruleStep();
+    later.moves[1] = { ...later.moves[1], start: "09:45" };
+    answer(200, body({}, { steps: [later] }));
+    expect((await requestPlan("example-sun", [change], null)).status).toBe("ready");
+    const wrongStart = ruleStep();
+    wrongStart.moves[1] = { ...wrongStart.moves[1], start: "10:00", end: "10:45" };
+    answer(200, body({}, { steps: [wrongStart] }));
+    expect(await requestPlan("example-sun", [change], null)).toEqual({ status: "error" });
+    const wrongDay = ruleStep();
+    wrongDay.moves[0] = { ...wrongDay.moves[0], day: 1 };
+    answer(200, body({}, { steps: [wrongDay] }));
+    expect(await requestPlan("example-sun", [change], null)).toEqual({ status: "error" });
+  });
+
   it("sends nothing for an unsafe preset id", async () => {
     const fetchMock = answer(200, body());
     expect(await requestPlan("../runs", [one], null)).toEqual({ status: "error" });
@@ -731,30 +762,103 @@ describe("words for a rule step", () => {
   it("reads a placed set and the whole step on one line", () => {
     expect(placedLine(priced.moves[0])).toBe("Act Two → East Stage 15:00–16:00");
     expect(ruleStepLine(priced)).toBe(
-      "Keep Act Four and Act Five apart: Act Two → East Stage 15:00–16:00; Act Three → West Stage 9:45–10:30",
+      "Change to keep Act Four and Act Five apart: Act Two → East Stage 15:00–16:00; Act Three → West Stage 9:45–10:30",
     );
   });
 
   it("words the receipt from the two facts the server sends", () => {
+    // The receipt confirms or denies the outcome.
     expect(ruleReceipt({ ruleHoldsAfter: true, newBreaks: 0 })).toBe(
-      "After this plan they share no time, and the plan adds no rule break.",
+      "Confirmed: after this plan they share no time, and the plan adds no rule break.",
     );
-    expect(ruleReceipt({ ruleHoldsAfter: false, newBreaks: 0 })).toBe("After this plan they still share time.");
-    expect(ruleReceipt({ ruleHoldsAfter: true, newBreaks: 1 })).toBe("The plan adds 1 rule break.");
-    expect(ruleReceipt({ ruleHoldsAfter: true, newBreaks: 3 })).toBe("The plan adds 3 rule breaks.");
+    expect(ruleReceipt({ ruleHoldsAfter: false, newBreaks: 0 })).toBe(
+      "Not confirmed: after this plan they still share time.",
+    );
+    expect(ruleReceipt({ ruleHoldsAfter: true, newBreaks: 1 })).toBe(
+      "After this plan they share no time, but the plan adds 1 rule break.",
+    );
+    expect(ruleReceipt({ ruleHoldsAfter: true, newBreaks: 3 })).toBe(
+      "After this plan they share no time, but the plan adds 3 rule breaks.",
+    );
     expect(ruleReceipt({ ruleHoldsAfter: false, newBreaks: 2 })).toBe(
-      "The plan adds 2 rule breaks. After this plan they still share time.",
+      "Not confirmed: after this plan they still share time, and the plan adds 2 rule breaks.",
     );
   });
 
   it("announces a plan with a kept change as steps, with the receipt", () => {
     const text = planAnnouncement({ publishedBudget: 116.71, budget: 111.85, steps: [priced] }, 1);
     expect(text).toBe(
-      "Plan: 1 kept step. Clash Budget Index 116.7 to 111.8, 4.8 lower. Act Four and Act Five: After this plan they share no time, and the plan adds no rule break.",
+      "Plan: 1 kept step. Clash Budget Index 116.7 to 111.8, 4.9 lower. Act Four and Act Five: Confirmed: after this plan they share no time, and the plan adds no rule break.",
     );
     expect(planAnnouncement({ publishedBudget: 116.71, budget: 106.62, steps: [] }, 2)).toBe(
       "Plan: 2 kept moves. Clash Budget Index 116.7 to 106.6, 10.1 lower.",
     );
+  });
+});
+
+describe("steps compared", () => {
+  it("knows a step it already holds, whatever way its time is written", () => {
+    expect(sameStep(one, { ...one })).toBe(true);
+    expect(sameStep(two, { ...two, start: "09:05" })).toBe(true);
+    expect(sameStep(one, { ...one, start: "21:00" })).toBe(false);
+    expect(sameStep(one, change)).toBe(false);
+    expect(sameStep(change, { ...change })).toBe(true);
+    expect(sameStep(change, single)).toBe(false);
+    expect(sameStep(change, { ...change, moves: [change.moves[0], { ...change.moves[1], start: "10:00" }] })).toBe(false);
+  });
+
+  it("knows a pair in either order", () => {
+    expect(sameRulePair(change, { ...change, rule: { aId: "act-five", bId: "act-four" } })).toBe(true);
+    expect(sameRulePair(change, single)).toBe(false);
+  });
+
+  it("says what keeping a step does to a plan: nothing, a replacement, or a fresh start", () => {
+    expect(seedOutcome([], change)).toEqual({ kind: "fresh", dropped: 0 });
+    expect(seedOutcome([one], change)).toEqual({ kind: "replace", dropped: 1 });
+    expect(seedOutcome([one, two], change)).toEqual({ kind: "replace", dropped: 2 });
+    expect(seedOutcome([one, change], change)).toEqual({ kind: "same", dropped: 0 });
+    expect(seedOutcome([one], { ...one })).toEqual({ kind: "same", dropped: 0 });
+  });
+});
+
+describe("keepChangeInPlan", () => {
+  const other: RuleStackStep = {
+    rule: { aId: "act-four", bId: "act-five" },
+    moves: [{ actId: "act-two", stageId: "west-stage", day: 0, start: "10:00" }],
+  };
+
+  it("adds a change for a new pair at the end", () => {
+    const outcome = keepChangeInPlan([one], change);
+    expect(outcome.kind).toBe("added");
+    expect(outcome.steps).toEqual([one, change]);
+    expect(outcome.replaced).toBeNull();
+  });
+
+  it("holds the plan as it is when it already has the change", () => {
+    const outcome = keepChangeInPlan([one, change], { ...change });
+    expect(outcome).toEqual({ kind: "same", steps: [one, change], replaced: null });
+  });
+
+  it("puts a second change for the same pair in the first one's place, in either order of the pair", () => {
+    const outcome = keepChangeInPlan([change, one], other);
+    expect(outcome.kind).toBe("replaced");
+    expect(outcome.steps).toEqual([other, one]);
+    expect(outcome.replaced).toBe(change);
+    const flipped = keepChangeInPlan([change], { ...other, rule: { aId: "act-five", bId: "act-four" } });
+    expect(flipped.kind).toBe("replaced");
+    expect(flipped.steps).toHaveLength(1);
+  });
+
+  it("frees the replaced change's moves before it counts the room", () => {
+    // Six single moves and a two-set change fill the plan's eight moves; a one-set change for the same pair fits.
+    const six = ["a", "b", "c", "d", "e", "f"].map((id): StackMove => ({ actId: `s-${id}`, stageId: "west-stage", day: 0, start: "12:00" }));
+    const full = [...six, change];
+    expect(moveCount(full)).toBe(8);
+    expect(keepChangeInPlan(full, other).kind).toBe("replaced");
+    // A change for another pair has no room.
+    const unrelated: RuleStackStep = { rule: { aId: "x-one", bId: "x-two" }, moves: [{ actId: "x-one", stageId: "west-stage", day: 0, start: "11:00" }] };
+    const refused = keepChangeInPlan(full, unrelated);
+    expect(refused).toEqual({ kind: "full", steps: full, replaced: null });
   });
 });
 

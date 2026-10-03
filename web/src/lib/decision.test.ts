@@ -157,7 +157,7 @@ describe("buildDecisionCopy", () => {
       rule: { aId: "ann", bId: "bo" },
       moves: [{ actId: "bo", stageId: "side", day: 0, start: "21:30" }],
     });
-    expect(copy.testingChange).toBe("Testing the change that keeps Ann Arbor and Bo Diddly Squat apart.");
+    expect(copy.testingChange).toBe("Kept a change meant to keep Ann Arbor and Bo Diddly Squat apart. Pricing your plan.");
     // A two-set change keeps both moves, in the order the list gives them.
     const two = rawRule();
     two.fixes[0].sets_moved = 2;

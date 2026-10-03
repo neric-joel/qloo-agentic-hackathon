@@ -43,7 +43,7 @@ export function SiteHeader() {
               aria-label="Check a draft grid"
               className="hidden rounded-sm py-1 text-sm leading-tight font-semibold whitespace-nowrap underline-offset-4 hover:underline md:inline"
             >
-              Check a grid
+              Check a draft grid
             </Link>
           ) : null}
           {/* No wrapping, so the group's narrowest width is the full toggle plus the link. */}

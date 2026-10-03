@@ -29,6 +29,8 @@ type BudgetDialProps = {
    * rules the random timetables keep and the shaded range stay in the dial's text alternative.
    */
   compact?: boolean;
+  /** The invented day: the text says its figures are invented instead of crediting Qloo. */
+  synthetic?: boolean;
   className?: string;
 };
 
@@ -40,7 +42,14 @@ const ANY_REACH = describeReach({ windowMinutes: null, neighbourStages: false, l
  * tone whichever side it falls on, because the dial is a reading, not a grade of a real festival. Every reading is also printed,
  * so nothing depends on the colours.
  */
-export function BudgetDial({ index, baseline, reach = ANY_REACH, compact = false, className }: BudgetDialProps) {
+export function BudgetDial({
+  index,
+  baseline,
+  reach = ANY_REACH,
+  compact = false,
+  synthetic = false,
+  className,
+}: BudgetDialProps) {
   const titleId = useId();
   const descId = useId();
 
@@ -84,7 +93,7 @@ export function BudgetDial({ index, baseline, reach = ANY_REACH, compact = false
         >
           <title id={titleId}>{`Clash Budget Index ${rounded}`}</title>
           <desc id={descId}>
-            {`Taste-overlap cost, calculated from Qloo data. Dial from ${domain.min} to ${domain.max}. 100 is the average of random valid timetables of this lineup` +
+            {`Taste-overlap cost, ${synthetic ? "from invented figures" : "calculated from Qloo data"}. Dial from ${domain.min} to ${domain.max}. 100 is the average of random valid timetables of this lineup` +
               (compact ? ` in which ${reach}` : "") +
               (p10 !== null && p90 !== null
                 ? `; the middle 80% of them score ${Math.round(p10)} to ${Math.round(p90)}.`
@@ -160,7 +169,7 @@ export function BudgetDial({ index, baseline, reach = ANY_REACH, compact = false
         <figcaption className="mt-4 text-sm leading-relaxed">
           <p className="font-medium">
             100 = the average of random valid timetables of this lineup in which {reach}. It counts
-            only what clashes cost: taste overlap, time shared and draw, calculated from Qloo data.
+            only what clashes cost: taste overlap, time shared and draw, {synthetic ? "all invented for this day" : "calculated from Qloo data"}.
           </p>
           <p className="mt-1.5 text-muted-foreground">
             {p10 !== null && p90 !== null

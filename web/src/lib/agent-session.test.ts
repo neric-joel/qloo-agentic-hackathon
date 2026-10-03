@@ -285,6 +285,21 @@ describe("budgetDelta", () => {
     expect(budgetDelta(null, 3)).toBeNull();
     expect(budgetDelta(3, null)).toBeNull();
   });
+
+  it("is the difference of the two figures as toFixed(1) prints them, never of a second rounding", () => {
+    // 111.85 prints as 111.8, so 116.7 to 111.8 is 4.9 lower, not 4.8.
+    expect((111.85).toFixed(1)).toBe("111.8");
+    expect(budgetDelta(116.71, 111.85)).toBe(-4.9);
+    for (const [before, after] of [
+      [116.71, 111.85],
+      [104.25, 99.35],
+      [88.05, 90.45],
+      [100.15, 100.25],
+    ]) {
+      const printed = Number(after.toFixed(1)) - Number(before.toFixed(1));
+      expect(budgetDelta(before, after)).toBe(Math.round(printed * 10) / 10);
+    }
+  });
 });
 
 describe("changeLabel", () => {

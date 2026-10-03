@@ -3,7 +3,13 @@ import Link from "next/link";
 import { CHECK_LIVE } from "@/lib/check-flag";
 import { MOCK_STREAM_ENABLED } from "@/lib/mock-stream";
 
-export function SiteFooter() {
+/** What the footer says about where the figures come from, on a real day and on the invented one. */
+export const FOOTER_SOURCES =
+  "Popularity and audience comparisons are saved Qloo responses; taste overlap and prices are calculated by this app from them. The festivals shown do not use Clash Control; their published timetables are scored by this app.";
+export const FOOTER_SYNTHETIC =
+  "This server is showing an invented example day, not a festival: its acts, times and figures are made up, and no Qloo request was made. Prices are calculated by this app from the invented figures.";
+
+export function SiteFooter({ synthetic = false }: { synthetic?: boolean }) {
   return (
     <footer className="border-t border-border">
       <div className="container-page flex flex-col gap-2 py-8 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
@@ -27,7 +33,9 @@ export function SiteFooter() {
         <p className="max-w-prose">
           {MOCK_STREAM_ENABLED
             ? "Figures on this preview are simulated, and no requests reach Qloo."
-            : "Popularity and audience comparisons are saved Qloo responses; taste overlap and prices are calculated by this app from them. The festivals shown do not use Clash Control; their published timetables are scored by this app."}
+            : synthetic
+              ? FOOTER_SYNTHETIC
+              : FOOTER_SOURCES}
         </p>
       </div>
     </footer>

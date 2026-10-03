@@ -7,6 +7,7 @@ import { SiteHeader } from "@/components/site/site-header";
 import { SyntheticBanner } from "@/components/site/synthetic-banner";
 import { THEME_INIT_SCRIPT } from "@/components/theme/theme-config";
 import { ThemeProvider } from "@/components/theme/theme-provider";
+import { loadSyntheticFlag } from "@/lib/server-summary";
 
 import "./globals.css";
 
@@ -48,7 +49,9 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  // Read on the server so the synthetic notice is in the HTML of every page that shows the day.
+  const synthetic = await loadSyntheticFlag();
   return (
     <html
       lang="en"
@@ -67,12 +70,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             Skip to main content
           </a>
           <MockBanner />
-          <SyntheticBanner />
+          <SyntheticBanner initial={synthetic} />
           <SiteHeader />
           <main id="main" className="flex-1">
             {children}
           </main>
-          <SiteFooter />
+          <SiteFooter synthetic={synthetic} />
         </ThemeProvider>
       </body>
     </html>

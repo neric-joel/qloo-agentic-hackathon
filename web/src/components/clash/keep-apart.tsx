@@ -18,8 +18,12 @@ import {
   fixIndexLine,
   fixStep,
   fixSummary,
+  ALREADY_KEPT,
   keepAnnouncement,
   lockedNote,
+  plannedNote,
+  replacedChangeAnnouncement,
+  STAGE_FIT_GLOSS,
   moveLine,
   previewAnnouncement,
   requestRuleFixes,
@@ -33,7 +37,16 @@ import {
 } from "@/lib/rule-fix";
 import { overlapWindow } from "@/lib/timetable";
 import { pluralize } from "@/lib/format";
-import { MAX_STACK, isRuleStackStep, moveCount, sameRuleStep, type RuleStackStep, type StackStep } from "@/lib/stack";
+import {
+  MAX_STACK,
+  isRuleStackStep,
+  moveCount,
+  keepChangeInPlan,
+  movedActs,
+  sameRuleStep,
+  type RuleStackStep,
+  type StackStep,
+} from "@/lib/stack";
 
 import { useAnnouncement } from "./use-announcement";
 
@@ -83,7 +96,7 @@ function SetOptions({ groups }: { groups: readonly Group[] }) {
 /** Whether a listed change can be kept now: it can, the plan has no room for it, or it is already in the plan. */
 type KeepState = "ready" | "full" | "kept";
 
-function ChangeCard({
+export function ChangeCard({
   fix,
   n,
   before,
@@ -91,6 +104,7 @@ function ChangeCard({
   pressed,
   keepState,
   roomText,
+  note,
   onPreview,
   onKeep,
   buttonRef,
@@ -102,6 +116,8 @@ function ChangeCard({
   pressed: boolean;
   keepState: KeepState | null;
   roomText: string | null;
+  /** Under the buttons: the change replaces the plan's earlier one, or the plan already moves its sets. */
+  note: string | null;
   onPreview: () => void;
   onKeep: () => void;
   buttonRef: (element: HTMLButtonElement | null) => void;
@@ -124,6 +140,7 @@ function ChangeCard({
         {index ? ` · ${index}` : ""}
         {flags ? ` · ${flags}` : ""}
       </p>
+      {flags ? <p className="mt-0.5 text-xs text-muted-foreground">{STAGE_FIT_GLOSS}</p> : null}
       <p className="mt-0.5 text-sm">Adds no rule break; ends this overlap.</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <Button
@@ -139,7 +156,8 @@ function ChangeCard({
           <Button
             type="button"
             variant="outline"
-            disabled={keepState !== "ready"}
+            // A kept row stays pressable: pressing it again says "Already in your plan." and keeps focus here.
+            disabled={keepState === "full"}
             aria-describedby={keepState === "full" ? roomId : undefined}
             onClick={onKeep}
           >
@@ -153,6 +171,7 @@ function ChangeCard({
           {roomText}
         </p>
       ) : null}
+      {note ? <p className="mt-2 text-sm">{note}</p> : null}
     </li>
   );
 }
@@ -334,7 +353,14 @@ export function KeepApart({
     // ghosts show it, so the preview closes.
     setPreviewing(null);
     onPreview?.(null);
-    setAnnouncement(keepAnnouncement(fixes, fix));
+    if (plan.some((item) => isRuleStackStep(item) && sameRuleStep(item, step))) {
+      // Already kept: nothing changes, and the visitor is told so.
+      setAnnouncement(ALREADY_KEPT);
+    } else if (earlierFor(step)) {
+      setAnnouncement(replacedChangeAnnouncement(fixes.a.act, fixes.b.act));
+    } else {
+      setAnnouncement(keepAnnouncement(fixes));
+    }
     onKeep(step);
   }
 
@@ -351,12 +377,40 @@ export function KeepApart({
   const activePreview = previewing && previewing.key === wantedKey ? previewing.index : null;
   const used = moveCount(plan);
   const left = MAX_STACK - used;
+  /** The plan's own change for this step's pair, when it is another change than this one. */
+  function earlierFor(step: RuleStackStep): RuleStackStep | null {
+    return keepChangeInPlan(plan, step).replaced;
+  }
+  // A change for a pair the plan already has one for takes that step's place, so its moves are freed.
+  function roomFor(step: RuleStackStep): number {
+    return left + (earlierFor(step)?.moves.length ?? 0);
+  }
   function keepStateOf(fix: RuleFix, fixes: RuleFixes): KeepState | null {
     if (!onKeep) return null;
     const step = fixStep(fixes, fix);
     if (!step) return null;
-    if (plan.some((item) => isRuleStackStep(item) && sameRuleStep(item, step))) return "kept";
-    return step.moves.length > left ? "full" : "ready";
+    const kind = keepChangeInPlan(plan, step).kind;
+    return kind === "same" ? "kept" : kind === "full" ? "full" : "ready";
+  }
+  function roomTextOf(fix: RuleFix, fixes: RuleFixes): string {
+    const step = fixStep(fixes, fix);
+    return roomNote(fix.moves.length, step ? roomFor(step) : left);
+  }
+  /**
+   * Under a row that is not kept yet: it replaces the plan's earlier change for this pair, and/or the plan
+   * already moves a set it was found for on the published day, so the receipt after pricing is what counts.
+   */
+  function noteOf(fix: RuleFix, fixes: RuleFixes): string | null {
+    if (!onKeep) return null;
+    const step = fixStep(fixes, fix);
+    if (!step || plan.some((item) => isRuleStackStep(item) && sameRuleStep(item, step))) return null;
+    const earlier = earlierFor(step);
+    const parts: string[] = [];
+    if (earlier) parts.push(`Keeping this replaces your earlier change for ${fixes.a.act} and ${fixes.b.act}.`);
+    const rest = earlier ? plan.filter((item) => item !== earlier) : plan;
+    const spoiled = plannedNote(fixes, fix, movedActs(rest));
+    if (spoiled) parts.push(spoiled);
+    return parts.length > 0 ? parts.join(" ") : null;
   }
 
   const canSearch = first !== "" && second !== "" && first !== second && search.status !== "loading";
@@ -505,7 +559,8 @@ export function KeepApart({
                           dayLabel={dayLabel}
                           pressed={activePreview === i}
                           keepState={keepStateOf(fix, result)}
-                          roomText={roomNote(fix.moves.length, left)}
+                          roomText={roomTextOf(fix, result)}
+                          note={noteOf(fix, result)}
                           onPreview={() => previewFix(fix, i, result)}
                           onKeep={() => keepFix(fix, result)}
                           buttonRef={(element) => {

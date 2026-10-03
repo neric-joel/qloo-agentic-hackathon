@@ -2,7 +2,7 @@
 
 import { useId } from "react";
 import Link from "next/link";
-import { FileText, Undo2 } from "lucide-react";
+import { ArrowUp, FileText, Undo2 } from "lucide-react";
 
 import { ProvenanceChip } from "@/components/kernel";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ import {
 } from "@/lib/stack";
 
 import { BudgetMove } from "./budget-move";
+import { DECISION_HEADING_ID } from "./decision-card";
 
 /** The plan's actions: undo the last kept step, start over, and open the plan as a brief. */
 function PlanActions({
@@ -30,12 +31,15 @@ function PlanActions({
   moves,
   onUndo,
   onStartOver,
+  backToDecision = false,
 }: {
   preset: Preset;
   day: number;
   moves: readonly StackStep[];
   onUndo: () => void;
   onStartOver: () => void;
+  /** The plan came from the decision card: offer the way back to it. */
+  backToDecision?: boolean;
 }) {
   const last = moves.at(-1);
   return (
@@ -54,6 +58,24 @@ function PlanActions({
         <FileText aria-hidden="true" className="size-4 shrink-0" />
         Open as a one-page brief
       </Link>
+      {backToDecision ? (
+        <a
+          href={`#${DECISION_HEADING_ID}`}
+          onClick={(event) => {
+            // The card is far above this plan on a phone: scroll back to it and put focus on its heading.
+            const heading = document.getElementById(DECISION_HEADING_ID);
+            if (!heading) return;
+            event.preventDefault();
+            const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            heading.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+            heading.focus({ preventScroll: true });
+          }}
+          className="inline-flex min-h-11 items-center gap-1.5 px-1 text-sm font-semibold underline underline-offset-4 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          <ArrowUp aria-hidden="true" className="size-4 shrink-0" />
+          Back to the decision
+        </a>
+      ) : null}
     </div>
   );
 }
@@ -74,6 +96,7 @@ export function ScratchPlan({
   range,
   onUndo,
   onStartOver,
+  backToDecision = false,
 }: {
   preset: Preset;
   day: number;
@@ -82,6 +105,7 @@ export function ScratchPlan({
   range: ScaleRange;
   onUndo: () => void;
   onStartOver: () => void;
+  backToDecision?: boolean;
 }) {
   const headingId = useId();
   const clashesId = useId();
@@ -168,7 +192,14 @@ export function ScratchPlan({
 
       <p className="mt-5 text-xs leading-relaxed text-muted-foreground">{PLAN_CAVEAT}</p>
 
-      <PlanActions preset={preset} day={day} moves={moves} onUndo={onUndo} onStartOver={onStartOver} />
+      <PlanActions
+        preset={preset}
+        day={day}
+        moves={moves}
+        onUndo={onUndo}
+        onStartOver={onStartOver}
+        backToDecision={backToDecision}
+      />
     </section>
   );
 }

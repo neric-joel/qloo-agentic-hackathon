@@ -9,7 +9,8 @@
  * Nothing here can reach Qloo or a language model: it reads pages and saved presets, asks for a method that is
  * not allowed, asks the first preset for its lenses and its decision (saved data, no Qloo request, no limiter
  * slot), asks its rule search for one set against itself (refused before any search or slot), and sends an empty
- * body to the pair check and to the what-if route, which fail validation before anything is spent.
+ * body to the pair check and to the what-if route, which fail validation before anything is spent, and a 20 KB
+ * padded body to the what-if route, which is refused as too large before it is read.
  */
 
 import { pathToFileURL } from "node:url";
@@ -192,6 +193,16 @@ export async function runSmoke({
       body: JSON.stringify({ moves: [{ rule: { a: "x", b: "x" }, moves: [] }] }),
     });
     expect(page.status === 422, `status ${page.status}`);
+  });
+
+  await check("web POST first preset what-if with a 20 KB padded body is 413", async () => {
+    expect(presetId, "no preset id to read");
+    const page = await request(webOrigin, `/api/presets/${encodeURIComponent(presetId)}/whatif`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: `{"moves": []${" ".repeat(20 * 1024)}}`,
+    });
+    expect(page.status === 413, `status ${page.status}`);
   });
 
   await check("web GET /api/pair is 405", async () => {

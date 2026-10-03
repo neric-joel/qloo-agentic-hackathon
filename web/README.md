@@ -32,7 +32,7 @@ Environment variables are listed in `.env.example`: `BACKEND_URL`, `NEXT_PUBLIC_
 | --- | --- |
 | `/` | The first screen is one decision on the published day: the costliest clash with a legal place that lowers the index, the move, the rule line, and the index before and after. Below it: the index, the priced clashes, the timetable, move and rule tests, the agent panel, recorded runs, and where the numbers come from. `?preset=<id>` selects another day. |
 | `/brief` | A one-page print view of a day's figures and the kept plan. |
-| `/check` | Paste one day of a draft grid and list its rule breaks and shared minutes. It runs in the browser and sends nothing, including to Qloo; it shows no Qloo-derived value for pasted acts. |
+| `/check` | Paste one day of a draft grid and list its rule breaks and shared minutes. It runs entirely in the browser (the backend computes nothing for it) and sends nothing, including to Qloo; it shows no Qloo-derived value for pasted acts. |
 | `/method` | How we know: the backtest, the pre-set test that failed, the exploratory follow-up, coverage, and what one live pair check sends. |
 
 ## Data boundaries
@@ -41,13 +41,13 @@ Environment variables are listed in `.env.example`: `BACKEND_URL`, `NEXT_PUBLIC_
 
 - `/api/presets/{id}/decision`: the day's worked decision.
 - `/api/presets/{id}/lenses`: the costliest clashes ranked with and without taste overlap.
-- `/api/presets/{id}/moves` and `POST /api/presets/{id}/whatif`: the legal places for a set, and a stacked plan priced step by step.
+- `/api/presets/{id}/moves` and `POST /api/presets/{id}/whatif`: the legal places for a set, and a stacked plan priced step by step (a step is one move or one listed rule change). They share the server's caps on computed answers: 300 per visitor-hour, 1,500 per visitor-day and 5,000 per day, none for a plan already computed.
 - `/api/presets/{id}/rule-fixes`: the rule search for one pair of sets.
 - `/api/presets/{id}/recordings`: saved agent runs for replay.
 
-`POST /api/pair` is the live pair check (three Qloo requests; on only when the server operator enables it and a key is set). `POST /api/runs` starts a live agent run and answers 503 while no language-model provider is configured.
+`POST /api/pair` is the live pair check (three Qloo requests; in the code it is off unless `PAIR_CHECK_ENABLED` is set and a key is present, and whether the public deployment turns it on is a deployment setting). `POST /api/runs` starts a live agent run and answers 503 while no language-model provider is configured.
 
-Taste overlap is an app-calculated rank out of 100 among the acts on one bill. Qloo returns artist popularity and audience-affinity data, not the page's taste-overlap rank, clash price or Clash Budget Index. Missing Qloo signals are shown as unpriced. Hidden clashes are examples with source links, not detections. A move's new index is calculated with the same measure used to find it. The method page reports the backtest that missed its pre-set bar.
+Taste overlap is an app-calculated rank out of 100 among the acts compared for this bill. Qloo returns artist popularity and audience-affinity data, not the page's taste-overlap rank, clash price or Clash Budget Index. Missing Qloo signals are shown as unpriced. Hidden clashes are examples with source links, not detections. A move's new index is calculated with the same measure used to find it. The method page reports the backtest that missed its pre-set bar.
 
 ## Structure
 
@@ -70,7 +70,7 @@ The event-stream client handles chunk boundaries, keep-alive comments, malformed
 
 ## Wording and tests
 
-Two scans read every shipped source file: `src/lib/claims-guard.test.ts` rejects wording that treats taste overlap as a count of fans, wording about business or safety effects, and language that presents a move as the best possible one. The backend has a matching scan over its strings and tool output. Tests use invented acts and festivals only; no test or fixture holds Qloo data.
+Two scans read every shipped source file: `src/lib/claims-guard.test.ts` rejects wording that treats taste overlap as a count of fans, wording about business or safety effects, and language that presents a move as the best possible one. The backend has a matching scan over its strings and tool output. Tests run on synthetic days and invented acts. Two exceptions, neither of which holds a Qloo value: `backend/tests/test_claims.py` also reads the local presets when that folder exists, and a few web tests (`decision.test.ts` among them) use public act names as labels.
 
 ## Accessibility and design
 

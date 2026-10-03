@@ -38,6 +38,12 @@ export type ServerSummary = {
   /** The preset id, so the client can tell whether the summary is for the day it is loading. */
   id: string;
   title: string;
+  /**
+   * True when the server serves its invented day (no festival day was built, so no Qloo request was
+   * ever made). Every sentence below that would credit Qloo then says the day is invented instead,
+   * and the page shows the synthetic notice in the server HTML.
+   */
+  synthetic: boolean;
   /** The Clash Budget Index, rounded to a whole number; null when the day has none. */
   index: number | null;
   /** The dial's sentence for the index ("17% more taste-overlap cost than ..."); null without one. */
@@ -71,7 +77,12 @@ function pairList(clashes: readonly SummaryClash[]): string {
   return clashes.map((clash) => `${clash.a} and ${clash.b}`).join("; ");
 }
 
+/** Where the prices of an invented day come from: nowhere real, and no Qloo request. */
+export const SYNTHETIC_EVIDENCE =
+  "Priced from an invented day: its acts, times and figures are made up, and no Qloo request was made.";
+
 function evidenceSentence(preset: Preset): string {
+  if (preset.synthetic === true) return SYNTHETIC_EVIDENCE;
   const { coverage } = preset.report;
   const total = coverage.strong + coverage.weak + coverage.none;
   const unpriced = Math.max(0, total - coverage.scored_acts);
@@ -82,6 +93,9 @@ function evidenceSentence(preset: Preset): string {
   );
 }
 
+/** The prefix an invented day's page description carries, so a shared link never reads as a real festival day. */
+export const SYNTHETIC_DESCRIPTION_LEAD = "Invented example day, no Qloo data:";
+
 function describeDay(preset: Preset, day: number, index: number | null, clashes: readonly SummaryClash[]): string {
   const { festival } = preset;
   const dayLabel = festival.days[day];
@@ -91,8 +105,8 @@ function describeDay(preset: Preset, day: number, index: number | null, clashes:
       ? `${name} has no Clash Budget Index: its random valid timetables could not be sampled.`
       : `${name} scores ${index} on the Clash Budget Index (100 is the average random valid timetable of its lineup; lower is better).`;
   const top = clashes.slice(0, 2);
-  if (top.length === 0) return head;
-  return `${head} ${top.length === 1 ? "Costliest clash" : "Costliest clashes"}: ${pairList(top)}.`;
+  const text = top.length === 0 ? head : `${head} ${top.length === 1 ? "Costliest clash" : "Costliest clashes"}: ${pairList(top)}.`;
+  return preset.synthetic === true ? `${SYNTHETIC_DESCRIPTION_LEAD} ${text}` : text;
 }
 
 /** The first page's figures for a preset, on the first day that has sets (the day the page opens on). */
@@ -111,6 +125,7 @@ export function summarize(preset: Preset, decision: Decision | null = null): Ser
   return {
     id: preset.id,
     title: preset.title,
+    synthetic: preset.synthetic === true,
     index,
     vsRandom: raw === null || index === null ? null : describeVsRandom(raw),
     figure: raw === null || index === null ? null : figureLine(raw),
@@ -192,6 +207,22 @@ async function loadDecision(fetcher: FetchLike, backend: string, id: string, tim
     return parseDecision(await getJson(fetcher, `${backend}${path}`, timeoutMs));
   } catch {
     return null;
+  }
+}
+
+/**
+ * True when the server's first festival day is its invented one. Read from the preset list alone (the
+ * flag is the server's, not the day's), so the layout can print the synthetic notice in the server HTML
+ * of every page. False on any failure: the client banner then still checks after the page loads.
+ */
+export async function loadSyntheticFlag(options: { backend?: string; fetcher?: FetchLike; timeoutMs?: number } = {}): Promise<boolean> {
+  const backend = options.backend ?? resolveBackendUrl(process.env.BACKEND_URL);
+  const fetcher = options.fetcher ?? (fetch as FetchLike);
+  const timeoutMs = options.timeoutMs ?? SUMMARY_TIMEOUT_MS;
+  try {
+    return parsePresetList(await getJson(fetcher, `${backend}/api/presets`, timeoutMs))[0]?.synthetic === true;
+  } catch {
+    return false;
   }
 }
 

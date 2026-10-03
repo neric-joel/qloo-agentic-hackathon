@@ -6,9 +6,10 @@ import { buildDecisionCopy, parseDecision } from "@/lib/decision";
 import type { Demand } from "@/lib/demand";
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
 import { parsePreset } from "@/lib/preset";
+import { parseRuleFixes, plannedNote, STAGE_FIT_GLOSS } from "@/lib/rule-fix";
 
 import { DecisionCard } from "./decision-card";
-import { KeepApart } from "./keep-apart";
+import { ChangeCard, KeepApart } from "./keep-apart";
 import { WhyThisMatters } from "./why-this-matters";
 
 // Every name and figure below is invented for the test.
@@ -34,6 +35,40 @@ const RULE = {
   searched: "x",
   fixes: [],
 };
+
+/** A change that moves two sets, in the order the list gives them. */
+const TWO_SET_FIX = {
+  sets_moved: 2,
+  minutes_moved: 120,
+  stage_changes: 0,
+  budget_after: 98.4,
+  moves: [
+    {
+      act_id: "bo",
+      act: "Bo Diddly Squat",
+      from: "Side 20:30-22:00",
+      stage_id: "side",
+      stage: "Side",
+      day: 0,
+      start: "21:30",
+      end: "23:00",
+      minutes_moved: 60,
+    },
+    {
+      act_id: "ann",
+      act: "Ann Arbor",
+      from: "Main 20:00-21:30",
+      stage_id: "main",
+      stage: "Main",
+      day: 0,
+      start: "19:00",
+      end: "20:30",
+      minutes_moved: 60,
+    },
+  ],
+};
+
+const RULE_RAW = { ...RULE, fixes_found: 1, fixes: [TWO_SET_FIX] };
 
 function copy(overrides: Record<string, unknown> = {}) {
   const decision = parseDecision({
@@ -157,16 +192,44 @@ describe("DecisionCard", () => {
     const shown = text(
       renderToStaticMarkup(createElement(DecisionCard, { copy: withChange, onOpenMove: () => {}, onKeepChange: () => {} })),
     );
-    expect(shown).toContain("Keep this change");
-    expect(text(renderToStaticMarkup(createElement(DecisionCard, { copy: withChange })))).not.toContain("Keep this change");
+    // The button says what it keeps, and a visible line under it says what the change is.
+    expect(withChange.changeLabel).toBe("Keep the single-set change");
+    expect(shown).toContain("Keep the single-set change");
+    expect(shown).toContain(withChange.changeSummary ?? "never");
+    expect(withChange.changeSummary).toBe(
+      "To keep Ann Arbor and Bo Diddly Squat apart: Bo Diddly Squat to Side 21:30–23:00; index 104.2 → 98.4.",
+    );
+    expect(shown).not.toContain("Keep this change");
+    const bare = text(renderToStaticMarkup(createElement(DecisionCard, { copy: withChange })));
+    expect(bare).not.toContain("Keep the single-set change");
+    expect(bare).not.toContain("To keep Ann Arbor");
     // No listed change on line 3: no button, even with a handler.
     const none = text(renderToStaticMarkup(createElement(DecisionCard, { copy: copy(), onKeepChange: () => {} })));
-    expect(none).not.toContain("Keep this change");
+    expect(none).not.toContain("Keep the single-set change");
+    expect(none).not.toContain("Keep the two-set change");
     const html = renderToStaticMarkup(createElement(DecisionCard, { copy: withChange, onKeepChange: () => {} }));
-    // The button names the line it keeps.
-    const id = /aria-describedby="([^"]+)"/.exec(html)?.[1];
-    expect(id).toBeTruthy();
-    expect(html).toContain(`id="${id}"`);
+    // The button is described by line 3 and by the summary line, both in the markup.
+    const ids = /aria-describedby="([^"]+)"/.exec(html)?.[1]?.split(" ") ?? [];
+    expect(ids).toHaveLength(2);
+    for (const id of ids) expect(html).toContain(`id="${id}"`);
+  });
+
+  it("names a two-set change in its label and marks the card once the plan holds it", () => {
+    const two = copy({ rule: { ...RULE, fixes_found: 1, fixes: [TWO_SET_FIX] } });
+    expect(two.changeLabel).toBe("Keep the two-set change");
+    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: two, onKeepChange: () => {} }));
+    expect(text(html)).toContain("Keep the two-set change");
+    expect(text(html)).not.toContain("In your plan");
+    const kept = renderToStaticMarkup(
+      createElement(DecisionCard, { copy: two, onKeepChange: () => {}, kept: { move: false, change: true } }),
+    );
+    expect(text(kept)).toContain("In your plan");
+    expect(text(kept)).toContain("the two-set change");
+    expect(text(kept)).not.toContain("Keep the two-set change");
+    // It is not disabled: a repeat press says "Already in your plan." instead of losing focus.
+    const button = kept.slice(kept.lastIndexOf("<button", kept.indexOf("In your plan")), kept.indexOf("In your plan"));
+    expect(button).not.toBe("");
+    expect(button).not.toContain(`disabled=""`);
   });
 
   it("says so, with no receipt, figure, timeline or move to open, when no place lowers the index", () => {
@@ -239,5 +302,84 @@ describe("KeepApart", () => {
     expect(plain).toContain("(locked)");
     expect(html).toMatch(/<button[^>]*disabled[^>]*>Search<\/button>/);
     expect(plain).not.toContain("Smallest changes first");
+  });
+});
+
+describe("a listed change row", () => {
+  const rule = parseRuleFixes(RULE_RAW)!;
+
+  function row(props: Record<string, unknown> = {}) {
+    return text(
+      renderToStaticMarkup(
+        createElement(ChangeCard, {
+          fix: rule.fixes[0],
+          n: 1,
+          before: 104.2,
+          dayLabel: () => null,
+          pressed: false,
+          keepState: "ready",
+          roomText: null,
+          note: null,
+          onPreview: () => {},
+          onKeep: () => {},
+          buttonRef: () => {},
+          ...props,
+        }),
+      ),
+    );
+  }
+
+  it("shows the note that the plan already moves a set, and the gloss only beside a stage-fit flag", () => {
+    const plain = row({ note: plannedNote(rule, rule.fixes[0], new Set(["ann"])) });
+    expect(plain).toContain(
+      "Found on the published day; your plan already moves Ann Arbor, so the receipt after pricing is what counts.",
+    );
+    expect(plain).toContain("Keep this change");
+    expect(plain).not.toContain("A stage-fit flag marks");
+    expect(row()).not.toContain("Found on the published day");
+    const flagged = row({ fix: { ...rule.fixes[0], flagsNow: 0, flagsAfter: 2 } });
+    expect(flagged).toContain("Adds 2 stage-fit flags");
+    expect(flagged).toContain(STAGE_FIT_GLOSS);
+  });
+
+  it("says a kept change is kept, and keeps its button pressable so a repeat press can answer", () => {
+    const html = renderToStaticMarkup(
+      createElement(ChangeCard, {
+        fix: rule.fixes[0],
+        n: 1,
+        before: 104.2,
+        dayLabel: () => null,
+        pressed: false,
+        keepState: "kept",
+        roomText: null,
+        note: null,
+        onPreview: () => {},
+        onKeep: () => {},
+        buttonRef: () => {},
+      }),
+    );
+    expect(text(html)).toContain("Kept in your plan");
+    const button = html.slice(html.lastIndexOf("<button", html.indexOf("Kept in your plan")), html.indexOf("Kept in your plan"));
+    expect(button).not.toContain(`disabled=""`);
+  });
+
+  it("disables the button only when the plan has no room, and says why", () => {
+    const html = renderToStaticMarkup(
+      createElement(ChangeCard, {
+        fix: rule.fixes[0],
+        n: 1,
+        before: 104.2,
+        dayLabel: () => null,
+        pressed: false,
+        keepState: "full",
+        roomText: "Your plan holds 8 moves, the most it can. Undo one or start over.",
+        note: null,
+        onPreview: () => {},
+        onKeep: () => {},
+        buttonRef: () => {},
+      }),
+    );
+    expect(html).toContain(`disabled=""`);
+    expect(text(html)).toContain("Your plan holds 8 moves");
   });
 });

@@ -15,7 +15,7 @@
  * their names and shapes.
  */
 
-import { budgetDelta, changeLabel } from "./agent-session";
+import { budgetDelta, changeLabel, oneDecimal } from "./agent-session";
 import { pluralize } from "./format";
 import { isRecord } from "./events";
 import { clockMinutes, parseMoves, type MovesResult, type Placement } from "./moves";
@@ -65,14 +65,70 @@ export function sameRuleStep(a: RuleStackStep, b: RuleStackStep): boolean {
     a.rule.aId === b.rule.aId &&
     a.rule.bId === b.rule.bId &&
     a.moves.length === b.moves.length &&
-    a.moves.every(
-      (move, i) =>
-        move.actId === b.moves[i].actId &&
-        move.stageId === b.moves[i].stageId &&
-        move.day === b.moves[i].day &&
-        move.start === b.moves[i].start,
-    )
+    a.moves.every((move, i) => sameMove(move, b.moves[i]))
   );
+}
+
+/** True when two moves put the same set in the same place at the same time. */
+function sameMove(a: StackMove, b: StackMove): boolean {
+  // Times compare as minutes, so "9:15" and "09:15" are one time.
+  return (
+    a.actId === b.actId &&
+    a.stageId === b.stageId &&
+    a.day === b.day &&
+    (a.start === b.start || (clockMinutes(a.start) !== null && clockMinutes(a.start) === clockMinutes(b.start)))
+  );
+}
+
+/** True when two steps are the same: the same move, or the same change for the same pair. */
+export function sameStep(a: StackStep, b: StackStep): boolean {
+  if (isRuleStackStep(a) || isRuleStackStep(b)) {
+    return isRuleStackStep(a) && isRuleStackStep(b) && sameRuleStep(a, b);
+  }
+  return sameMove(a, b);
+}
+
+/** True when two rule steps serve the same pair of sets, in either order. */
+export function sameRulePair(a: RuleStackStep, b: RuleStackStep): boolean {
+  return (
+    (a.rule.aId === b.rule.aId && a.rule.bId === b.rule.bId) ||
+    (a.rule.aId === b.rule.bId && a.rule.bId === b.rule.aId)
+  );
+}
+
+/**
+ * What keeping a listed change does to a plan: nothing when the plan already holds it (`same`); it takes
+ * the place of the plan's earlier change for the same pair (`replaced`, in the same position, so a
+ * second change for a pair is never refused as impossible); it is added at the end (`added`); or the
+ * plan has no room for it (`full`, the plan unchanged). A two-set change counts 2 of the 8 moves, and
+ * the moves of a change it replaces are freed first.
+ */
+export function keepChangeInPlan(
+  plan: readonly StackStep[],
+  step: RuleStackStep,
+): { kind: "same" | "replaced" | "added" | "full"; steps: StackStep[]; replaced: RuleStackStep | null } {
+  if (plan.some((item) => sameStep(item, step))) return { kind: "same", steps: [...plan], replaced: null };
+  const at = plan.findIndex((item) => isRuleStackStep(item) && sameRulePair(item, step));
+  const rest = at >= 0 ? plan.filter((_, i) => i !== at) : plan;
+  if (moveCount(rest) + step.moves.length > MAX_STACK) return { kind: "full", steps: [...plan], replaced: null };
+  const earlier = at >= 0 ? plan[at] : null;
+  if (earlier && isRuleStackStep(earlier)) {
+    return { kind: "replaced", steps: plan.map((item, i) => (i === at ? step : item)), replaced: earlier };
+  }
+  return { kind: "added", steps: [...plan, step], replaced: null };
+}
+
+/**
+ * What keeping `seed` does to a plan that is not empty: nothing when the plan already holds it
+ * (`same`), else it takes the plan's place (`replace`, `dropped` steps lost) as the decision card's
+ * buttons do, or simply starts the plan (`fresh`).
+ */
+export function seedOutcome(
+  plan: readonly StackStep[],
+  seed: StackStep,
+): { kind: "same" | "replace" | "fresh"; dropped: number } {
+  if (plan.some((step) => sameStep(step, seed))) return { kind: "same", dropped: 0 };
+  return plan.length > 0 ? { kind: "replace", dropped: plan.length } : { kind: "fresh", dropped: 0 };
 }
 
 /** One step of a priced plan, as the server words and prices it. */
@@ -370,7 +426,18 @@ export function parsePlan(json: unknown): Plan | null {
 /** The answer to a plan request: priced, refused as impossible (422), or not priced. */
 export type PlanAnswer = { status: "ready"; plan: Plan } | { status: "invalid" } | { status: "error" };
 
-/** True when a priced step is about the step that was asked, kind and sets alike. */
+/** True when a priced place is the one that was asked: the set, stage, day and start time alike. */
+function placeAnswers(
+  priced: Pick<PlanPlaced, "actId" | "stageId" | "day" | "start">,
+  asked: StackMove,
+): boolean {
+  if (priced.actId !== asked.actId || priced.stageId !== asked.stageId || priced.day !== asked.day) return false;
+  // Compared as minutes, so "9:15" and "09:15" are the same time.
+  const pricedStart = clockMinutes(priced.start);
+  return pricedStart !== null && pricedStart === clockMinutes(asked.start);
+}
+
+/** True when a priced step is about the step that was asked, kind, sets, days and times alike. */
 function stepAnswers(priced: PlanEntry, asked: StackStep): boolean {
   if (isPlanRuleStep(priced) || isRuleStackStep(asked)) {
     if (!isPlanRuleStep(priced) || !isRuleStackStep(asked)) return false;
@@ -378,10 +445,10 @@ function stepAnswers(priced: PlanEntry, asked: StackStep): boolean {
       priced.rule.a.actId === asked.rule.aId &&
       priced.rule.b.actId === asked.rule.bId &&
       priced.moves.length === asked.moves.length &&
-      priced.moves.every((move, i) => move.actId === asked.moves[i].actId && move.stageId === asked.moves[i].stageId)
+      priced.moves.every((move, i) => placeAnswers(move, asked.moves[i]))
     );
   }
-  return priced.actId === asked.actId && priced.stageId === asked.stageId;
+  return placeAnswers(priced, asked);
 }
 
 /** True when the answer is about these steps, in this order, and about this set. */
@@ -447,7 +514,7 @@ export async function fetchPlan(
  */
 export function rangeVerdict(value: number, range: ScaleRange): "below" | "inside" | "above" | null {
   if (!range || !Number.isFinite(value) || !Number.isFinite(range.low) || !Number.isFinite(range.high)) return null;
-  const shown = Math.round(value * 10) / 10;
+  const shown = oneDecimal(value);
   if (shown < Math.round(range.low)) return "below";
   if (shown > Math.round(range.high)) return "above";
   return "inside";
@@ -471,26 +538,32 @@ export function placedLine(move: Pick<PlanPlaced, "act" | "stage" | "start" | "e
   return `${move.act} → ${move.stage} ${move.start}–${move.end}`;
 }
 
-/** "Keep Sprints and Katy J Pearson apart: Sprints → The Park 15:00–16:00; Royel Otis → Woodsies 14:30–15:15". */
+/**
+ * "Change to keep Sprints and Katy J Pearson apart: Sprints → The Park 15:00–16:00; Royel Otis →
+ * Woodsies 14:30–15:15". The heading names what the change is meant to do; the receipt under it
+ * says whether the finished plan does it.
+ */
 export function ruleStepLine(step: Pick<PlanRuleStep, "rule" | "moves">): string {
-  return `Keep ${step.rule.a.act} and ${step.rule.b.act} apart: ${step.moves.map(placedLine).join("; ")}`;
+  return `Change to keep ${step.rule.a.act} and ${step.rule.b.act} apart: ${step.moves.map(placedLine).join("; ")}`;
 }
 
 /**
- * What the server says about a rule step, as a fact: "After this plan they share no time, and the
- * plan adds no rule break." (the pair shares no minute after the whole plan and the plan adds no
- * rule break), "After this plan they still share time." (a later step can undo the change), or
- * "The plan adds 1 rule break." (the count is the server's; it follows with the shared-time fact
- * when the pair still shares time).
+ * What the server says about a rule step, as a fact that confirms or denies the outcome: "Confirmed:
+ * after this plan they share no time, and the plan adds no rule break." (the pair shares no minute
+ * after the whole plan and the plan adds no rule break), "Not confirmed: after this plan they still
+ * share time." (a later step can undo the change), or, with rule breaks (the count is the server's),
+ * "After this plan they share no time, but the plan adds 1 rule break."
  */
 export function ruleReceipt(step: Pick<PlanRuleStep, "ruleHoldsAfter" | "newBreaks">): string {
   if (step.newBreaks > 0) {
-    const breaks = `The plan adds ${pluralize(step.newBreaks, "rule break")}.`;
-    return step.ruleHoldsAfter ? breaks : `${breaks} After this plan they still share time.`;
+    const breaks = pluralize(step.newBreaks, "rule break");
+    return step.ruleHoldsAfter
+      ? `After this plan they share no time, but the plan adds ${breaks}.`
+      : `Not confirmed: after this plan they still share time, and the plan adds ${breaks}.`;
   }
   return step.ruleHoldsAfter
-    ? "After this plan they share no time, and the plan adds no rule break."
-    : "After this plan they still share time.";
+    ? "Confirmed: after this plan they share no time, and the plan adds no rule break."
+    : "Not confirmed: after this plan they still share time.";
 }
 
 /**

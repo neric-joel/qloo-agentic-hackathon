@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { ATTRIBUTION, type DecisionCopy, type SharedTimeline } from "@/lib/decision";
+import { ALREADY_KEPT } from "@/lib/rule-fix";
 import { cn } from "@/lib/utils";
 
 import { useAnnouncement } from "./use-announcement";
@@ -158,11 +159,17 @@ export function DecisionCardSkeleton() {
 type DecisionCardProps = {
   copy: DecisionCopy;
   /** Keeps the one move as the plan. Absent in the server HTML, where the page cannot act yet. */
-  onOpenMove?: () => void;
+  onOpenMove?: () => string | null | void;
   /** Opens the rule search for the pair. Absent when there is no rule line to try. */
   onTryRule?: () => void;
-  /** Keeps line 3's change as one step of the plan. Absent in the server HTML and without that change. */
-  onKeepChange?: () => void;
+  /**
+   * Keeps line 3's change as one step of the plan. Absent in the server HTML and without that change.
+   * It may return what the status line should say instead of the default (the plan already holds the
+   * change, or the change takes the place of earlier steps), so nothing is dropped silently.
+   */
+  onKeepChange?: () => string | null | void;
+  /** What the plan already holds of this card: the move, and line 3's change. */
+  kept?: { move: boolean; change: boolean };
   /** Opens the day's hero clash (a hidden clash when it has one), with the button as the place to return to. */
   onOpenHidden?: (trigger: HTMLElement) => void;
   /** What that link says; "Open a hidden clash" unless the day has none. */
@@ -188,6 +195,7 @@ export function DecisionCard({
   onOpenMove,
   onTryRule,
   onKeepChange,
+  kept,
   onOpenHidden,
   hiddenLabel,
   className,
@@ -198,6 +206,7 @@ export function DecisionCard({
   const [expanded, setExpanded] = useState(false);
   const bodyId = useId();
   const ruleLineId = useId();
+  const changeSummaryId = useId();
   const counted = useCount(copy.indexFrom, copy.indexTo, playKey);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
 
@@ -211,9 +220,15 @@ export function DecisionCard({
 
   function openMove() {
     if (!onOpenMove) return;
+    // Pressing it again for a move the plan already holds changes nothing and says so.
+    if (kept?.move) {
+      say(ALREADY_KEPT);
+      onOpenMove();
+      return;
+    }
     setPlayKey((key) => key + 1);
-    say(copy.testing ?? "");
-    onOpenMove();
+    const extra = onOpenMove();
+    say([copy.testing, typeof extra === "string" ? extra : null].filter(Boolean).join(" "));
   }
 
   function tryRule() {
@@ -224,8 +239,13 @@ export function DecisionCard({
 
   function keepChange() {
     if (!onKeepChange) return;
-    say(copy.testingChange ?? "");
-    onKeepChange();
+    if (kept?.change) {
+      say(ALREADY_KEPT);
+      onKeepChange();
+      return;
+    }
+    const extra = onKeepChange();
+    say([copy.testingChange, typeof extra === "string" ? extra : null].filter(Boolean).join(" "));
   }
 
   const figure =
@@ -295,11 +315,30 @@ export function DecisionCard({
             </Button>
           ) : null}
           {onKeepChange && copy.seedChange ? (
-            <Button type="button" variant="outline" aria-describedby={ruleLineId} onClick={keepChange}>
-              Keep this change
+            // Not disabled once kept: it stays pressable so a repeat press says "Already in your plan."
+            // and a keyboard visitor never loses focus to the page.
+            <Button
+              type="button"
+              variant={kept?.change ? "ink" : "outline"}
+              aria-describedby={`${ruleLineId} ${changeSummaryId}`}
+              onClick={keepChange}
+            >
+              {kept?.change ? (
+                <>
+                  <Check aria-hidden="true" />
+                  In your plan<span className="sr-only">: {copy.changeLabel?.replace(/^Keep /, "")}</span>
+                </>
+              ) : (
+                (copy.changeLabel ?? "Keep this change")
+              )}
             </Button>
           ) : null}
         </div>
+      ) : null}
+      {onKeepChange && copy.seedChange && copy.changeSummary ? (
+        <p id={changeSummaryId} className="mt-2 text-xs leading-snug text-muted-foreground">
+          {copy.changeSummary}
+        </p>
       ) : null}
 
       <div className="mt-4 border-t border-border pt-1 sm:pt-3">

@@ -25,11 +25,13 @@ export function SyntheticNotice() {
 
 /**
  * Shown on the pages that print the day when the server has no built preset and serves its invented one
- * (`synthetic: true` on the preset list). Silent if the list cannot be read: the page reports that itself.
+ * (`synthetic: true` on the preset list). `initial` is what the server already read from that list, so
+ * the notice is in the server HTML and does not wait for hydration; the browser then asks again and
+ * follows the answer. If the list cannot be read the page keeps `initial`: it reports its own errors.
  */
-export function SyntheticBanner() {
+export function SyntheticBanner({ initial = false }: { initial?: boolean }) {
   const pathname = usePathname();
-  const [synthetic, setSynthetic] = useState(false);
+  const [synthetic, setSynthetic] = useState(initial);
 
   useEffect(() => {
     if (MOCK_STREAM_ENABLED) return; // the simulated-data banner already covers this build

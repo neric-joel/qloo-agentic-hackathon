@@ -261,9 +261,12 @@ export function suggestedPrompts(
   ];
 }
 
-/** A Clash Budget Index as the cards print it: one decimal. */
-function oneDecimal(value: number): number {
-  return Math.round(value * 10) / 10;
+/**
+ * A Clash Budget Index as the cards print it: one decimal, rounded the way `toFixed(1)` prints it (so
+ * 111.85 is 111.8 here as on the card), never by a second rounding that could differ from the figure shown.
+ */
+export function oneDecimal(value: number): number {
+  return Number(value.toFixed(1));
 }
 
 /**

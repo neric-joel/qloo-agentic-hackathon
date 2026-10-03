@@ -10,27 +10,30 @@ import { Button } from "@/components/ui/button";
 import {
   BRIEF_CLASHES,
   HIDDEN_NOTE,
-  HOW_TO_READ,
   NO_MOVES,
   READING_NOTE,
   TO_DECIDE,
   bandSentence,
+  briefIntro,
   briefRows,
   briefSteps,
   briefTitle,
   clashesTitle,
   coverageSentence,
   dayFigures,
+  figuresAttribution,
   hiddenNames,
   hiddenSentence,
+  howToRead,
   indexSentence,
+  noPricedClashes,
   isBriefRuleStep,
   planClashLines,
   planClashesTitle,
   planSummary,
   planVerdictSentence,
-  savedDate,
   sourceHosts,
+  tableClashes,
   type BriefRow,
 } from "@/lib/brief";
 import { daysWithSets } from "@/lib/clashes";
@@ -389,15 +392,16 @@ export function BriefContent({
   const { festival, day: dayLabel } = briefTitle(preset, day);
   const figures = dayFigures(preset);
   const band = figures.index === null ? null : bandSentence(figures.index, figures.range);
-  const rows = briefRows(preset, day, BRIEF_CLASHES);
   const hidden = hiddenSentence(hiddenNames(preset, day));
   const steps = plan && plan.steps.length > 0 ? briefSteps(preset, plan) : [];
   const withMoves = steps.length > 0;
   const twoColumns = steps.length > 3;
+  // A long plan shortens the published-day table to three clashes so the sheet stays on one page.
+  const rows = briefRows(preset, day, withMoves ? tableClashes(steps, twoColumns ? 2 : 1) : BRIEF_CLASHES);
   const tableTitle = clashesTitle(rows.length, withMoves);
   const planLines = plan && withMoves ? planClashLines(plan) : [];
   const verdict = plan && withMoves ? planVerdictSentence(plan, figures.range) : null;
-  const saved = savedDate(preset);
+  const synthetic = preset.synthetic === true;
   const hosts = sourceHosts(preset);
   const tableCaption = "brief-clashes-caption";
 
@@ -407,16 +411,14 @@ export function BriefContent({
         <strong className="font-semibold">{indexSentence(figures.index)}</strong>
         {band ? ` ${band}` : ""}
       </p>
-      <p className="mt-1 print:mt-[2pt]">{coverageSentence(figures)}</p>
+      <p className="mt-1 print:mt-[2pt]">{coverageSentence(figures, synthetic)}</p>
     </Block>
   );
 
   const tableBlock = (
     <Block title={tableTitle}>
       {rows.length === 0 ? (
-        <p className="text-muted-foreground">
-          No priced clashes on this day: no two acts with a Qloo signal play at the same time.
-        </p>
+        <p className="text-muted-foreground">{noPricedClashes(synthetic)}</p>
       ) : (
         <>
           <p id={tableCaption} className="sr-only">
@@ -441,7 +443,7 @@ export function BriefContent({
   const howBlock = (
     <Block title="How to read this">
       <ul className="list-disc space-y-1 pl-5 marker:text-muted-foreground print:space-y-[1pt] print:pl-[12pt] print:text-[9pt]">
-        {HOW_TO_READ.map((line) => (
+        {howToRead(synthetic).map((line) => (
           <li key={line}>{line}</li>
         ))}
       </ul>
@@ -547,9 +549,7 @@ export function BriefContent({
       >
         {festival} {dayLabel}: where the clash budget goes
       </h1>
-      <p className="mt-2 text-muted-foreground print:mt-[3pt]">
-        Scored by this app from the published timetable. {festival} does not use Clash Control.
-      </p>
+      <p className="mt-2 text-muted-foreground print:mt-[3pt]">{briefIntro(festival, synthetic)}</p>
 
       {withMoves ? (
         <>
@@ -569,13 +569,7 @@ export function BriefContent({
       {howBlock}
 
       <div className="mt-8 border-t border-border pt-3 text-xs leading-relaxed text-muted-foreground print:mt-[6pt] print:pt-[3pt] print:text-[9pt] print:leading-[1.25]">
-        <p>
-          {saved
-            ? `Figures are calculated by this app from Qloo audience data saved ${saved}.`
-            : "Figures are calculated by this app from saved Qloo audience data."}{" "}
-          This is an independent hackathon entry, not endorsed by Qloo or {festival}. Prepared for visitors
-          and judges of this demo; not for redistribution.
-        </p>
+        <p>{figuresAttribution(preset, festival)}</p>
         {hosts.length > 0 ? <p className="mt-1 print:mt-0">Timetable sources: {hosts.join(", ")}.</p> : null}
       </div>
     </article>

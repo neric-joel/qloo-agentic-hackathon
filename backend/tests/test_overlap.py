@@ -7,7 +7,6 @@ from app.qloo.overlap import (
     CONTROL_ARTISTS,
     _billing_parts,
     _normalize,
-    _percentiles,
     _row,
     build_overlap,
     parse_shared_tags,
@@ -87,9 +86,9 @@ async def test_large_lineups_are_scored_in_chunks():
 
 
 def test_percentiles_handle_ties_and_single_values():
-    assert _percentiles({}) == {}
-    assert _percentiles({"a": 0.5}) == {"a": 1.0}
-    ranks = _percentiles({"a": 0.1, "b": 0.5, "c": 0.5, "d": 0.9})
+    assert percentiles({}) == {}
+    assert percentiles({"a": 0.5}) == {"a": 1.0}
+    ranks = percentiles({"a": 0.1, "b": 0.5, "c": 0.5, "d": 0.9})
     assert ranks == {"a": 0.0, "b": 0.5, "c": 0.5, "d": 1.0}
 
 
@@ -202,10 +201,6 @@ async def test_shared_taste_keeps_meaningful_tags_in_score_order():
 
 
 # ----------------------------------------------------------------- pieces shared with the live pair check
-
-
-def test_percentiles_keeps_its_old_name():
-    assert _percentiles is percentiles
 
 
 async def test_row_scores_is_what_a_row_keeps_from_one_answer():

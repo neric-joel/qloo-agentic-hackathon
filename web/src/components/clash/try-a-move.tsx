@@ -27,14 +27,20 @@ import {
   MAX_STACK,
   applyMoves,
   encodeMoves,
+  isRuleStackStep,
+  moveCount,
+  movedActs,
   planAnnouncement,
   planPreview,
   planStarters,
   readStoredMoves,
+  sameRuleStep,
+  stepMoves,
   storeMoves,
   type GhostSlot,
   type PlanPreview,
-  type StackMove,
+  type RuleStackStep,
+  type StackStep,
 } from "@/lib/stack";
 import { cn } from "@/lib/utils";
 
@@ -65,12 +71,20 @@ function byStage(sets: readonly PickableSet[]): StageGroup[] {
 
 /**
  * The plan kept for this preset in this tab, when every move is still a set of this festival that
- * may move. Anything else is dropped, and the server checks the rest.
+ * may move and every rule step's pair is still on this festival. Anything else is dropped, and the
+ * server checks the rest.
  */
-function storedPlan(preset: Preset): StackMove[] {
+function storedPlan(preset: Preset): StackStep[] {
   const stored = readStoredMoves(preset.id);
+  const all = new Set(preset.festival.timetable.map((slot) => slot.act_id));
   const movable = new Set(preset.festival.timetable.filter((slot) => !slot.locked).map((slot) => slot.act_id));
-  return stored.every((move) => movable.has(move.actId)) ? stored : [];
+  return stored.every(
+    (step) =>
+      stepMoves(step).every((move) => movable.has(move.actId)) &&
+      (!isRuleStackStep(step) || (all.has(step.rule.aId) && all.has(step.rule.bId))),
+  )
+    ? stored
+    : [];
 }
 
 function ClashChangeList({
@@ -389,7 +403,7 @@ export function TryAMove({
   isLocked,
   onPlanChange,
   onRulePreview,
-  seedMove = null,
+  seedStep = null,
   seedRule = null,
 }: {
   preset: Preset;
@@ -399,8 +413,11 @@ export function TryAMove({
   onPlanChange?: (preview: PlanPreview | null) => void;
   /** A change previewed from "Keep two sets apart": two ghost slots, never part of the kept plan. */
   onRulePreview?: (preview: RulePreview | null) => void;
-  /** The decision card's move: a new `nonce` makes it the kept plan; the same one does nothing. */
-  seedMove?: { nonce: number; move: StackMove } | null;
+  /**
+   * The decision card's move or change: a new `nonce` makes it the kept plan; the same one does
+   * nothing.
+   */
+  seedStep?: { nonce: number; step: StackStep } | null;
   /** The decision card's rule: a new `nonce` runs the search for the pair in "Keep two sets apart". */
   seedRule?: { nonce: number; aId: string; bId: string } | null;
 }) {
@@ -418,8 +435,9 @@ export function TryAMove({
 
   // The page is drawn in the browser once the festival day has loaded, so the tab's saved plan can
   // be read when this section first renders.
-  const [moves, setMoves] = useState<readonly StackMove[]>(() => storedPlan(preset));
-  const moved = useMemo(() => new Set(moves.map((move) => move.actId)), [moves]);
+  const [moves, setMoves] = useState<readonly StackStep[]>(() => storedPlan(preset));
+  const moved = useMemo(() => movedActs(moves), [moves]);
+  const used = moveCount(moves);
   const timetable = useMemo(() => applyMoves(preset.festival.timetable, moves), [preset, moves]);
 
   const [picked, setPicked] = useState<string | null>(null);
@@ -467,7 +485,7 @@ export function TryAMove({
     notify.current?.(previewRef.current);
   }, [previewKey]);
 
-  function update(next: readonly StackMove[]) {
+  function update(next: readonly StackStep[]) {
     setMoves(next);
     storeMoves(preset.id, next);
   }
@@ -479,44 +497,48 @@ export function TryAMove({
   }, [onRulePreview]);
   const emitRulePreview = useCallback((next: RulePreview | null) => rulePreviewRef.current?.(next), []);
 
-  // A move seeded by the decision card becomes the kept plan: state adjusted while rendering, as
-  // React advises for a prop that changes. The plan is priced as any kept move is (this section's own
-  // `/whatif` request); focus reaches the plan card once the card's own motion (the band and the
-  // figure, 900 ms) has played, at once with reduced motion.
-  const seedNonce = seedMove?.nonce ?? 0;
-  const seedMoveValue = seedMove?.move ?? null;
+  // A move or change seeded by the decision card becomes the kept plan: state adjusted while
+  // rendering, as React advises for a prop that changes. The plan is priced as any kept step is (this
+  // section's own `/whatif` request); for a move, focus reaches the plan card once the card's own
+  // motion (the band and the figure, 900 ms) has played; a change has no motion to wait for. With
+  // reduced motion focus moves at once.
+  const seedNonce = seedStep?.nonce ?? 0;
+  const seedStepValue = seedStep?.step ?? null;
   const [handledSeed, setHandledSeed] = useState(0);
-  const [focusNonce, setFocusNonce] = useState(0);
+  const [focusPlan, setFocusPlan] = useState({ nonce: 0, delay: 900 });
   if (
-    seedMoveValue &&
+    seedStepValue &&
     seedNonce !== 0 &&
     seedNonce !== handledSeed &&
-    sets.some((set) => set.actId === seedMoveValue.actId && !set.locked)
+    stepMoves(seedStepValue).every((move) => sets.some((set) => set.actId === move.actId && !set.locked)) &&
+    (!isRuleStackStep(seedStepValue) ||
+      (sets.some((set) => set.actId === seedStepValue.rule.aId) &&
+        sets.some((set) => set.actId === seedStepValue.rule.bId)))
   ) {
-    const next = [seedMoveValue];
+    const next = [seedStepValue];
     setHandledSeed(seedNonce);
     setMoves(next);
     setPicked(null);
     setPlanNews({ moves: encodeMoves(next), picked: null });
-    setFocusNonce(seedNonce);
+    setFocusPlan({ nonce: seedNonce, delay: isRuleStackStep(seedStepValue) ? 0 : 900 });
   }
   // Keep the tab's plan in step with the moves, whichever way they changed.
   useEffect(() => {
     storeMoves(preset.id, moves);
   }, [preset.id, moves]);
   useEffect(() => {
-    if (focusNonce === 0) return;
+    if (focusPlan.nonce === 0) return;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const show = () => {
       planRef.current?.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
       planRef.current?.focus({ preventScroll: true });
     };
-    const timer = window.setTimeout(show, reduce ? 0 : 900);
+    const timer = window.setTimeout(show, reduce ? 0 : focusPlan.delay);
     return () => window.clearTimeout(timer);
-  }, [focusNonce]);
+  }, [focusPlan]);
 
   function keep(option: PlacedOption) {
-    if (!actId || moves.length >= MAX_STACK || moved.has(actId)) return;
+    if (!actId || used >= MAX_STACK || moved.has(actId)) return;
     const next = [...moves, { actId, stageId: option.stageId, day: option.day, start: option.start }];
     update(next);
     setPicked(null);
@@ -525,7 +547,20 @@ export function TryAMove({
     requestAnimationFrame(() => planRef.current?.focus());
   }
 
+  /** A listed change from "Keep two sets apart", kept as one step; the plan card takes focus. */
+  function keepChange(step: RuleStackStep) {
+    if (used + step.moves.length > MAX_STACK) return;
+    if (moves.some((item) => isRuleStackStep(item) && sameRuleStep(item, step))) return;
+    const next = [...moves, step];
+    update(next);
+    setPicked(null);
+    setPlanNews({ moves: encodeMoves(next), picked: null });
+    // The plan card is where the change now shows; focus reaches it once it is in the page.
+    setFocusPlan((previous) => ({ nonce: previous.nonce + 1, delay: 0 }));
+  }
+
   function undo() {
+    // One press takes back a whole step: a single move, or both sets of a kept change.
     const next = moves.slice(0, -1);
     update(next);
     setPlanNews({ moves: encodeMoves(next), picked });
@@ -668,10 +703,10 @@ export function TryAMove({
                 result={result}
                 preset={preset}
                 timetable={timetable}
-                kept={moves.length}
+                kept={used}
                 range={range}
                 chosen={chosen}
-                keep={{ full: moves.length >= MAX_STACK, onKeep: keep }}
+                keep={{ full: used >= MAX_STACK, onKeep: keep }}
                 onChoose={(next) => setChoice({ key: choiceKey, index: next })}
               />
             ) : null}
@@ -689,10 +724,17 @@ export function TryAMove({
           >
             {state.status === "invalid" ? (
               <div role="alert" className="rounded-xl border border-destructive/50 bg-danger-bg p-5">
-                <p className="text-[0.9375rem] font-semibold">That plan is no longer possible. Start over to try again.</p>
-                <Button type="button" variant="outline" className="mt-3" onClick={startOver}>
-                  Start over
-                </Button>
+                <p className="text-[0.9375rem] font-semibold">
+                  That plan is no longer possible. Undo the last step or start over to try again.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" onClick={undo}>
+                    Undo last step
+                  </Button>
+                  <Button type="button" variant="outline" onClick={startOver}>
+                    Start over
+                  </Button>
+                </div>
               </div>
             ) : state.plan ? (
               <ScratchPlan
@@ -715,7 +757,15 @@ export function TryAMove({
           </div>
         ) : null}
 
-        <KeepApart key={day} preset={preset} day={day} seed={seedRule} onPreview={emitRulePreview} />
+        <KeepApart
+          key={day}
+          preset={preset}
+          day={day}
+          seed={seedRule}
+          onPreview={emitRulePreview}
+          plan={moves}
+          onKeep={keepChange}
+        />
 
         <p role="status" aria-live="polite" className="sr-only">
           {announcement}

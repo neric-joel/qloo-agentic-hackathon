@@ -2,6 +2,9 @@
 
 Presets are built by ``scripts/build_preset.py`` into ``backend/presets/`` (or ``PRESETS_DIR``). They hold
 Qloo-derived data, so that folder is git-ignored: it ships with the deployment, never with the repository.
+
+A clone has no such folder. When the folder is missing or holds no preset, the API serves one invented day
+instead (``synthetic: true``), generated here from a set seed: invented acts and affinities, no Qloo data.
 """
 
 from __future__ import annotations
@@ -16,7 +19,9 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from .config import Settings, get_settings
+from .schedule.metrics import score_festival
 from .schedule.models import Festival, OverlapMatrix
+from .schedule.synthetic import synthetic_festival
 
 router = APIRouter(prefix="/api/presets", tags=["presets"])
 
@@ -34,12 +39,17 @@ class PresetSummary(BaseModel):
     sets: int
     stages: int
     scored_share: float | None
+    synthetic: bool = False
 
 
 class Preset(BaseModel):
     id: str
     title: str
     built_at: str | None = None
+    synthetic: bool = Field(
+        default=False,
+        description="True for the invented day served when no preset was built: no Qloo data in it.",
+    )
     festival: Festival
     matrix: OverlapMatrix
     report: dict[str, Any]
@@ -60,10 +70,43 @@ def _load_all(directory: str) -> dict[str, Preset]:
     return presets
 
 
-def get_presets(settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, Preset]:
+def build_synthetic_preset(*, seed: int = 7, acts: int = 24) -> Preset:
+    """A reproducible one-day festival of invented acts: no key, no Qloo request, no saved Qloo response."""
+    festival, matrix = synthetic_festival(seed, days=1, stages=4, acts=acts)
+    report = score_festival(festival, matrix)
+    return Preset(
+        id=f"{festival.id}-friday",
+        title="Lanternfield Friday (synthetic demo)",
+        synthetic=True,
+        festival=festival,
+        matrix=matrix,
+        report=report.model_dump(mode="json"),
+        requests=[],
+        sources=[],
+        overlap_notes=[
+            "Synthetic example day: every artist, set time, popularity and affinity here is invented.",
+            "No Qloo request was made. Nothing on this day says anything about a real festival.",
+        ],
+    )
+
+
+@lru_cache(maxsize=1)
+def synthetic_presets() -> dict[str, Preset]:
+    """The fallback day, built once per process (one object, which the engine's caches rely on)."""
+    preset = build_synthetic_preset()
+    return {preset.id: preset}
+
+
+def load_presets(settings: Settings) -> dict[str, Preset]:
+    """The presets built into ``presets_dir``; empty when the folder is missing or holds none."""
     if settings.presets_dir is None or not settings.presets_dir.is_dir():
         return {}
     return _load_all(str(settings.presets_dir))
+
+
+def get_presets(settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, Preset]:
+    """The built presets, or the one invented day when there are none (a clone has no presets folder)."""
+    return load_presets(settings) or synthetic_presets()
 
 
 Presets = Annotated[dict[str, Preset], Depends(get_presets)]
@@ -78,6 +121,7 @@ def summarize(preset: Preset) -> PresetSummary:
         sets=len(preset.festival.timetable),
         stages=len(preset.festival.stages),
         scored_share=coverage.get("scored_share"),
+        synthetic=preset.synthetic,
     )
 
 

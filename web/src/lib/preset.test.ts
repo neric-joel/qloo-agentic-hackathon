@@ -104,8 +104,8 @@ describe("parsePresetList", () => {
         { id: "b", title: "B", city: null, sets: 1, stages: 1, scored_share: null },
       ]),
     ).toEqual([
-      { id: "a", title: "A", city: "X", sets: 3, stages: 2, scored_share: 0.5 },
-      { id: "b", title: "B", city: null, sets: 1, stages: 1, scored_share: null },
+      { id: "a", title: "A", city: "X", sets: 3, stages: 2, scored_share: 0.5, synthetic: false },
+      { id: "b", title: "B", city: null, sets: 1, stages: 1, scored_share: null, synthetic: false },
     ]);
   });
 

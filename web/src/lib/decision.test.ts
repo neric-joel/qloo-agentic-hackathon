@@ -151,6 +151,40 @@ describe("buildDecisionCopy", () => {
     expect(copy.testing).toBe("Testing Bo Diddly Squat at 21:30.");
   });
 
+  it("seeds line 3's first change as one step a plan can keep, only when that change exists", () => {
+    const copy = buildDecisionCopy(preset(), parseDecision(rawDecision()))!;
+    expect(copy.seedChange).toEqual({
+      rule: { aId: "ann", bId: "bo" },
+      moves: [{ actId: "bo", stageId: "side", day: 0, start: "21:30" }],
+    });
+    expect(copy.testingChange).toBe("Testing the change that keeps Ann Arbor and Bo Diddly Squat apart.");
+    // A two-set change keeps both moves, in the order the list gives them.
+    const two = rawRule();
+    two.fixes[0].sets_moved = 2;
+    two.fixes[0].moves.push({
+      act_id: "ann",
+      act: "Ann Arbor",
+      from: "Main 20:00-21:30",
+      stage_id: "main",
+      stage: "Main",
+      day: 0,
+      start: "19:00",
+      end: "20:30",
+      minutes_moved: 60,
+    });
+    expect(buildDecisionCopy(preset(), parseDecision(rawDecision({ rule: two })))!.seedChange?.moves).toEqual([
+      { actId: "bo", stageId: "side", day: 0, start: "21:30" },
+      { actId: "ann", stageId: "main", day: 0, start: "19:00" },
+    ]);
+    for (const rule of [null, rawRule({ fixes: [], fixes_found: 0 }), rawRule({ holds: true, fixes: [], shared_minutes: 0 })]) {
+      const none = buildDecisionCopy(preset(), parseDecision(rawDecision({ rule })))!;
+      expect(none.seedChange).toBeNull();
+      expect(none.testingChange).toBeNull();
+    }
+    const both = rawRule({ b: { act_id: "bo", act: "Bo Diddly Squat", locked: true, place: "y" } });
+    expect(buildDecisionCopy(preset(), parseDecision(rawDecision({ rule: both })))!.seedChange).toBeNull();
+  });
+
   it("prints the first rule change's index beside the published one on line 3, and words the alternative", () => {
     const copy = buildDecisionCopy(preset(), parseDecision(rawDecision()))!;
     expect(copy.ruleLine).toContain(

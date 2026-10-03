@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { parseMoves, type MovesResult } from "@/lib/moves";
-import { encodeMoves, requestPlan, type Plan, type PlanAnswer, type StackMove } from "@/lib/stack";
+import { encodeMoves, requestPlan, type Plan, type PlanAnswer, type StackStep } from "@/lib/stack";
 
 /** How many priced places the section asks for. */
 export const MOVES_LIMIT = 8;
@@ -39,17 +39,17 @@ const planAnswers = new Map<string, Plan>();
 const plansByMoves = new Map<string, Plan>();
 
 /** No kept moves: the published timetable. Shared so its identity never changes. */
-const NO_MOVES: readonly StackMove[] = [];
+const NO_MOVES: readonly StackStep[] = [];
 
 function cacheKey(presetId: string, actId: string): string {
   return `${presetId}:${actId}`;
 }
 
-function movesKey(presetId: string, moves: readonly StackMove[]): string {
+function movesKey(presetId: string, moves: readonly StackStep[]): string {
   return `${presetId}:${encodeMoves(moves)}`;
 }
 
-function planKey(presetId: string, moves: readonly StackMove[], actId: string | null): string {
+function planKey(presetId: string, moves: readonly StackStep[], actId: string | null): string {
   return `${movesKey(presetId, moves)}:${actId ?? ""}`;
 }
 
@@ -77,7 +77,7 @@ function loadMoves(presetId: string, actId: string): Promise<MovesResult | null>
   return request;
 }
 
-function loadPlan(presetId: string, moves: readonly StackMove[], actId: string | null): Promise<PlanAnswer> {
+function loadPlan(presetId: string, moves: readonly StackStep[], actId: string | null): Promise<PlanAnswer> {
   const key = planKey(presetId, moves, actId);
   const pending = planRequests.get(key);
   if (pending) return pending;
@@ -104,7 +104,7 @@ function loadPlan(presetId: string, moves: readonly StackMove[], actId: string |
  * keep its identity while it is unchanged (state, not a fresh array each render). No request
  * starts an agent run or calls a language model, and nothing changes the published timetable.
  */
-export function usePlan(presetId: string, moves: readonly StackMove[], actId: string | null): PlanState {
+export function usePlan(presetId: string, moves: readonly StackStep[], actId: string | null): PlanState {
   const [settled, setSettled] = useState<{
     key: string;
     attempt: number;

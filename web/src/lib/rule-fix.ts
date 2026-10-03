@@ -11,7 +11,7 @@
 import { isRecord } from "./events";
 import { pluralize } from "./format";
 import { clockMinutes } from "./moves";
-import { isSafeId, type GhostSlot } from "./stack";
+import { MAX_STACK, isSafeId, type GhostSlot, type RuleStackStep } from "./stack";
 
 /** How many changes the card and the panel ask for. */
 export const RULE_LIMIT = 3;
@@ -337,6 +337,45 @@ export function fixGhosts(fix: RuleFix): GhostSlot[] {
     ghosts.push({ actId: move.actId, stageId: move.stageId, day: move.day, start, end });
   }
   return ghosts;
+}
+
+/**
+ * A listed change as one step of a plan: the pair it serves and its one or two moves, in the order
+ * the list gives them. Null when the change cannot be sent as a step (no move or more than two, a
+ * pair of one set, a set twice, an id or a time the page will not send).
+ */
+export function fixStep(rule: Pick<RuleFixes, "a" | "b">, fix: RuleFix): RuleStackStep | null {
+  const aId = rule.a.actId;
+  const bId = rule.b.actId;
+  if (aId === bId || !isSafeId(aId) || !isSafeId(bId)) return null;
+  if (fix.moves.length < 1 || fix.moves.length > 2 || fix.moves.length > MAX_STACK) return null;
+  const moves: RuleStackStep["moves"] = [];
+  for (const move of fix.moves) {
+    const sendable =
+      isSafeId(move.actId) &&
+      isSafeId(move.stageId) &&
+      Number.isInteger(move.day) &&
+      move.day >= 0 &&
+      move.day <= 13 &&
+      /^\d{1,2}:[0-5]\d$/.test(move.start) &&
+      clockMinutes(move.start) !== null;
+    if (!sendable || moves.some((other) => other.actId === move.actId)) return null;
+    moves.push({ actId: move.actId, stageId: move.stageId, day: move.day, start: move.start });
+  }
+  return { rule: { aId, bId }, moves };
+}
+
+/** What the status region says when a change is kept as one step of the plan. */
+export function keepAnnouncement(rule: Pick<RuleFixes, "a" | "b">, fix: RuleFix): string {
+  const where = fix.moves.map((move) => `${move.act} at ${move.stage} ${move.start}`).join(" and ");
+  return `Kept the change that keeps ${rule.a.act} and ${rule.b.act} apart: ${where}. Pricing your plan.`;
+}
+
+/** Under a change that cannot be kept: why the plan has no room for it (a two-set change counts 2 of the 8 moves). */
+export function roomNote(needed: number, left: number): string {
+  return left <= 0
+    ? "Your plan holds 8 moves, the most it can. Undo one or start over."
+    : `This change uses ${pluralize(needed, "move")} and your plan has ${left} left.`;
 }
 
 /** What the status region says when a change is previewed. */

@@ -171,6 +171,11 @@ export type Preset = {
   id: string;
   title: string;
   built_at: string | null;
+  /**
+   * True for the invented day the server serves when it has no built preset: invented acts, no Qloo
+   * data. Missing or false for a real day.
+   */
+  synthetic?: boolean;
   festival: Festival;
   report: ScoreReport;
   /** Every Qloo request behind the preset, replayed from storage (flagged `recorded`). */
@@ -187,6 +192,8 @@ export type PresetSummary = {
   sets: number;
   stages: number;
   scored_share: number | null;
+  /** True when the day is the invented one; missing or false for a real day. */
+  synthetic?: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -574,6 +581,7 @@ export function parsePreset(raw: unknown): Preset {
     id: str(o, "id", "preset"),
     title: str(o, "title", "preset"),
     built_at: optStr(o, "built_at", "preset"),
+    synthetic: bool(o, "synthetic"),
     festival: parseFestival(o.festival),
     report: parseReport(o.report),
     requests: optArr(o.requests, "requests").map((item, i) =>
@@ -597,6 +605,7 @@ export function parsePresetList(raw: unknown): PresetSummary[] {
       sets: optNum(o, "sets", at) ?? 0,
       stages: optNum(o, "stages", at) ?? 0,
       scored_share: optNum(o, "scored_share", at),
+      synthetic: bool(o, "synthetic"),
     };
   });
 }

@@ -34,7 +34,7 @@ function stubHandler(broken = {}) {
       return send(200, list, "application/json");
     }
     if (url === "/api/presets/one") {
-      const body = { id: "one", filler: BIG, ...(broken.matrix ? { matrix: {} } : {}) };
+      const body = { id: "one", filler: BIG, ...(broken.matrix ? { matrix: {} } : {}), ...(broken.synthetic ? { synthetic: true } : {}) };
       return send(200, broken.smallPreset ? { id: "one" } : body, "application/json");
     }
     if (url === "/api/presets/one/lenses" && method === "GET") {
@@ -125,8 +125,9 @@ describe("runSmoke against a stub deployment", () => {
       [{ briefStatus: 500 }, "web /brief answers 200"],
       [{ noKey: true }, "web /api/health is ok with a Qloo key and the expected pair check"],
       [{ onePreset: true }, "web /api/presets lists at least 2 presets"],
-      [{ smallPreset: true }, "web first preset is over 50 KB and carries no matrix"],
-      [{ matrix: true }, "web first preset is over 50 KB and carries no matrix"],
+      [{ smallPreset: true }, "web first preset is real (over 50 KB, not the synthetic day) and carries no matrix"],
+      [{ matrix: true }, "web first preset is real (over 50 KB, not the synthetic day) and carries no matrix"],
+      [{ synthetic: true }, "web first preset is real (over 50 KB, not the synthetic day) and carries no matrix"],
       [{ lensesStatus: 404 }, "web first preset lenses answer 200 and say kind lenses"],
       [{ lensesKind: "other" }, "web first preset lenses answer 200 and say kind lenses"],
       [{ decisionStatus: 404 }, "web first preset decision answers 200 with kind decision and no stray decimal"],

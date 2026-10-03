@@ -140,13 +140,14 @@ export async function runSmoke({
     expect(presetId, "the first preset has no id");
   });
 
-  await check("web first preset is over 50 KB and carries no matrix", async () => {
+  await check("web first preset is real (over 50 KB, not the synthetic day) and carries no matrix", async () => {
     expect(presetId, "no preset id to read");
     const page = await request(webOrigin, `/api/presets/${encodeURIComponent(presetId)}`);
     expect(page.status === 200, `status ${page.status}`);
     expect(page.bytes > PRESET_MIN_BYTES, `only ${page.bytes} bytes`);
     const body = json(page);
     expect(!("matrix" in body), "the preset carries a matrix key");
+    expect(body.synthetic !== true, "the server is serving the invented fallback day (presets missing?)");
   });
 
   await check("web first preset lenses answer 200 and say kind lenses", async () => {

@@ -9,11 +9,21 @@ import { Button } from "@/components/ui/button";
 import { currentPlacement } from "@/lib/moves";
 import type { Preset } from "@/lib/preset";
 import { PLAN_CAVEAT, RAISES_MARK, planVerdict, raisesIndex } from "@/lib/plan-copy";
-import { briefHref, shiftText, type Plan, type ScaleRange, type StackMove } from "@/lib/stack";
+import {
+  briefHref,
+  isPlanRuleStep,
+  isRuleStackStep,
+  ruleReceipt,
+  ruleStepLine,
+  shiftText,
+  type Plan,
+  type ScaleRange,
+  type StackStep,
+} from "@/lib/stack";
 
 import { BudgetMove } from "./budget-move";
 
-/** The plan's actions: undo the last kept move, start over, and open the plan as a brief. */
+/** The plan's actions: undo the last kept step, start over, and open the plan as a brief. */
 function PlanActions({
   preset,
   day,
@@ -23,15 +33,16 @@ function PlanActions({
 }: {
   preset: Preset;
   day: number;
-  moves: readonly StackMove[];
+  moves: readonly StackStep[];
   onUndo: () => void;
   onStartOver: () => void;
 }) {
+  const last = moves.at(-1);
   return (
     <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border pt-4">
       <Button type="button" variant="outline" onClick={onUndo}>
         <Undo2 aria-hidden="true" />
-        Undo last move
+        {last && isRuleStackStep(last) ? "Undo last change" : "Undo last move"}
       </Button>
       <Button type="button" variant="outline" onClick={onStartOver}>
         Start over
@@ -48,10 +59,12 @@ function PlanActions({
 }
 
 /**
- * "Your tested moves": the kept moves priced together by the timetable engine. The published
- * reading is Now and the plan's is After; each step shows how it shifts its set and the Clash Budget
- * Index before and after it; then the moved timetable's costliest clashes and the caveat. Every
- * number comes from the server's answer; nothing is computed here, and nothing is applied.
+ * "Your tested moves": the kept steps priced together by the timetable engine. The published
+ * reading is Now and the plan's is After; a single move shows how it shifts its set, a kept change
+ * from "Keep two sets apart" reads as one step (the pair, where each set plays, then the server's
+ * receipt for the whole plan); each step shows the Clash Budget Index before and after it; then the
+ * moved timetable's costliest clashes and the caveat. Every number comes from the server's answer;
+ * nothing is computed here, and nothing is applied.
  */
 export function ScratchPlan({
   preset,
@@ -65,7 +78,7 @@ export function ScratchPlan({
   preset: Preset;
   day: number;
   plan: Plan;
-  moves: readonly StackMove[];
+  moves: readonly StackStep[];
   range: ScaleRange;
   onUndo: () => void;
   onStartOver: () => void;
@@ -96,6 +109,22 @@ export function ScratchPlan({
         <ol aria-label="Kept moves" className="min-w-0 space-y-3">
           {plan.steps.map((step, i) => {
             const before = i === 0 ? plan.publishedBudget : plan.steps[i - 1].budgetAfter;
+            if (isPlanRuleStep(step)) {
+              return (
+                <li key={`rule-${i}-${step.moves.map((move) => move.actId).join("+")}`} className="min-w-0">
+                  <p className="font-semibold break-words">
+                    <span className="tabular-nums">{i + 1}.</span> {ruleStepLine(step)}
+                  </p>
+                  <p className="mt-0.5 text-sm text-muted-foreground">
+                    <span className="tabular-nums">
+                      {before.toFixed(1)} → {step.budgetAfter.toFixed(1)}
+                    </span>
+                    {raisesIndex(before, step.budgetAfter) ? RAISES_MARK : null}
+                  </p>
+                  <p className="mt-0.5 text-sm">{ruleReceipt(step)}</p>
+                </li>
+              );
+            }
             const home = festival.timetable.find((slot) => slot.act_id === step.actId);
             const shift = shiftText(currentPlacement(preset, step.actId), step, home ? stageName(home.stage_id) : "");
             return (

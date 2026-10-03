@@ -24,6 +24,7 @@ import {
   hiddenNames,
   hiddenSentence,
   indexSentence,
+  isBriefRuleStep,
   planClashLines,
   planClashesTitle,
   planSummary,
@@ -37,7 +38,7 @@ import { MOCK_PRESET_ID, mockPreset } from "@/lib/mock-preset";
 import { MOCK_STREAM_ENABLED } from "@/lib/mock-stream";
 import { PLAN_CAVEAT, RAISES_MARK } from "@/lib/plan-copy";
 import { parsePreset, type Preset } from "@/lib/preset";
-import { decodeMoves, encodeMoves, fetchPlan, isSafeId, type Plan, type StackMove } from "@/lib/stack";
+import { decodeMoves, encodeMoves, fetchPlan, isSafeId, type Plan, type StackStep } from "@/lib/stack";
 import { cn } from "@/lib/utils";
 
 // ------------------------------------------------------------------------------------ loading
@@ -65,7 +66,7 @@ async function loadPreset(id: string, signal: AbortSignal): Promise<Preset> {
 }
 
 /** The preset and, only when the link carries kept moves, their plan, priced by the server. */
-async function loadBrief(id: string, moves: readonly StackMove[], signal: AbortSignal): Promise<Outcome> {
+async function loadBrief(id: string, moves: readonly StackStep[], signal: AbortSignal): Promise<Outcome> {
   try {
     const [preset, plan] = await Promise.all([
       loadPreset(id, signal),
@@ -79,7 +80,7 @@ async function loadBrief(id: string, moves: readonly StackMove[], signal: AbortS
 }
 
 /** Loads the brief's data once per preset and plan; a malformed preset id never reaches the network. */
-function useBrief(presetId: string | null, moves: readonly StackMove[]): Outcome | { status: "loading" } {
+function useBrief(presetId: string | null, moves: readonly StackStep[]): Outcome | { status: "loading" } {
   const key = `${presetId ?? ""}|${encodeMoves(moves)}`;
   const safe = isSafeId(presetId);
   const [result, setResult] = useState<{ key: string; outcome: Outcome } | null>(null);
@@ -392,6 +393,7 @@ export function BriefContent({
   const hidden = hiddenSentence(hiddenNames(preset, day));
   const steps = plan && plan.steps.length > 0 ? briefSteps(preset, plan) : [];
   const withMoves = steps.length > 0;
+  const twoColumns = steps.length > 3;
   const tableTitle = clashesTitle(rows.length, withMoves);
   const planLines = plan && withMoves ? planClashLines(plan) : [];
   const verdict = plan && withMoves ? planVerdictSentence(plan, figures.range) : null;
@@ -453,28 +455,49 @@ export function BriefContent({
     plan && withMoves ? (
       <>
         <Block title="Your plan">
-          <p className="font-semibold">{planSummary(plan)}</p>
-          {verdict ? <p className="mt-1 print:mt-[2pt]">{verdict}</p> : null}
+          <p className="font-semibold print:inline">{planSummary(plan)}</p>
+          {verdict ? (
+            <>
+              {" "}
+              <p className="mt-1 print:mt-0 print:inline">{verdict}</p>
+            </>
+          ) : null}
+          {/* Up to three steps are one column. More are two columns, and on paper they flow down the
+              first column and then the second, so a long kept change never stretches a row. */}
           <ol
             className={cn(
               "mt-2 grid gap-x-6 gap-y-2 print:mt-[2pt] print:gap-y-[2pt]",
-              steps.length > 3 && "md:grid-cols-2 print:grid-cols-2",
+              twoColumns && "md:grid-cols-2 print:block print:columns-2 print:gap-x-[24px]",
             )}
           >
-            {steps.map((step) => (
-              <li key={step.n} className="min-w-0 break-inside-avoid">
-                <span className="font-semibold break-words print:text-[9pt]">
-                  <span className="tabular-nums">{step.n}.</span> {step.act} · {step.place}
-                </span>
-                <span className="block text-sm text-muted-foreground print:text-[9pt]">
-                  {step.shift} ·{" "}
-                  <span className="font-mono tabular-nums">
-                    {step.before} → {step.after}
+            {steps.map((step) =>
+              isBriefRuleStep(step) ? (
+                <li key={step.n} className={cn("min-w-0 break-inside-avoid", twoColumns && "print:mb-[2pt]")}>
+                  <span className="font-semibold break-words print:text-[9pt]">
+                    <span className="tabular-nums">{step.n}.</span> {step.line}
                   </span>
-                  {step.raises ? RAISES_MARK : null}
-                </span>
-              </li>
-            ))}
+                  <span className="block text-sm text-muted-foreground print:text-[9pt]">
+                    <span className="font-mono tabular-nums">
+                      {step.before} → {step.after}
+                    </span>
+                    {step.raises ? RAISES_MARK : null} · {step.receipt}
+                  </span>
+                </li>
+              ) : (
+                <li key={step.n} className={cn("min-w-0 break-inside-avoid", twoColumns && "print:mb-[2pt]")}>
+                  <span className="font-semibold break-words print:text-[9pt]">
+                    <span className="tabular-nums">{step.n}.</span> {step.act} · {step.place}
+                  </span>
+                  <span className="block text-sm text-muted-foreground print:text-[9pt]">
+                    {step.shift} ·{" "}
+                    <span className="font-mono tabular-nums">
+                      {step.before} → {step.after}
+                    </span>
+                    {step.raises ? RAISES_MARK : null}
+                  </span>
+                </li>
+              ),
+            )}
           </ol>
           <p className="mt-2 text-sm text-muted-foreground print:mt-[4pt] print:text-[9pt]">{PLAN_CAVEAT}</p>
         </Block>

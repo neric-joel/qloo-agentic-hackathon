@@ -23,6 +23,7 @@ import {
   hiddenNames,
   hiddenSentence,
   indexSentence,
+  isBriefRuleStep,
   planClashLines,
   planClashesTitle,
   planSummary,
@@ -31,7 +32,7 @@ import {
 } from "./brief";
 import { PLAN_CAVEAT } from "./plan-copy";
 import type { PairClash, Preset, SetSlot } from "./preset";
-import type { Plan, PlanStep } from "./stack";
+import type { Plan, PlanRuleStep, PlanStep } from "./stack";
 
 // Every name, id, tag and figure below is invented for the test; none of it is Qloo data.
 
@@ -496,5 +497,114 @@ describe("/brief page", () => {
     expect(style).toMatch(/@media print/);
     expect(style).toMatch(/body > header, body > footer/);
     expect(style.indexOf("display: none")).toBeGreaterThan(style.indexOf("@media print"));
+  });
+});
+
+// ----------------------------------------------------------------------------- kept changes
+
+function ruleStep(budgetAfter: number, extra: Partial<PlanRuleStep> = {}): PlanRuleStep {
+  return {
+    rule: { a: { actId: "act-one", act: "Act One" }, b: { actId: "act-two", act: "Act Two" } },
+    moves: [
+      {
+        act: "Act Two",
+        actId: "act-two",
+        move: "Act Two: South Tent 14:15-15:15 -> The Barn 15:30-16:30",
+        stage: "The Barn",
+        stageId: "barn",
+        day: 0,
+        start: "15:30",
+        end: "16:30",
+      },
+      {
+        act: "Act Three",
+        actId: "act-three",
+        move: "Act Three: The Barn 14:30-15:30 -> South Tent 14:15-15:15",
+        stage: "South Tent",
+        stageId: "south",
+        day: 0,
+        start: "14:15",
+        end: "15:15",
+      },
+    ],
+    budgetAfter,
+    ruleHoldsAfter: true,
+    newBreaks: 0,
+    ...extra,
+  };
+}
+
+/** Four single moves and two kept changes, the fullest plan one page must hold. */
+const MIXED_PLAN: Plan = {
+  publishedBudget: 116.71,
+  budget: 100.12,
+  steps: [
+    PLAN.steps[0],
+    ruleStep(111.85),
+    PLAN.steps[1],
+    PLAN.steps[2],
+    ruleStep(103.3, { rule: { a: { actId: "act-four", act: "Act Four" }, b: { actId: "act-five", act: "Act Five" } } }),
+    step("act-six", "Act Six", "North Field", "north", "21:00", "22:00", 100.12),
+  ],
+  clashes: PLAN.clashes,
+  options: null,
+};
+
+describe("kept changes in the brief", () => {
+  it("sums up a plan with a kept change as steps, and a plan of moves as before", () => {
+    expect(planSummary(MIXED_PLAN)).toBe("6 kept steps: Clash Budget Index 116.7 → 100.1, 16.6 lower.");
+    expect(planSummary({ ...MIXED_PLAN, steps: [ruleStep(111.85)], budget: 111.85 })).toBe(
+      "1 kept step: Clash Budget Index 116.7 → 111.8, 4.8 lower.",
+    );
+    expect(planSummary(PLAN)).toBe("3 kept moves: Clash Budget Index 116.7 → 106.6, 10.1 lower.");
+  });
+
+  it("words a kept change as one numbered step with its index and the server receipt", () => {
+    const steps = briefSteps(makePreset(), MIXED_PLAN);
+    expect(steps).toHaveLength(6);
+    const second = steps[1];
+    expect(isBriefRuleStep(second)).toBe(true);
+    expect(second).toEqual({
+      n: 2,
+      line: "Keep Act One and Act Two apart: Act Two → The Barn 15:30–16:30; Act Three → South Tent 14:15–15:15",
+      before: "110.2",
+      after: "111.8",
+      raises: true,
+      receipt: "After this plan they share no time, and the plan adds no rule break.",
+    });
+    // A single move keeps its own shape.
+    expect(isBriefRuleStep(steps[0])).toBe(false);
+    expect(steps[0]).toMatchObject({ n: 1, act: "Act One", before: "116.7", after: "110.2" });
+  });
+
+  it("prints a kept change, its index and its receipt in Your plan", () => {
+    const text = sheetText(makePreset(), MIXED_PLAN);
+    expect(text).toContain(
+      "2. Keep Act One and Act Two apart: Act Two → The Barn 15:30–16:30; Act Three → South Tent 14:15–15:15 110.2 → 111.8 · raises the index · After this plan they share no time, and the plan adds no rule break.",
+    );
+    expect(text).toContain("1. Act One · North Field 14:30–15:30 30 minutes later, same stage · 116.7 → 110.2");
+    expect(text).toContain("6 kept steps: Clash Budget Index 116.7 → 100.1, 16.6 lower.");
+    expect(text).not.toContain(NO_MOVES);
+  });
+
+  it("prints the receipt as the server gave it when the pair still shares time or a break was added", () => {
+    const still: Plan = { ...PLAN, steps: [ruleStep(108, { ruleHoldsAfter: false })], budget: 108 };
+    expect(sheetText(makePreset(), still)).toContain("After this plan they still share time.");
+    const broken: Plan = { ...PLAN, steps: [ruleStep(108, { newBreaks: 2 })], budget: 108 };
+    expect(sheetText(makePreset(), broken)).toContain("The plan adds 2 rule breaks.");
+  });
+
+  it("keeps print type at 9 pt or more with four moves and two kept changes", () => {
+    const html = renderToStaticMarkup(createElement(BriefContent, { preset: makePreset(), day: 0, plan: MIXED_PLAN }));
+    const sizes = [...html.matchAll(/print:text-\[([\d.]+)pt\]/g)].map((match) => Number(match[1]));
+    expect(Math.min(...sizes)).toBeGreaterThanOrEqual(9);
+    expect(html).toContain("print:columns-2");
+  });
+
+  it("uses none of the words the round forbids in a kept change", () => {
+    const text = sheetText(makePreset(), MIXED_PLAN);
+    for (const pattern of [/optimi[sz]/i, /improve/i, /recommend/i, /validated/i, /\bfix/i, /\bbest\b/i]) {
+      expect(text).not.toMatch(pattern);
+    }
   });
 });

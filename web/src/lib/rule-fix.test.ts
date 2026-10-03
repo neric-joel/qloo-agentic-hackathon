@@ -5,12 +5,15 @@ import {
   NO_RESULT,
   fixGhosts,
   fixIndexLine,
+  fixStep,
   fixSummary,
+  keepAnnouncement,
   lockedNote,
   moveLine,
   parsePlace,
   parseRuleFixes,
   previewAnnouncement,
+  roomNote,
   searchedSentence,
   SEARCH_COVERS,
   ruleFixesPath,
@@ -226,5 +229,50 @@ describe("fixGhosts", () => {
   it("carries a set that ends past midnight", () => {
     const rule = parseRuleFixes(rawRule({ fixes: [rawFix({ moves: [rawMove({ start: "23:30", end: "00:30" })] })] }))!;
     expect(fixGhosts(rule.fixes[0])[0]).toMatchObject({ start: 1410, end: 1470 });
+  });
+});
+
+describe("fixStep", () => {
+  it("turns a listed change into one step with its pair and its moves in the listed order", () => {
+    const rule = parseRuleFixes(rawRule())!;
+    expect(fixStep(rule, rule.fixes[0])).toEqual({
+      rule: { aId: "ann", bId: "bo" },
+      moves: [
+        { actId: "ann", stageId: "side", day: 0, start: "21:30" },
+        { actId: "bo", stageId: "main", day: 0, start: "20:00" },
+      ],
+    });
+    const one = parseRuleFixes(rawRule({ fixes: [rawFix({ sets_moved: 1, moves: [rawMove()] })] }))!;
+    expect(fixStep(one, one.fixes[0])?.moves).toHaveLength(1);
+  });
+
+  it("refuses a change that cannot be sent as a step, and never throws", () => {
+    const rule = parseRuleFixes(rawRule())!;
+    const fix = rule.fixes[0];
+    const three = { ...fix, moves: [...fix.moves, { ...fix.moves[0], actId: "cy" }] };
+    expect(fixStep(rule, three)).toBeNull();
+    expect(fixStep(rule, { ...fix, moves: [] })).toBeNull();
+    expect(fixStep(rule, { ...fix, moves: [fix.moves[0], fix.moves[0]] })).toBeNull();
+    expect(fixStep(rule, { ...fix, moves: [{ ...fix.moves[0], day: 14 }] })).toBeNull();
+    expect(fixStep(rule, { ...fix, moves: [{ ...fix.moves[0], day: 0.5 }] })).toBeNull();
+    expect(fixStep(rule, { ...fix, moves: [{ ...fix.moves[0], start: "21:30:00" }] })).toBeNull();
+    expect(fixStep(rule, { ...fix, moves: [{ ...fix.moves[0], stageId: "../x" }] })).toBeNull();
+    expect(fixStep({ a: rule.a, b: rule.a }, fix)).toBeNull();
+    expect(fixStep({ a: { ...rule.a, actId: "a/b" }, b: rule.b }, fix)).toBeNull();
+  });
+});
+
+describe("keeping a change", () => {
+  it("announces what was kept and that the plan is being priced", () => {
+    const rule = parseRuleFixes(rawRule())!;
+    expect(keepAnnouncement(rule, rule.fixes[0])).toBe(
+      "Kept the change that keeps Ann Arbor and Bo Diddly Squat apart: Ann Arbor at Side 21:30 and Bo Diddly Squat at Main 20:00. Pricing your plan.",
+    );
+  });
+
+  it("says why a change has no room in the plan", () => {
+    expect(roomNote(2, 1)).toBe("This change uses 2 moves and your plan has 1 left.");
+    expect(roomNote(1, 0)).toBe("Your plan holds 8 moves, the most it can. Undo one or start over.");
+    expect(roomNote(2, -1)).toBe("Your plan holds 8 moves, the most it can. Undo one or start over.");
   });
 });

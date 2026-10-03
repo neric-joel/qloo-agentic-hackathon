@@ -161,6 +161,8 @@ type DecisionCardProps = {
   onOpenMove?: () => void;
   /** Opens the rule search for the pair. Absent when there is no rule line to try. */
   onTryRule?: () => void;
+  /** Keeps line 3's change as one step of the plan. Absent in the server HTML and without that change. */
+  onKeepChange?: () => void;
   /** Opens the day's hero clash (a hidden clash when it has one), with the button as the place to return to. */
   onOpenHidden?: (trigger: HTMLElement) => void;
   /** What that link says; "Open a hidden clash" unless the day has none. */
@@ -181,12 +183,21 @@ export const HOW_CHOSEN = "How this was chosen";
  * client card are the same card. It never changes the dial, which stays the reading of the
  * published timetable.
  */
-export function DecisionCard({ copy, onOpenMove, onTryRule, onOpenHidden, hiddenLabel, className }: DecisionCardProps) {
+export function DecisionCard({
+  copy,
+  onOpenMove,
+  onTryRule,
+  onKeepChange,
+  onOpenHidden,
+  hiddenLabel,
+  className,
+}: DecisionCardProps) {
   const rootRef = useRef<HTMLElement | null>(null);
   const [playKey, setPlayKey] = useState(0);
   const [status, say] = useAnnouncement();
   const [expanded, setExpanded] = useState(false);
   const bodyId = useId();
+  const ruleLineId = useId();
   const counted = useCount(copy.indexFrom, copy.indexTo, playKey);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
 
@@ -209,6 +220,12 @@ export function DecisionCard({ copy, onOpenMove, onTryRule, onOpenHidden, hidden
     if (!onTryRule) return;
     say("");
     onTryRule();
+  }
+
+  function keepChange() {
+    if (!onKeepChange) return;
+    say(copy.testingChange ?? "");
+    onKeepChange();
   }
 
   const figure =
@@ -265,7 +282,7 @@ export function DecisionCard({ copy, onOpenMove, onTryRule, onOpenHidden, hidden
         </figure>
       ) : null}
 
-      {(onOpenMove && copy.seedMove) || (onTryRule && copy.seedRule) ? (
+      {(onOpenMove && copy.seedMove) || (onTryRule && copy.seedRule) || (onKeepChange && copy.seedChange) ? (
         <div className="mt-4 flex flex-wrap gap-2 max-[390px]:flex-col max-[390px]:items-stretch">
           {onOpenMove && copy.seedMove ? (
             <Button type="button" variant="ink" onClick={openMove}>
@@ -275,6 +292,11 @@ export function DecisionCard({ copy, onOpenMove, onTryRule, onOpenHidden, hidden
           {onTryRule && copy.seedRule ? (
             <Button type="button" variant="outline" onClick={tryRule}>
               Try this rule yourself
+            </Button>
+          ) : null}
+          {onKeepChange && copy.seedChange ? (
+            <Button type="button" variant="outline" aria-describedby={ruleLineId} onClick={keepChange}>
+              Keep this change
             </Button>
           ) : null}
         </div>
@@ -318,7 +340,7 @@ export function DecisionCard({ copy, onOpenMove, onTryRule, onOpenHidden, hidden
           {copy.ruleLine ? (
             <div className="grid grid-cols-[1rem_minmax(0,1fr)] gap-x-3 border-t border-border pt-3">
               <LineLabel n={3} />
-              <p>{copy.ruleLine}</p>
+              <p id={ruleLineId}>{copy.ruleLine}</p>
             </div>
           ) : null}
 

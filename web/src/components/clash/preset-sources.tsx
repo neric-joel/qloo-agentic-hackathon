@@ -4,6 +4,7 @@ import { RecordedBadge } from "@/components/kernel";
 import { describeReach, samplingReach } from "@/lib/clash-budget";
 import { festivalName, hostOf, popularitySpread } from "@/lib/clashes";
 import type { Preset } from "@/lib/preset";
+import { SYNTHETIC_NOTICE } from "@/lib/synthetic-notice";
 
 /** "/news/lineups/some-long-slug..." trimmed to fit one line. */
 function shortPath(url: string): string {
@@ -21,6 +22,7 @@ export function PresetSources({ preset }: { preset: Preset }) {
   const samples = preset.report.baseline?.samples;
   const spread = popularitySpread(preset.festival.acts);
   const reach = describeReach(samplingReach(preset.festival.timetable));
+  const synthetic = preset.synthetic === true;
   return (
     <section aria-labelledby="sources-heading" className="border-t border-border">
       <div className="container-page grid gap-10 py-14 sm:py-16 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-16">
@@ -29,34 +31,63 @@ export function PresetSources({ preset }: { preset: Preset }) {
           <h2 id="sources-heading" className="type-headline mt-2">
             Where the numbers come from
           </h2>
-          <p className="mt-5 max-w-prose text-[0.9375rem] leading-relaxed">
-            <strong className="font-semibold">{festivalName(preset.festival)} does not use Clash Control.</strong>{" "}
-            This page scores the festival&rsquo;s published timetable from public sources. Nothing
-            here is the festival&rsquo;s own data or view.
-          </p>
+          {synthetic ? (
+            <p className="mt-5 max-w-prose text-[0.9375rem] leading-relaxed">
+              <strong className="font-semibold">{SYNTHETIC_NOTICE}.</strong> The server has no built
+              festival day, so it shows one made up for this page: the acts, set times, popularity
+              and audience affinities are all invented, and no request was sent to Qloo. Nothing
+              here says anything about a real festival.
+            </p>
+          ) : (
+            <p className="mt-5 max-w-prose text-[0.9375rem] leading-relaxed">
+              <strong className="font-semibold">{festivalName(preset.festival)} does not use Clash Control.</strong>{" "}
+              This page scores the festival&rsquo;s published timetable from public sources. Nothing
+              here is the festival&rsquo;s own data or view.
+            </p>
+          )}
           {preset.built_at ? <RecordedBadge builtAt={preset.built_at} className="mt-5" /> : null}
         </div>
 
         <div className="space-y-8">
           <dl className="space-y-4 text-[0.9375rem] leading-relaxed">
             <div>
-              <dt className="font-semibold">Draw (Qloo popularity)</dt>
+              <dt className="font-semibold">{synthetic ? "Draw (invented popularity)" : "Draw (Qloo popularity)"}</dt>
               <dd className="text-muted-foreground">
-                Each act&rsquo;s popularity on Qloo, 0 to 100. It is a percentile among Qloo artists,
-                so most headline acts sit near the top: {spread.atLeast} of {spread.total} acts on
-                this day score 90 or more.
+                {synthetic ? (
+                  <>
+                    Each act&rsquo;s invented popularity, 0 to 100, standing where Qloo popularity
+                    sits on a real day: {spread.atLeast} of {spread.total} acts on this day score 90
+                    or more.
+                  </>
+                ) : (
+                  <>
+                    Each act&rsquo;s popularity on Qloo, 0 to 100. It is a percentile among Qloo
+                    artists, so most headline acts sit near the top: {spread.atLeast} of{" "}
+                    {spread.total} acts on this day score 90 or more.
+                  </>
+                )}
               </dd>
             </div>
             <div>
               <dt className="font-semibold">Taste overlap (rank on this bill)</dt>
               <dd className="text-muted-foreground">
-                For each act, Qloo ranks every other act on this day&rsquo;s bill by how strongly that
-                act&rsquo;s audience leans toward them. In the saved pairs we checked, Qloo&rsquo;s
-                affinity came back the same whichever act was the signal, so for those pairs the two
-                directions are one reading. The app turns it into a rank within each act&rsquo;s row of
-                the bill, averages the two ranks and scales the result 0 to 100. It says how alike
-                Qloo ranks two audiences in taste, relative to this bill. It is not a share of fans
-                and not attendance.
+                {synthetic ? (
+                  <>
+                    Invented affinities between the acts, put through the same steps as real ones:
+                    a rank within each act&rsquo;s row of the bill, the two ranks averaged, the
+                    result scaled 0 to 100. No Qloo reading is involved.
+                  </>
+                ) : (
+                  <>
+                    For each act, Qloo ranks every other act on this day&rsquo;s bill by how strongly
+                    that act&rsquo;s audience leans toward them. In the saved pairs we checked,
+                    Qloo&rsquo;s affinity came back the same whichever act was the signal, so for
+                    those pairs the two directions are one reading. The app turns it into a rank
+                    within each act&rsquo;s row of the bill, averages the two ranks and scales the
+                    result 0 to 100. It says how alike Qloo ranks two audiences in taste, relative to
+                    this bill. It is not a share of fans and not attendance.
+                  </>
+                )}
               </dd>
             </div>
             <div>

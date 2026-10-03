@@ -4,6 +4,7 @@ import { Archivo, JetBrains_Mono } from "next/font/google";
 import { MockBanner } from "@/components/site/mock-banner";
 import { SiteFooter } from "@/components/site/site-footer";
 import { SiteHeader } from "@/components/site/site-header";
+import { SyntheticBanner } from "@/components/site/synthetic-banner";
 import { THEME_INIT_SCRIPT } from "@/components/theme/theme-config";
 import { ThemeProvider } from "@/components/theme/theme-provider";
 
@@ -66,6 +67,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             Skip to main content
           </a>
           <MockBanner />
+          <SyntheticBanner />
           <SiteHeader />
           <main id="main" className="flex-1">
             {children}

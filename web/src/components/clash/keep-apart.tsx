@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { LoaderCircle, RotateCcw } from "lucide-react";
+import { Check, LoaderCircle, RotateCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { dayName } from "@/lib/clashes";
@@ -16,11 +16,14 @@ import {
   SMALLEST_FIRST,
   fixGhosts,
   fixIndexLine,
+  fixStep,
   fixSummary,
+  keepAnnouncement,
   lockedNote,
   moveLine,
   previewAnnouncement,
   requestRuleFixes,
+  roomNote,
   searchedSentence,
   type RuleAnswer,
   stageFitNote,
@@ -30,6 +33,7 @@ import {
 } from "@/lib/rule-fix";
 import { overlapWindow } from "@/lib/timetable";
 import { pluralize } from "@/lib/format";
+import { MAX_STACK, isRuleStackStep, moveCount, sameRuleStep, type RuleStackStep, type StackStep } from "@/lib/stack";
 
 import { useAnnouncement } from "./use-announcement";
 
@@ -76,13 +80,19 @@ function SetOptions({ groups }: { groups: readonly Group[] }) {
   ));
 }
 
+/** Whether a listed change can be kept now: it can, the plan has no room for it, or it is already in the plan. */
+type KeepState = "ready" | "full" | "kept";
+
 function ChangeCard({
   fix,
   n,
   before,
   dayLabel,
   pressed,
+  keepState,
+  roomText,
   onPreview,
+  onKeep,
   buttonRef,
 }: {
   fix: RuleFix;
@@ -90,11 +100,15 @@ function ChangeCard({
   before: number | null;
   dayLabel: (day: number) => string | null;
   pressed: boolean;
+  keepState: KeepState | null;
+  roomText: string | null;
   onPreview: () => void;
+  onKeep: () => void;
   buttonRef: (element: HTMLButtonElement | null) => void;
 }) {
   const index = fixIndexLine(fix, before);
   const flags = stageFitNote(fix);
+  const roomId = useId();
   return (
     <li className="rounded-lg border border-border bg-background p-3.5 sm:p-4">
       <p className="type-kicker text-muted-foreground">Change {n}</p>
@@ -111,16 +125,34 @@ function ChangeCard({
         {flags ? ` · ${flags}` : ""}
       </p>
       <p className="mt-0.5 text-sm">Adds no rule break; ends this overlap.</p>
-      <Button
-        ref={buttonRef}
-        type="button"
-        variant={pressed ? "ink" : "outline"}
-        className="mt-3"
-        aria-pressed={pressed}
-        onClick={onPreview}
-      >
-        Preview on the timetable
-      </Button>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button
+          ref={buttonRef}
+          type="button"
+          variant={pressed ? "ink" : "outline"}
+          aria-pressed={pressed}
+          onClick={onPreview}
+        >
+          Preview on the timetable
+        </Button>
+        {keepState ? (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={keepState !== "ready"}
+            aria-describedby={keepState === "full" ? roomId : undefined}
+            onClick={onKeep}
+          >
+            {keepState === "kept" ? null : <Check aria-hidden="true" />}
+            {keepState === "kept" ? "Kept in your plan" : "Keep this change"}
+          </Button>
+        ) : null}
+      </div>
+      {keepState === "full" && roomText ? (
+        <p id={roomId} className="mt-2 text-sm text-muted-foreground">
+          {roomText}
+        </p>
+      ) : null}
     </li>
   );
 }
@@ -131,20 +163,28 @@ function ChangeCard({
  * generates; the route's own `searched` sentence is printed with an answer), keeping only changes
  * after which the two share no minute and the day has no new rule break. A change can be previewed
  * on the timetable as ghost slots that replace the kept plan's ghosts while they show; that preview
- * is separate from the kept plan and never enters the brief. The index shown is the route's, for
- * information: it does not order the list.
+ * is separate from the kept plan. "Keep this change" adds a listed change to the plan as one step
+ * (a two-set change counts 2 of its 8 moves), closes the preview and moves focus to the plan card;
+ * the plan prices it and the brief prints it. The index shown is the route's, for information: it
+ * does not order the list.
  */
 export function KeepApart({
   preset,
   day,
   seed,
   onPreview,
+  plan = [],
+  onKeep,
 }: {
   preset: Preset;
   day: number;
   /** A pair the decision card asks for; a new `nonce` runs the search again, the same one does not. */
   seed?: { nonce: number; aId: string; bId: string } | null;
   onPreview?: (preview: RulePreview | null) => void;
+  /** The kept plan, so a change can be shown as kept and the room it has left counted. */
+  plan?: readonly StackStep[];
+  /** Keeps a listed change as one step of the plan. Absent: the rows have no Keep button. */
+  onKeep?: (step: RuleStackStep) => void;
 }) {
   const firstId = useId();
   const secondId = useId();
@@ -287,6 +327,17 @@ export function KeepApart({
     setAnnouncement(previewAnnouncement(fix));
   }
 
+  function keepFix(fix: RuleFix, fixes: RuleFixes) {
+    const step = fixStep(fixes, fix);
+    if (!step || !onKeep) return;
+    // The preview is a tested timetable of its own; once the change is in the plan, the plan's own
+    // ghosts show it, so the preview closes.
+    setPreviewing(null);
+    onPreview?.(null);
+    setAnnouncement(keepAnnouncement(fixes, fix));
+    onKeep(step);
+  }
+
   function clearPreview() {
     // The Clear button disables as the preview goes, so focus returns first to the row's own
     // Preview button, which is where the visitor was before the board took their eye.
@@ -298,6 +349,15 @@ export function KeepApart({
   }
 
   const activePreview = previewing && previewing.key === wantedKey ? previewing.index : null;
+  const used = moveCount(plan);
+  const left = MAX_STACK - used;
+  function keepStateOf(fix: RuleFix, fixes: RuleFixes): KeepState | null {
+    if (!onKeep) return null;
+    const step = fixStep(fixes, fix);
+    if (!step) return null;
+    if (plan.some((item) => isRuleStackStep(item) && sameRuleStep(item, step))) return "kept";
+    return step.moves.length > left ? "full" : "ready";
+  }
 
   const canSearch = first !== "" && second !== "" && first !== second && search.status !== "loading";
   const result = search.status === "ready" ? search.fixes : null;
@@ -444,7 +504,10 @@ export function KeepApart({
                           before={before}
                           dayLabel={dayLabel}
                           pressed={activePreview === i}
+                          keepState={keepStateOf(fix, result)}
+                          roomText={roomNote(fix.moves.length, left)}
                           onPreview={() => previewFix(fix, i, result)}
+                          onKeep={() => keepFix(fix, result)}
                           buttonRef={(element) => {
                             if (element) previewButtons.current.set(i, element);
                             else previewButtons.current.delete(i);
@@ -462,9 +525,9 @@ export function KeepApart({
                     </div>
                     {activePreview !== null ? (
                       <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                        This is a tested timetable, not a kept move. While it shows, it replaces any kept plan’s ghosts
-                        on the timetable; Clear preview brings them back. The links and rank badges still describe the
-                        published day.
+                        This is a tested timetable, not a kept change. While it shows, it replaces any kept plan’s
+                        ghosts on the timetable; Clear preview brings them back. The links and rank badges still
+                        describe the published day.
                       </p>
                     ) : null}
                   </>

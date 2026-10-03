@@ -1,161 +1,77 @@
-# Web
+# Clash Control web app
 
-Next.js (App Router, TypeScript strict, Tailwind v4, shadcn/ui) front end for Clash Control. The landing
-page is the product: a preset festival day's published timetable with every clash priced by Qloo (fans at
-stake times how many of them are the same people), the Clash Budget Index, Qloo coverage, the costliest
-clashes, sourced hidden-clash examples and the twin card. It sits on a shared kernel: the event-stream
-client, the run state, and the components that make Qloo's part in each answer visible.
+The Next.js 16 front end for [Clash Control](../README.md) (App Router, React 19, Tailwind v4). It reads a festival day's published timetable and its scores from the backend and shows the decision card, the priced clashes, the Clash Budget Index, Qloo coverage and the request trail, move and rule tests, recorded agent runs, a printable brief and a browser-only grid check. [The live site](https://clash-control.vercel.app) and its [method page](https://clash-control.vercel.app/method) show the product and the limits of its evidence.
 
-## Run it
+## Local development
 
 ```bash
-npm install
-npm run dev          # http://localhost:3000
+npm ci
+npm run dev
 ```
 
-| Script | What it does |
+Open `http://localhost:3000`. The app needs the API: start the backend on port 8000 as the root README describes. With no Qloo key and no presets built, the backend serves one invented day and the page shows a `Synthetic example day: invented acts, no Qloo data` banner above the header.
+
+`next.config.ts` rewrites `/api/:path*` to `${BACKEND_URL}/api/:path*`; `BACKEND_URL` defaults to `http://127.0.0.1:8000`. The browser never receives the Qloo key.
+
+To preview the screens with no backend, set `NEXT_PUBLIC_MOCK_STREAM=1` (PowerShell: `$env:NEXT_PUBLIC_MOCK_STREAM = "1"`). Mock mode uses an invented day and a simulated event stream, makes no request, and shows a `Simulated data` banner. The variable is read at build time; leave it unset in production.
+
+| Command | Purpose |
 | --- | --- |
-| `npm run dev` / `build` / `start` | Next.js dev server, production build, production server |
+| `npm run dev` | Development server |
+| `npm run build` / `npm run start` | Production build and server |
 | `npm run lint` | ESLint |
-| `npm run typecheck` | Route types, then `tsc --noEmit` |
-| `npm test` | Vitest (event stream, run state, presets, timetable layout, clash mapping, formatters, config) |
-| `npm run check` | Lint, typecheck and tests in one go |
+| `npm run typecheck` | Next route types and TypeScript |
+| `npm test` | Vitest |
+| `npm run check` | Lint, typecheck and tests |
 
-### Environment
+Environment variables are listed in `.env.example`: `BACKEND_URL`, `NEXT_PUBLIC_MOCK_STREAM` and `VISITOR_STAMP_SECRET`. The secret signs the caller's address in `src/proxy.ts` for the API's per-visitor caps and must equal the backend's value; left empty, nothing is signed and incoming stamp headers are still removed.
 
-Copy `.env.example` to `.env.local` if you need to change anything.
+## Pages
 
-| Variable | Purpose |
+| Route | What it shows |
 | --- | --- |
-| `BACKEND_URL` | Origin that `/api/*` is proxied to. Empty means `http://127.0.0.1:8000`. |
-| `NEXT_PUBLIC_MOCK_STREAM` | `1` serves a synthetic festival day (invented acts, no Qloo data) and simulated event streams instead of calling the backend, and puts a "Simulated data" banner on every page. It is read at build time, so leave it unset in production. |
+| `/` | The first screen is one decision on the published day: the costliest clash with a legal place that lowers the index, the move, the rule line, and the index before and after. Below it: the index, the priced clashes, the timetable, move and rule tests, the agent panel, recorded runs, and where the numbers come from. `?preset=<id>` selects another day. |
+| `/brief` | A one-page print view of a day's figures and the kept plan. |
+| `/check` | Paste one day of a draft grid and list its rule breaks and shared minutes. It runs in the browser and sends nothing, including to Qloo; it shows no Qloo-derived value for pasted acts. |
+| `/method` | How we know: the backtest, the pre-set test that failed, the exploratory follow-up, coverage, and what one live pair check sends. |
 
-The browser only ever talks to this app. `next.config.ts` rewrites `/api/:path*` to
-`${BACKEND_URL}/api/:path*`, so there is no CORS and the Qloo and model keys stay on the server.
+## Data boundaries
 
-Event streams pass through that rewrite, so `compress` is off in `next.config.ts` (with gzip on, the Node
-server holds the whole stream back until it ends). The backend should also send
-`Cache-Control: no-cache, no-transform` and `X-Accel-Buffering: no` on `text/event-stream` responses, and a
-`: keep-alive` comment every 15 s or so during long silences, because the client treats 60 s without any
-bytes as a stalled connection.
+`GET /api/presets` lists the available days and `GET /api/presets/{id}` returns one: the published timetable, the report, source links and the saved request records, with `synthetic: true` on the invented day. The full overlap matrix stays on the backend. The routes the page also reads, all computed from saved data with no Qloo request:
 
-## Layout
+- `/api/presets/{id}/decision`: the day's worked decision.
+- `/api/presets/{id}/lenses`: the costliest clashes ranked with and without taste overlap.
+- `/api/presets/{id}/moves` and `POST /api/presets/{id}/whatif`: the legal places for a set, and a stacked plan priced step by step.
+- `/api/presets/{id}/rule-fixes`: the rule search for one pair of sets.
+- `/api/presets/{id}/recordings`: saved agent runs for replay.
 
-```
-src/
-  app/                 layout, theme tokens (globals.css), landing page, error and 404 pages
-  components/
-    kernel/            ProvenanceChip, RunSteps, TraceDrawer, RecordedBadge, AbstainState, ErrorState,
-                       NeedsInput, LlmOnlyToggle, MockBadge, useAgentRun
-    ui/                shadcn/ui primitives (button, sheet) and SegmentedControl
-    theme/             light, dark and system theme
-    site/              header, footer, logo
-    clash/             the landing screen: Clash Budget dial, coverage strip, timetable grid with clash
-                       links (desktop) and start-order list (mobile), ranked clash list, clash drawer,
-                       hidden-clash wall, twin cards, sources, skeletons, usePresets
-  lib/
-    preset.ts          Preset types and a validator for /api/presets and /api/presets/{id}
-    clashes.ts         set views, receipts, the Qloo requests behind a clash, display formatting
-    timetable.ts       time-to-pixel scale, column frames, clash-link placement, arrow-key movement
-    clash-budget.ts    dial geometry for the Clash Budget Index
-    mock-preset.ts     synthetic festival day for NEXT_PUBLIC_MOCK_STREAM=1
-    events.ts          AgentEvent and QlooRequestRecord types, plus a validator for incoming events
-    sse.ts             streamRun(): POST + ReadableStream event-stream client
-    run-state.ts       reducer that folds events into render state, plus selectors
-    mock-stream.ts     simulated runs for building without the backend
-    format.ts          latency, count and HTTP status formatters
-    utils.ts           cn(): class merger that also knows the type-* utilities
-```
+`POST /api/pair` is the live pair check (three Qloo requests; on only when the server operator enables it and a key is set). `POST /api/runs` starts a live agent run and answers 503 while no language-model provider is configured.
 
-## The landing screen
+Taste overlap is an app-calculated rank out of 100 among the acts on one bill. Qloo returns artist popularity and audience-affinity data, not the page's taste-overlap rank, clash price or Clash Budget Index. Missing Qloo signals are shown as unpriced. Hidden clashes are examples with source links, not detections. A move's new index is calculated with the same measure used to find it. The method page reports the backtest that missed its pre-set bar.
 
-`GET /api/presets` lists the preset festival days (the first is shown by default; `?preset=<id>` picks
-another) and `GET /api/presets/{id}` returns one with its festival, score report, the saved Qloo requests
-behind it, timetable sources and evidence. Preset data is Qloo-derived and is never copied into this
-folder: tests use the small hand-written fixture in `lib/fixtures/` and mock mode uses `lib/mock-preset.ts`,
-both invented.
+## Structure
 
-Copy rules the screen follows: every index says "by Qloo's measure"; draw is labelled as Qloo popularity
-and overlap as shared audience; acts without a Qloo signal are hatched and named, never scored as zero;
-hidden clashes from the press are sourced examples, not proof of detection; the festival shown does not
-use the tool, and the index is not a verdict on its programming.
+| Path | Responsibility |
+| --- | --- |
+| `src/app/` | Pages (`/`, `/method`, `/brief`, `/check`), layout, global styles, share image |
+| `src/components/clash/` | Decision card, timetable, clash drawer, move and keep-apart controls, plan, evidence, agent panel |
+| `src/components/check/`, `brief/` | The grid check and the printable brief |
+| `src/components/kernel/` | Event-stream state, provenance, trace, recorded and refusal views |
+| `src/components/site/` | Header, footer, simulated-data and synthetic-day banners |
+| `src/lib/preset.ts`, `decision.ts`, `moves.ts`, `rule-fix.ts` | Validate API payloads; a contract change shows a clear error instead of a broken page |
+| `src/lib/check.ts` | The grid parser and the five rule checks, with no network code |
+| `src/lib/events.ts`, `sse.ts`, `run-state.ts` | Validate, read and reduce event streams |
+| `src/lib/mock-preset.ts`, `mock-stream.ts` | Invented local demo data |
+| `src/lib/method-figures.ts` | Every figure printed on `/method`, pinned by a test |
 
-Accessibility: the timetable is one tab stop (arrow keys move between sets, Home and End jump within a
-stage, Enter opens a set's costliest clash), each clash link has a numbered badge button, and the clash
-drawer returns focus to whatever opened it. Hidden clashes differ by shape (diamond, dashed link) as well
-as colour.
+The event-stream client handles chunk boundaries, keep-alive comments, malformed events, connection loss and cancellation. Recorded runs feed the same state reducer as a live stream, with their captured status visible. Provenance components distinguish Qloo-returned values, app calculations and recorded material.
 
-## The event stream
+`next.config.ts` disables Next's response compression because local compression can buffer event streams. The backend sends no-transform and buffering headers for streams. The client treats 60 seconds without bytes as a stalled connection.
 
-`streamRun(url, body, onEvent, signal)` POSTs JSON and delivers each `AgentEvent` (`data: <json>`, blank line)
-to `onEvent`. It copes with events split across chunks, LF, CRLF and CR line endings, multi-line `data:`
-fields, `:` keep-alive comments and multi-byte characters cut mid-sequence. Problems arrive as a single
-`error` event instead of a rejected promise: HTTP errors, a dropped or stalled connection (60 s without
-bytes), and events that are malformed or break the contract (reading stops there). Reading also stops at
-`run_finished`. A server `error` is passed on and the read continues only to pick up the closing
-`run_finished`. Once the outcome is known (`run_finished`, `needs_input` or `error`), a connection that drops
-or goes quiet later is not reported. Aborting through `signal` stops quietly. Unknown event types are
-skipped so a newer backend does not break an older client.
+## Wording and tests
 
-Conventions on top of the contract:
+Two scans read every shipped source file: `src/lib/claims-guard.test.ts` rejects wording that treats taste overlap as a count of fans, wording about business or safety effects, and language that presents a move as the best possible one. The backend has a matching scan over its strings and tool output. Tests use invented acts and festivals only; no test or fixture holds Qloo data.
 
-- **Abstain.** A `result` event with `kind: "abstain"` and `data: { reason: string, details?: string[] }`
-  means Qloo has too little data. Render it with `AbstainState` (`selectAbstain()` reads it).
-- **Recorded requests.** `QlooRequestRecord` has an optional `recorded: true`, set when the request was
-  served from a saved fixture. The trace drawer labels those separately from live and cached ones.
-- **Answering a question.** After `needs_input` the server may close the stream without `run_finished`; the
-  run is then shown as waiting. `useAgentRun().answer(option)` starts a new run whose body is the previous
-  body plus `answer: { question, option_id }`. Pass `buildAnswerBody` to change the shape.
-- **Steps.** The backend does not have to send `step` events: `selectSteps(state)` falls back to one step per
-  tool call (named after the tool), so `RunSteps` is never empty during a run.
-- **Prose.** `text_delta` events from several turns of the writer are joined into `state.text`; text that
-  arrives after a tool call starts a new paragraph (`\n\n`).
-- **`summary` results** are only used by the simulated stream. Real screens define their own kinds.
+## Accessibility and design
 
-## Using the kernel
-
-```tsx
-"use client";
-
-import { ErrorState, RunSteps, TraceDrawer, useAgentRun } from "@/components/kernel";
-import { selectSteps } from "@/lib/run-state";
-
-export function Run() {
-  const { state, start, retry } = useAgentRun({ endpoint: "/api/runs" });
-  return (
-    <>
-      <button onClick={() => start({ preset: "demo" })}>Run</button>
-      <RunSteps steps={selectSteps(state)} status={state.status} />
-      <TraceDrawer toolCalls={state.toolCalls} runId={state.runId} mode={state.mode} />
-      {state.error && <ErrorState message={state.error.message} retryable={state.error.retryable} onRetry={retry} />}
-    </>
-  );
-}
-```
-
-`state` also carries `text` (streamed prose), `results`, `needsInput`, `summary` and `mode`. A stored run can
-be rendered by passing its events through `reduceEvents()` from `lib/run-state`.
-
-Rules the components follow, which new screens should keep:
-
-- Every figure shows where it came from with a `ProvenanceChip` (`qloo`, `derived`, `llm`, `recorded`).
-  Never present a model guess as Qloo data.
-- Declining to answer is a result (`AbstainState`), not an error.
-- Anything replayed from a script is labelled (`MockBadge`, `RecordedBadge`).
-- The retry button and the `NeedsInput` options disappear when their run restarts, so move focus to a stable
-  control afterwards (the landing page hands it to the run button).
-
-## Design system
-
-Tokens live in `src/app/globals.css` as CSS variables for light ("paper and ink") and dark ("midnight stage"),
-following the system setting unless the user picks one with the header toggle. Text pairs meet WCAG AA (most
-reach AAA). Status and provenance always carry an icon and a text label as well as colour.
-
-- Fonts: Archivo (variable width, condensed for display type) and JetBrains Mono, via `next/font`.
-- Type utilities: `type-display`, `type-headline`, `type-title`, `type-numeral`, `type-kicker`,
-  `type-wordmark`. `type-display` sizes itself from the nearest `@container` ancestor.
-- Layout: `container-page`, `bg-timegrid` (faint column grid), `ticket-perforation` (ticket-style card edge).
-- Motion respects `prefers-reduced-motion`.
-
-New shadcn components: `npx shadcn@latest add <name>`. The state variants they rely on (`data-open`,
-`data-checked`, and so on) are already defined in `globals.css`.
+The timetable supports arrow-key navigation, and opening a clash returns focus to its trigger. Status and provenance use words and icons as well as colour. The layout has light, dark and system themes and respects reduced motion. Styling uses Tailwind v4, Radix primitives, Archivo and JetBrains Mono.

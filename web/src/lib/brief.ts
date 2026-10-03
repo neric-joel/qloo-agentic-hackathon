@@ -25,7 +25,7 @@ import { numberWord } from "./method-figures";
 import { currentPlacement } from "./moves";
 import { planVerdict, publishedVerdict, raisesIndex } from "./plan-copy";
 import type { BaselineStats, Preset } from "./preset";
-import { shiftText, type Plan, type ScaleRange } from "./stack";
+import { isPlanRuleStep, ruleReceipt, ruleStepLine, shiftText, type Plan, type ScaleRange } from "./stack";
 import { formatRange, overlapWindow } from "./timetable";
 
 /** How many of the day's costliest clashes the brief's table lists. */
@@ -202,18 +202,33 @@ export function hiddenSentence(names: readonly string[]): string | null {
 // ------------------------------------------------------------------------------------ the plan
 
 /**
- * "2 kept moves: Clash Budget Index 116.7 → 106.6, 10.1 lower." Both readings and the change come
- * from the plan answer, compared to one decimal as the plan card does.
+ * "2 kept moves: Clash Budget Index 116.7 → 106.6, 10.1 lower." ("kept steps" when the plan holds
+ * a kept change from "Keep two sets apart"). Both readings and the change come from the plan
+ * answer, compared to one decimal as the plan card does.
  */
 export function planSummary(plan: Pick<Plan, "publishedBudget" | "budget" | "steps">): string {
   const count = plan.steps.length;
+  const noun = plan.steps.some(isPlanRuleStep) ? "step" : "move";
   const delta = budgetDelta(plan.publishedBudget, plan.budget) ?? 0;
   const change = delta === 0 ? "no change" : changeLabel(delta);
-  return `${count} kept ${count === 1 ? "move" : "moves"}: Clash Budget Index ${formatIndex(plan.publishedBudget)} → ${formatIndex(plan.budget)}, ${change}.`;
+  return `${count} kept ${count === 1 ? noun : `${noun}s`}: Clash Budget Index ${formatIndex(plan.publishedBudget)} → ${formatIndex(plan.budget)}, ${change}.`;
 }
 
+/** One kept change from "Keep two sets apart" as the plan card prints it: one numbered step. */
+export type BriefRuleStep = {
+  n: number;
+  /** "Keep Sprints and Katy J Pearson apart: Sprints → The Park 15:00–16:00; Royel Otis → Woodsies 14:30–15:15". */
+  line: string;
+  /** The index before and after this step, one decimal. */
+  before: string;
+  after: string;
+  raises: boolean;
+  /** What the server says about the pair after the whole plan, as the plan card prints it. */
+  receipt: string;
+};
+
 /** One kept move as the plan card prints it. */
-export type BriefStep = {
+export type BriefMoveStep = {
   n: number;
   act: string;
   /** "West Holts 20:30–21:30". */
@@ -227,6 +242,14 @@ export type BriefStep = {
   raises: boolean;
 };
 
+/** A step of the brief's plan: a single move or a kept change. */
+export type BriefStep = BriefMoveStep | BriefRuleStep;
+
+/** True for a kept change of the brief's plan. */
+export function isBriefRuleStep(step: BriefStep): step is BriefRuleStep {
+  return "line" in step;
+}
+
 /** "20:30-21:30" as the page prints a range: "20:30–21:30". */
 function dashRange(start: string, end: string): string {
   return `${start}–${end}`;
@@ -239,10 +262,20 @@ function dashRange(start: string, end: string): string {
 export function briefSteps(preset: Pick<Preset, "festival">, plan: Pick<Plan, "publishedBudget" | "steps">): BriefStep[] {
   const stages = new Map(preset.festival.stages.map((stage) => [stage.id, stage.name]));
   const slots = new Map(preset.festival.timetable.map((slot) => [slot.act_id, slot]));
-  return plan.steps.map((step, index) => {
+  return plan.steps.map((step, index): BriefStep => {
+    const before = index === 0 ? plan.publishedBudget : plan.steps[index - 1].budgetAfter;
+    if (isPlanRuleStep(step)) {
+      return {
+        n: index + 1,
+        line: ruleStepLine(step),
+        before: formatIndex(before),
+        after: formatIndex(step.budgetAfter),
+        raises: raisesIndex(before, step.budgetAfter),
+        receipt: ruleReceipt(step),
+      };
+    }
     const from = currentPlacement(preset, step.actId);
     const fromStage = slots.get(step.actId)?.stage_id;
-    const before = index === 0 ? plan.publishedBudget : plan.steps[index - 1].budgetAfter;
     return {
       n: index + 1,
       act: step.act,

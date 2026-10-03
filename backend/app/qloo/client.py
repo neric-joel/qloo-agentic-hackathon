@@ -445,42 +445,18 @@ class QlooClient:
         """Find entities by name. ``types`` are entity URNs such as ``urn:entity:artist``."""
         return await self.get("/search", {"query": query, "types": list(types or []), "take": take})
 
-    async def entities(self, entity_ids: Iterable[str]) -> dict[str, Any]:
-        """Look up full entity records by Qloo id."""
-        return await self.get("/entities", {"entity_ids": list(entity_ids)})
-
     async def insights(self, params: Params) -> dict[str, Any]:
         """Call the Insights API. ``params`` use Qloo's dotted names, e.g. ``filter.type``."""
         if "filter.type" not in params:
             raise ValueError("insights() requires 'filter.type'")
         return await self.get("/v2/insights", params, ttl=INSIGHTS_TTL)
 
-    async def tags(self, params: Params) -> dict[str, Any]:
-        """Search tags (genres, keywords, cuisines, styles...)."""
-        return await self.get("/v2/tags", params, ttl=LOOKUP_TTL)
-
-    async def tag_types(self) -> dict[str, Any]:
-        return await self.get("/v2/tags/types", ttl=LOOKUP_TTL)
-
-    async def audiences(self, params: Params) -> dict[str, Any]:
-        """Search audience segments."""
-        return await self.get("/v2/audiences", params, ttl=LOOKUP_TTL)
-
-    async def audience_types(self) -> dict[str, Any]:
-        return await self.get("/v2/audiences/types", ttl=LOOKUP_TTL)
-
-    async def trending(self, params: Params) -> dict[str, Any]:
-        """Entities whose audience is growing over a date range."""
-        return await self.get("/v2/trending", params, ttl=TRENDING_TTL)
-
     async def compare(self, params: Params) -> dict[str, Any]:
         """What two groups of signals have in common (``a.*`` and ``b.*`` params)."""
         return await self.get("/v2/analysis/compare", params, ttl=INSIGHTS_TTL)
 
 
-LOOKUP_TTL = 24 * 3600
 INSIGHTS_TTL = 6 * 3600
-TRENDING_TTL = 3600
 
 
 def _retry_after_seconds(response: httpx.Response) -> float | None:

@@ -9,8 +9,13 @@ import {
   encodeMoves,
   fetchPlan,
   ghostSlot,
+  isPlanRuleStep,
+  isRuleStackStep,
   isSafeId,
+  moveCount,
+  movedActs,
   parsePlan,
+  placedLine,
   planAnnouncement,
   planBody,
   planPreview,
@@ -19,9 +24,15 @@ import {
   rangeVerdict,
   readStoredMoves,
   requestPlan,
+  ruleReceipt,
+  ruleStepLine,
+  sameRuleStep,
   shiftText,
+  stepMoves,
   storeMoves,
+  type PlanRuleStep,
   type PlanStep,
+  type RuleStackStep,
   type StackMove,
 } from "./stack";
 
@@ -503,6 +514,320 @@ describe("requestPlan and fetchPlan", () => {
     const fetchMock = answer(200, body());
     expect(await requestPlan("../runs", [one], null)).toEqual({ status: "error" });
     expect(await requestPlan("example-sun", [one], "../x")).toEqual({ status: "error" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+// ----------------------------------------------------------------------------- rule steps
+
+/** Synthetic: a kept change that moves Act Two and Act Three to keep Act Four and Act Five apart. */
+const change: RuleStackStep = {
+  rule: { aId: "act-four", bId: "act-five" },
+  moves: [
+    { actId: "act-two", stageId: "east-stage", day: 0, start: "15:00" },
+    { actId: "act-three", stageId: "west-stage", day: 0, start: "9:45" },
+  ],
+};
+const single: RuleStackStep = {
+  rule: { aId: "act.four", bId: "act_five" },
+  moves: [{ actId: "act-two", stageId: "east-stage", day: 1, start: "15:00" }],
+};
+
+function ruleStep(extra: Partial<Record<string, unknown>> = {}) {
+  return {
+    rule: { a: { act_id: "act-four", act: "Act Four" }, b: { act_id: "act-five", act: "Act Five" } },
+    moves: [
+      {
+        act: "Act Two",
+        act_id: "act-two",
+        move: "Act Two: East Stage 14:00-15:00 -> East Stage 15:00-16:00",
+        stage: "East Stage",
+        stage_id: "east-stage",
+        day: 0,
+        start: "15:00",
+        end: "16:00",
+      },
+      {
+        act: "Act Three",
+        act_id: "act-three",
+        move: "Act Three: West Stage 15:15-16:00 -> West Stage 9:45-10:30",
+        stage: "West Stage",
+        stage_id: "west-stage",
+        day: 0,
+        start: "9:45",
+        end: "10:30",
+      },
+    ],
+    budget_after: 108.4,
+    rule_holds_after: true,
+    new_breaks: 0,
+    ...extra,
+  };
+}
+
+describe("rule steps in a link", () => {
+  it("round trips a two-set and a one-set change between single moves", () => {
+    const steps = [one, change, single, two];
+    const encoded = encodeMoves(steps);
+    expect(encoded).toBe(
+      "act-one~west-stage~0~2030,r~act-four~act-five~act-two~east-stage~0~1500|act-three~west-stage~0~945," +
+        "r~act.four~act_five~act-two~east-stage~1~1500,act-two~east-stage~0~905",
+    );
+    expect(decodeMoves(encoded)).toEqual(steps);
+  });
+
+  it("reads a link made before rule steps existed exactly as it did", () => {
+    const old = "act-one~west-stage~0~2030,act-two~east-stage~0~905,act.three~tent_2~1~2515";
+    expect(decodeMoves(old)).toEqual([one, two, late]);
+    // A set whose id is r is still a single move.
+    expect(decodeMoves("r~west-stage~0~2030")).toEqual([{ actId: "r", stageId: "west-stage", day: 0, start: "20:30" }]);
+  });
+
+  it("counts a two-set change as two of the eight moves", () => {
+    expect(moveCount([one, change, single])).toBe(4);
+    const six = Array.from({ length: 6 }, (_, i) => ({ ...one, actId: `act-${i}` }));
+    expect(decodeMoves(encodeMoves([...six, change]))).toEqual([...six, change]);
+    expect(decodeMoves(encodeMoves([...six, change, { ...one, actId: "act-9" }]))).toEqual([]);
+    expect(decodeMoves(encodeMoves([...six, single, { ...one, actId: "act-8" }]))).toHaveLength(8);
+    expect(decodeMoves(encodeMoves([...six, { ...one, actId: "act-7" }, change]))).toEqual([]);
+  });
+
+  it("lets a change move a set an earlier single move moved, but not a set twice in one step", () => {
+    const hero = { actId: "act-two", stageId: "east-stage", day: 0, start: "14:15" };
+    expect(decodeMoves(encodeMoves([hero, change]))).toEqual([hero, change]);
+    const twice = { ...change, moves: [change.moves[0], { ...change.moves[0], start: "16:00" }] };
+    expect(decodeMoves(encodeMoves([twice]))).toEqual([]);
+    // Two single moves of one set are still refused.
+    expect(decodeMoves(encodeMoves([hero, { ...hero, start: "16:00" }]))).toEqual([]);
+  });
+
+  it("gives an empty plan for a malformed rule step, and never throws", () => {
+    const m1 = "act-two~east-stage~0~1500";
+    const m2 = "act-three~west-stage~0~945";
+    const broken = [
+      "r~act-four~act-five",
+      "r~act-four~act-five~",
+      `r~act-four~act-five~${m1}|`,
+      `r~act-four~act-five~${m1}|${m2}|${m2}`,
+      `r~act-four~act-four~${m1}`,
+      `r~..~act-five~${m1}`,
+      `r~act-four~a/b~${m1}`,
+      `r~act-four~act-five~${m1}|act-two~west-stage~0~1600`,
+      "r~act-four~act-five~act-two~east-stage~14~1500",
+      "r~act-four~act-five~act-two~east-stage~0~15:00",
+      `x~act-four~act-five~${m1}`,
+      `r~act-four~act-five~${m1}|${m2}~extra`,
+      `r~${"a".repeat(81)}~act-five~${m1}`,
+      `${m1}|${m2}`,
+      `r~act-four~act-five~${m1},`,
+    ];
+    for (const item of broken) {
+      expect(() => decodeMoves(item)).not.toThrow();
+      expect(decodeMoves(item)).toEqual([]);
+    }
+  });
+
+  it("knows a rule step from a single move and lists every moved set once", () => {
+    expect(isRuleStackStep(change)).toBe(true);
+    expect(isRuleStackStep(one)).toBe(false);
+    expect(stepMoves(one)).toEqual([one]);
+    expect(stepMoves(change)).toEqual(change.moves);
+    expect([...movedActs([{ ...one, actId: "act-two" }, change])].sort()).toEqual(["act-three", "act-two"]);
+    expect(sameRuleStep(change, { ...change, moves: [...change.moves] })).toBe(true);
+    expect(sameRuleStep(change, single)).toBe(false);
+    expect(sameRuleStep(change, { ...change, moves: [change.moves[1], change.moves[0]] })).toBe(false);
+  });
+
+  it("links the brief with the encoded rule step", () => {
+    const href = briefHref("example-sun", 0, [one, change]);
+    const params = new URL(href, "http://localhost").searchParams;
+    expect(decodeMoves(params.get("moves"))).toEqual([one, change]);
+  });
+});
+
+describe("planBody with rule steps", () => {
+  it("sends a rule step as the contract words it and a single move as before", () => {
+    const parsed = JSON.parse(planBody([one, change, single], null, 8));
+    expect(parsed.moves[0]).toEqual({ act: "act-one", stage_id: "west-stage", day: 0, start: "20:30" });
+    expect(parsed.moves[1]).toEqual({
+      rule: { a: "act-four", b: "act-five" },
+      moves: [
+        { act: "act-two", stage_id: "east-stage", day: 0, start: "15:00" },
+        { act: "act-three", stage_id: "west-stage", day: 0, start: "9:45" },
+      ],
+    });
+    expect(Object.keys(parsed.moves[1])).toEqual(["rule", "moves"]);
+    expect(parsed.moves[2].moves).toHaveLength(1);
+    expect(Object.keys(parsed)).toEqual(["moves", "act", "limit"]);
+  });
+});
+
+describe("parsePlan with rule steps", () => {
+  it("reads a rule step with its receipt, between single moves", () => {
+    const plan = parsePlan(body({}, { steps: [step(), ruleStep()] }));
+    expect(plan?.steps).toHaveLength(2);
+    const second = plan?.steps[1];
+    expect(second && isPlanRuleStep(second)).toBe(true);
+    expect(plan?.steps[0] && isPlanRuleStep(plan.steps[0])).toBe(false);
+    expect(second).toEqual({
+      rule: { a: { actId: "act-four", act: "Act Four" }, b: { actId: "act-five", act: "Act Five" } },
+      moves: [
+        {
+          act: "Act Two",
+          actId: "act-two",
+          move: "Act Two: East Stage 14:00-15:00 -> East Stage 15:00-16:00",
+          stage: "East Stage",
+          stageId: "east-stage",
+          day: 0,
+          start: "15:00",
+          end: "16:00",
+        },
+        {
+          act: "Act Three",
+          actId: "act-three",
+          move: "Act Three: West Stage 15:15-16:00 -> West Stage 9:45-10:30",
+          stage: "West Stage",
+          stageId: "west-stage",
+          day: 0,
+          start: "9:45",
+          end: "10:30",
+        },
+      ],
+      budgetAfter: 108.4,
+      ruleHoldsAfter: true,
+      newBreaks: 0,
+    });
+  });
+
+  it("refuses a rule step the page would print wrongly, and never throws", () => {
+    const broken = [
+      ruleStep({ rule: null }),
+      ruleStep({ rule: { a: { act_id: "act-four", act: "Act Four" } } }),
+      ruleStep({ rule: { a: { act_id: "", act: "Act Four" }, b: { act_id: "act-five", act: "Act Five" } } }),
+      ruleStep({ moves: [] }),
+      ruleStep({ moves: "none" }),
+      ruleStep({ moves: [...ruleStep().moves, ...ruleStep().moves] }),
+      ruleStep({ moves: [{ ...ruleStep().moves[0], stage: "" }] }),
+      ruleStep({ moves: [null] }),
+      ruleStep({ budget_after: Number.NaN }),
+      ruleStep({ budget_after: undefined }),
+      ruleStep({ rule_holds_after: "true" }),
+      ruleStep({ rule_holds_after: undefined }),
+      ruleStep({ new_breaks: -1 }),
+      ruleStep({ new_breaks: 1.5 }),
+      ruleStep({ new_breaks: "0" }),
+      ruleStep({ new_breaks: undefined }),
+    ];
+    for (const item of broken) {
+      expect(() => parsePlan(body({}, { steps: [item] }))).not.toThrow();
+      expect(parsePlan(body({}, { steps: [item] }))).toBeNull();
+    }
+  });
+});
+
+describe("words for a rule step", () => {
+  const priced = parsePlan(body({}, { steps: [ruleStep()] }))?.steps[0] as PlanRuleStep;
+
+  it("reads a placed set and the whole step on one line", () => {
+    expect(placedLine(priced.moves[0])).toBe("Act Two → East Stage 15:00–16:00");
+    expect(ruleStepLine(priced)).toBe(
+      "Keep Act Four and Act Five apart: Act Two → East Stage 15:00–16:00; Act Three → West Stage 9:45–10:30",
+    );
+  });
+
+  it("words the receipt from the two facts the server sends", () => {
+    expect(ruleReceipt({ ruleHoldsAfter: true, newBreaks: 0 })).toBe(
+      "After this plan they share no time, and the plan adds no rule break.",
+    );
+    expect(ruleReceipt({ ruleHoldsAfter: false, newBreaks: 0 })).toBe("After this plan they still share time.");
+    expect(ruleReceipt({ ruleHoldsAfter: true, newBreaks: 1 })).toBe("The plan adds 1 rule break.");
+    expect(ruleReceipt({ ruleHoldsAfter: true, newBreaks: 3 })).toBe("The plan adds 3 rule breaks.");
+    expect(ruleReceipt({ ruleHoldsAfter: false, newBreaks: 2 })).toBe(
+      "The plan adds 2 rule breaks. After this plan they still share time.",
+    );
+  });
+
+  it("announces a plan with a kept change as steps, with the receipt", () => {
+    const text = planAnnouncement({ publishedBudget: 116.71, budget: 111.85, steps: [priced] }, 1);
+    expect(text).toBe(
+      "Plan: 1 kept step. Clash Budget Index 116.7 to 111.8, 4.8 lower. Act Four and Act Five: After this plan they share no time, and the plan adds no rule break.",
+    );
+    expect(planAnnouncement({ publishedBudget: 116.71, budget: 106.62, steps: [] }, 2)).toBe(
+      "Plan: 2 kept moves. Clash Budget Index 116.7 to 106.6, 10.1 lower.",
+    );
+  });
+});
+
+describe("rule steps on the timetable", () => {
+  const timetable: SetSlot[] = [
+    { act_id: "act-one", day: 0, stage_id: "west-stage", start: 1200, end: 1260, locked: false },
+    { act_id: "act-two", day: 0, stage_id: "east-stage", start: 840, end: 900, locked: false },
+    { act_id: "act-three", day: 0, stage_id: "west-stage", start: 915, end: 960, locked: false },
+  ];
+
+  it("draws a ghost for every moved set of a change", () => {
+    const preview = planPreview(timetable, [change], null);
+    expect(preview?.kept).toEqual([
+      { actId: "act-two", stageId: "east-stage", day: 0, start: 900, end: 960 },
+      { actId: "act-three", stageId: "west-stage", day: 0, start: 585, end: 630 },
+    ]);
+    expect(applyMoves(timetable, [change])[1]).toMatchObject({ start: 900, end: 960 });
+    expect(applyMoves(timetable, [change])[2]).toMatchObject({ start: 585, end: 630 });
+  });
+
+  it("draws one ghost per set at the place the last step leaves it", () => {
+    const hero: StackMove = { actId: "act-two", stageId: "east-stage", day: 0, start: "14:15" };
+    const preview = planPreview(timetable, [hero, change], null);
+    expect(preview?.kept.map((ghost) => ghost.actId)).toEqual(["act-two", "act-three"]);
+    expect(preview?.kept[0]).toMatchObject({ start: 900 });
+    expect(applyMoves(timetable, [hero, change])[1]).toMatchObject({ start: 900 });
+  });
+});
+
+describe("plan storage and requests with rule steps", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps both kinds of step through session storage", () => {
+    const items = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => items.get(key) ?? null,
+      setItem: (key: string, value: string) => void items.set(key, value),
+      removeItem: (key: string) => void items.delete(key),
+    };
+    storeMoves("example-sun", [one, change, single], storage);
+    expect(readStoredMoves("example-sun", storage)).toEqual([one, change, single]);
+  });
+
+  it("posts a rule step and accepts the answer about it", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(body({}, { steps: [ruleStep()] })), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await requestPlan("example-sun", [change], null);
+    expect(result.status).toBe("ready");
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body)).moves[0].rule).toEqual({ a: "act-four", b: "act-five" });
+  });
+
+  it("refuses an answer that is about another kind of step or other sets", async () => {
+    const reply = (steps: unknown[]) => {
+      vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(body({}, { steps })), { status: 200 })));
+    };
+    reply([step()]);
+    expect(await requestPlan("example-sun", [change], null)).toEqual({ status: "error" });
+    reply([ruleStep()]);
+    expect(await requestPlan("example-sun", [one], null)).toEqual({ status: "error" });
+    reply([ruleStep({ rule: { a: { act_id: "act-nine", act: "Act Nine" }, b: { act_id: "act-five", act: "Act Five" } } })]);
+    expect(await requestPlan("example-sun", [change], null)).toEqual({ status: "error" });
+    reply([ruleStep({ moves: [ruleStep().moves[0]] })]);
+    expect(await requestPlan("example-sun", [change], null)).toEqual({ status: "error" });
+  });
+
+  it("sends nothing for more than eight moves counted over every step", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(body()), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const seven = Array.from({ length: 7 }, (_, i) => ({ ...one, actId: `act-${i}` }));
+    expect(await requestPlan("example-sun", [...seven, change], null)).toEqual({ status: "error" });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

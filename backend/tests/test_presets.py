@@ -48,10 +48,25 @@ def test_lists_and_serves_presets(tmp_path):
         app.dependency_overrides.clear()
 
 
-def test_no_presets_directory_means_an_empty_list(tmp_path):
+def test_no_presets_directory_serves_only_the_invented_day(tmp_path):
     try:
         with client_for(tmp_path / "absent") as client:
-            assert client.get("/api/presets").json() == []
+            listed = client.get("/api/presets").json()
+            assert [p["id"] for p in listed] == ["synthetic-lanternfield-friday"]
+            assert listed[0]["synthetic"] is True
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_built_presets_replace_the_invented_day_and_are_not_flagged(tmp_path):
+    write_preset(tmp_path, "a-day", "A Day")
+    try:
+        with client_for(tmp_path) as client:
+            listed = client.get("/api/presets").json()
+            assert [p["id"] for p in listed] == ["a-day"]
+            assert listed[0]["synthetic"] is False
+            assert client.get("/api/presets/a-day").json()["synthetic"] is False
+            assert client.get("/api/presets/synthetic-lanternfield-friday").status_code == 404
     finally:
         app.dependency_overrides.clear()
 

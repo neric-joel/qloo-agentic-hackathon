@@ -225,9 +225,6 @@ def percentiles(scores: dict[str, float]) -> dict[str, float]:
     return out
 
 
-_percentiles = percentiles
-
-
 async def build_overlap(
     client: QlooClient,
     names: Sequence[str],

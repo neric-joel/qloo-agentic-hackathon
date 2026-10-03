@@ -16,8 +16,8 @@ import { pluralize } from "./format";
 import { clockMinutes } from "./moves";
 import { planVerdict, rangeLead } from "./plan-copy";
 import type { Preset } from "./preset";
-import { lowerFirst, parseRuleFixes, ruleSentence, shiftBrief, shiftWords, type RuleFixes } from "./rule-fix";
-import { isSafeId, type ScaleRange, type StackMove } from "./stack";
+import { fixStep, lowerFirst, parseRuleFixes, ruleSentence, shiftBrief, shiftWords, type RuleFixes } from "./rule-fix";
+import { isSafeId, type RuleStackStep, type ScaleRange, type StackMove } from "./stack";
 import { formatClock, formatRange, overlapWindow } from "./timetable";
 
 // ------------------------------------------------------------------------------------ the answer
@@ -204,6 +204,10 @@ export type DecisionCopy = {
   seedMove: StackMove | null;
   /** What "Try this rule yourself" searches; null when there is no rule line to try. */
   seedRule: { aId: string; bId: string } | null;
+  /** What "Keep this change" keeps: line 3's change as one step of a plan; null without that change. */
+  seedChange: RuleStackStep | null;
+  /** The status line a kept change announces first, "Testing the change that keeps A and B apart." */
+  testingChange: string | null;
   /** The status line a seeded move announces first, "Testing Sprints at 14:15." */
   testing: string | null;
 };
@@ -350,6 +354,8 @@ export function buildDecisionCopy(preset: Preset, decision: Decision | null): De
     // Line 3: the rule. Absent when the route gave none, or the pair already shares nothing.
     const ruleLine = decision.rule ? ruleSentence(decision.rule, published) : null;
     const tryable = ruleLine !== null && decision.rule !== null && !(decision.rule.a.locked && decision.rule.b.locked);
+    // The change line 3 describes (the first listed one), as one step a plan can keep.
+    const change = tryable && decision.rule && decision.rule.fixes[0] ? fixStep(decision.rule, decision.rule.fixes[0]) : null;
 
     return {
       presetId: preset.id,
@@ -371,6 +377,8 @@ export function buildDecisionCopy(preset: Preset, decision: Decision | null): De
       minutesAfter: move ? move.minutesSharedAfter : null,
       seedMove,
       seedRule: tryable ? { aId: clash.aId, bId: clash.bId } : null,
+      seedChange: change,
+      testingChange: change && decision.rule ? `Testing the change that keeps ${decision.rule.a.act} and ${decision.rule.b.act} apart.` : null,
       testing,
     };
   } catch {

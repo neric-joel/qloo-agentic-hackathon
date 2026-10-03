@@ -43,7 +43,7 @@ from app.agent.grounding import ungrounded_numbers  # noqa: E402
 from app.agent.llm import DEFAULT_MODELS, LLMBackend, OnText, build_backend  # noqa: E402
 from app.claims import FORBIDDEN_PATTERNS, RUNTIME_ONLY, find_claims  # noqa: E402
 from app.config import Settings, get_settings  # noqa: E402
-from app.presets import Preset, get_presets  # noqa: E402
+from app.presets import Preset, load_presets  # noqa: E402
 from app.qloo.client import QlooClient  # noqa: E402
 from app.recordings import MAX_RUNS, Recording  # noqa: E402
 from app.runs import ClashInput, RunRequest, clash_state, execute_run  # noqa: E402
@@ -458,7 +458,7 @@ async def record_one(
 
 def dry_run(args: argparse.Namespace, entries: Sequence[PlanEntry]) -> int:
     # Only the presets are needed, so no .env is read and no key is even loaded
-    presets = get_presets(Settings(_env_file=None))
+    presets = load_presets(Settings(_env_file=None))
     try:
         planned = build_requests(entries, presets)
         files = check_out(args.out, entries)
@@ -489,7 +489,7 @@ async def record(args: argparse.Namespace, entries: Sequence[PlanEntry]) -> int:
         raise SystemExit(NOT_CONFIGURED)
     if not settings.qloo_api_key:
         raise SystemExit("Qloo is not configured: set QLOO_API_KEY in backend/.env")
-    presets = get_presets(settings)
+    presets = load_presets(settings)
     try:
         planned = build_requests(entries, presets)
         check_out(args.out, entries)

@@ -120,6 +120,7 @@ describe("DecisionCard", () => {
     expect(withHandlers).toContain("Open this move");
     expect(withHandlers).toContain("Try this rule yourself");
     expect(withHandlers).toContain("Open a hidden clash");
+    expect(withHandlers).not.toContain("Keep this change");
     const noRule = text(
       renderToStaticMarkup(
         createElement(DecisionCard, { copy: copy({ rule: null }), onOpenMove: () => {}, onTryRule: () => {} }),
@@ -129,6 +130,43 @@ describe("DecisionCard", () => {
     expect(noRule).not.toContain("Try this rule yourself");
     expect(noRule).not.toContain("Line 3");
     expect(noRule).toContain("Line 4");
+  });
+
+  it("offers Keep this change only with its handler and a listed change on line 3", () => {
+    const fix = {
+      sets_moved: 1,
+      minutes_moved: 60,
+      stage_changes: 0,
+      budget_after: 98.4,
+      moves: [
+        {
+          act_id: "bo",
+          act: "Bo Diddly Squat",
+          from: "Side 20:30-22:00",
+          stage_id: "side",
+          stage: "Side",
+          day: 0,
+          start: "21:30",
+          end: "23:00",
+          minutes_moved: 60,
+        },
+      ],
+    };
+    const withChange = copy({ rule: { ...RULE, fixes_found: 1, fixes: [fix] } });
+    expect(withChange.seedChange).not.toBeNull();
+    const shown = text(
+      renderToStaticMarkup(createElement(DecisionCard, { copy: withChange, onOpenMove: () => {}, onKeepChange: () => {} })),
+    );
+    expect(shown).toContain("Keep this change");
+    expect(text(renderToStaticMarkup(createElement(DecisionCard, { copy: withChange })))).not.toContain("Keep this change");
+    // No listed change on line 3: no button, even with a handler.
+    const none = text(renderToStaticMarkup(createElement(DecisionCard, { copy: copy(), onKeepChange: () => {} })));
+    expect(none).not.toContain("Keep this change");
+    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: withChange, onKeepChange: () => {} }));
+    // The button names the line it keeps.
+    const id = /aria-describedby="([^"]+)"/.exec(html)?.[1];
+    expect(id).toBeTruthy();
+    expect(html).toContain(`id="${id}"`);
   });
 
   it("says so, with no receipt, figure, timeline or move to open, when no place lowers the index", () => {

@@ -29,7 +29,7 @@ import { drawerRank, drawerRankOf } from "@/lib/lenses";
 import type { PairClash, Preset, PresetSummary } from "@/lib/preset";
 import type { RulePreview } from "@/lib/rule-fix";
 import type { ServerSummary } from "@/lib/server-summary";
-import type { PlanPreview, StackMove } from "@/lib/stack";
+import type { PlanPreview, StackStep } from "@/lib/stack";
 import { cn } from "@/lib/utils";
 
 import { AgentPanel } from "./agent-panel";
@@ -73,10 +73,16 @@ const HERO_BUTTON: Record<HeroClash["kind"], string> = {
 
 const PROOF_LINE =
   "Shown on two published days from festivals that do not use it: Glastonbury 2025 and Riot Fest 2026. A reading, not a verdict on either festival.";
+export const SYNTHETIC_PROOF_LINE =
+  "Shown here on an invented day: the server has no built festival day, so the acts, times and readings are made up and no Qloo request was made.";
 
 /** The proof line sits under the actions on a wide screen and after the card on a phone. */
-function ProofLine({ className }: { className: string }) {
-  return <p className={cn("max-w-2xl text-xs leading-relaxed text-muted-foreground", className)}>{PROOF_LINE}</p>;
+function ProofLine({ className, synthetic = false }: { className: string; synthetic?: boolean }) {
+  return (
+    <p className={cn("max-w-2xl text-xs leading-relaxed text-muted-foreground", className)}>
+      {synthetic ? SYNTHETIC_PROOF_LINE : PROOF_LINE}
+    </p>
+  );
 }
 
 /**
@@ -113,7 +119,17 @@ function HeroActions({ seeDecision, tryMove }: { seeDecision: boolean; tryMove: 
  * score on the right. On a phone the pitch comes first, then the card (its first line is on the first
  * screen), the proof line, and the dial.
  */
-function HeroLayout({ intro, actions, aside }: { intro: ReactNode; actions?: ReactNode; aside: ReactNode }) {
+function HeroLayout({
+  intro,
+  actions,
+  aside,
+  synthetic = false,
+}: {
+  intro: ReactNode;
+  actions?: ReactNode;
+  aside: ReactNode;
+  synthetic?: boolean;
+}) {
   return (
     <section aria-labelledby="pitch-heading" className="relative isolate overflow-hidden">
       <div
@@ -125,7 +141,7 @@ function HeroLayout({ intro, actions, aside }: { intro: ReactNode; actions?: Rea
           <div className="min-w-0">
             {intro}
             {actions}
-            <ProofLine className="mt-4 hidden lg:block" />
+            <ProofLine className="mt-4 hidden lg:block" synthetic={synthetic} />
           </div>
           <div className="min-w-0">{aside}</div>
         </div>
@@ -431,8 +447,9 @@ function PresetView({
   const [planPreview, setPlanPreview] = useState<PlanPreview | null>(null);
   // A change from "Keep two sets apart", previewed as two ghosts. Separate from the plan above.
   const [rulePreview, setRulePreview] = useState<RulePreview | null>(null);
-  // The decision card's two buttons hand "Try a move" a seed; a new nonce replays it, the same one never does.
-  const [seedMove, setSeedMove] = useState<{ nonce: number; move: StackMove } | null>(null);
+  // The decision card's buttons hand "Try a move" a seed (a move, or line 3's change as one step); a
+  // new nonce replays it, the same one never does.
+  const [seedStep, setSeedStep] = useState<{ nonce: number; step: StackStep } | null>(null);
   const [seedRule, setSeedRule] = useState<{ nonce: number; aId: string; bId: string } | null>(null);
 
   const { festival, report } = preset;
@@ -500,6 +517,7 @@ function PresetView({
     <>
       <HeroLayout
         intro={intro}
+        synthetic={preset.synthetic === true}
         actions={<HeroActions seeDecision={decisionCopy !== null} tryMove />}
         aside={
           <div className="space-y-4">
@@ -510,7 +528,7 @@ function PresetView({
                   decisionCopy.seedMove
                     ? () => {
                         const move = decisionCopy.seedMove;
-                        if (move) setSeedMove((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, move }));
+                        if (move) setSeedStep((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, step: move }));
                       }
                     : undefined
                 }
@@ -522,13 +540,21 @@ function PresetView({
                       }
                     : undefined
                 }
+                onKeepChange={
+                  decisionCopy.seedChange
+                    ? () => {
+                        const change = decisionCopy.seedChange;
+                        if (change) setSeedStep((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, step: change }));
+                      }
+                    : undefined
+                }
                 onOpenHidden={hero ? (trigger) => openClash(hero.clash, trigger) : undefined}
                 hiddenLabel={hero ? HERO_BUTTON[hero.kind] : undefined}
               />
             ) : decisionState.status === "loading" ? (
               <DecisionCardSkeleton />
             ) : null}
-            <ProofLine className="lg:hidden" />
+            <ProofLine className="lg:hidden" synthetic={preset.synthetic === true} />
             <Scorecard>
               <BudgetDial index={index} baseline={report.baseline} reach={reach} compact />
             </Scorecard>
@@ -650,7 +676,7 @@ function PresetView({
         isLocked={isLocked}
         onPlanChange={setPlanPreview}
         onRulePreview={setRulePreview}
-        seedMove={seedMove}
+        seedStep={seedStep}
         seedRule={seedRule}
       />
 

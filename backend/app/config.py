@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     qloo_base_url: str = HACKATHON_BASE_URL
     qloo_record_fixtures: bool = False
     fixtures_dir: Path = Path(__file__).parent / "qloo" / "fixtures"
+    # Prebuilt demo presets (Qloo-derived): shipped with the deployment, never committed
+    presets_dir: Path | None = Path(__file__).resolve().parent.parent / "presets"
 
     # LLM access: "gateway" (Vercel AI Gateway) or "anthropic" (direct API key). "none" disables runs.
     llm_provider: Literal["none", "gateway", "anthropic"] = "none"

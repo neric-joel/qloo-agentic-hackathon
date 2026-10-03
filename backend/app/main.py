@@ -8,12 +8,14 @@ from fastapi.responses import StreamingResponse
 from .agent.events import EventChannel
 from .agent.llm import LLMBackend, build_backend
 from .config import get_settings
+from .presets import router as presets_router
 from .qloo.client import QlooClient
 from .runs import RunRequest, execute_run
 from .schedule.api import router as schedule_router
 
 app = FastAPI(title="Agent API", version="0.1.0")
 app.include_router(schedule_router)
+app.include_router(presets_router)
 
 _qloo: QlooClient | None = None
 

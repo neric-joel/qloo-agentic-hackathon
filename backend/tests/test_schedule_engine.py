@@ -5,28 +5,13 @@ from collections import defaultdict
 
 import pytest
 from hypothesis import given
-from schedule_support import PROPERTY, conflicts, festival_cases, make_festival
+from schedule_support import PROPERTY, conflicts, festival_cases, make_festival, slots_of
 
 from app.schedule.layout import Layout, Move, Placement
 from app.schedule.metrics import build_scorer
-from app.schedule.models import Constraints, Festival, ScoringConfig, SetSlot
+from app.schedule.models import Constraints, Festival, ScoringConfig
 from app.schedule.moves import Objective, candidate_moves, free_windows, random_move, slot_window
 from app.schedule.synthetic import synthetic_festival
-
-
-def slots_of(festival: Festival, layout: Layout) -> list[SetSlot]:
-    rules = layout.rules
-    return [
-        slot.model_copy(
-            update={
-                "day": layout.day[i],
-                "stage_id": rules.stage_ids[layout.stage[i]],
-                "start": layout.start[i],
-                "end": layout.end(i),
-            }
-        )
-        for i, slot in enumerate(festival.timetable)
-    ]
 
 
 def mixed_weights(festival: Festival, matrix, weight: float = 0.4):

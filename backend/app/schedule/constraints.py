@@ -32,6 +32,8 @@ class Rules:
     locked: tuple[bool, ...]
     stage_locked: tuple[bool, ...]
     not_before: tuple[int, ...]
+    not_after: tuple[int, ...]  # latest allowed start; NO_LIMIT when the set has none
+    allowed_stages: tuple[frozenset[int], ...]  # stage indices each set may play on
     home_day: tuple[int, ...]
     billing: tuple[tuple[int | None, int | None] | None, ...]
     no_clash: tuple[tuple[int, ...], ...]
@@ -65,6 +67,8 @@ def build_rules(festival: Festival) -> Rules:
     constraints = festival.constraints
     n_days = len(festival.days)
     opens, closes = _stage_windows(festival, n_days)
+    stage_index = {stage.id: s for s, stage in enumerate(festival.stages)}
+    every_stage = frozenset(stage_index.values())
     return Rules(
         act_ids=tuple(slot.act_id for slot in slots),
         names=tuple(acts[slot.act_id].name for slot in slots),
@@ -74,6 +78,11 @@ def build_rules(festival: Festival) -> Rules:
         locked=tuple(slot.locked for slot in slots),
         stage_locked=tuple(slot.stage_locked for slot in slots),
         not_before=tuple(slot.not_before or 0 for slot in slots),
+        not_after=tuple(NO_LIMIT if slot.not_after is None else slot.not_after for slot in slots),
+        allowed_stages=tuple(
+            every_stage if slot.stages is None else frozenset(stage_index[s] for s in slot.stages)
+            for slot in slots
+        ),
         home_day=tuple(slot.day for slot in slots),
         billing=tuple(_billing_limits(festival, acts[slot.act_id].billing_tier) for slot in slots),
         no_clash=_no_clash_partners(festival, act_index),
@@ -137,6 +146,10 @@ def placement_issues(rules: Rules, i: int, day: int, stage: int, start: int) -> 
         found.append(("curfew", i))
     if start < rules.not_before[i]:
         found.append(("not_before", i))
+    if start > rules.not_after[i]:
+        found.append(("not_after", i))
+    if stage not in rules.allowed_stages[i]:
+        found.append(("stage", i))
     return found
 
 
@@ -175,6 +188,8 @@ def describe_issue(issue: Issue, rules: Rules) -> str:
         "hours": "is scheduled outside its stage's opening hours",
         "curfew": "runs past the curfew",
         "not_before": "starts before its earliest allowed time",
+        "not_after": "starts after its latest allowed time",
+        "stage": "is on a stage it may not play on",
         "billing": "breaks its billing-tier rule",
     }
     return f"{names[0]} {messages[str(kind)]}"

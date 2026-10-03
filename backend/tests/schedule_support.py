@@ -10,6 +10,7 @@ from itertools import pairwise
 from hypothesis import HealthCheck, settings
 from hypothesis import strategies as st
 
+from app.schedule.layout import Layout
 from app.schedule.models import Act, Constraints, Festival, OverlapMatrix, SetSlot, Stage, StageHours
 from app.schedule.synthetic import synthetic_festival
 
@@ -80,6 +81,22 @@ def make_matrix(
     return OverlapMatrix(act_ids=list(ids), values=values, coverage=coverage or {}, source=source)
 
 
+def slots_of(festival: Festival, layout: Layout) -> list[SetSlot]:
+    """The festival's timetable with every set where ``layout`` has it."""
+    rules = layout.rules
+    return [
+        slot.model_copy(
+            update={
+                "day": layout.day[i],
+                "stage_id": rules.stage_ids[layout.stage[i]],
+                "start": layout.start[i],
+                "end": layout.end(i),
+            }
+        )
+        for i, slot in enumerate(festival.timetable)
+    ]
+
+
 def conflicts(festival: Festival, timetable: Sequence[SetSlot] | None = None) -> list[str]:
     """Every hard-constraint violation, found by brute force without using the engine's own checks."""
     slots = list(timetable if timetable is not None else festival.timetable)
@@ -94,6 +111,10 @@ def conflicts(festival: Festival, timetable: Sequence[SetSlot] | None = None) ->
             found.append(f"{slot.act_id} ends after the curfew")
         if slot.not_before is not None and slot.start < slot.not_before:
             found.append(f"{slot.act_id} starts before not_before")
+        if slot.not_after is not None and slot.start > slot.not_after:
+            found.append(f"{slot.act_id} starts after not_after")
+        if slot.stages is not None and slot.stage_id not in slot.stages:
+            found.append(f"{slot.act_id} is on a stage outside its list")
         for hours in stages[slot.stage_id].hours:
             if hours.day == slot.day and not (hours.open <= slot.start and slot.end <= hours.close):
                 found.append(f"{slot.act_id} is outside stage hours")
@@ -128,8 +149,15 @@ def with_random_constraints(
     lock_share: float,
     stage_lock_share: float,
     allow_day_moves: bool,
+    window_share: float = 0.0,
+    stage_list_share: float = 0.0,
 ) -> Festival:
-    """Add locks, earliest-start limits, a tighter curfew and a looser changeover; keep the start valid."""
+    """Add locks, earliest-start limits, a tighter curfew and a looser changeover; keep the start valid.
+
+    ``window_share`` of the sets also get a latest start and ``stage_list_share`` a list of allowed stages
+    (always including the current one). Those draws use their own random stream, so the other limits are
+    the same whatever the two shares are.
+    """
     rng = random.Random(seed)
     data = festival.model_dump()
     for slot in data["timetable"]:
@@ -142,12 +170,31 @@ def with_random_constraints(
             data["constraints"]["curfew"][day] = max(ends) + rng.choice((0, 10, 30, 60))
     data["constraints"]["changeover_minutes"] = rng.choice((0, 5, 10, 15))
     data["constraints"]["allow_day_moves"] = allow_day_moves
+    if window_share or stage_list_share:
+        _add_windows(data, random.Random(seed + 1_000_003), window_share, stage_list_share)
     return Festival.model_validate(data)
 
 
+def _add_windows(data: dict, rng: random.Random, window_share: float, stage_list_share: float) -> None:
+    stage_ids = [stage["id"] for stage in data["stages"]]
+    for slot in data["timetable"]:
+        if rng.random() < window_share:
+            slot["not_after"] = slot["start"] + rng.choice((0, 0, 10, 30, 60, 120))
+            if slot["not_before"] is None and rng.random() < 0.5:
+                slot["not_before"] = max(0, slot["start"] - rng.choice((0, 30, 90)))
+        if rng.random() < stage_list_share:
+            others = [s for s in stage_ids if s != slot["stage_id"]]
+            allowed = [slot["stage_id"], *rng.sample(others, rng.randint(0, len(others)))]
+            rng.shuffle(allowed)
+            slot["stages"] = allowed
+
+
 @st.composite
-def festival_cases(draw) -> tuple[Festival, OverlapMatrix]:
-    """A small random festival (synthetic base plus random locks and limits) with its overlap matrix."""
+def festival_cases(draw, windows: bool = False) -> tuple[Festival, OverlapMatrix]:
+    """A small random festival (synthetic base plus random locks and limits) with its overlap matrix.
+
+    With ``windows``, sets also get random latest starts and allowed-stage lists.
+    """
     seed = draw(st.integers(min_value=0, max_value=5_000))
     base, matrix = synthetic_festival(
         seed,
@@ -162,5 +209,7 @@ def festival_cases(draw) -> tuple[Festival, OverlapMatrix]:
         lock_share=draw(st.sampled_from((0.0, 0.2, 0.5, 0.8))),
         stage_lock_share=draw(st.sampled_from((0.0, 0.3))),
         allow_day_moves=draw(st.booleans()),
+        window_share=draw(st.sampled_from((0.3, 0.6, 1.0))) if windows else 0.0,
+        stage_list_share=draw(st.sampled_from((0.3, 0.6, 1.0))) if windows else 0.0,
     )
     return festival, matrix

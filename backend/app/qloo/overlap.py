@@ -76,14 +76,24 @@ def _similar(a: str, b: str) -> float:
     return SequenceMatcher(None, _normalize(a), _normalize(b)).ratio()
 
 
-_SET_SUFFIX = re.compile(r"\s*\((?:dj set|live|live set|hybrid set|dj)\)\s*$", re.IGNORECASE)
+_SET_SUFFIX = re.compile(
+    r"\s*(?:\((?:dj set|live|live set|hybrid set|dj)\)|(?:and|&)\s+(?:his|her|their)\s+band)\s*$",
+    re.IGNORECASE,
+)
 _BILLING_SPLIT = re.compile(r"\s+(?:b2b|b3b|x|vs\.?|with|presents)\s+", re.IGNORECASE)
+_BAND_SPLIT = re.compile(r"\s+(?:&|and)\s+", re.IGNORECASE)
 
 
 def _billing_parts(name: str) -> list[str]:
-    """'Tinashe (DJ set)' -> ['Tinashe']; 'A b2b B' -> ['A', 'B']. Empty when the name has no such form."""
+    """Names to try when a billing doesn't match an artist as printed.
+
+    'Tinashe (DJ set)' and 'Patti Smith and Her Band' -> the artist; 'A b2b B' -> ['A', 'B'];
+    'Elvis Costello & The Imposters' -> ['Elvis Costello', 'The Imposters']. Empty when no such form.
+    """
     stripped = _SET_SUFFIX.sub("", name).strip()
     parts = [p.strip() for p in _BILLING_SPLIT.split(stripped) if p.strip()]
+    if len(parts) < 2:
+        parts = [p.strip() for p in _BAND_SPLIT.split(stripped) if p.strip()]
     if stripped == name and len(parts) < 2:
         return []
     return parts
@@ -250,3 +260,37 @@ async def build_overlap(
     return OverlapResult(
         acts=acts, values=values, discriminates=discriminates, control_rank=control_rank, notes=notes
     )
+
+
+# Tag kinds that explain a shared audience; instruments, regions and vague descriptors do not.
+TASTE_TAG_KINDS = ("urn:tag:genre", "urn:tag:subgenre", "urn:tag:theme")
+
+
+@dataclass
+class SharedTag:
+    name: str
+    tag_id: str
+    kind: str  # Qloo tag subtype, e.g. urn:tag:genre:music
+    score: float
+
+
+async def shared_taste(client: QlooClient, a_id: str, b_id: str, *, take: int = 8) -> list[SharedTag]:
+    """What two acts' audiences have in common, by Qloo's comparison of their taste profiles.
+
+    Only genre, subgenre and theme tags are kept: instruments, regions and descriptors such as
+    "Energetic" say little about why the same people would want to see both sets.
+    """
+    response = await client.compare(
+        {"a.signal.interests.entities": [a_id], "b.signal.interests.entities": [b_id], "take": 50}
+    )
+    shared = []
+    for tag in (response.get("results") or {}).get("tags") or []:
+        kind = tag.get("subtype") or tag.get("type") or ""
+        score = (tag.get("query") or {}).get("score")
+        if not tag.get("name") or not isinstance(score, (int, float)) or not kind.startswith(TASTE_TAG_KINDS):
+            continue
+        shared.append(
+            SharedTag(name=tag["name"], tag_id=tag.get("tag_id", ""), kind=kind, score=float(score))
+        )
+    shared.sort(key=lambda t: t.score, reverse=True)
+    return shared[:take]

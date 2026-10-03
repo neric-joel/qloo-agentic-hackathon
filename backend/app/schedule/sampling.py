@@ -1,9 +1,10 @@
 """Random valid timetables for the same lineup, used as the Clash Budget Index baseline.
 
 The sampler is a random walk over valid arrangements: it starts from the supplied timetable and repeatedly
-applies a random swap or gap move that passes every hard constraint (locks, changeover, curfew, riders,
-billing rules). After a burn-in long enough to forget the starting arrangement it records one sample every
-few accepted moves, so every sample is a timetable the festival could legally have published.
+applies a random swap or gap move that passes every hard constraint (locks, start windows, allowed stages,
+changeover, curfew, riders, billing rules). After a burn-in long enough to forget the starting arrangement
+it records one sample every few accepted moves, so every sample is a timetable the festival could legally
+have published.
 """
 
 from __future__ import annotations

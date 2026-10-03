@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 
+# Qloo-derived demo data (shipped with deployments, never committed)
+backend/presets/
+
 # Python
 __pycache__/
 *.py[cod]

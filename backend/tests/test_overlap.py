@@ -8,6 +8,7 @@ from app.qloo.overlap import (
     _percentiles,
     build_overlap,
     resolve_acts,
+    shared_taste,
 )
 
 CLUSTERS = {"Indie A": "indie", "Indie B": "indie", "Electro C": "electro", "Electro D": "electro"}
@@ -135,6 +136,8 @@ def test_billing_parts_split_b2b_and_strip_set_labels():
     assert _billing_parts("Tinashe (DJ set)") == ["Tinashe"]
     assert _billing_parts("Armin van Buuren b2b Adam Beyer") == ["Armin van Buuren", "Adam Beyer"]
     assert _billing_parts("Afrojack x Shimza") == ["Afrojack", "Shimza"]
+    assert _billing_parts("Patti Smith and Her Band") == ["Patti Smith"]
+    assert _billing_parts("Elvis Costello & The Imposters") == ["Elvis Costello", "The Imposters"]
     assert _billing_parts("Sultan + Shepard") == []
     assert _billing_parts("Lil Nas X") == []
 
@@ -149,4 +152,43 @@ async def test_b2b_billing_is_scored_as_its_best_known_component():
     )
     [act] = await resolve_acts(client, ["Prospa b2b Josh Baker"])
     assert (act.entity_id, act.coverage, act.scored_as) == ("p", "weak", "Prospa")
+    await client.aclose()
+
+
+async def test_shared_taste_keeps_meaningful_tags_in_score_order():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v2/analysis/compare"
+        assert request.url.params["a.signal.interests.entities"] == "A"
+        tags = [
+            {
+                "name": "United States",
+                "tag_id": "r",
+                "subtype": "urn:tag:region:qloo",
+                "query": {"score": 0.99},
+            },
+            {"name": "Indie Rock", "tag_id": "g", "subtype": "urn:tag:genre:music", "query": {"score": 0.7}},
+            {
+                "name": "Melancholy",
+                "tag_id": "m",
+                "subtype": "urn:tag:characteristic:music",
+                "query": {"score": 0.9},
+            },
+            {"name": "Loyal", "tag_id": "l", "subtype": "urn:tag:audience:qloo", "query": {"score": 0.95}},
+            {"name": "Identity", "tag_id": "t", "subtype": "urn:tag:theme:qloo", "query": {"score": 0.8}},
+            {
+                "name": "Guitar",
+                "tag_id": "i",
+                "subtype": "urn:tag:instrument:music",
+                "query": {"score": 0.97},
+            },
+            {"name": "No score", "tag_id": "x", "subtype": "urn:tag:genre:music", "query": {}},
+        ]
+        return httpx.Response(200, json={"results": {"tags": tags}})
+
+    client = QlooClient("k", backoff=0, max_rps=None, transport=httpx.MockTransport(handler))
+    tags = await shared_taste(client, "A", "B")
+    assert [(t.name, t.kind) for t in tags] == [
+        ("Identity", "urn:tag:theme:qloo"),
+        ("Indie Rock", "urn:tag:genre:music"),
+    ]
     await client.aclose()

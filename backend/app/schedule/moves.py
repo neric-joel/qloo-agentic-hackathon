@@ -3,6 +3,9 @@
 A *swap* exchanges two sets' slots. Each set takes over the slot's start (or end) time, shifted just enough
 to stay inside the free window around that slot, so sets of different lengths can trade places whenever the
 room exists. A *gap move* relocates one set into free time on any stage it may use.
+
+Every candidate keeps each set on a stage it may play on and starting inside its own start window
+(``not_before`` to ``not_after``); the other constraints are left to :meth:`Layout.is_feasible`.
 """
 
 from __future__ import annotations
@@ -10,6 +13,7 @@ from __future__ import annotations
 import random
 from collections.abc import Iterator, Sequence
 
+from .constraints import Rules
 from .layout import Layout, Move, Placement
 
 Window = tuple[int, int]  # (earliest start, latest end)
@@ -33,19 +37,24 @@ def slot_window(layout: Layout, i: int) -> Window:
 
 
 def free_windows(layout: Layout, i: int, day: int, stage: int) -> list[Window]:
-    """Free windows on a stage-day, ignoring set ``i``, that are long enough to hold it."""
+    """Free windows on a stage-day, ignoring set ``i``, that are long enough to hold it.
+
+    Windows are trimmed to the set's own start window: none starts before ``not_before`` and none ends
+    later than a set starting at ``not_after`` would.
+    """
     rules = layout.rules
     need = rules.dur[i]
     earliest = max(rules.open[day][stage], rules.not_before[i])
+    cap = rules.not_after[i] + need
     found: list[Window] = []
     for k in layout.by_slot[(day, stage)]:
         if k == i:
             continue
-        latest = layout.start[k] - rules.changeover
+        latest = min(layout.start[k] - rules.changeover, cap)
         if latest - earliest >= need:
             found.append((earliest, latest))
         earliest = max(earliest, layout.end(k) + rules.changeover)
-    latest = rules.latest_end(day, stage)
+    latest = min(rules.latest_end(day, stage), cap)
     if latest - earliest >= need:
         found.append((earliest, latest))
     return found
@@ -54,10 +63,14 @@ def free_windows(layout: Layout, i: int, day: int, stage: int) -> list[Window]:
 def _allowed_places(layout: Layout, i: int) -> Iterator[tuple[int, int]]:
     rules = layout.rules
     days = range(rules.n_days) if rules.allow_day_moves else (rules.home_day[i],)
-    stages = (layout.stage[i],) if rules.stage_locked[i] else range(rules.n_stages)
+    stages = (layout.stage[i],) if rules.stage_locked[i] else sorted(rules.allowed_stages[i])
     for day in days:
         for stage in stages:
             yield day, stage
+
+
+def _may_start(rules: Rules, i: int, start: int) -> bool:
+    return rules.not_before[i] <= start <= rules.not_after[i]
 
 
 def _starts_within(first: int, last: int, snaps: Sequence[int]) -> list[int]:
@@ -88,10 +101,10 @@ def gap_moves(layout: Layout, i: int, rewarded: Sequence[int] = ()) -> Iterator[
 
 
 def _fit(layout: Layout, i: int, window: Window, preferred_start: int) -> int | None:
-    """Start closest to ``preferred_start`` that keeps set ``i`` inside ``window``."""
+    """Start closest to ``preferred_start`` that keeps set ``i`` inside ``window`` and its start window."""
     rules = layout.rules
     first = max(window[0], rules.not_before[i])
-    last = window[1] - rules.dur[i]
+    last = min(window[1] - rules.dur[i], rules.not_after[i])
     if last < first:
         return None
     return min(max(preferred_start, first), last)
@@ -104,6 +117,8 @@ def swap_moves(layout: Layout, i: int, j: int, window_i: Window, window_j: Windo
     if rules.stage_locked[i] and stage[j] != stage[i]:
         return ()
     if rules.stage_locked[j] and stage[i] != stage[j]:
+        return ()
+    if stage[j] not in rules.allowed_stages[i] or stage[i] not in rules.allowed_stages[j]:
         return ()
     if not rules.allow_day_moves and day[i] != day[j]:
         return ()
@@ -129,11 +144,18 @@ def _aligned(layout: Layout, mover: int, target: int, align_end: bool) -> int:
 
 
 def _reorder(layout: Layout, i: int, j: int) -> tuple[Move, ...]:
-    """Swap two sets on one stage: the later one opens the block, the earlier one closes it."""
+    """Swap two sets on one stage: the later one opens the block, the earlier one closes it.
+
+    Nothing is offered when either set would leave its start window.
+    """
+    rules = layout.rules
     first, second = sorted((i, j), key=layout.start.__getitem__)
     day, stage = layout.day[first], layout.stage[first]
-    new_first_start = layout.end(second) - layout.rules.dur[first]
-    return (Move((second, first), ((day, stage, layout.start[first]), (day, stage, new_first_start))),)
+    new_second_start = layout.start[first]
+    new_first_start = layout.end(second) - rules.dur[first]
+    if not (_may_start(rules, second, new_second_start) and _may_start(rules, first, new_first_start)):
+        return ()
+    return (Move((second, first), ((day, stage, new_second_start), (day, stage, new_first_start))),)
 
 
 def candidate_moves(

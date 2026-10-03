@@ -130,11 +130,26 @@ class SetSlot(_Model):
     locked: bool = Field(default=False, description="The set may not move at all.")
     stage_locked: bool = Field(default=False, description="The set may change time but not stage.")
     not_before: Minutes | None = Field(default=None, description="The set may not start earlier than this.")
+    not_after: Minutes | None = Field(default=None, description="The set may not start later than this.")
+    stages: Annotated[list[str], Field(min_length=1, max_length=MAX_STAGES)] | None = Field(
+        default=None,
+        description="Ids of the stages the set may play on, including its current one. None means any stage.",
+    )
 
     @model_validator(mode="after")
     def _ends_after_start(self) -> SetSlot:
         if self.end <= self.start:
             raise ValueError(f"set for {self.act_id!r} must end after it starts")
+        return self
+
+    @model_validator(mode="after")
+    def _start_window_in_order(self) -> SetSlot:
+        """An empty start window is an input error; a published start outside the window is not."""
+        if self.not_before is not None and self.not_after is not None and self.not_before > self.not_after:
+            raise ValueError(
+                f"set for {self.act_id!r} has not_before {format_minutes(self.not_before)} "
+                f"later than not_after {format_minutes(self.not_after)}"
+            )
         return self
 
     @property
@@ -231,6 +246,17 @@ class Festival(_Model):
                 problems.append(f"timetable references unknown act {slot.act_id!r}")
             if slot.stage_id not in stages:
                 problems.append(f"set for {slot.act_id!r} is on unknown stage {slot.stage_id!r}")
+            if slot.stages is not None:
+                problems += [
+                    f"set for {slot.act_id!r} lists unknown stage {stage_id!r}"
+                    for stage_id in slot.stages
+                    if stage_id not in stages
+                ]
+                if slot.stage_id not in slot.stages:
+                    problems.append(
+                        f"set for {slot.act_id!r} is on stage {slot.stage_id!r}, "
+                        "which is not one of its allowed stages"
+                    )
             if slot.day >= len(self.days):
                 problems.append(
                     f"set for {slot.act_id!r} is on day {slot.day} but there are {len(self.days)} days"

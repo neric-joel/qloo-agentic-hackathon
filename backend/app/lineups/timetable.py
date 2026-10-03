@@ -4,6 +4,11 @@ A published timetable is what a festival prints (or the press copies) before the
 sets with start and end times. Converting one day of it gives a ``Festival`` the scheduler can score:
 headliners are inferred from the closing slots of the main stages and locked in place, each stage keeps
 its published opening hours, and the day's curfew is the latest published end.
+
+Stages are ranked by prominence in the order the festival lists them (tier 1 = the biggest stage). By
+default every other set may only move a limited distance (``Reach``): within two hours of its published
+start and onto its own stage or one ranked next to it, so an early undercard act is never proposed for a
+prime evening slot on the main stage.
 """
 
 from __future__ import annotations
@@ -12,6 +17,7 @@ import re
 import unicodedata
 from collections import defaultdict
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -31,6 +37,17 @@ SKIP_FLAGS = frozenset({"cancelled", "replacement", "talk"})
 STAGE_TIERS = {"main": 1, "secondary": 2, "minor": 3}
 EVENING = 17 * 60
 DEFAULT_CHANGEOVER = 15
+
+
+@dataclass(frozen=True)
+class Reach:
+    """How far a movable set may go from its published slot. ``None`` means no limit."""
+
+    minutes: int | None = 120
+    stages: int | None = 1  # stage ranks away from its own
+
+
+DEFAULT_REACH = Reach()
 
 
 class PublishedStage(BaseModel):
@@ -75,11 +92,13 @@ def to_festival(
     *,
     stage_ids: Iterable[str] | None = None,
     start_after: str | None = None,
+    reach: Reach = DEFAULT_REACH,
 ) -> Festival:
     """One day of a published timetable as a single-day ``Festival``.
 
     ``stage_ids`` limits the stages (default: every stage that is not ``minor``); ``start_after`` drops
-    sets that start before that time. Cancelled, replacement and talk sets are left out.
+    sets that start before that time; ``reach`` limits how far movable sets may go. Cancelled,
+    replacement and talk sets are left out.
     """
     if day not in timetable.days:
         raise ValueError(f"{timetable.name} has no day {day!r}; days are {timetable.days}")
@@ -104,8 +123,10 @@ def to_festival(
         raise ValueError(f"no sets on {day} for the chosen stages")
 
     stage_order = [s.id for s in timetable.stages if s.id in {x.stage for x in sets}]
-    stages = [Stage(id=sid, name=by_id[sid].name, tier=STAGE_TIERS[by_id[sid].tier]) for sid in stage_order]
-    stage_tier = {s.id: s.tier for s in stages}
+    stage_order.sort(key=lambda sid: STAGE_TIERS[by_id[sid].tier])  # stable: keeps listed order within a tier
+    rank = {sid: i for i, sid in enumerate(stage_order)}
+    stages = [Stage(id=sid, name=by_id[sid].name, tier=min(rank[sid] + 1, 9)) for sid in stage_order]
+    stage_tier = {sid: STAGE_TIERS[by_id[sid].tier] for sid in stage_order}
 
     per_stage: dict[str, list[PublishedSet]] = defaultdict(list)
     for s in sets:
@@ -123,6 +144,7 @@ def to_festival(
             tier = _billing_tier(stage_tier[stage_id], from_end, parse_minutes(s.start))
             act_id, name = _unique(slugify(s.act), s.act, used)
             acts.append(Act(id=act_id, name=name, billing_tier=tier))
+            start = parse_minutes(s.start)
             slots.append(
                 SetSlot(
                     act_id=act_id,
@@ -131,6 +153,11 @@ def to_festival(
                     start=s.start,
                     end=s.end,
                     locked=tier == 1,
+                    not_before=None if reach.minutes is None else max(0, start - reach.minutes),
+                    not_after=None if reach.minutes is None else start + reach.minutes,
+                    stages=None
+                    if reach.stages is None
+                    else [sid for sid in stage_order if abs(rank[sid] - rank[stage_id]) <= reach.stages],
                 )
             )
 
@@ -159,7 +186,7 @@ def to_festival(
         constraints=Constraints(
             changeover_minutes=min(DEFAULT_CHANGEOVER, _tightest_gap(per_stage.values())),
             curfew={0: max(x.end for x in slots)},
-            billing_rules=[BillingRule(billing_tier=1, max_stage_tier=1, last_slots=1)],
+            billing_rules=[BillingRule(billing_tier=1, max_stage_tier=None, last_slots=1)],
         ),
     )
 

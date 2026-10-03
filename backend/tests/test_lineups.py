@@ -1,9 +1,10 @@
 import pytest
 
 from app.lineups.overlap_matrix import apply_overlap, genre_label
-from app.lineups.timetable import PublishedTimetable, slugify, to_festival
+from app.lineups.timetable import PublishedTimetable, Reach, slugify, to_festival
 from app.qloo.overlap import OverlapResult, ResolvedAct
 from app.schedule.metrics import score_festival
+from app.schedule.optimizer import optimize
 
 TIMETABLE = PublishedTimetable.model_validate(
     {
@@ -103,3 +104,38 @@ def test_apply_overlap_builds_a_symmetric_matrix_and_marks_missing_acts():
     assert (support.qloo_id, support.genre) == ("id-Support", "Indie")
     report = score_festival(enriched, matrix)
     assert report is not None
+
+
+def test_stages_ranked_and_sets_limited_to_nearby_times_and_stages():
+    festival = to_festival(TIMETABLE, "Sat")
+    assert [(s.id, s.tier) for s in festival.stages] == [("main", 1), ("tent", 2)]
+    slots = {s.act_id: s for s in festival.timetable}
+    opener = slots["opener"]
+    assert (opener.not_before, opener.not_after) == (12 * 60, 16 * 60)
+    assert opener.stages == ["main", "tent"]
+    narrow = to_festival(TIMETABLE, "Sat", reach=Reach(minutes=30, stages=0))
+    early = {s.act_id: s for s in narrow.timetable}["early-tent"]
+    assert (early.not_before, early.not_after, early.stages) == (14 * 60 + 30, 15 * 60 + 30, ["tent"])
+
+
+def test_unlimited_reach_leaves_sets_free():
+    festival = to_festival(TIMETABLE, "Sat", reach=Reach(minutes=None, stages=None))
+    assert all(s.not_before is None and s.not_after is None and s.stages is None for s in festival.timetable)
+
+
+def test_optimizer_keeps_moves_within_reach():
+    festival = to_festival(TIMETABLE, "Sat", reach=Reach(minutes=60, stages=0))
+    names = [a.name for a in festival.acts]
+    result = OverlapResult(
+        acts=[ResolvedAct(name=n, entity_id=f"id-{n}", popularity=0.9, coverage="strong") for n in names],
+        values={a: {b: 0.9 for b in names if b != a} for a in names},
+        discriminates=True,
+        control_rank=0.1,
+    )
+    enriched, matrix = apply_overlap(festival, result)
+    report = optimize(enriched, matrix, weight=1.0, move_budget=4)
+    home = {s.act_id: s for s in festival.timetable}
+    for option in report.options:
+        for slot in option.timetable:
+            assert slot.stage_id == home[slot.act_id].stage_id
+            assert abs(slot.start - home[slot.act_id].start) <= 60

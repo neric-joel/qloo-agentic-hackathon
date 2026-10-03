@@ -182,6 +182,8 @@ class Layout:
         for i, (day, stage, _) in zip(move.sets, move.to, strict=True):
             if self.frozen[i] or (rules.stage_locked[i] and stage != self.stage[i]):
                 return False
+            if stage not in rules.allowed_stages[i]:
+                return False
             if not rules.allow_day_moves and day != rules.home_day[i]:
                 return False
         return self.issues_after(move) <= self.tolerated

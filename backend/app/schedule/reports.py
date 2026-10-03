@@ -101,7 +101,7 @@ class Movability(BaseModel):
 
 
 class Violation(BaseModel):
-    kind: Literal["gap", "hours", "curfew", "not_before", "billing", "no_clash"]
+    kind: Literal["gap", "hours", "curfew", "not_before", "not_after", "stage", "billing", "no_clash"]
     act_ids: list[str]
     message: str
 

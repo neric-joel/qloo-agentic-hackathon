@@ -4,6 +4,8 @@ import { useCallback, useEffect, useReducer, useRef } from "react";
 
 import { isRecord, type AgentEvent, type NeedsInputOption } from "@/lib/events";
 import { MOCK_STREAM_ENABLED, mockStreamRun, type MockStreamOptions } from "@/lib/mock-stream";
+import { toReplayBeats, type RecordedRun } from "@/lib/recorded-run";
+import { replayRun, type ReplayOptions } from "@/lib/replay";
 import { initialRunState, runReducer, type RunState } from "@/lib/run-state";
 import { streamRun } from "@/lib/sse";
 
@@ -34,7 +36,12 @@ export type AgentRun = {
   isMock: boolean;
   /** Starts a run, cancelling any run in progress. */
   start: (body?: unknown) => void;
-  /** Starts again with the body of the last run. */
+  /**
+   * Plays a recorded run through the same state, cancelling any run in progress. Nothing is sent
+   * anywhere. `instant` delivers the whole run at once (skip to the answer).
+   */
+  replay: (run: RecordedRun, options?: ReplayOptions) => void;
+  /** Starts again with the body of the last run, or plays the last recorded run again. */
   retry: () => void;
   /** Continues after a `needs_input` question. */
   answer: (option: NeedsInputOption) => void;
@@ -58,6 +65,8 @@ export function useAgentRun(options: UseAgentRunOptions): AgentRun {
   const optionsRef = useRef(options);
   const controllerRef = useRef<AbortController | null>(null);
   const bodyRef = useRef<unknown>(undefined);
+  /** The recorded run last played, so a retry replays it instead of calling the endpoint. */
+  const replayRef = useRef<RecordedRun | null>(null);
 
   useEffect(() => {
     optionsRef.current = options;
@@ -72,6 +81,7 @@ export function useAgentRun(options: UseAgentRunOptions): AgentRun {
     const controller = new AbortController();
     controllerRef.current = controller;
     bodyRef.current = body;
+    replayRef.current = null;
     dispatch({ type: "start" });
 
     const { endpoint, mock } = optionsRef.current;
@@ -91,7 +101,27 @@ export function useAgentRun(options: UseAgentRunOptions): AgentRun {
     });
   }, []);
 
-  const retry = useCallback(() => start(bodyRef.current), [start]);
+  const replay = useCallback((run: RecordedRun, replayOptions: ReplayOptions = {}) => {
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    bodyRef.current = undefined;
+    replayRef.current = run;
+    dispatch({ type: "start" });
+
+    const onEvent = (event: AgentEvent) => {
+      if (!controller.signal.aborted) dispatch({ type: "event", event });
+    };
+    replayRun(toReplayBeats(run), onEvent, controller.signal, replayOptions).catch((error: unknown) => {
+      console.error("[agent-run] The replay failed unexpectedly", error);
+      onEvent({ type: "error", message: "The replay stopped unexpectedly.", retryable: true });
+    });
+  }, []);
+
+  const retry = useCallback(() => {
+    if (replayRef.current) replay(replayRef.current);
+    else start(bodyRef.current);
+  }, [replay, start]);
 
   const question = state.needsInput?.question ?? "";
   const answer = useCallback(
@@ -125,6 +155,7 @@ export function useAgentRun(options: UseAgentRunOptions): AgentRun {
     isRunning: state.status === "running",
     isMock: resolveMock(options.mock) !== null,
     start,
+    replay,
     retry,
     answer,
     cancel,

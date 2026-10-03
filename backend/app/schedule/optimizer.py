@@ -416,7 +416,7 @@ def _summary(options: Sequence[OptionReport], mov: Movability) -> str:
 
 def _no_gain_message(mov: Movability) -> str:
     return (
-        "No re-slot improves this timetable under its locks and constraints "
+        "No re-slot lowers this day's Clash Budget under its locks and constraints "
         f"({mov.movable} of {mov.total_sets} sets are movable)."
     )
 
@@ -436,8 +436,8 @@ def _note(
         return f"Same arrangement as the {TITLES[same_as].lower()} option."
     if kind != "least_regret" and change_pct is not None and change_pct > 0:
         return (
-            f"Regret rises {change_pct:.1f}% in exchange for a better crowd split "
-            f"(weight {pricing.weight:.2f} favors splitting crowds)."
+            f"Clash cost rises {change_pct:.1f}% in exchange for more big acts with unlike audiences "
+            f"clashing (weight {pricing.weight:.2f})."
         )
     return None
 

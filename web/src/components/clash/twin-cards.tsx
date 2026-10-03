@@ -84,9 +84,9 @@ function TwinCard({ twin, acts }: { twin: Twin; acts: readonly Act[] }) {
             : `${drawGap === 0 ? "Level" : `${drawGap} ${drawGap === 1 ? "point" : "points"} apart`} on draw, `}
           {overlapGap} apart on taste overlap.
         </strong>{" "}
-        By Qloo&rsquo;s measure, clashing {twin.act} with {twin.shared.act} puts two acts with much
-        alike audiences against each other; clashing {twin.act} with {twin.separate.act} puts two
-        unlike audiences against each other.
+        Clashing {twin.act} with {twin.shared.act} puts two acts with much alike audiences against
+        each other; clashing {twin.act} with {twin.separate.act} puts two unlike audiences against
+        each other.
       </p>
     </li>
   );

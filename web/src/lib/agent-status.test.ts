@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseHealth } from "./agent-status";
+import { panelMode, parseHealth } from "./agent-status";
 
 describe("parseHealth", () => {
   it("reads whether the language model is configured", () => {
@@ -17,5 +17,30 @@ describe("parseHealth", () => {
     expect(parseHealth(undefined)).toBe("unknown");
     expect(parseHealth("ok")).toBe("unknown");
     expect(parseHealth([{ llm_configured: false }])).toBe("unknown");
+  });
+});
+
+describe("panelMode", () => {
+  it("shows the placeholder while the health check is in flight", () => {
+    expect(panelMode("checking", false)).toBe("checking");
+    expect(panelMode("checking", true)).toBe("checking");
+  });
+
+  it("shows the live panel when the agent is on or its state is unknown", () => {
+    for (const recordings of [true, false]) {
+      expect(panelMode("on", recordings)).toBe("live");
+      expect(panelMode("unknown", recordings)).toBe("live");
+    }
+  });
+
+  it("offers recorded runs when the agent is off and there are some", () => {
+    expect(panelMode("off", true)).toBe("off-recorded");
+    expect(panelMode("off", false)).toBe("off");
+  });
+
+  it("keeps the placeholder for an off agent until the recorded runs have loaded", () => {
+    expect(panelMode("off", false, true)).toBe("checking");
+    expect(panelMode("off", true, false)).toBe("off-recorded");
+    expect(panelMode("on", false, true)).toBe("live");
   });
 });

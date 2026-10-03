@@ -2,7 +2,15 @@ import { useId, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 import { ProvenanceChip } from "@/components/kernel";
-import { describeReach, describeVsRandom, dialArc, dialDomain, dialFraction, dialPoint } from "@/lib/clash-budget";
+import {
+  describeReach,
+  describeVsRandom,
+  dialArc,
+  dialDomain,
+  dialFraction,
+  dialPoint,
+  rangePosition,
+} from "@/lib/clash-budget";
 import type { BaselineStats } from "@/lib/preset";
 
 const W = 240;
@@ -53,6 +61,7 @@ export function BudgetDial({ index, baseline, reach = ANY_REACH, className }: Bu
   const avgOuter = dialPoint(at(100), CX, CY, R + TRACK / 2 + 3);
   const avgLabel = dialPoint(at(100), CX, CY, R + TRACK / 2 + 13);
   const rounded = Math.round(index);
+  const position = rangePosition(index, p10, p90);
 
   return (
     <figure className={className}>
@@ -70,7 +79,7 @@ export function BudgetDial({ index, baseline, reach = ANY_REACH, className }: Bu
         >
           <title id={titleId}>{`Clash Budget Index ${rounded}`}</title>
           <desc id={descId}>
-            {`Taste-overlap cost by Qloo's measure. Dial from ${domain.min} to ${domain.max}. 100 is the average of random re-orderings of this lineup` +
+            {`Taste-overlap cost, calculated from Qloo data. Dial from ${domain.min} to ${domain.max}. 100 is the average of random re-orderings of this lineup` +
               (p10 !== null && p90 !== null
                 ? `; the middle 80% of them score ${Math.round(p10)} to ${Math.round(p90)}.`
                 : ".") +
@@ -137,12 +146,17 @@ export function BudgetDial({ index, baseline, reach = ANY_REACH, className }: Bu
       <figcaption className="mt-4 text-sm leading-relaxed">
         <p className="font-medium">
           100 = the average of random re-orderings of this lineup in which {reach}. It counts
-          taste-overlap cost only, by Qloo&rsquo;s measure.
+          taste-overlap cost only, calculated from Qloo data.
         </p>
         <p className="mt-1.5 text-muted-foreground">
           {p10 !== null && p90 !== null
             ? `Shaded: the middle 80% of those re-orderings (${Math.round(p10)} to ${Math.round(p90)}). `
             : ""}
+          {position === "above" || position === "below" ? (
+            <>
+              This day&rsquo;s published timetable scores {rounded}, {position} that range.{" "}
+            </>
+          ) : null}
           A reading, not a grade. Not a verdict on the festival: real programming weighs much more
           than taste overlap.
         </p>

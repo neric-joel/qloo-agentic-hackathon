@@ -1,7 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { ArrowDown, ArrowRight, ArrowUp, Check, CornerDownLeft, LoaderCircle, PowerOff, RotateCcw, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import {
+  ArrowDown,
+  ArrowRight,
+  ArrowUp,
+  Check,
+  CornerDownLeft,
+  History,
+  LoaderCircle,
+  PowerOff,
+  RotateCcw,
+  SkipForward,
+  X,
+} from "lucide-react";
 
 import { ErrorState, MockBadge, ProvenanceChip, TraceDrawer, useAgentRun } from "@/components/kernel";
 import { Button } from "@/components/ui/button";
@@ -20,12 +32,17 @@ import {
   type ReslotSuggestion,
   type WhatIf,
 } from "@/lib/agent-session";
-import type { AgentStatus } from "@/lib/agent-status";
+import { panelMode, type AgentStatus } from "@/lib/agent-status";
 import { formatOverlap } from "@/lib/clashes";
 import { formatLatency, humanizeIdentifier, pluralize } from "@/lib/format";
 import type { Preset } from "@/lib/preset";
+import type { RecordedRun } from "@/lib/recorded-run";
 import type { ToolCallState } from "@/lib/run-state";
 import { cn } from "@/lib/utils";
+
+import { RecordedNotice, RecordedRuns } from "./recorded-runs";
+import { AgentSkeleton } from "./skeletons";
+import { useRecordings } from "./use-recordings";
 
 const TOOL_LABELS: Record<string, string> = {
   list_timetable: "Read the timetable",
@@ -37,13 +54,38 @@ const TOOL_LABELS: Record<string, string> = {
   reslot: "Suggested moves",
 };
 
-const CAPABILITIES: { tool: string; text: string }[] = [
-  { tool: "explain_clash", text: "Explain why two sets clash, with the taste Qloo finds both audiences share." },
-  { tool: "find_moves", text: "Check every start on a 5-minute grid and list the legal places a set could move to, each one priced." },
-  { tool: "try_move", text: "Test a move you name against the rules and price it, without changing anything." },
-  { tool: "add_constraint", text: "Record your rules: keep a set in place, keep two acts apart, stage hours." },
-  { tool: "reslot", text: "Suggest moves when you ask, graded by the same measure." },
+/** What the agent can do, in the present tense; the tool trail keeps the past-tense labels above. */
+const CAPABILITIES: { tool: string; title: string; text: string }[] = [
+  {
+    tool: "explain_clash",
+    title: "Explain a clash",
+    text: "Explain why two sets clash, with the taste Qloo finds both audiences share.",
+  },
+  {
+    tool: "find_moves",
+    title: "Find legal places",
+    text: "Check every start on a 5-minute grid and list the legal places a set could move to, each one priced.",
+  },
+  {
+    tool: "try_move",
+    title: "Test a move",
+    text: "Test a move you name against the rules and price it, without changing anything.",
+  },
+  {
+    tool: "add_constraint",
+    title: "Record a rule",
+    text: "Record your rules: keep a set in place, keep two acts apart, stage hours.",
+  },
+  { tool: "reslot", title: "Suggest moves", text: "Suggest moves when you ask, graded by the same measure." },
 ];
+
+/** The range random re-orderings of this day score in (10th to 90th percentile), for scale. */
+type ScaleRange = { low: number; high: number } | null;
+
+/** A Clash Budget change, as the cards print it: "−2.4", "+0.6". */
+function signedDelta(delta: number): string {
+  return `${delta > 0 ? "+" : delta < 0 ? "−" : "±"}${Math.abs(delta).toFixed(1)}`;
+}
 
 function toolLabel(tool: string): string {
   return TOOL_LABELS[tool] ?? humanizeIdentifier(tool);
@@ -128,7 +170,15 @@ function ToolTrail({ calls }: { calls: readonly ToolCallState[] }) {
   );
 }
 
-function BudgetMove({ before, after }: { before: number | null; after: number | null }) {
+function BudgetMove({
+  before,
+  after,
+  range,
+}: {
+  before: number | null;
+  after: number | null;
+  range: ScaleRange;
+}) {
   const delta = budgetDelta(before, after);
   if (before === null || after === null || delta === null) return null;
   const better = delta < 0;
@@ -142,9 +192,9 @@ function BudgetMove({ before, after }: { before: number | null; after: number | 
     <div className="mt-3">
       <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="type-numeral text-3xl leading-none">
-          {Math.round(before)}
+          {before.toFixed(1)}
           <ArrowRight aria-label="to" className="mx-1.5 inline size-5 align-middle text-muted-foreground" />
-          {Math.round(after)}
+          {after.toFixed(1)}
         </span>
         <span
           className={cn(
@@ -153,7 +203,7 @@ function BudgetMove({ before, after }: { before: number | null; after: number | 
           )}
         >
           <Icon aria-hidden="true" className="size-3" />
-          {delta === 0 ? "No change" : `${delta > 0 ? "+" : "−"}${Math.abs(delta)} ${better ? "lower" : "higher"}`}
+          {delta === 0 ? "No change" : `${signedDelta(delta)} ${better ? "lower" : "higher"}`}
         </span>
         <span className="text-xs text-muted-foreground">Clash Budget Index · lower is better</span>
       </p>
@@ -170,11 +220,17 @@ function BudgetMove({ before, after }: { before: number | null; after: number | 
           </div>
         ))}
       </div>
+      {range ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          For scale, random re-orderings of this day score {Math.round(range.low)} to{" "}
+          {Math.round(range.high)}.
+        </p>
+      ) : null}
     </div>
   );
 }
 
-function WhatIfCard({ whatIf }: { whatIf: WhatIf }) {
+function WhatIfCard({ whatIf, range }: { whatIf: WhatIf; range: ScaleRange }) {
   return (
     <div className="rounded-lg border border-border-strong bg-card p-4">
       <div className="flex items-start justify-between gap-3">
@@ -183,7 +239,7 @@ function WhatIfCard({ whatIf }: { whatIf: WhatIf }) {
       </div>
       <p className="mt-1.5 font-semibold break-words">{whatIf.move.replace(/ -> /g, " → ")}</p>
       {whatIf.allowed ? (
-        <BudgetMove before={whatIf.before} after={whatIf.after} />
+        <BudgetMove before={whatIf.before} after={whatIf.after} range={range} />
       ) : (
         <div className="mt-2 text-sm">
           <p className="font-semibold text-destructive">Breaks a rule, so it was not priced</p>
@@ -223,7 +279,7 @@ function RuledOutCard({ whatIfs }: { whatIfs: readonly WhatIf[] }) {
   );
 }
 
-function MoveOptionsCard({ options }: { options: MoveOptions }) {
+function MoveOptionsCard({ options, range }: { options: MoveOptions; range: ScaleRange }) {
   const [best, ...rest] = options.options;
   return (
     <div className="rounded-lg border border-border-strong bg-card p-4 sm:col-span-2">
@@ -241,7 +297,7 @@ function MoveOptionsCard({ options }: { options: MoveOptions }) {
           <p className="mt-3 font-semibold">
             Best: {best.stage} at {best.start}
           </p>
-          <BudgetMove before={options.before} after={best.after} />
+          <BudgetMove before={options.before} after={best.after} range={range} />
           {rest.length > 0 ? (
             <ol className="mt-3 space-y-1 border-t border-border pt-3 text-sm" aria-label="Other legal places">
               {rest.map((option) => {
@@ -252,8 +308,8 @@ function MoveOptionsCard({ options }: { options: MoveOptions }) {
                       {option.stage} at {option.start}
                     </span>
                     <span className="tabular-nums text-muted-foreground">
-                      {option.after !== null ? Math.round(option.after) : "?"}
-                      {delta !== null ? ` (${delta > 0 ? "+" : delta < 0 ? "−" : "±"}${Math.abs(delta)})` : ""}
+                      {option.after !== null ? option.after.toFixed(1) : "?"}
+                      {delta !== null ? ` (${signedDelta(delta)})` : ""}
                     </span>
                   </li>
                 );
@@ -261,8 +317,8 @@ function MoveOptionsCard({ options }: { options: MoveOptions }) {
             </ol>
           ) : null}
           <p className="mt-3 text-xs text-muted-foreground">
-            {pluralize(options.legalPlaces, "legal place")} found under every rule. Tested only: the
-            timetable above is unchanged.
+            {pluralize(options.legalPlaces, "legal place")}, checking every start on a 5-minute grid.
+            Tested only: the timetable above is unchanged.
           </p>
         </>
       )}
@@ -270,7 +326,8 @@ function MoveOptionsCard({ options }: { options: MoveOptions }) {
   );
 }
 
-function ExplainCard({ explain }: { explain: ClashExplain }) {
+/** `recorded`: the tags were returned when the run was recorded, not just now. */
+function ExplainCard({ explain, recorded = false }: { explain: ClashExplain; recorded?: boolean }) {
   return (
     <div className="rounded-lg border border-border-strong bg-card p-4">
       <div className="flex items-start justify-between gap-3">
@@ -303,7 +360,7 @@ function ExplainCard({ explain }: { explain: ClashExplain }) {
           {explain.sharedTaste.length > 0 ? (
             <div className="mt-3">
               <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                Tags Qloo returned <ProvenanceChip provenance="qloo" size="sm" />
+                Tags Qloo returned <ProvenanceChip provenance={recorded ? "recorded" : "qloo"} size="sm" />
               </p>
               <ul className="mt-1.5 flex flex-wrap gap-1.5">
                 {explain.sharedTaste.map((tag) => (
@@ -320,7 +377,7 @@ function ExplainCard({ explain }: { explain: ClashExplain }) {
   );
 }
 
-function ReslotCard({ reslot }: { reslot: ReslotSuggestion }) {
+function ReslotCard({ reslot, range }: { reslot: ReslotSuggestion; range: ScaleRange }) {
   return (
     <div className="rounded-lg border border-border-strong bg-card p-4">
       <div className="flex items-start justify-between gap-3">
@@ -331,7 +388,7 @@ function ReslotCard({ reslot }: { reslot: ReslotSuggestion }) {
         <p className="mt-1.5 text-sm text-muted-foreground">{reslot.message ?? "No move lowers this day's Clash Budget under your rules."}</p>
       ) : (
         <>
-          <BudgetMove before={reslot.before} after={reslot.after} />
+          <BudgetMove before={reslot.before} after={reslot.after} range={range} />
           <ol className="mt-3 space-y-1.5 text-sm">
             {reslot.moves.map((move) => (
               <li key={`${move.act}-${move.to}`}>
@@ -350,16 +407,27 @@ function ReslotCard({ reslot }: { reslot: ReslotSuggestion }) {
   );
 }
 
+/** An exchange in the panel: a replayed one keeps the recorded run it plays. */
+type PanelExchange = Exchange & { recording?: RecordedRun };
+
 function ExchangeView({
   exchange,
   latest,
+  range,
   onRetry,
+  onSkip,
+  onWatchRecorded,
 }: {
-  exchange: Exchange;
+  exchange: PanelExchange;
   latest: boolean;
+  range: ScaleRange;
   onRetry: () => void;
+  /** Finishes a replay at once. */
+  onSkip: () => void;
+  /** Plays a recorded run instead; only offered when the day has one. */
+  onWatchRecorded?: () => void;
 }) {
-  const { state } = exchange;
+  const { state, recording } = exchange;
   const reply = useMemo(() => readClashReply(state.results), [state.results]);
   const running = state.status === "running";
   const text = reply?.text || state.text;
@@ -369,12 +437,24 @@ function ExchangeView({
     <li id={`agent-${exchange.id}`} className="space-y-4">
       <div className="flex justify-end">
         <p className="max-w-[85%] rounded-2xl rounded-br-sm bg-foreground px-4 py-2.5 text-[0.9375rem] leading-relaxed text-background break-words">
-          <span className="sr-only">You asked: </span>
+          <span className="sr-only">{recording ? "The recorded run was asked: " : "You asked: "}</span>
           {exchange.message}
         </p>
       </div>
 
       <div className="space-y-4 border-l-2 border-border pl-4">
+        {recording ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <RecordedNotice capturedAt={recording.capturedAt} />
+            {running && latest ? (
+              <Button type="button" variant="ghost" size="sm" onClick={onSkip}>
+                <SkipForward aria-hidden="true" />
+                Skip to the answer
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+
         <ToolTrail calls={state.toolCalls} />
 
         {running && !text ? (
@@ -397,32 +477,46 @@ function ExchangeView({
         {reply && reply.whatIfs.length + reply.explains.length + reply.reslots.length + reply.moveOptions.length > 0 ? (
           <div className="grid gap-3 sm:grid-cols-2">
             {reply.explains.map((explain, i) => (
-              <ExplainCard key={`e${i}`} explain={explain} />
+              <ExplainCard key={`e${i}`} explain={explain} recorded={exchange.recording !== undefined || exchange.recorded === true} />
             ))}
             {reply.moveOptions.map((options, i) => (
-              <MoveOptionsCard key={`m${i}`} options={options} />
+              <MoveOptionsCard key={`m${i}`} options={options} range={range} />
             ))}
             {reply.whatIfs
               .filter((whatIf) => whatIf.allowed)
               .map((whatIf, i) => (
-                <WhatIfCard key={`w${i}`} whatIf={whatIf} />
+                <WhatIfCard key={`w${i}`} whatIf={whatIf} range={range} />
               ))}
             {reply.whatIfs.some((whatIf) => !whatIf.allowed) ? (
               <RuledOutCard whatIfs={reply.whatIfs.filter((whatIf) => !whatIf.allowed)} />
             ) : null}
             {reply.reslots.map((reslot, i) => (
-              <ReslotCard key={`r${i}`} reslot={reslot} />
+              <ReslotCard key={`r${i}`} reslot={reslot} range={range} />
             ))}
           </div>
         ) : null}
 
         {state.status === "error" && state.error ? (
-          <ErrorState
-            title="The agent could not answer"
-            message={state.error.message}
-            retryable={latest && state.error.retryable}
-            onRetry={onRetry}
-          />
+          <div>
+            <ErrorState
+              title="The agent could not answer"
+              message={state.error.message}
+              retryable={latest && state.error.retryable}
+              onRetry={onRetry}
+            />
+            {latest && onWatchRecorded ? (
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className="mt-2 h-auto px-0 py-1"
+                onClick={onWatchRecorded}
+              >
+                <History aria-hidden="true" />
+                Watch a recorded run instead
+              </Button>
+            ) : null}
+          </div>
         ) : null}
 
         {state.status === "cancelled" ? <p className="text-sm text-muted-foreground">Stopped.</p> : null}
@@ -441,7 +535,11 @@ function ExchangeView({
               qlooCalls={qlooCalls}
               triggerVariant="ghost"
               triggerClassName="h-8 px-2 text-xs"
-              description="The Qloo requests this answer made. Prices and what-ifs reuse the day's saved Qloo data; explaining a clash asks Qloo live for the taste both audiences share."
+              description={
+                recording
+                  ? "The Qloo requests this run made when it was recorded. They are listed from the saved stream; none were made just now."
+                  : "The Qloo requests this answer made. Prices and what-ifs reuse the day's saved Qloo data; explaining a clash asks Qloo live for the taste both audiences share."
+              }
             />
           </div>
         ) : null}
@@ -457,14 +555,14 @@ function Capabilities() {
       <ul className="mt-4 space-y-3 text-sm">
         {CAPABILITIES.map((item) => (
           <li key={item.tool} className="grid grid-cols-[minmax(0,1fr)] gap-0.5">
-            <span className="font-semibold">{toolLabel(item.tool)}</span>
+            <span className="font-semibold">{item.title}</span>
             <span className="text-muted-foreground">{item.text}</span>
           </li>
         ))}
       </ul>
       <p className="mt-4 text-sm text-muted-foreground">
-        Every number it gives comes from a tool in that answer. It never changes the real festival,
-        which does not use Clash Control.
+        Prices, overlaps and Clash Budgets in its answers come from the steps listed with them. It
+        never changes the real festival, which does not use Clash Control.
       </p>
     </div>
   );
@@ -490,8 +588,11 @@ function AgentHeading({ isMock }: { isMock: boolean }) {
   );
 }
 
-/** Shown instead of the question box while the language model is off, so the panel never looks broken. */
-function AgentOffCard() {
+/**
+ * Shown instead of the question box while the language model is off, so the panel never looks
+ * broken. With recorded runs to offer, it ends by pointing at them.
+ */
+function AgentOffCard({ withRecordings }: { withRecordings: boolean }) {
   return (
     <div className="rounded-xl border-2 border-dashed border-border-strong bg-card p-5 sm:p-6">
       <div className="flex items-start gap-3">
@@ -501,6 +602,7 @@ function AgentOffCard() {
           <p className="mt-2 text-[0.9375rem] leading-relaxed text-muted-foreground">
             Its answers come from a language model, which is off here to keep this demo free to run.
             Everything above (prices, clashes, receipts) works without it.
+            {withRecordings ? " Watch a recorded run instead:" : null}
           </p>
         </div>
       </div>
@@ -511,9 +613,12 @@ function AgentOffCard() {
 /**
  * "Ask the agent": a conversation about this festival day. The agent prices clashes, explains them
  * with Qloo's shared taste, records rules and tests moves; each answer shows its steps, the budget
- * before and after a tested move, and the Qloo requests behind it. While `agentStatus` is "off"
- * (no language model on the server) it shows a notice and what the agent can do, with no question
- * box and no request to the agent.
+ * before and after a tested move, and the Qloo requests behind it.
+ *
+ * What it shows depends on whether the live agent is on (`agentStatus`, see `panelMode`): a
+ * placeholder while that is being checked, the question box when it is on (or unknown), and a
+ * notice when it is off. Real runs saved for this day can be replayed in every state but the
+ * placeholder; a replay makes no request and never feeds the live conversation.
  */
 export function AgentPanel({
   preset,
@@ -525,41 +630,82 @@ export function AgentPanel({
   agentStatus?: AgentStatus;
 }) {
   const run = useAgentRun({ endpoint: "/api/runs" });
-  const [exchanges, setExchanges] = useState<Exchange[]>([]);
-  const [current, setCurrent] = useState<{ id: string; message: string } | null>(null);
+  const recordings = useRecordings(preset.id);
+  const [exchanges, setExchanges] = useState<PanelExchange[]>([]);
+  const [current, setCurrent] = useState<{ id: string; message: string; recording?: RecordedRun } | null>(null);
   const [draft, setDraft] = useState("");
   const counter = useRef(0);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const all = useMemo(
-    () => (current ? [...exchanges, { ...current, state: run.state }] : exchanges),
+  const runs = recordings.runs;
+  const mode = panelMode(agentStatus, runs.length > 0, recordings.status === "loading");
+  const range = useMemo<ScaleRange>(() => {
+    const baseline = preset.report.baseline;
+    return baseline && baseline.p10_index !== null && baseline.p90_index !== null
+      ? { low: baseline.p10_index, high: baseline.p90_index }
+      : null;
+  }, [preset]);
+
+  const all = useMemo<PanelExchange[]>(
+    () =>
+      current
+        ? [...exchanges, { ...current, recorded: current.recording !== undefined, state: run.state }]
+        : exchanges,
     [exchanges, current, run.state],
   );
   const rules = useMemo(() => latestSession(all)?.rules ?? [], [all]);
-  const asked = useMemo(() => new Set(all.map((exchange) => exchange.message)), [all]);
+  // A replayed question does not count as asked: it can still be asked live.
+  const asked = useMemo(
+    () => new Set(all.filter((exchange) => !exchange.recorded).map((exchange) => exchange.message)),
+    [all],
+  );
   const prompts = useMemo(() => {
     const locked = new Set(preset.festival.timetable.filter((slot) => slot.locked).map((slot) => slot.act_id));
-    return suggestedPrompts(preset.report.clashes, day, (id) => locked.has(id)).filter(
+    return suggestedPrompts(preset.report.clashes, day, (id) => locked.has(id), preset.evidence).filter(
       (prompt) => !asked.has(prompt),
     );
   }, [preset, day, asked]);
   const busy = run.isRunning;
+  const replaying = current?.recording !== undefined;
 
   useEffect(() => {
     if (!current) return;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    document.getElementById(`agent-${current.id}`)?.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
+    // Bring the question to the top so the answer streams into view below it, not below the fold.
+    document
+      .getElementById(`agent-${current.id}`)
+      ?.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
   }, [current]);
+
+  /** Moves the exchange in progress into the finished list and returns that list. */
+  function commit(): PanelExchange[] {
+    const committed: PanelExchange[] = current
+      ? [...exchanges, { ...current, recorded: current.recording !== undefined, state: run.state }]
+      : exchanges;
+    counter.current += 1;
+    setExchanges(committed);
+    return committed;
+  }
 
   function send(message: string) {
     const text = message.trim();
     if (!text || busy) return;
-    const committed: Exchange[] = current ? [...exchanges, { ...current, state: run.state }] : exchanges;
-    counter.current += 1;
-    setExchanges(committed);
+    const committed = commit();
     setCurrent({ id: `q${counter.current}`, message: text });
     setDraft("");
     run.start(buildClashBody(preset.id, text, committed));
+  }
+
+  /** Replays a recorded run as a new exchange. Nothing is sent; the live session is untouched. */
+  function play(recording: RecordedRun) {
+    if (busy) return;
+    commit();
+    setCurrent({ id: `q${counter.current}`, message: recording.question, recording });
+    run.replay(recording);
+  }
+
+  function skip() {
+    if (current?.recording && busy) run.replay(current.recording, { instant: true });
   }
 
   function startOver() {
@@ -583,28 +729,120 @@ export function AgentPanel({
 
   const status =
     run.state.status === "running"
-      ? "The agent is working."
+      ? replaying
+        ? "Replaying a recorded run."
+        : "The agent is working."
       : run.state.status === "done"
-        ? "The agent answered."
+        ? replaying
+          ? "The recorded run has finished."
+          : "The agent answered."
         : run.state.status === "error"
           ? "The agent could not answer."
           : "";
 
-  if (agentStatus === "off") {
-    return (
-      <section id="agent" aria-labelledby="agent-heading" className="border-t border-border bg-muted/40">
-        <div className="container-page py-14 sm:py-20">
-          <AgentHeading isMock={run.isMock} />
-          <div className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:gap-12">
-            <div className="min-w-0">
-              <AgentOffCard />
-            </div>
-            <aside className="min-w-0">
-              <Capabilities />
-            </aside>
+  const conversation =
+    all.length > 0 ? (
+      <ol aria-label="Conversation" aria-busy={busy} className="space-y-8">
+        {all.map((exchange, index) => (
+          <ExchangeView
+            key={exchange.id}
+            exchange={exchange}
+            latest={index === all.length - 1}
+            range={range}
+            onRetry={run.retry}
+            onSkip={skip}
+            onWatchRecorded={runs.length > 0 ? () => play(runs[0]) : undefined}
+          />
+        ))}
+      </ol>
+    ) : null;
+
+  const recorded = <RecordedRuns runs={runs} onPlay={play} disabled={busy} />;
+
+  let main: ReactNode;
+  if (mode === "checking") {
+    main = (
+      <>
+        <AgentSkeleton />
+        <p role="status" className="sr-only">
+          Checking whether the live agent is on.
+        </p>
+      </>
+    );
+  } else if (mode === "off" || mode === "off-recorded") {
+    main = (
+      <>
+        <AgentOffCard withRecordings={mode === "off-recorded"} />
+        {mode === "off-recorded" ? <div className="mt-6">{recorded}</div> : null}
+        {conversation ? <div className="mt-10">{conversation}</div> : null}
+      </>
+    );
+  } else {
+    main = (
+      <>
+        {conversation ? <div className="mb-8">{conversation}</div> : null}
+
+        {prompts.length > 0 && !busy ? (
+          <div className="mb-4">
+            <p className="text-xs text-muted-foreground">{all.length === 0 ? "Try one" : "Or try"}</p>
+            <ul className="mt-2 flex flex-wrap gap-2">
+              {prompts.map((prompt) => (
+                <li key={prompt}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-auto min-h-9 py-1.5 text-left whitespace-normal"
+                    onClick={() => send(prompt)}
+                  >
+                    {prompt}
+                  </Button>
+                </li>
+              ))}
+            </ul>
           </div>
-        </div>
-      </section>
+        ) : null}
+
+        <form onSubmit={onSubmit} className="rounded-xl border border-border-strong bg-card p-2 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring">
+          <label htmlFor="agent-input" className="sr-only">
+            Ask the agent about this festival day
+          </label>
+          <textarea
+            id="agent-input"
+            ref={inputRef}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={onKeyDown}
+            maxLength={MAX_MESSAGE_CHARS}
+            rows={2}
+            placeholder="e.g. Keep the headliner on the main stage, then try moving the set it clashes with"
+            className="block w-full resize-none bg-transparent px-2 py-1.5 text-[0.9375rem] leading-relaxed outline-none placeholder:text-muted-foreground"
+          />
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1 pt-1">
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <CornerDownLeft aria-hidden="true" className="size-3" /> Enter to send · Shift+Enter for a new line
+              {draft.length > MAX_MESSAGE_CHARS - 100 ? ` · ${MAX_MESSAGE_CHARS - draft.length} left` : ""}
+            </p>
+            <div className="flex items-center gap-2">
+              {busy ? (
+                <Button type="button" variant="ghost" size="sm" onClick={run.cancel}>
+                  Stop
+                </Button>
+              ) : null}
+              <Button type="submit" variant="ink" size="sm" disabled={busy || !draft.trim()}>
+                {busy && !replaying ? <LoaderCircle aria-hidden="true" className="motion-safe:animate-spin" /> : null}
+                Ask
+              </Button>
+            </div>
+          </div>
+        </form>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Answers are written live by a language model from the tools&rsquo; results. Questions are
+          limited per visitor to keep the demo free.
+        </p>
+
+        {runs.length > 0 ? <div className="mt-10 border-t border-border pt-6">{recorded}</div> : null}
+      </>
     );
   }
 
@@ -615,80 +853,12 @@ export function AgentPanel({
 
         <div className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:gap-12">
           <div className="min-w-0">
-            {all.length > 0 ? (
-              <ol aria-label="Conversation" aria-busy={busy} className="mb-8 space-y-8">
-                {all.map((exchange, index) => (
-                  <ExchangeView
-                    key={exchange.id}
-                    exchange={exchange}
-                    latest={index === all.length - 1}
-                    onRetry={run.retry}
-                  />
-                ))}
-              </ol>
+            {main}
+            {mode !== "checking" ? (
+              <p role="status" aria-live="polite" className="sr-only">
+                {status}
+              </p>
             ) : null}
-
-            {prompts.length > 0 && !busy ? (
-              <div className="mb-4">
-                <p className="text-xs text-muted-foreground">{all.length === 0 ? "Try one" : "Or try"}</p>
-                <ul className="mt-2 flex flex-wrap gap-2">
-                  {prompts.map((prompt) => (
-                    <li key={prompt}>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-auto min-h-9 py-1.5 text-left whitespace-normal"
-                        onClick={() => send(prompt)}
-                      >
-                        {prompt}
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            <form onSubmit={onSubmit} className="rounded-xl border border-border-strong bg-card p-2 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring">
-              <label htmlFor="agent-input" className="sr-only">
-                Ask the agent about this festival day
-              </label>
-              <textarea
-                id="agent-input"
-                ref={inputRef}
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={onKeyDown}
-                maxLength={MAX_MESSAGE_CHARS}
-                rows={2}
-                placeholder="e.g. Keep the headliner on the main stage, then try moving the set it clashes with"
-                className="block w-full resize-none bg-transparent px-2 py-1.5 text-[0.9375rem] leading-relaxed outline-none placeholder:text-muted-foreground"
-              />
-              <div className="flex flex-wrap items-center justify-between gap-2 px-1 pt-1">
-                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <CornerDownLeft aria-hidden="true" className="size-3" /> Enter to send · Shift+Enter for a new line
-                  {draft.length > MAX_MESSAGE_CHARS - 100 ? ` · ${MAX_MESSAGE_CHARS - draft.length} left` : ""}
-                </p>
-                <div className="flex items-center gap-2">
-                  {busy ? (
-                    <Button type="button" variant="ghost" size="sm" onClick={run.cancel}>
-                      Stop
-                    </Button>
-                  ) : null}
-                  <Button type="submit" variant="ink" size="sm" disabled={busy || !draft.trim()}>
-                    {busy ? <LoaderCircle aria-hidden="true" className="motion-safe:animate-spin" /> : null}
-                    Ask
-                  </Button>
-                </div>
-              </div>
-            </form>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Answers are written live by a language model from the tools&rsquo; results. Questions are
-              limited per visitor to keep the demo free.
-            </p>
-            <p role="status" aria-live="polite" className="sr-only">
-              {status}
-            </p>
           </div>
 
           <aside className="min-w-0 space-y-8">
@@ -706,7 +876,7 @@ export function AgentPanel({
               </div>
             ) : null}
             <Capabilities />
-            {all.length > 0 ? (
+            {all.length > 0 && mode !== "checking" ? (
               <Button type="button" variant="outline" size="sm" onClick={startOver} disabled={busy}>
                 <RotateCcw aria-hidden="true" /> Start over
               </Button>

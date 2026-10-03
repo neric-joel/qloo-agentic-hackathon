@@ -7,6 +7,7 @@ import {
   dialDomain,
   dialFraction,
   dialPoint,
+  rangePosition,
   samplingReach,
 } from "./clash-budget";
 import type { SetSlot } from "./preset";
@@ -84,6 +85,29 @@ function realShapedDay(): SetSlot[] {
     };
   });
 }
+
+describe("rangePosition", () => {
+  it("places the index above, within or below the shaded band", () => {
+    // Shaped like the two festival days shown: 116.71 against 92.16 to 108.56, 86.48 against 89.42 to 110.54.
+    expect(rangePosition(116.71, 92.16, 108.56)).toBe("above");
+    expect(rangePosition(86.48, 89.42, 110.54)).toBe("below");
+    expect(rangePosition(100, 92.16, 108.56)).toBe("within");
+  });
+
+  it("compares the whole numbers the dial prints", () => {
+    // 108.7 prints as 109, the same as the band's top, so it is not called above it.
+    expect(rangePosition(108.7, 92.16, 108.56)).toBe("within");
+    expect(rangePosition(109.5, 92.16, 108.56)).toBe("above");
+    expect(rangePosition(91.6, 92.16, 108.56)).toBe("within");
+    expect(rangePosition(91.4, 92.16, 108.56)).toBe("below");
+  });
+
+  it("is null without a band", () => {
+    expect(rangePosition(116.71, null, 108.56)).toBeNull();
+    expect(rangePosition(116.71, 92.16, null)).toBeNull();
+    expect(rangePosition(Number.NaN, 92.16, 108.56)).toBeNull();
+  });
+});
 
 describe("samplingReach", () => {
   it("reads the shared window, the stage freedom and the locks of a real-shaped day", () => {

@@ -48,6 +48,25 @@ export function dialArc(from: number, to: number, cx: number, cy: number, r: num
 }
 
 /**
+ * Where the index sits against the shaded band of random re-orderings (10th to 90th percentile),
+ * compared as the dial prints them (whole numbers), so the words never contradict the figures.
+ * Null when the band is unknown.
+ */
+export function rangePosition(
+  index: number,
+  p10: number | null,
+  p90: number | null,
+): "above" | "within" | "below" | null {
+  if (p10 === null || p90 === null || !Number.isFinite(index) || !Number.isFinite(p10) || !Number.isFinite(p90)) {
+    return null;
+  }
+  const value = Math.round(index);
+  if (value > Math.round(p90)) return "above";
+  if (value < Math.round(p10)) return "below";
+  return "within";
+}
+
+/**
  * "17% more taste-overlap cost than the average random re-ordering", "14% less ...", or "level
  * with the average random re-ordering".
  */

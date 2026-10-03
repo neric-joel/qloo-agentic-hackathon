@@ -103,9 +103,9 @@ async def create_run(
 ) -> StreamingResponse:
     if backend is None:
         raise HTTPException(status_code=503, detail="The agent is not configured on this server yet.")
-    # Refuse what cannot run before it takes a limiter slot. What runs follows the input's shape, so an
-    # explore input sent under the clash scenario is gated too.
-    if (body.scenario == "explore" or isinstance(body.input, ExploreInput)) and not settings.allow_explore:
+    # Refuse what cannot run before it takes a limiter slot. What runs follows the input's shape (a scenario
+    # that contradicts it is a 422 already).
+    if isinstance(body.input, ExploreInput) and not settings.allow_explore:
         raise HTTPException(status_code=404, detail="That scenario is not available.")
     if isinstance(body.input, ClashInput):
         preset = presets.get(body.input.preset_id)
@@ -131,6 +131,8 @@ async def create_run(
             max_turns=settings.agent_max_turns,
             max_tool_calls=settings.agent_max_tool_calls_per_turn,
             max_qloo_calls=settings.agent_max_qloo_calls_per_run,
+            max_reslots=settings.agent_max_reslots_per_run,
+            max_engine_seconds=settings.agent_max_engine_seconds,
         )
     )
 

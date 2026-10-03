@@ -6,7 +6,8 @@
 
 import { isRecord } from "./events";
 
-export type AgentStatus = "unknown" | "on" | "off";
+/** "checking" until the health check answers; "unknown" when it fails or takes too long. */
+export type AgentStatus = "checking" | "unknown" | "on" | "off";
 
 /** `llm_configured: true` is "on", `false` is "off", and anything else (including no answer) is "unknown". */
 export function parseHealth(json: unknown): AgentStatus {
@@ -14,4 +15,26 @@ export function parseHealth(json: unknown): AgentStatus {
   if (json.llm_configured === true) return "on";
   if (json.llm_configured === false) return "off";
   return "unknown";
+}
+
+/**
+ * What the agent panel shows:
+ * - "checking": a placeholder while the health check is in flight (no question box yet);
+ * - "live": the question box, for "on" and for "unknown" (a failed check must not hide the agent);
+ * - "off-recorded": the agent is off and recorded runs can be watched instead;
+ * - "off": the agent is off and there is nothing recorded to show.
+ *
+ * `hasRecordings` is true once the recorded runs have loaded and there is at least one. While they
+ * are still loading (`recordingsLoading`), an "off" agent keeps the placeholder, so the panel does
+ * not flash the plain notice before the recorded runs arrive.
+ */
+export function panelMode(
+  status: AgentStatus,
+  hasRecordings: boolean,
+  recordingsLoading = false,
+): "checking" | "live" | "off-recorded" | "off" {
+  if (status === "checking") return "checking";
+  if (status === "on" || status === "unknown") return "live";
+  if (hasRecordings) return "off-recorded";
+  return recordingsLoading ? "checking" : "off";
 }

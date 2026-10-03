@@ -68,7 +68,7 @@ async def test_list_and_report():
     assert next(s for s in listed["sets"] if s["name"] == "Headliner")["locked"] is True
     report = json.loads((await CLASH_REPORT.handler({"limit": 3}, ctx)).content)
     assert {report["top_clashes"][0]["a"], report["top_clashes"][0]["b"]} == {"Indie Star", "Indie Twin"}
-    assert report["top_clashes"][0]["taste_overlap"] == 0.95
+    assert report["top_clashes"][0]["taste_overlap_out_of_100"] == 95
 
 
 async def test_explain_clash_uses_qloo_compare_and_names():
@@ -88,7 +88,10 @@ async def test_try_move_reports_without_changing_the_timetable():
     )
     assert out["allowed"] is True
     assert out["clash_budget_after"] < out["clash_budget_before"]
-    assert "Indie Star" in out["clashes_before"] and "Indie Star" not in out["clashes_after"]
+    assert (
+        "Indie Star" in out["clash_index_points_before"]
+        and "Indie Star" not in out["clash_index_points_after"]
+    )
     assert ctx.state["festival"] is before
     clash = json.loads(
         (await TRY_MOVE.handler({"act": "Indie Twin", "stage": "Tent", "start": "20:30"}, ctx)).content
@@ -146,7 +149,7 @@ async def test_find_moves_misses_no_legal_place_a_brute_force_search_finds():
                     )
                 except ToolInputError:
                     continue
-                result = json.loads(out.content)
+                result = out.data  # engine values, not the rounded view the model reads
                 if result["allowed"]:
                     legal.append(result["clash_budget_after"])
         assert found["legal_places"] >= len(legal)
@@ -176,16 +179,14 @@ async def test_constraints_change_the_working_festival_and_bind_the_reslot():
     await ADD_CONSTRAINT.handler(
         {"kind": "not_after", "act": "Indie Star", "time": "17:00", "other_act": ""}, ctx
     )
-    out = json.loads(
-        (await RESLOT.handler({"objective": 1, "move_budget": 4, "compare_without_qloo": True}, ctx)).content
-    )
+    out = json.loads((await RESLOT.handler({"objective": 1, "move_budget": 4}, ctx)).content)
     moved = {m["act"] for m in out.get("moves", [])}
     assert "Indie Twin" not in moved
     assert ctx.state["constraints"] == [
         "Indie Twin stays exactly where it is",
         "Indie Star starts no later than 17:00",
     ]
-    assert "without_qloo" in out
+    assert "without_qloo" not in out
 
 
 async def test_bad_inputs_go_back_to_the_model():
@@ -197,6 +198,115 @@ async def test_bad_inputs_go_back_to_the_model():
             {"kind": "not_before", "act": "Opener", "time": "soon", "other_act": ""}, ctx
         )
     with pytest.raises(ToolInputError, match="move_budget"):
-        await RESLOT.handler({"objective": 1, "move_budget": 99, "compare_without_qloo": False}, ctx)
+        await RESLOT.handler({"objective": 1, "move_budget": 99}, ctx)
     with pytest.raises(ToolInputError, match="No act"):
         await TRY_MOVE.handler({"act": "Nobody", "stage": "Main", "start": "12:00"}, ctx)
+
+
+# ------------------------------------------------------------------------- what the model reads
+
+
+def decimals(value: float) -> int:
+    text = repr(value)
+    return len(text.split(".")[1]) if "." in text else 0
+
+
+async def test_content_gives_taste_overlap_and_draw_out_of_100_and_data_keeps_the_engine_units():
+    ctx = context()
+    report = json.loads((await CLASH_REPORT.handler({"limit": 5}, ctx)).content)
+    for row in report["top_clashes"]:
+        assert {"taste_overlap", "draw", "share_of_total_cost"}.isdisjoint(row)
+        for key in ("taste_overlap_out_of_100", "draw_out_of_100", "share_of_day_cost_percent"):
+            assert isinstance(row[key], int) and 0 <= row[key] <= 100
+    assert decimals(report["clash_budget_index"]) <= 1
+
+    listed = json.loads((await LIST_TIMETABLE.handler({}, ctx)).content)
+    assert all("draw" not in row and isinstance(row["draw_out_of_100"], int) for row in listed["sets"])
+
+    out = await EXPLAIN_CLASH.handler({"act_a": "Indie Star", "act_b": "Indie Twin"}, ctx)
+    content = json.loads(out.content)
+    assert content["taste_overlap_out_of_100"] == 95 and "taste_overlap" not in content
+    assert content["a"]["draw_out_of_100"] == 90 and "draw" not in content["a"]
+    assert content["qloo_tags_for_pair"] == ["Indie Rock"] and "tags" not in content  # no raw Qloo scores
+    # The web app's card still reads the engine's units
+    assert out.data["taste_overlap"] == 0.95 and out.data["a"]["draw"] == 0.9
+    assert out.data["tags"][0]["score"] == 0.9 and out.data["qloo_tags_for_pair"] == ["Indie Rock"]
+
+
+async def test_an_act_without_qloo_signal_is_explained_as_unpriced():
+    ctx = context()
+    matrix = ctx.state["matrix"]
+    tent_closer = next(a.id for a in ctx.state["festival"].acts if a.name == "Tent Closer")
+    ctx.state["matrix"] = matrix.model_copy(update={"coverage": {tent_closer: "none"}})
+    out = await EXPLAIN_CLASH.handler({"act_a": "Tent Closer", "act_b": "Headliner"}, ctx)
+    content = json.loads(out.content)
+    assert content["taste_overlap_out_of_100"] is None and "not priced" in content["note"]
+    assert out.data is None and out.summary == "No Qloo signal for one act"
+
+
+async def test_budgets_the_model_reads_have_one_decimal():
+    ctx = context()
+    moves = await FIND_MOVES.handler({"act": "Indie Twin"}, ctx)
+    content = json.loads(moves.content)
+    assert decimals(content["clash_budget_before"]) <= 1
+    assert all(decimals(o["clash_budget_after"]) <= 1 for o in content["options"])
+    assert [round(o["clash_budget_after"], 1) for o in moves.data["options"]] == [
+        o["clash_budget_after"] for o in content["options"]
+    ]
+    assert "->" in moves.summary and all(
+        decimals(float(x)) <= 1 for x in moves.summary.split("best ")[1].split(" -> ")
+    )
+
+    what_if = await TRY_MOVE.handler({"act": "Indie Twin", "stage": "Tent", "start": "18:30"}, ctx)
+    content = json.loads(what_if.content)
+    assert decimals(content["clash_budget_before"]) <= 1 and decimals(content["clash_budget_after"]) <= 1
+    assert "clashes_before" not in content and "clashes_after" not in content
+    points = [*content["clash_index_points_before"].values(), *content["clash_index_points_after"].values()]
+    assert points and all(decimals(v) <= 1 and v >= 1 for v in points)
+    assert content["clash_budget_after"] == round(what_if.data["clash_budget_after"], 1)
+    assert (
+        what_if.data["clash_budget_after"]
+        == score_festival(  # the card's value is the engine's
+            ctx.state["festival"].model_copy(
+                update={
+                    "timetable": [
+                        s.model_copy(update={"start": 1110, "end": 1170}) if s.act_id == "indie-twin" else s
+                        for s in ctx.state["festival"].timetable
+                    ]
+                }
+            ),
+            ctx.state["matrix"],
+            ctx.state["config"],
+        ).metrics.clash_budget_index
+    )
+
+    reslot = json.loads((await RESLOT.handler({"objective": 1, "move_budget": 4}, ctx)).content)
+    assert decimals(reslot["clash_budget_before"]) <= 1 and decimals(reslot["clash_budget_after"]) <= 1
+
+
+def test_reslot_offers_no_comparison_without_qloo():
+    assert "compare_without_qloo" not in json.dumps(RESLOT.to_api())
+    assert RESLOT.input_schema["required"] == ["objective", "move_budget"]
+
+
+async def test_a_rule_never_loosens_a_bound_the_set_already_has():
+    ctx = context()
+    await ADD_CONSTRAINT.handler(
+        {"kind": "not_after", "act": "Opener", "time": "15:00", "other_act": ""}, ctx
+    )
+    out = await ADD_CONSTRAINT.handler(
+        {"kind": "not_after", "act": "Opener", "time": "18:00", "other_act": ""}, ctx
+    )
+    content = json.loads(out.content)
+    slot = next(s for s in ctx.state["festival"].timetable if s.act_id == "opener")
+    assert slot.not_after == 15 * 60
+    assert content["added"] == "Opener starts no later than 15:00"
+    assert "stricter" in content["kept_stricter_bound"]
+    tighter = json.loads(
+        (
+            await ADD_CONSTRAINT.handler(
+                {"kind": "not_after", "act": "Opener", "time": "14:30", "other_act": ""}, ctx
+            )
+        ).content
+    )
+    assert "kept_stricter_bound" not in tighter and tighter["added"] == "Opener starts no later than 14:30"

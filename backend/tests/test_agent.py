@@ -222,10 +222,12 @@ def test_explore_scenario_is_off_by_default():
     try:
         with TestClient(app) as client:
             refused = client.post("/api/runs", json=EXPLORE_BODY)
-            # An explore input under the clash label runs explore, so it is refused too.
+            unlabelled = client.post("/api/runs", json={"input": EXPLORE_BODY["input"]})
+            # An explore input under the clash label contradicts itself: refused before anything runs.
             relabelled = client.post("/api/runs", json={**EXPLORE_BODY, "scenario": "clash"})
         assert refused.status_code == 404 and refused.json()["detail"] == "That scenario is not available."
-        assert relabelled.status_code == 404
+        assert unlabelled.status_code == 404
+        assert relabelled.status_code == 422
     finally:
         app.dependency_overrides.clear()
 

@@ -13,6 +13,7 @@ import json
 import logging
 from datetime import datetime
 from functools import lru_cache
+from itertools import pairwise
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -69,11 +70,14 @@ class Recording(BaseModel):
         results = [e.event for e in self.events if e.event["type"] == "result"]
         if len(results) != 1 or results[0].get("kind") != "clash":
             raise ValueError("a run needs exactly one result event, of kind clash")
-        if any(later.t < earlier.t for earlier, later in zip(self.events, self.events[1:], strict=False)):
+        if any(later.t < earlier.t for earlier, later in pairwise(self.events)):
             raise ValueError("event times must not go backwards")
-        size = len(json.dumps(self.model_dump(mode="json"), ensure_ascii=False, separators=(",", ":")).encode())
+        encoded = json.dumps(self.model_dump(mode="json"), ensure_ascii=False, separators=(",", ":"))
+        size = len(encoded.encode("utf-8"))
         if size > MAX_RUN_BYTES:
-            raise ValueError(f"a run may be at most {MAX_RUN_BYTES // 1024} KB, this one is {size // 1024} KB")
+            raise ValueError(
+                f"a run may be at most {MAX_RUN_BYTES // 1024} KB; this one is {size // 1024} KB"
+            )
         return self
 
 
@@ -90,7 +94,7 @@ def _first_error(exc: ValidationError) -> str:
 
 
 def _read(path: Path) -> list[Recording]:
-    """The valid runs in one file; skips (and logs) each invalid run, or the whole file when it is unreadable."""
+    """The valid runs in one file. Skips (and logs) each invalid run, or the whole file when unreadable."""
     if path.stat().st_size > MAX_FILE_BYTES:
         log.warning("Skipping recordings file %s: larger than %d bytes", path.name, MAX_FILE_BYTES)
         return []
@@ -99,8 +103,12 @@ def _read(path: Path) -> list[Recording]:
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         log.warning("Skipping recordings file %s: %s", path.name, exc)
         return []
-    if not isinstance(raw, dict) or raw.get("preset_id") != path.stem or not isinstance(raw.get("runs"), list):
-        log.warning("Skipping recordings file %s: it needs preset_id %r and a runs list", path.name, path.stem)
+    if (
+        not isinstance(raw, dict)
+        or raw.get("preset_id") != path.stem
+        or not isinstance(raw.get("runs"), list)
+    ):
+        log.warning("Skipping recordings file %s: needs preset_id %r and a runs list", path.name, path.stem)
         return []
     if len(raw["runs"]) > MAX_RUNS:
         log.warning("Skipping recordings file %s: more than %d runs", path.name, MAX_RUNS)

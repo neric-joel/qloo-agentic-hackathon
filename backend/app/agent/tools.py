@@ -7,16 +7,18 @@ import logging
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, TypeVar
 
 from ..qloo.client import QlooClient, QlooError, record_requests
 from .events import Emit, Provenance
 
 log = logging.getLogger(__name__)
+T = TypeVar("T")
 
 
 TOO_MANY_CALLS = "Too many tool calls in one turn; the rest were skipped."
 QLOO_BUDGET_USED = "Error: this run's Qloo budget is used up."
+ENGINE_BUDGET_USED = "Error: this run's calculation budget is used up."
 QLOO_CALLS = "qloo_calls"  # ToolContext.state key: Qloo requests made so far in this run
 
 
@@ -45,6 +47,30 @@ class ToolContext:
     qloo: QlooClient
     state: dict[str, Any] = field(default_factory=dict)
     qloo_budget: int | None = None  # most Qloo requests one run may make; None means no cap
+    reslot_budget: int | None = None  # most re-slots one run may make; None means no cap
+    engine_budget: float | None = None  # most seconds of engine work one run may use; None means no cap
+    reslots: int = 0
+    engine_seconds: float = 0.0
+
+    def take_reslot(self) -> None:
+        """Count one re-slot, or refuse it once the run has had its share (checked before any await)."""
+        if self.reslot_budget is not None and self.reslots >= self.reslot_budget:
+            allowed = "one re-slot" if self.reslot_budget == 1 else f"{self.reslot_budget} re-slots"
+            raise ToolRefused(f"Error: only {allowed} per run.", f"Skipped: {allowed} per run")
+        self.reslots += 1
+
+    async def engine(self, work: Callable[..., T], *args: Any) -> T:
+        """Run CPU-bound engine work off the event loop and charge its wall time to the run.
+
+        Work that starts under the budget finishes; once the budget is spent the next call is refused.
+        """
+        if self.engine_budget is not None and self.engine_seconds >= self.engine_budget:
+            raise ToolRefused(ENGINE_BUDGET_USED, "Calculation budget for this run is used up")
+        started = time.perf_counter()
+        try:
+            return await asyncio.to_thread(work, *args)
+        finally:
+            self.engine_seconds += time.perf_counter() - started
 
     def take_qloo_slot(self) -> None:
         """Reserve one Qloo request before a Qloo-backed tool runs, or refuse it once the budget is used.

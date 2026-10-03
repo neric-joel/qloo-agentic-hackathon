@@ -6,7 +6,7 @@ import logging
 import time
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 from .agent.clash_tools import CLASH_TOOLS
 from .agent.events import Event, EventChannel, new_id
@@ -30,10 +30,17 @@ words) that names the top picks and the favorites that drove them."""
 
 CLASH_SYSTEM = """You are Clash Control, a programming assistant for one day of a festival timetable.
 A clash is two sets on different stages at the same time. Its cost = how popular the two acts are (combined
-draw, Qloo popularity) x how much their audiences overlap in taste (taste overlap: Qloo's affinity between
-the two acts' audiences, turned into a rank among this day's acts, 0-1; tool results call it
-taste_overlap) x minutes overlapping. Taste overlap measures taste, not attendance.
+draw, Qloo popularity) x how much their audiences overlap in taste (taste overlap, 0-100: Qloo's affinity
+between the two acts' audiences, turned into a rank among this day's acts; tool results call it
+taste_overlap_out_of_100) x minutes overlapping. Taste overlap measures taste, not attendance.
 Never describe taste overlap as a percentage of fans or a headcount.
+State taste overlap and draw as whole numbers out of 100, exactly as the tools give them, for example
+"taste overlap 92 out of 100". Never write them as decimals.
+Taste overlap, prices and the Clash Budget Index are calculated by this app from Qloo data. Do not call them
+"Qloo's own measure" or "Qloo's score". Only the tags from explain_clash and each act's popularity are
+values Qloo returned.
+Quote the Clash Budget Index with one decimal, as the tools give it. Describe a move only by what it changes
+("goes from 116.7 to 114.3"). Do not call a result an improvement and do not offer to find a bigger one.
 
 How to work:
 - Every number you state must come from a tool result in this run. Never estimate.
@@ -43,8 +50,8 @@ How to work:
 - To find where a set could go, call find_moves once; it checks every start on a 5-minute grid and lists
   the legal places, priced. Do not guess times
   with try_move. Use try_move for a specific move the user names. If a move breaks a rule, say which rule.
-- Call reslot only when the user asks for suggestions. Present its results by Qloo's measure, and
-  describe them as suggestions graded by the same measure used to find them.
+- Call reslot only when the user asks for suggestions. Describe its results as
+  suggestions graded by the same measure used to find them.
 - If Qloo has no signal for an act, say its clashes cannot be priced.
 - Answer in plain language, under 150 words, naming acts, stages and times. Do not judge the real
   festival's programming; it does not use this tool."""
@@ -95,8 +102,18 @@ class ClashInput(_Input):
 
 
 class RunRequest(_Input):
-    scenario: Literal["explore", "clash"] = "explore"
+    """What to run follows the input's shape; ``scenario`` may be left out, but it may not contradict it."""
+
+    scenario: Literal["explore", "clash"] | None = None
     input: ExploreInput | ClashInput
+
+    @model_validator(mode="after")
+    def _scenario_matches_input(self) -> RunRequest:
+        implied = "clash" if isinstance(self.input, ClashInput) else "explore"
+        if self.scenario is not None and self.scenario != implied:
+            raise ValueError(f"scenario {self.scenario!r} does not match a {implied} input")
+        self.scenario = implied
+        return self
 
 
 class SessionError(ValueError):
@@ -116,6 +133,8 @@ def clash_state(preset: Preset, data: ClashInput) -> dict[str, Any]:
             festival = Festival.model_validate({**festival.model_dump(), **update})
         except ValueError as exc:
             raise SessionError("The timetable is not valid for this festival day.") from exc
+        if not _only_tightens(preset.festival, festival):
+            raise SessionError("The timetable does not match this festival day.")
     baseline = BaselineStats.model_validate(preset.report["baseline"])
     return {
         "festival": festival,
@@ -123,6 +142,36 @@ def clash_state(preset: Preset, data: ClashInput) -> dict[str, Any]:
         "config": ScoringConfig(baseline=baseline),
         "constraints": list(data.rules),
     }
+
+
+def _only_tightens(published: Festival, session: Festival) -> bool:
+    """Whether a session could have come from the published day. The agent never applies a move, and a rule
+    may add a lock, narrow a start window or a stage list, or keep two acts apart, never the reverse; so a
+    real session has every set where it was published and is at least as constrained."""
+    fixed = {"no_clash_with"}
+    if session.constraints.model_dump(exclude=fixed) != published.constraints.model_dump(exclude=fixed):
+        return False
+    pairs = {frozenset(pair) for pair in session.constraints.no_clash_with}
+    if any(frozenset(pair) not in pairs for pair in published.constraints.no_clash_with):
+        return False
+    slots = {slot.act_id: slot for slot in session.timetable}
+    return all(_slot_tightens(slot, slots[slot.act_id]) for slot in published.timetable)
+
+
+def _slot_tightens(published: SetSlot, slot: SetSlot) -> bool:
+    place = ("day", "stage_id", "start", "end")
+    if any(getattr(slot, name) != getattr(published, name) for name in place):
+        return False
+    if (published.locked and not slot.locked) or (published.stage_locked and not slot.stage_locked):
+        return False
+    if published.not_before is not None and (
+        slot.not_before is None or slot.not_before < published.not_before
+    ):
+        return False
+    if published.not_after is not None and (slot.not_after is None or slot.not_after > published.not_after):
+        return False
+    # Without a published list any list passes: the festival already requires it to hold the set's stage
+    return published.stages is None or (slot.stages is not None and set(slot.stages) <= set(published.stages))
 
 
 def clash_prompt(festival: Festival, data: ClashInput) -> str:
@@ -146,9 +195,11 @@ async def execute_run(
     max_turns: int = MAX_TURNS,
     max_tool_calls: int | None = None,
     max_qloo_calls: int | None = None,
+    max_reslots: int | None = None,
+    max_engine_seconds: float | None = None,
 ) -> None:
-    """Run one agent request. The caps (model turns, tool calls per turn, Qloo requests) come from the
-    caller's settings; ``None`` leaves that cap off."""
+    """Run one agent request. The caps (model turns, tool calls per turn, Qloo requests, re-slots and
+    seconds of engine work) come from the caller's settings; ``None`` leaves that cap off."""
     run_id = new_id("run")
     started = time.perf_counter()
     qloo_calls = 0
@@ -175,7 +226,13 @@ async def execute_run(
             except SessionError as exc:
                 await emit({"type": "error", "message": str(exc), "retryable": False})
                 return
-            ctx = ToolContext(qloo=qloo, state=state, qloo_budget=max_qloo_calls)
+            ctx = ToolContext(
+                qloo=qloo,
+                state=state,
+                qloo_budget=max_qloo_calls,
+                reslot_budget=max_reslots,
+                engine_budget=max_engine_seconds,
+            )
             system, prompt, tools = CLASH_SYSTEM, clash_prompt(state["festival"], data), CLASH_TOOLS
         else:
             ctx = ToolContext(qloo=qloo, qloo_budget=max_qloo_calls)

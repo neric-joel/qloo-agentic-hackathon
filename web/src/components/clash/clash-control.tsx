@@ -15,10 +15,13 @@ import {
   dayName,
   daysWithSets,
   festivalName,
+  heroClash,
   involves,
+  isFixedByLocks,
   partnerOf,
   topClashes,
   traceToolCalls,
+  type HeroClash,
 } from "@/lib/clashes";
 import type { PairClash, Preset, PresetSummary } from "@/lib/preset";
 
@@ -29,6 +32,7 @@ import { ClashList } from "./clash-list";
 import { CoverageMeter } from "./coverage-meter";
 import { HiddenWall } from "./hidden-wall";
 import { PresetSources } from "./preset-sources";
+import { RECORDED_RUNS_ID } from "./recorded-runs";
 import { BoardSkeleton, ScoreSkeleton } from "./skeletons";
 import { TimetableGrid } from "./timetable-grid";
 import { TimetableLegend } from "./timetable-legend";
@@ -36,11 +40,19 @@ import { TimetableList } from "./timetable-list";
 import { TwinCards } from "./twin-cards";
 import { useAgentStatus } from "./use-agent-status";
 import { usePresets } from "./use-presets";
+import { useRecordings } from "./use-recordings";
 
 const TOP_LINKS = 10;
 
 const HERO_LINK =
   "inline-flex items-center gap-1.5 text-sm font-semibold underline underline-offset-4 hover:text-primary";
+
+/** The hero button says what the first click opens, and only rank 1 is called the costliest. */
+const HERO_BUTTON: Record<HeroClash["kind"], string> = {
+  hidden: "Open a hidden clash",
+  evidence: "Open a clash and its evidence",
+  costliest: "Open the costliest clash",
+};
 
 /** The hero row: the static pitch on the left, the day's score on the right. Kept short so the
  * priced timetable starts in the first screenful. */
@@ -94,8 +106,8 @@ export function ClashControlFallback({ intro }: { intro: ReactNode }) {
 
 /**
  * The landing screen: loads the preset festival days, lets the visitor pick one, and shows its
- * Clash Budget Index and coverage, the priced timetable with the costliest clashes, the hidden-clash
- * examples and the twin card.
+ * Clash Budget Index and coverage, the priced timetable with the costliest clashes, the agent (live
+ * or recorded runs), the hidden-clash examples and the twin card.
  */
 export function ClashControl({ intro }: { intro: ReactNode }) {
   const pathname = usePathname();
@@ -236,6 +248,17 @@ function PresetView({
   const stages = useMemo(() => new Map(festival.stages.map((stage) => [stage.id, stage])), [festival]);
   const allCalls = useMemo(() => traceToolCalls(preset.requests, preset.id), [preset]);
   const reach = useMemo(() => describeReach(samplingReach(festival.timetable)), [festival]);
+  const isLocked = useMemo(() => {
+    const locked = new Set(festival.timetable.filter((slot) => slot.locked).map((slot) => slot.act_id));
+    return (actId: string) => locked.has(actId);
+  }, [festival]);
+  const hero = useMemo(() => heroClash(ranked, preset.evidence, isLocked), [ranked, preset.evidence, isLocked]);
+  // The share of the day's cost that sits between two locked sets, over every ranked clash.
+  const fixedShare = useMemo(
+    () => ranked.filter((clash) => isFixedByLocks(clash, isLocked)).reduce((sum, clash) => sum + clash.regret_share, 0),
+    [ranked, isLocked],
+  );
+  const recordings = useRecordings(preset.id);
 
   const { activeSetIds, activeClashKeys } = useMemo(() => {
     const setIds = new Set<string>();
@@ -273,18 +296,23 @@ function PresetView({
         }
       >
         <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">
-          {ranked.length > 0 ? (
-            <Button type="button" variant="ink" onClick={(event) => openClash(ranked[0], event.currentTarget)}>
-              Open the costliest clash
+          {hero ? (
+            <Button type="button" variant="ink" onClick={(event) => openClash(hero.clash, event.currentTarget)}>
+              {HERO_BUTTON[hero.kind]}
             </Button>
           ) : null}
           <a href="#hidden-wall" className={HERO_LINK}>
             See the hidden clashes
             <ArrowDown aria-hidden="true" className="size-4" />
           </a>
-          {agentStatus !== "off" ? (
+          {agentStatus === "on" || agentStatus === "unknown" ? (
             <a href="#agent" className={HERO_LINK}>
               Ask the agent what happens if a set moves
+              <ArrowDown aria-hidden="true" className="size-4" />
+            </a>
+          ) : agentStatus === "off" && recordings.runs.length > 0 ? (
+            <a href={`#${RECORDED_RUNS_ID}`} className={HERO_LINK}>
+              Watch a recorded agent run
               <ArrowDown aria-hidden="true" className="size-4" />
             </a>
           ) : null}
@@ -351,6 +379,8 @@ function PresetView({
               slots={slots}
               stages={stages}
               totalRanked={ranked.length}
+              fixedShare={fixedShare}
+              isLocked={isLocked}
               activeKeys={activeClashKeys}
               dimmed={highlight !== null}
               onOpen={openClash}
@@ -378,10 +408,10 @@ function PresetView({
         </div>
       </BoardFrame>
 
+      <AgentPanel preset={preset} day={day} agentStatus={agentStatus} />
+
       <HiddenWall evidence={preset.evidence} />
       <TwinCards twins={preset.evidence?.twins ?? []} acts={festival.acts} />
-
-      <AgentPanel preset={preset} day={day} agentStatus={agentStatus} />
 
       <PresetSources preset={preset} />
 

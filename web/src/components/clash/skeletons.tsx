@@ -66,3 +66,15 @@ export function BoardSkeleton() {
     </div>
   );
 }
+
+/** Placeholder for the agent panel while the page finds out whether the live agent is on. */
+export function AgentSkeleton({ className }: { className?: string }) {
+  return (
+    <div className={cn("rounded-xl border border-border bg-card p-5 sm:p-6", className)}>
+      <Bone className="h-4 w-2/3" />
+      <Bone className="mt-4 h-3 w-full" />
+      <Bone className="mt-2 h-3 w-5/6" />
+      <Bone className="mt-6 h-9 w-40" />
+    </div>
+  );
+}

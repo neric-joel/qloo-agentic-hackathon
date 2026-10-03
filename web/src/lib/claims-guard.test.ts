@@ -5,9 +5,10 @@
  * that found them.
  *
  * Each file is scanned whole, as a reader would see its text: line breaks, indentation and {" "}
- * spacers collapse to one space, adjacent string literals joined with + are joined, and the HTML
- * entities used in JSX text are decoded. So a phrase wrapped across lines or split by {" "} is still
- * caught. The simulated stream (mock-*) ships in the bundle behind a build flag, so it is scanned
+ * spacers collapse to one space, adjacent string literals joined with + are joined, HTML entities
+ * (named and numeric) are decoded and zero-width characters are dropped. So a phrase wrapped across
+ * lines, split by {" "} or hidden behind an entity or an invisible character is still caught. The
+ * simulated stream (mock-*) ships in the bundle behind a build flag, so it is scanned
  * too; only tests and test fixtures are skipped.
  */
 
@@ -30,6 +31,7 @@ const FORBIDDEN: readonly RegExp[] = [
   /same size crowd/i,
   /shared audiences?/i,
   /% of (the )?fans/i,
+  /\d+\s*%\s*of (the |all )?(fans|audience)/i,
   /fans forced/i,
   /crowds? (split|torn)/i,
   /headcount/i,
@@ -38,6 +40,11 @@ const FORBIDDEN: readonly RegExp[] = [
   /outperform/i,
   /beats popularity/i,
   /improves? (this day|the timetable)/i,
+  /improves? on /i,
+  /regret cut/i,
+  // A derived number is "calculated from Qloo data", never "Qloo's measure". "Qloo's score" stays
+  // allowed: comments use it for the tag order, a value Qloo returned.
+  /qloo'?s (own )?measure/i,
   /no fan is torn/i,
   /revenue/i,
   /resale/i,
@@ -47,16 +54,28 @@ const FORBIDDEN: readonly RegExp[] = [
 /** Phrases a forbidden pattern would match that say the opposite, such as "not a headcount". */
 const ALLOWED: readonly RegExp[] = [/not (a )?headcount/gi];
 
+/** Zero-width characters, typed or written as a \u escape: U+200B to U+200D, U+2060 and U+FEFF. */
+const INVISIBLE = /[​-‍⁠﻿]|\\u(?:200[bcd]|2060|feff)|\\u\{(?:200[bcd]|2060|feff)\}/gi;
+
+/** The character a numeric entity stands for; nothing for a code point no character has. */
+function fromCodePoint(code: number): string {
+  return Number.isInteger(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : "";
+}
+
 /**
  * Source text as a reader would see it. {" "} and {' '} become a space, "a " + "b" becomes "a b",
- * the entities JSX text uses are decoded (&amp; last, so nothing is decoded twice), and every run of
- * whitespace, newlines included, becomes one space.
+ * numeric entities (&#39;, &#x27;) and the named ones JSX text uses are decoded (&amp; last, so
+ * nothing is decoded twice), zero-width characters are dropped, and every run of whitespace,
+ * newlines included, becomes one space.
  */
 function normalize(source: string): string {
   return source
     .replace(/\{\s*(["'])\s*\1\s*\}/g, " ")
     .replace(/(["'`])\s*\+\s*\1/g, "")
-    .replace(/&rsquo;|&lsquo;|&apos;|&#39;|[‘’]/g, "'")
+    .replace(/&#(\d+);/g, (_, code: string) => fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code: string) => fromCodePoint(parseInt(code, 16)))
+    .replace(INVISIBLE, "")
+    .replace(/&rsquo;|&lsquo;|&apos;|[‘’]/g, "'")
     .replace(/&nbsp;| /g, " ")
     .replace(/&amp;/g, "&")
     .replace(/\s+/g, " ");
@@ -125,8 +144,33 @@ describe("claims guard", () => {
     expect(findClaims("<p>\n  Their shared\n  audiences differ.\n</p>")).toHaveLength(1);
     expect(findClaims("<p>{' '}Fans at&nbsp;stake</p>")).toHaveLength(1);
     expect(findClaims('const text =\n  "they draw the same " +\n  "people";')).toHaveLength(1);
-    expect(findClaims("<p>40% of the fans</p>")).toHaveLength(1);
+    // Two patterns catch this one (any "% of the fans", and a figure "% of the fans or audience").
+    expect(findClaims("<p>40% of the fans</p>")).not.toEqual([]);
     expect(findClaims("<p>Two crowds torn</p>")).toHaveLength(1);
+  });
+
+  it("catches the phrases added after the second review", () => {
+    expect(findClaims("<p>Moving it would improve on the published day.</p>")).toHaveLength(1);
+    expect(findClaims("<p>A regret cut of 12 points.</p>")).toHaveLength(1);
+    expect(findClaims("<p>Clashing them strands 40 % of the audience.</p>")).toHaveLength(1);
+    expect(findClaims("<p>30% of all fans</p>")).not.toEqual([]);
+    expect(findClaims("<p>By Qloo&rsquo;s measure, they clash.</p>")).toHaveLength(1);
+    expect(findClaims('const note = "These figures come from Qloo\'s own measure.";')).toHaveLength(1);
+    // The tag order is a value Qloo returned, so "Qloo's score" is allowed.
+    expect(findClaims("// The tags in Qloo's score order, highest first.")).toEqual([]);
+  });
+
+  it("catches phrases hidden behind numeric entities or zero-width characters", () => {
+    expect(findClaims("<p>Qloo&#39;s measure</p>")).toHaveLength(1);
+    expect(findClaims("<p>Qloo&#x27;s measure</p>")).toHaveLength(1);
+    expect(findClaims("<p>the same&#32;crowd</p>")).toHaveLength(1);
+    expect(findClaims("<p>head​count</p>")).toHaveLength(1);
+    expect(findClaims("<p>the same cr⁠owd</p>")).toHaveLength(1);
+    expect(findClaims("<p>opti﻿mal</p>")).toHaveLength(1);
+    expect(findClaims('const text = "the same \\u200bpeople";')).toHaveLength(1);
+    expect(findClaims("<p>reven&#8203;ue</p>")).toHaveLength(1);
+    // An entity that names no character is dropped rather than breaking the scan.
+    expect(findClaims("<p>&#0; &#x110000; fine</p>")).toEqual([]);
   });
 
   it("allows headcount and attendance only where they are denied", () => {

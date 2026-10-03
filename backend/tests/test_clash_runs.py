@@ -1,4 +1,5 @@
 import json
+import re
 
 from fastapi.testclient import TestClient
 
@@ -8,7 +9,7 @@ from app.config import Settings, get_settings
 from app.limits import RunLimiter, visitor_key
 from app.main import app, get_backend, get_limiter, get_qloo
 from app.presets import get_presets
-from app.runs import ClashInput, RunRequest, execute_run
+from app.runs import CLASH_SYSTEM, ClashInput, RunRequest, execute_run
 from app.schedule.metrics import score_festival
 from app.schedule.synthetic import synthetic_festival
 from tests.test_agent import parse_sse, qloo_client
@@ -154,3 +155,46 @@ def test_limiter_windows_and_visitor_key():
     assert limiter.try_acquire("a") is None
     assert visitor_key({"x-forwarded-for": "1.2.3.4, 10.0.0.1"}, "9.9.9.9") == "1.2.3.4"
     assert visitor_key({}, "9.9.9.9") == "9.9.9.9"
+
+
+def test_the_agent_is_told_the_page_units_and_what_qloo_returned():
+    prompt = re.sub(r"\s+", " ", CLASH_SYSTEM)
+    rest = prompt
+    for sentence in (
+        "State taste overlap and draw as whole numbers out of 100, exactly as the tools give them, for "
+        'example "taste overlap 92 out of 100". Never write them as decimals.',
+        "Taste overlap, prices and the Clash Budget Index are calculated by this app from Qloo data.",
+        'Do not call them "Qloo\'s own measure" or "Qloo\'s score".',
+        "Only the tags from explain_clash and each act's popularity are values Qloo returned.",
+        "Quote the Clash Budget Index with one decimal, as the tools give it.",
+        'Describe a move only by what it changes ("goes from 116.7 to 114.3").',
+        "Do not call a result an improvement and do not offer to find a bigger one.",
+        "Describe its results as suggestions graded by the same measure used to find them.",
+    ):
+        assert sentence in prompt
+        rest = rest.replace(sentence, "")
+    assert "taste overlap, 0-100" in prompt and "taste_overlap_out_of_100" in prompt
+    # Outside the sentences that forbid them: no 0-1 scale, no "Qloo's own", no improvement claim
+    assert not re.search(r"0-1(?!\d)", rest)
+    assert "Qloo's own" not in rest and "Qloo's measure" not in prompt and "improvement" not in rest.lower()
+    assert len(CLASH_SYSTEM.split()) < 400
+
+
+def test_the_scenario_follows_the_input_when_it_is_left_out(tmp_path):
+    setup(tmp_path, [[{"text": "ok"}]])
+    try:
+        with TestClient(app) as client:
+            response = client.post("/api/runs", json={"input": {"preset_id": "day", "message": "hi"}})
+            contradictions = [
+                client.post(
+                    "/api/runs", json={"scenario": "explore", "input": {"preset_id": "day", "message": "hi"}}
+                ),
+                client.post("/api/runs", json={"scenario": "clash", "input": {"favorites": ["x"]}}),
+            ]
+        assert response.status_code == 200, response.text
+        result = next(e for e in parse_sse(response.text) if e["type"] == "result")
+        assert result["kind"] == "clash"
+        assert [r.status_code for r in contradictions] == [422, 422]
+    finally:
+        app.dependency_overrides.clear()
+    assert RunRequest.model_validate({"input": {"favorites": ["x"]}}).scenario == "explore"

@@ -258,6 +258,41 @@ export function receiptFor(evidence: Evidence | null, a: string, b: string): Rec
   return evidence.receipts[pairKey(a, b)] ?? evidence.receipts[pairKey(b, a)] ?? null;
 }
 
+/** A clash between two locked sets: neither can move, so no one can fix it. */
+export function isFixedByLocks(clash: Pick<PairClash, "a" | "b">, isLocked: (actId: string) => boolean): boolean {
+  return isLocked(clash.a.act_id) && isLocked(clash.b.act_id);
+}
+
+/** How many of the day's costliest clashes the hero button chooses from. */
+export const HERO_POOL = 5;
+
+export type HeroClash = { clash: PairClash; kind: "hidden" | "evidence" | "costliest" };
+
+/**
+ * The clash the first click should open: one with a story. Among the day's five costliest clashes
+ * (`ranked`, costliest first), the first that is not fixed by locks and has tags Qloo returned for
+ * the pair, preferring a hidden clash ("hidden", then "evidence"). Without one, the costliest clash
+ * itself ("costliest"), which is only ever rank 1, so the button never calls anything else the
+ * costliest. Null when the day has no clash.
+ */
+export function heroClash(
+  ranked: readonly PairClash[],
+  evidence: Evidence | null,
+  isLocked: (actId: string) => boolean,
+): HeroClash | null {
+  if (ranked.length === 0) return null;
+  const pool = ranked.slice(0, HERO_POOL);
+  const movable = (clash: PairClash) => !isFixedByLocks(clash, isLocked);
+  const hasTags = (clash: PairClash) =>
+    (receiptFor(evidence, clash.a.act_id, clash.b.act_id)?.shared_tags.length ?? 0) > 0;
+
+  const hidden = pool.find((clash) => movable(clash) && hasTags(clash) && clash.label === "hidden");
+  if (hidden) return { clash: hidden, kind: "hidden" };
+  const withTags = pool.find((clash) => movable(clash) && hasTags(clash));
+  if (withTags) return { clash: withTags, kind: "evidence" };
+  return { clash: ranked[0], kind: "costliest" };
+}
+
 // ---------------------------------------------------------------------------
 // Qloo requests
 // ---------------------------------------------------------------------------

@@ -5,8 +5,8 @@
  */
 
 import { isRecord } from "./events";
-import { topClashes } from "./clashes";
-import type { PairClash, SetSlot } from "./preset";
+import { heroClash, isFixedByLocks, topClashes } from "./clashes";
+import type { Evidence, PairClash, SetSlot } from "./preset";
 import type { RunResult, RunState } from "./run-state";
 
 /** Server limits (backend `ClashInput`): earlier turns kept, characters per turn and per message. */
@@ -73,8 +73,15 @@ export type ClashReply = {
   moveOptions: MoveOptions[];
 };
 
-/** One question and the run that answered it. */
-export type Exchange = { id: string; message: string; state: RunState };
+/**
+ * One question and the run that answered it. A recorded exchange replays a saved run: it is shown
+ * like any other answer but never feeds a live request (no history, no session, no rules).
+ */
+export type Exchange = { id: string; message: string; state: RunState; recorded?: boolean };
+
+function live(exchanges: readonly Exchange[]): Exchange[] {
+  return exchanges.filter((exchange) => !exchange.recorded);
+}
 
 function num(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -183,10 +190,13 @@ function clip(text: string): string {
   return text.length > MAX_TURN_CHARS ? `${text.slice(0, MAX_TURN_CHARS - 1)}…` : text;
 }
 
-/** Earlier turns for the next request: answered exchanges only, newest kept within the limit. */
+/**
+ * Earlier turns for the next request: answered live exchanges only (never a replay), newest kept
+ * within the limit.
+ */
 export function historyFrom(exchanges: readonly Exchange[]): ChatTurn[] {
   const turns: ChatTurn[] = [];
-  for (const exchange of exchanges) {
+  for (const exchange of live(exchanges)) {
     const reply = readClashReply(exchange.state.results);
     if (!reply?.text) continue;
     turns.push({ role: "user", text: clip(exchange.message) }, { role: "assistant", text: clip(reply.text) });
@@ -194,24 +204,26 @@ export function historyFrom(exchanges: readonly Exchange[]): ChatTurn[] {
   return turns.slice(-MAX_HISTORY_TURNS);
 }
 
-/** The working timetable, constraints and rules from the newest answered exchange. */
+/** The working timetable, constraints and rules from the newest answered live exchange. */
 export function latestSession(exchanges: readonly Exchange[]): ClashSession | null {
-  for (let i = exchanges.length - 1; i >= 0; i--) {
-    const session = readClashReply(exchanges[i].state.results)?.session;
+  const answered = live(exchanges);
+  for (let i = answered.length - 1; i >= 0; i--) {
+    const session = readClashReply(answered[i].state.results)?.session;
     if (session) return session;
   }
   return null;
 }
 
-/** The `POST /api/runs` body for the next message. */
+/** The `POST /api/runs` body for the next message. Recorded exchanges contribute nothing. */
 export function buildClashBody(presetId: string, message: string, exchanges: readonly Exchange[]) {
-  const session = latestSession(exchanges);
+  const answered = live(exchanges);
+  const session = latestSession(answered);
   return {
     scenario: "clash" as const,
     input: {
       preset_id: presetId,
       message: message.trim().slice(0, MAX_MESSAGE_CHARS),
-      history: historyFrom(exchanges),
+      history: historyFrom(answered),
       ...(session
         ? { timetable: session.timetable, constraints: session.constraints, rules: session.rules }
         : {}),
@@ -220,16 +232,23 @@ export function buildClashBody(presetId: string, message: string, exchanges: rea
 }
 
 /**
- * Starter questions built from the day's costliest clash that has a set free to move, so each one
- * works on this lineup. `isLocked` says whether a set is fixed in place.
+ * Starter questions about the clash the hero button opens (`heroClash`: a costly clash with a
+ * story, a set free to move and tags Qloo returned), so the first click and the first prompt land on
+ * the same pair and each question works on this lineup. `isLocked` says whether a set is fixed in
+ * place; `evidence` holds the tags.
  */
 export function suggestedPrompts(
   clashes: readonly PairClash[],
   day: number,
   isLocked: (actId: string) => boolean = () => false,
+  evidence: Evidence | null = null,
 ): string[] {
   const ranked = topClashes(clashes, day, Number.POSITIVE_INFINITY);
-  const top = ranked.find((clash) => !isLocked(clash.a.act_id) || !isLocked(clash.b.act_id));
+  const hero = heroClash(ranked, evidence, isLocked);
+  const top =
+    hero && !isFixedByLocks(hero.clash, isLocked)
+      ? hero.clash
+      : ranked.find((clash) => !isFixedByLocks(clash, isLocked));
   if (!top) {
     return ["Which clash costs the most today?", "How is the Clash Budget worked out?"];
   }
@@ -242,10 +261,18 @@ export function suggestedPrompts(
   ];
 }
 
-/** Budget change from a what-if or a suggestion: negative is better. */
+/** A Clash Budget Index as the cards print it: one decimal. */
+function oneDecimal(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+/**
+ * Budget change from a what-if or a suggestion, between the one-decimal readings the cards print
+ * (so 116.7 to 114.3 is -2.4, never a rounded -3): negative is lower.
+ */
 export function budgetDelta(before: number | null, after: number | null): number | null {
   if (before === null || after === null) return null;
-  return Math.round(after) - Math.round(before);
+  return Math.round((oneDecimal(after) - oneDecimal(before)) * 10) / 10;
 }
 
 // ---------------------------------------------------------------------------------------- text

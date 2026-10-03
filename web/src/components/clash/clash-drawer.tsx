@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, ExternalLink, ShieldCheck, ShieldAlert } from "lucide-react";
+import { ArrowLeft, ArrowRight, ExternalLink, Lock, ShieldCheck, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { ProvenanceChip, TraceDrawer } from "@/components/kernel";
@@ -15,6 +15,7 @@ import {
   formatPercent,
   formatShare,
   hostOf,
+  isFixedByLocks,
   isWebUrl,
   LABEL_META,
   leadingTags,
@@ -110,7 +111,17 @@ function ActPanel({ act, slot, stage }: { act: Act | undefined; slot: SetSlot | 
  * The tags Qloo returned for this pair, in the order they are stored (Qloo's score, highest first),
  * the first few and a count of the rest.
  */
-function PairTags({ receipt, hasEvidence }: { receipt: Receipt | null; hasEvidence: boolean }) {
+function PairTags({
+  receipt,
+  hasEvidence,
+  a,
+  b,
+}: {
+  receipt: Receipt | null;
+  hasEvidence: boolean;
+  a: PairClash["a"];
+  b: PairClash["b"];
+}) {
   if (!hasEvidence) {
     return <p className="text-sm text-muted-foreground">No audience comparison was run for this festival day.</p>;
   }
@@ -120,10 +131,15 @@ function PairTags({ receipt, hasEvidence }: { receipt: Receipt | null; hasEviden
   if (receipt.shared_tags.length === 0) {
     // Only genre, subgenre and theme tags are saved, so an empty list does not mean Qloo returned none.
     return (
-      <p className="text-sm text-muted-foreground">
-        No genre or theme tags are saved for this pair, so its price rests on the taste-overlap
-        ranking alone.
-      </p>
+      <>
+        <p className="text-sm text-muted-foreground">
+          No genre or theme tags are saved for this pair, so its price rests on the taste-overlap
+          ranking alone.
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Main genre tags: {a.genre ?? "none"} and {b.genre ?? "none"}.
+        </p>
+      </>
     );
   }
   const { shown, more } = leadingTags(receipt.shared_tags);
@@ -192,6 +208,7 @@ export function ClashDrawer({
   const slotB = slots.get(shown.b.act_id);
   const window = slotA && slotB ? overlapWindow(slotA, slotB) : null;
   const receipt = receiptFor(preset.evidence, shown.a.act_id, shown.b.act_id);
+  const fixed = isFixedByLocks(shown, (actId) => slots.get(actId)?.locked === true);
   const index = ranked.findIndex((item) => item.rank === shown.rank && item.day === shown.day);
   const previous = index > 0 ? ranked[index - 1] : null;
   const next = index >= 0 && index < ranked.length - 1 ? ranked[index + 1] : null;
@@ -212,7 +229,8 @@ export function ClashDrawer({
         onCloseAutoFocus={(event) => {
           if (returnFocusTo && document.contains(returnFocusTo)) {
             event.preventDefault();
-            returnFocusTo.focus();
+            // Never scroll the page to the trigger: closing must leave the reader where they were.
+            returnFocusTo.focus({ preventScroll: true });
           }
         }}
       >
@@ -226,6 +244,12 @@ export function ClashDrawer({
           </SheetTitle>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {shown.label ? <LabelBadge label={shown.label} /> : null}
+            {fixed ? (
+              <span className="inline-flex h-6 items-center gap-1.5 rounded-full border border-border-strong px-2.5 text-xs font-semibold">
+                <Lock aria-hidden="true" className="size-3.5" />
+                Both sets locked
+              </span>
+            ) : null}
             <span
               className={cn(
                 "inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-xs font-semibold",
@@ -254,10 +278,16 @@ export function ClashDrawer({
           <SheetDescription className="max-w-prose text-[0.9375rem] leading-relaxed text-foreground">
             {shown.a.name} and {shown.b.name} play at the same time for {shown.overlap_minutes} minutes.
             Their taste overlap is {formatOverlap(shown.audience_overlap)} out of 100 (rank among the
-            other acts on this bill, by Qloo&rsquo;s measure), so this clash takes{" "}
+            other acts on this bill, calculated from Qloo data), so this clash takes{" "}
             {formatShare(shown.regret_share)} of the day&rsquo;s clash cost. Taste overlap is not
             attendance.
           </SheetDescription>
+          {fixed ? (
+            <p className="mt-3 max-w-prose text-[0.9375rem] leading-relaxed text-muted-foreground">
+              Both sets are locked, so this clash cannot be moved. It still counts in the day&rsquo;s
+              cost.
+            </p>
+          ) : null}
 
           <div className="mt-6 grid gap-3 sm:grid-cols-2">
             <ActPanel act={actA} slot={slotA} stage={stages.get(shown.a.stage_id)} />
@@ -328,7 +358,7 @@ export function ClashDrawer({
           </Section>
 
           <Section title="Tags Qloo returned for this pair">
-            <PairTags receipt={receipt} hasEvidence={preset.evidence !== null} />
+            <PairTags receipt={receipt} hasEvidence={preset.evidence !== null} a={shown.a} b={shown.b} />
             {receipt?.press && isWebUrl(receipt.press) ? (
               <p className="mt-4 text-sm">
                 Named in press coverage of this festival&rsquo;s clashes:{" "}

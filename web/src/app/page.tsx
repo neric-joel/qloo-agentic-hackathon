@@ -18,8 +18,8 @@ function Intro() {
         <mark className="-mx-0.5 bg-highlight px-0.5 text-highlight-foreground [box-decoration-break:clone]">
           how much their audiences overlap in taste
         </mark>
-        . It shows the hidden clashes genre labels miss, and lets a programmer test any change
-        against their own rules.
+        . It shows the hidden clashes genre labels miss, and an agent that tests a change against a
+        programmer&rsquo;s own rules before it says anything.
       </p>
       <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
         Taste overlap is derived from Qloo data and ranked within each day&rsquo;s lineup. It is not

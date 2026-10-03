@@ -1,9 +1,17 @@
 "use client";
 
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-import { clashKey, formatDraw, formatOverlap, formatPercent, formatShare, LABEL_META } from "@/lib/clashes";
+import {
+  clashKey,
+  formatDraw,
+  formatOverlap,
+  formatPercent,
+  formatShare,
+  isFixedByLocks,
+  LABEL_META,
+} from "@/lib/clashes";
 import type { PairClash, SetSlot, Stage } from "@/lib/preset";
 import { formatRange, overlapWindow } from "@/lib/timetable";
 
@@ -15,6 +23,10 @@ type ClashListProps = {
   stages: ReadonlyMap<string, Stage>;
   /** Ranked clashes on this day in total (the list shows the first few). */
   totalRanked: number;
+  /** The share of the day's cost between two locked sets, over every ranked clash, 0 to 1. */
+  fixedShare?: number;
+  /** Whether a set is locked in place; a clash between two locked sets cannot be moved. */
+  isLocked?: (actId: string) => boolean;
   activeKeys: ReadonlySet<string>;
   dimmed: boolean;
   onOpen: (clash: PairClash, trigger: HTMLElement) => void;
@@ -28,6 +40,8 @@ export function ClashList({
   slots,
   stages,
   totalRanked,
+  fixedShare = 0,
+  isLocked = () => false,
   activeKeys,
   dimmed,
   onOpen,
@@ -45,8 +59,15 @@ export function ClashList({
         </h3>
         <p className="mt-1.5 text-sm text-muted-foreground">
           Together {formatPercent(combined)} of the day&rsquo;s clash cost
-          {totalRanked > clashes.length ? ` (${totalRanked} ranked in all)` : ""}. Draw is Qloo
-          popularity; overlap is a rank on this bill.
+          {totalRanked > clashes.length ? ` (${totalRanked} ranked in all)` : ""}.
+          {fixedShare > 0 ? (
+            <>
+              {" "}
+              {formatPercent(fixedShare)} of the day&rsquo;s cost sits between two locked sets, which
+              cannot move.
+            </>
+          ) : null}{" "}
+          Draw is Qloo popularity; overlap is a rank on this bill.
         </p>
       </div>
 
@@ -62,6 +83,7 @@ export function ClashList({
             const b = slots.get(clash.b.act_id);
             const window = a && b ? overlapWindow(a, b) : null;
             const active = activeKeys.has(key);
+            const fixed = isFixedByLocks(clash, isLocked);
             return (
               <li key={key}>
                 <button
@@ -118,6 +140,15 @@ export function ClashList({
                       {stages.get(clash.a.stage_id)?.name ?? clash.a.stage_id} +{" "}
                       {stages.get(clash.b.stage_id)?.name ?? clash.b.stage_id}
                       {window ? ` · ${formatRange(window)}` : ""} · {clash.overlap_minutes} min
+                      {fixed ? (
+                        <>
+                          {" · "}
+                          <span className="inline-flex items-center gap-1 font-semibold text-foreground">
+                            <Lock aria-hidden="true" className="size-3" />
+                            Both sets locked
+                          </span>
+                        </>
+                      ) : null}
                     </span>
                     <span className="mt-2 grid grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-x-3 font-mono text-xs tabular-nums">
                       <span title="Taste overlap, rank among the other acts on this bill">

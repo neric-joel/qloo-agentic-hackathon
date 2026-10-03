@@ -15,7 +15,7 @@ import {
   type Exchange,
 } from "./agent-session";
 import type { AgentEvent } from "./events";
-import type { PairClash } from "./preset";
+import type { Evidence, PairClash } from "./preset";
 import { reduceEvents } from "./run-state";
 
 const session = {
@@ -192,6 +192,29 @@ describe("history and session", () => {
     expect(latestSession([answered("1", "a", "b"), failed("2", "c")])).toEqual(session);
   });
 
+  it("never sends anything from a recorded exchange", () => {
+    const replayed: Exchange = {
+      ...answered("r", "Why do the replayed acts clash?", "Recorded answer.", {
+        session: { timetable: [{ act_id: "zz", day: 0, stage_id: "s9", start: 1, end: 2 }], constraints: { x: 1 }, rules: ["Recorded rule"] },
+      }),
+      recorded: true,
+    };
+    expect(historyFrom([replayed])).toEqual([]);
+    expect(latestSession([replayed])).toBeNull();
+    expect(buildClashBody("glasto-sun", "Why?", [replayed])).toEqual({
+      scenario: "clash",
+      input: { preset_id: "glasto-sun", message: "Why?", history: [] },
+    });
+
+    // Around live exchanges, a replay is skipped: the live session and turns are sent as they are.
+    const exchanges = [answered("1", "a", "b"), replayed, answered("2", "c", "d")];
+    expect(historyFrom(exchanges).map((turn) => turn.text)).toEqual(["a", "b", "c", "d"]);
+    expect(latestSession([answered("1", "a", "b"), replayed])).toEqual(session);
+    const body = buildClashBody("glasto-sun", "Next?", [answered("1", "a", "b"), replayed]);
+    expect(body.input).toMatchObject({ timetable: session.timetable, constraints: session.constraints, rules: session.rules });
+    expect(JSON.stringify(body)).not.toMatch(/Recorded|replayed|zz/);
+  });
+
   it("builds the first and the follow-up request bodies", () => {
     expect(buildClashBody("glasto-sun", "  Why?  ", [])).toEqual({
       scenario: "clash",
@@ -231,13 +254,34 @@ describe("suggestedPrompts", () => {
   it("falls back to general questions when the day has no clash", () => {
     expect(suggestedPrompts([], 0)).toHaveLength(2);
   });
+
+  it("asks about the clash the hero button opens: a hidden clash with tags", () => {
+    const tag = { name: "Indie rock", kind: "genre", score: 0.9 };
+    const evidence: Evidence = {
+      hidden_wall: [],
+      hidden_wall_total: 0,
+      twins: [],
+      receipts: { "A|B": { shared_tags: [], press: null }, "C|D": { shared_tags: [tag], press: null }, "E|F": { shared_tags: [tag], press: null } },
+    };
+    const clashes = [clash(1, 0, "A", "B"), clash(2, 0, "C", "D"), { ...clash(3, 0, "E", "F"), label: "hidden" as const }];
+    const prompts = suggestedPrompts(clashes, 0, () => false, evidence);
+    expect(prompts[0]).toBe("Why do E and F clash?");
+    expect(prompts[1]).toBe("Where could F go instead?");
+    expect(prompts[2]).toBe("Keep E where it is. Which clash should I fix first?");
+    // Without evidence it is the costliest clash, as before.
+    expect(suggestedPrompts(clashes, 0)[0]).toBe("Why do A and B clash?");
+  });
 });
 
 describe("budgetDelta", () => {
-  it("compares rounded readings", () => {
-    expect(budgetDelta(117.4, 98.2)).toBe(-19);
-    expect(budgetDelta(100, 104.6)).toBe(5);
+  it("compares the one-decimal readings the cards print", () => {
+    expect(budgetDelta(116.71, 114.26)).toBe(-2.4);
+    expect(budgetDelta(116.71, 116.06)).toBe(-0.6);
+    expect(budgetDelta(117.4, 98.2)).toBe(-19.2);
+    expect(budgetDelta(100, 104.6)).toBe(4.6);
+    expect(budgetDelta(114.26, 114.3)).toBe(0);
     expect(budgetDelta(null, 3)).toBeNull();
+    expect(budgetDelta(3, null)).toBeNull();
   });
 });
 

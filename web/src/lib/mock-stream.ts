@@ -14,6 +14,7 @@ import {
   type QlooRequestRecord,
   type RunUsage,
 } from "./events";
+import { wait } from "./replay";
 
 /** Build-time flag. Written as a literal so the bundler can inline it. */
 export const MOCK_STREAM_ENABLED = process.env.NEXT_PUBLIC_MOCK_STREAM === "1";
@@ -546,23 +547,6 @@ function scriptFor(scenario: MockScenario, body: unknown): Beat[] {
 // ---------------------------------------------------------------------------
 
 let runCounter = 0;
-
-/** Resolves true after `ms`, or false right away if `signal` aborts first. */
-function wait(ms: number, signal?: AbortSignal): Promise<boolean> {
-  if (signal?.aborted) return Promise.resolve(false);
-  if (!(ms > 0)) return Promise.resolve(true);
-  return new Promise((resolve) => {
-    const onAbort = () => {
-      clearTimeout(timer);
-      resolve(false);
-    };
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve(true);
-    }, ms);
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
-}
 
 /**
  * Plays a scripted run through `onEvent`, same shape as `streamRun` minus the URL.

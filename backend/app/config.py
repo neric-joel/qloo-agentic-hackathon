@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     agent_max_turns: int = 6
     agent_max_tool_calls_per_turn: int = 6
     agent_max_qloo_calls_per_run: int = 12
+    # Engine work per run: re-slots allowed, and wall-clock seconds of find_moves and re-slot together
+    agent_max_reslots_per_run: int = 1
+    agent_max_engine_seconds: float = 20.0
     # Live agent run caps (per server instance; the provider's spend limit is the hard stop)
     runs_per_visitor_hour: int = 8
     runs_per_visitor_day: int = 20

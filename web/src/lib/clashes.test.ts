@@ -12,7 +12,9 @@ import {
   formatOverlap,
   formatPercent,
   formatShare,
+  heroClash,
   hostOf,
+  isFixedByLocks,
   isWebUrl,
   leadingTags,
   ordinal,
@@ -28,7 +30,7 @@ import {
 } from "./clashes";
 import type { QlooRequestRecord } from "./events";
 import { rawTinyPreset } from "./fixtures/tiny-preset";
-import { parsePreset, type Act, type PairClash } from "./preset";
+import { parsePreset, type Act, type Evidence, type PairClash } from "./preset";
 
 const preset = parsePreset(rawTinyPreset());
 
@@ -206,6 +208,77 @@ describe("clash helpers", () => {
     const make = (rank: number, day: number) => ({ ...clash, rank, day }) satisfies PairClash;
     const ranked = topClashes([make(3, 0), make(1, 0), make(2, 1), make(4, 0)], 0, 2);
     expect(ranked.map((item) => item.rank)).toEqual([1, 3]);
+  });
+});
+
+describe("heroClash and isFixedByLocks", () => {
+  // Invented acts, shaped like a real day: rank 1 has no tags, rank 2 has tags and no label, rank 3
+  // has tags and is hidden, rank 5 is between two locked sets.
+  const pair = (rank: number, a: string, b: string, label: PairClash["label"] = null): PairClash => ({
+    ...preset.report.clashes[0],
+    rank,
+    day: 0,
+    label,
+    a: { act_id: a, name: a.toUpperCase(), stage_id: "s1", genre: null },
+    b: { act_id: b, name: b.toUpperCase(), stage_id: "s2", genre: null },
+  });
+  const tag = { name: "Indie rock", kind: "genre", score: 0.9 };
+  const evidence: Evidence = {
+    hidden_wall: [],
+    hidden_wall_total: 0,
+    twins: [],
+    receipts: {
+      "a1|b1": { shared_tags: [], press: null },
+      "a2|b2": { shared_tags: [tag], press: null },
+      "b3|a3": { shared_tags: [tag, tag], press: null },
+      "a4|b4": { shared_tags: [tag], press: null },
+      "a5|b5": { shared_tags: [tag], press: null },
+    },
+  };
+  const ranked = [
+    pair(1, "a1", "b1", "hidden"),
+    pair(2, "a2", "b2"),
+    pair(3, "a3", "b3", "hidden"),
+    pair(4, "a4", "b4", "hidden"),
+    pair(5, "a5", "b5", "hidden"),
+    pair(6, "a6", "b6", "hidden"),
+  ];
+  const locked = (ids: string[]) => (id: string) => ids.includes(id);
+  const none = locked([]);
+
+  it("says a clash is fixed only when both sets are locked", () => {
+    expect(isFixedByLocks(ranked[0], locked(["a1", "b1"]))).toBe(true);
+    expect(isFixedByLocks(ranked[0], locked(["a1"]))).toBe(false);
+    expect(isFixedByLocks(ranked[0], none)).toBe(false);
+  });
+
+  it("opens the first movable hidden clash with tags, not the untagged costliest one", () => {
+    expect(heroClash(ranked, evidence, none)).toEqual({ clash: ranked[2], kind: "hidden" });
+    // Tags found in either key order; a locked partner alone does not rule a clash out.
+    expect(heroClash(ranked, evidence, locked(["a3"]))?.clash.rank).toBe(3);
+  });
+
+  it("skips clashes fixed by locks", () => {
+    expect(heroClash(ranked, evidence, locked(["a3", "b3"]))).toEqual({ clash: ranked[3], kind: "hidden" });
+  });
+
+  it("falls back to a movable clash with tags, then to the costliest clash", () => {
+    const noHidden = ranked.map((item) => ({ ...item, label: null }));
+    expect(heroClash(noHidden, evidence, none)).toEqual({ clash: noHidden[1], kind: "evidence" });
+    // Like a day with no saved evidence: the costliest clash, rank 1.
+    expect(heroClash(ranked, null, none)).toEqual({ clash: ranked[0], kind: "costliest" });
+    expect(heroClash(ranked, null, locked(["a1"]))).toEqual({ clash: ranked[0], kind: "costliest" });
+  });
+
+  it("looks only at the five costliest clashes", () => {
+    const late = { ...evidence, receipts: { "a6|b6": { shared_tags: [tag], press: null } } };
+    expect(heroClash(ranked, late, none)).toEqual({ clash: ranked[0], kind: "costliest" });
+  });
+
+  it("opens rank 1 when every clash is locked, and nothing on an empty day", () => {
+    const all = locked(ranked.flatMap((item) => [item.a.act_id, item.b.act_id]));
+    expect(heroClash(ranked, evidence, all)).toEqual({ clash: ranked[0], kind: "costliest" });
+    expect(heroClash([], evidence, none)).toBeNull();
   });
 });
 

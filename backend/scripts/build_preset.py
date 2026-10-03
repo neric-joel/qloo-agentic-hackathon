@@ -72,10 +72,16 @@ async def build(args: argparse.Namespace) -> dict:
         "overlap_notes": result.notes,
         "discriminates": result.discriminates,
         "requests": [
-            {"path": r.path, "params": r.params, "status": r.status, "cached": r.cached, "request_id": r.request_id}
+            {
+                "path": r.path,
+                "params": r.params,
+                "status": r.status,
+                "cached": r.cached,
+                "request_id": r.request_id,
+            }
             for r in log
         ],
-        "sources": [s for s in json.loads((DATA / f"{args.festival}.json").read_text(encoding="utf-8"))["sources"]],
+        "sources": json.loads((DATA / f"{args.festival}.json").read_text(encoding="utf-8"))["sources"],
     }
 
 

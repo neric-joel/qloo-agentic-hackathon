@@ -214,6 +214,87 @@ describe("parser", () => {
   });
 });
 
+describe("one day boundary for the sets and the curfew", () => {
+  it("flags a set past the curfew when the whole grid is written after midnight", () => {
+    const r = report("a,m,00:30,01:30\nb,m,01:40,02:30", { changeover: "0", curfew: "02:00" });
+    expect(r.settings.curfew).toBe(120);
+    expect(r.breaks.map((b) => b.text)).toEqual(["b ends at 02:30, after the 02:00 curfew."]);
+  });
+
+  it("flags the same grid written as 24:30 to 26:30, the same way", () => {
+    const r = report("a,m,24:30,25:30\nb,m,25:40,26:30", { changeover: "0", curfew: "02:00" });
+    expect(r.breaks.map((b) => b.text)).toEqual(["b ends at 02:30, after the 02:00 curfew."]);
+  });
+
+  it("still reads a curfew before 06:00 as after midnight when any set starts later in the day", () => {
+    const r = report("a,m,22:00,23:00\nb,m,23:30,00:30", { curfew: "00:00" });
+    expect(r.settings.curfew).toBe(1440);
+    expect(r.breaks.map((b) => b.rule)).toEqual([4]);
+  });
+
+  it("refuses an early-only grid whose curfew is at or before its first start, rather than guess", () => {
+    for (const curfew of ["00:00", "00:30"]) {
+      expect(errors("a,m,00:30,01:30", { curfew })[0]).toMatch(/cannot tell which day it means/);
+    }
+    expect(report("a,m,00:30,01:30", { curfew: "00:31" }).breaks).toHaveLength(1);
+  });
+
+  it("refuses a curfew before 06:00 when night sets sit beside morning sets and none in the afternoon", () => {
+    const grid = "a,m,00:30,01:30\nb,m,01:40,02:30\nc,m,06:00,07:00";
+    expect(errors(grid, { curfew: "02:00" })[0]).toMatch(/cannot tell which side of the curfew/);
+    expect(report(grid, { changeover: "0", curfew: "23:00" }).breaks).toHaveLength(0);
+  });
+
+  it("refuses an end before its start when the set starts after midnight", () => {
+    expect(errors("a,m,02:00,01:00")[0]).toMatch(/ends before it starts/);
+    expect(errors("a,m,01:30,00:30")[0]).toMatch(/ends before it starts/);
+  });
+});
+
+describe("pair ids", () => {
+  it("are unique when one act is booked on two stages at the same start and overlaps a third act", () => {
+    const r = report("X,Main,18:00,19:00\nX,Side,18:00,19:00\nY,Third,18:30,19:30");
+    expect(r.shared).toHaveLength(2);
+    expect(new Set(r.shared.map((p) => p.id)).size).toBe(2);
+  });
+});
+
+describe("spreadsheet and copy-paste tolerance", () => {
+  it("drops seconds from times, in the grid and the curfew", () => {
+    const r = report("A,Main,18:00:00,19:00:30", { curfew: "23:00:00" });
+    expect(r.sets[0]).toMatchObject({ start: 1080, end: 1140 });
+    expect(r.settings.curfew).toBe(1380);
+    expect(errors("A,Main,18:00:60,19:00")[0]).toMatch(/start time/);
+  });
+
+  it("reads header rows with other case or the Start time and End time wording", () => {
+    for (const header of [
+      "Act,Stage,Start time,End time",
+      "ACT NAME,STAGE NAME,START TIME,END TIME,LOCKED",
+      "Artist,stage,start_time,end_time",
+    ]) {
+      expect(report(`${header}\nA,Main,18:00,19:00`).sets).toHaveLength(1);
+    }
+    expect(errors("act,stage,begin,end\nA,Main,18:00,19:00")[0]).toMatch(/header should read/);
+  });
+
+  it("keeps zero-width joiners and non-joiners in names and strips soft hyphens", () => {
+    const r = report("Mo‍na,Main,18:00,19:00\nKa‌vi,Side,18:00,19:00\nSoft­ware,Tent,18:00,19:00");
+    expect(r.sets.map((s) => s.act)).toEqual(["Mo‍na", "Ka‌vi", "Software"]);
+    const withPair = report("Soft­ware,Main,18:00,19:00\nB,Side,18:00,19:00", { pairs: "Soft­ware | B" });
+    expect(withPair.breaks).toHaveLength(1);
+  });
+
+  it("names the line of any other invisible character it refuses", () => {
+    const e = errors("A,Main,18:00,19:00\nB​,Side,18:00,19:00");
+    expect(e).toHaveLength(1);
+    expect(e[0]).toMatch(/^Line 2 contains a control or invisible character/);
+    expect(errors("A,Main,18:00,19:00\nB‮,Side,18:00,19:00")[0]).toMatch(/^Line 2 /);
+    expect(errors("A,Main,18:00,19:00", { pairs: "A | B\nC​ | D" })[0]).toMatch(/^Pair line 2 /);
+    expect(errors("A,Main,18:00,19:00\n\u0000")[0]).toMatch(/^Line 2 contains a character this page cannot read/);
+  });
+});
+
 describe("pair rules", () => {
   const grid = "A,Main,18:00,19:00\nB,Side,18:30,19:30\nA2,Main,20:00,21:00\nB,Tent,22:00,23:00";
 

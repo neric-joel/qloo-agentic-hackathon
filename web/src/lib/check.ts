@@ -10,7 +10,11 @@
  *   rejected visibly, never guessed;
  * - names longer than 80 characters are refused and never echoed; anything echoed is clipped.
  *
- * Times are minutes from 00:00 of the day. Hours of 24 or more are after midnight. The engine's rule
+ * Times are minutes from 00:00 of the day. Hours of 24 or more are after midnight. One day boundary
+ * serves sets and curfew: an end before its start that is before 06:00 is the next day, but only for a
+ * set that starts at 06:00 or later; a curfew before 06:00 is the next day too, unless every set starts
+ * before 06:00 (a grid written after midnight), where it is read on the same clock and refused when it
+ * falls at or before the first start. The engine's rule
  * semantics are mirrored on purpose (`backend/tests/test_check_parity.py` pins the counts): a changeover
  * break is a gap between neighbours on one stage (by start time) that is at least 0 and under the
  * setting; a curfew break is an end strictly after the curfew; a pair break is any shared minute.
@@ -39,9 +43,16 @@ export const CHECK_LIMITS = {
 /** The characters echoed at most from any pasted name. */
 const ECHO_CHARS = 80;
 const MINUTES_PER_DAY = 1440;
-const CLOCK = /^(\d{1,2}):([0-5]\d)$/;
-/** Control characters (tab, carriage return and line feed are handled before this runs) and invisible format characters. */
+/** H:MM or HH:MM, with optional seconds that are dropped (spreadsheets often copy 18:00:00). */
+const CLOCK = /^(\d{1,2}):([0-5]\d)(?::[0-5]\d)?$/;
+/**
+ * Control characters (tab, carriage return and line feed are handled before this runs) and invisible
+ * format characters, except the joiners real names use (U+200C, U+200D). Soft hyphens (U+00AD) are
+ * stripped before this runs.
+ */
 const UNREADABLE = /[\p{Cc}\p{Cf}]/u;
+const JOINERS = /[‌‍]/g;
+const SOFT_HYPHEN = /­/g;
 
 export type CheckSet = {
   /** Line number in the paste, counting from 1. */
@@ -229,6 +240,19 @@ function splitLine(line: string, delimiter: string): SplitResult {
   return { ok: true, fields };
 }
 
+/** What a header cell may be called, by column; spreadsheets say "Start time" and capitalise freely. */
+const HEADER_NAMES: readonly ReadonlySet<string>[] = [
+  new Set(["act", "act name", "artist"]),
+  new Set(["stage", "stage name"]),
+  new Set(["start", "start time"]),
+  new Set(["end", "end time"]),
+  new Set(["locked"]),
+];
+
+function headerName(value: string): string {
+  return value.trim().toLowerCase().replace(/[_\s]+/g, " ");
+}
+
 const LOCKED_YES = new Set(["locked", "yes", "y", "true", "1", "x"]);
 const LOCKED_NO = new Set(["", "no", "n", "false", "0"]);
 
@@ -251,13 +275,22 @@ class Problems {
   }
 }
 
-function textProblem(text: string, label: string): string | null {
-  const probe = text.replace(/\t|\r|\n/g, "");
-  if (probe.includes("\u0000")) {
-    return `${label} contains a character this page cannot read (a NUL, as in a UTF-16 file). Paste plain text.`;
-  }
-  if (UNREADABLE.test(probe)) {
-    return `${label} contains a control or invisible character. Paste plain text.`;
+/** Soft hyphens carry no meaning in a name; they come with text copied from PDFs and Word. */
+function stripSoftHyphens(text: string): string {
+  return text.replace(SOFT_HYPHEN, "");
+}
+
+/** The first line with a character this page will not read, named by its line number. */
+function textProblem(text: string, linePrefix: string): string | null {
+  const lines = text.split(/\r\n|\r|\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const probe = lines[index].replace(/\t/g, "").replace(JOINERS, "");
+    if (probe.includes("\u0000")) {
+      return `${linePrefix} ${index + 1} contains a character this page cannot read (a NUL, as in a UTF-16 file). Paste plain text.`;
+    }
+    if (UNREADABLE.test(probe)) {
+      return `${linePrefix} ${index + 1} contains a control or invisible character (such as a zero-width space or a text-direction mark). Remove it or retype the name.`;
+    }
   }
   return null;
 }
@@ -265,7 +298,7 @@ function textProblem(text: string, label: string): string | null {
 /** The grid text into rows, or the problems that stop it. Header row optional. */
 export function parseGrid(raw: string): { ok: true; sets: CheckSet[] } | { ok: false; errors: string[] } {
   const problems = new Problems();
-  const text = raw.startsWith("﻿") ? raw.slice(1) : raw;
+  const text = stripSoftHyphens(raw.startsWith("﻿") ? raw.slice(1) : raw);
   if (text.trim() === "") return { ok: false, errors: ["Paste a grid first: one set per line."] };
   const size = utf8Length(text);
   if (size > CHECK_LIMITS.bytes) {
@@ -276,7 +309,7 @@ export function parseGrid(raw: string): { ok: true; sets: CheckSet[] } | { ok: f
       ],
     };
   }
-  const unreadable = textProblem(text, "The grid");
+  const unreadable = textProblem(text, "Line");
   if (unreadable) return { ok: false, errors: [unreadable] };
 
   const lines = text.split(/\r\n|\r|\n/);
@@ -295,10 +328,13 @@ export function parseGrid(raw: string): { ok: true; sets: CheckSet[] } | { ok: f
     const fields = split.fields;
     if (!headerChecked) {
       headerChecked = true;
-      if (fields[2] !== undefined && fields[2].trim().toLowerCase() === "start") {
-        const names = fields.map((f) => f.trim().toLowerCase());
-        const expected = ["act", "stage", "start", "end", "locked"];
-        const matches = names.length >= 4 && names.length <= 5 && names.every((n, k) => n === expected[k]);
+      const names = fields.map(headerName);
+      const looksLikeHeader =
+        (names[2] !== undefined && HEADER_NAMES[2].has(names[2])) ||
+        (HEADER_NAMES[0].has(names[0]) && fields[2] !== undefined && parseClock(fields[2]) === null);
+      if (looksLikeHeader) {
+        const matches =
+          names.length >= 4 && names.length <= 5 && names.every((n, k) => HEADER_NAMES[k].has(n));
         if (!matches) problems.add(`Line ${row}: the header should read act, stage, start, end (and locked).`);
         return;
       }
@@ -329,7 +365,9 @@ export function parseGrid(raw: string): { ok: true; sets: CheckSet[] } | { ok: f
       return;
     }
     if (end < start) {
-      if (end < CHECK_LIMITS.dayStartsAt) end += MINUTES_PER_DAY;
+      // Only a set that starts in the day proper can run past midnight by writing a small end; a set
+      // that starts after midnight and ends earlier could mean anything.
+      if (end < CHECK_LIMITS.dayStartsAt && start >= CHECK_LIMITS.dayStartsAt) end += MINUTES_PER_DAY;
       else {
         problems.add(
           `Line ${row}: the set ends before it starts. For after midnight, write the end as 24:30 or later.`,
@@ -407,15 +445,32 @@ export function parseSettings(input: Omit<CheckInput, "grid">, sets: readonly Ch
   if (rawCurfew !== "") {
     const parsed = parseClock(rawCurfew);
     if (parsed === null) problems.add("Curfew should be a time as H:MM or HH:MM, or blank for none.");
-    else curfew = parsed < CHECK_LIMITS.dayStartsAt ? parsed + MINUTES_PER_DAY : parsed;
+    else if (parsed >= CHECK_LIMITS.dayStartsAt) curfew = parsed;
+    else if (sets.length > 0 && sets.every((set) => set.start < CHECK_LIMITS.dayStartsAt)) {
+      // The whole grid is written after midnight, so a curfew before 06:00 is on the same clock as the
+      // sets. One that falls at or before the first start cannot be told apart from the night before.
+      const first = Math.min(...sets.map((set) => set.start));
+      if (parsed > first) curfew = parsed;
+      else {
+        problems.add(
+          `The curfew is at or before the first set starts, so this page cannot tell which day it means. Write the grid’s times as 24:30 or later (and the curfew the same way) to keep the day in order.`,
+        );
+      }
+    } else if (sets.some((set) => set.start < CHECK_LIMITS.dayStartsAt)) {
+      // Sets before 06:00 beside morning sets and none in the afternoon: the night and the morning could be
+      // either side of the curfew, so the page refuses rather than guess.
+      problems.add(
+        `The grid has sets before 06:00 and sets in the morning, so this page cannot tell which side of the curfew they fall. Write after-midnight times as 24:30 or later (and the curfew the same way) to keep the day in order.`,
+      );
+    } else curfew = parsed + MINUTES_PER_DAY;
   }
 
   const pairs: CheckSettings["pairs"] = [];
-  const pairText = input.pairs.replace(/^﻿/, "");
+  const pairText = stripSoftHyphens(input.pairs.replace(/^﻿/, ""));
   const sizeProblem =
     utf8Length(pairText) > CHECK_LIMITS.pairBytes
       ? "The pair rules are longer than 2 KB. This page reads up to 30 lines."
-      : textProblem(pairText, "The pair rules");
+      : textProblem(pairText, "Pair line");
   if (sizeProblem) {
     problems.add(sizeProblem);
   } else if (pairText.trim() !== "") {
@@ -572,7 +627,8 @@ export function findShared(sets: readonly CheckSet[]): SharedPair[] {
       if (minutes === 0) continue;
       const windowStart = Math.max(a.start, b.start);
       found.push({
-        id: `${a.actKey}@${a.start}|${b.actKey}@${b.start}`,
+        // Act, stage and both times: one act booked on two stages at once must not share an id.
+        id: `${a.actKey}@${a.stageKey}@${a.start}-${a.end}|${b.actKey}@${b.stageKey}@${b.start}-${b.end}`,
         a,
         b,
         minutes,

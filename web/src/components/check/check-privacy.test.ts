@@ -149,6 +149,11 @@ describe("the page and its results", () => {
     expect((html.match(/Kept on purpose/g) ?? []).length).toBe(SHARED_SHOWN);
   });
 
+  it("prints the Kept by the programmer note on screen and links the published days to the home page", () => {
+    expect(page).toContain("a marked pair prints as “Kept by the programmer”");
+    expect(html).toMatch(/<a [^>]*href="\/"[^>]*>The two published days<\/a> on the home page show what it adds\./);
+  });
+
   it("has a polite live region that is always present and says the counts", () => {
     expect(html).toMatch(/<p role="status" aria-live="polite" class="sr-only">Rule breaks: 4\. Sets that share time: \d+ pairs\.<\/p>/);
   });
@@ -278,7 +283,7 @@ const NETWORK: readonly [string, RegExp][] = [
 ];
 
 const ALLOWED_IMPORT =
-  /^(react|react-dom|lucide-react|next|@\/components\/ui\/button|@\/lib\/check|@\/lib\/check-sample|@\/lib\/check-flag|@\/lib\/utils|@\/components\/check\/.+|\.\/.+)$/;
+  /^(react|react-dom|lucide-react|next|next\/link|@\/components\/ui\/button|@\/lib\/check|@\/lib\/check-sample|@\/lib\/check-flag|@\/lib\/utils|@\/components\/check\/.+|\.\/.+)$/;
 
 describe("the check route holds no network call", () => {
   it("finds the route's files", () => {

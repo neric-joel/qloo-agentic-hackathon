@@ -144,5 +144,38 @@
     "resolved": [[1140, 1200], [1170, 1230]],
     "settings": { "changeover": "15", "curfew": "", "pairs": [] },
     "expected": { "engine": "rejects", "engine_error": "more than one set", "double_booked": 1, "same_stage": 0, "changeover": 0, "curfew": 0, "keep_apart": 0 }
+  },
+  {
+    "name": "early_only_curfew_breaks",
+    "note": "Every set is written after midnight, so a curfew before 06:00 is on the same clock: Bravo ends 02:30, after a 02:00 curfew.",
+    "rows": [
+      ["Alpha", "Main", "00:30", "01:30"],
+      ["Bravo", "Main", "01:40", "02:30"]
+    ],
+    "resolved": [[30, 90], [100, 150]],
+    "settings": { "changeover": "0", "curfew": "02:00", "pairs": [] },
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 0, "curfew": 1, "keep_apart": 0, "shared_pairs": 0 }
+  },
+  {
+    "name": "early_only_curfew_end_exact",
+    "note": "An end exactly at the curfew is not past it, in an early-only grid too.",
+    "rows": [
+      ["Alpha", "Main", "00:30", "01:30"],
+      ["Bravo", "Main", "01:45", "02:00"]
+    ],
+    "resolved": [[30, 90], [105, 120]],
+    "settings": { "changeover": "15", "curfew": "02:00", "pairs": [] },
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 0, "curfew": 0, "keep_apart": 0, "shared_pairs": 0 }
+  },
+  {
+    "name": "early_only_two_stages",
+    "note": "Early-only grid with a curfew and a pair kept apart: India ends 03:00 after a 02:30 curfew, and shares 30 minutes with Hotel.",
+    "rows": [
+      ["Hotel", "Main", "01:00", "02:00"],
+      ["India", "Side", "01:30", "03:00"]
+    ],
+    "resolved": [[60, 120], [90, 180]],
+    "settings": { "changeover": "15", "curfew": "02:30", "pairs": [["Hotel", "India"]] },
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 0, "curfew": 1, "keep_apart": 1, "shared_pairs": 1 }
   }
 ]

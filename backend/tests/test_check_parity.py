@@ -43,11 +43,14 @@ def _clock(value: str) -> int:
     return int(hours) * 60 + int(minutes)
 
 
-def _curfew(value: str) -> int | None:
+def _curfew(value: str, starts: list[int]) -> int | None:
+    """Before 06:00 means after midnight, unless every set starts before 06:00 (early-only grid)."""
     if value.strip() == "":
         return None
     minutes = _clock(value)
-    return minutes + 1440 if minutes < DAY_STARTS_AT else minutes
+    if minutes >= DAY_STARTS_AT or all(start < DAY_STARTS_AT for start in starts):
+        return minutes
+    return minutes + 1440
 
 
 def build_festival(vector: dict) -> Festival:
@@ -62,7 +65,7 @@ def build_festival(vector: dict) -> Festival:
         stages.setdefault(stage_id, stage.strip())
         slots.append(SetSlot(act_id=act_id, day=0, stage_id=stage_id, start=start, end=end))
     settings = vector["settings"]
-    curfew = _curfew(settings["curfew"])
+    curfew = _curfew(settings["curfew"], [start for start, _end in vector["resolved"]])
     constraints = Constraints(
         changeover_minutes=int(settings["changeover"]),
         curfew={} if curfew is None else {0: curfew},
@@ -116,6 +119,11 @@ def test_the_two_rejection_kinds_are_both_covered() -> None:
     reasons = {v["expected"]["engine_error"] for v in REJECTED_VECTORS}
     assert "more than one set" in reasons  # an act on two stages at once
     assert "overlap on stage" in reasons  # two sets on one stage at the same time
+
+
+def test_early_only_grids_are_in_the_vectors() -> None:
+    names = {v["name"] for v in ENGINE_VECTORS}
+    assert {"early_only_curfew_breaks", "early_only_curfew_end_exact", "early_only_two_stages"} <= names
 
 
 def test_the_vectors_use_invented_names_only() -> None:

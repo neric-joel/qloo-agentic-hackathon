@@ -1,4 +1,5 @@
 import type { Ref } from "react";
+import Link from "next/link";
 
 import {
   CHECK_COPY,
@@ -11,6 +12,10 @@ import {
   type SharedPair,
 } from "@/lib/check";
 import { cn } from "@/lib/utils";
+
+// The fixed paragraph, with its first words as a link to the home page (the text is unchanged).
+const PUBLISHED_DAYS = "The two published days";
+const [NOT_COMPUTED_BEFORE, NOT_COMPUTED_AFTER] = CHECK_COPY.notComputed.split(PUBLISHED_DAYS);
 
 /** Pairs listed before "Show all". */
 export const SHARED_SHOWN = 15;
@@ -143,7 +148,8 @@ export function CheckResults({ report, kept, onKeep, showAll, onShowAll, nonce, 
         ) : (
           <>
             <p className="mt-2 text-sm text-muted-foreground print:hidden">
-              Longest first. A mark under a pair is yours: it never removes a rule break above.
+              Longest first. A mark under a pair is yours: it never removes a rule break above, and a
+              marked pair prints as “Kept by the programmer”.
             </p>
             <p className="mt-1 hidden text-sm text-muted-foreground print:block">
               Longest first.
@@ -177,7 +183,13 @@ export function CheckResults({ report, kept, onKeep, showAll, onShowAll, nonce, 
       </section>
 
       <div className="max-w-prose space-y-3 text-[0.9375rem] leading-relaxed print:space-y-[3pt] print:text-[9pt]">
-        <p>{CHECK_COPY.notComputed}</p>
+        <p>
+          {NOT_COMPUTED_BEFORE}
+          <Link href="/" prefetch={false} className="underline underline-offset-4">
+            {PUBLISHED_DAYS}
+          </Link>
+          {NOT_COMPUTED_AFTER}
+        </p>
         <p>{CHECK_COPY.elsewhere}</p>
       </div>
     </div>

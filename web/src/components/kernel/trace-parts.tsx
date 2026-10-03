@@ -136,7 +136,8 @@ export function RequestItem({ item }: { item: TracedRequest }) {
       </div>
       <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
         <StatusPill status={record.status} />
-        <LatencyPill ms={record.latency_ms} />
+        {/* Saved requests may not carry a latency; show none rather than a made-up one. */}
+        {Number.isFinite(record.latency_ms) ? <LatencyPill ms={record.latency_ms} /> : null}
         <SourcePill record={record} />
       </div>
       <ParamsTable item={item} />

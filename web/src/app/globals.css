@@ -342,6 +342,31 @@
   }
 }
 
+/*
+ * Hero headline: the display face at a fixed, viewport-driven size, for headlines that share a row
+ * with other content (type-display fills its container instead).
+ */
+@utility type-poster {
+  font-weight: 800;
+  font-variation-settings: "wdth" 62;
+  text-transform: uppercase;
+  line-height: 0.86;
+  letter-spacing: -0.01em;
+  font-size: clamp(3.25rem, 1.4rem + 4.6vw, 6.25rem);
+}
+
+/*
+ * Diagonal hatching for sets with no Qloo signal. The pattern itself carries the meaning (with a
+ * text label), so it reads the same in greyscale and forced colours.
+ */
+@utility bg-hatch {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in oklab, var(--foreground) 16%, transparent) 0 1.5px,
+    transparent 1.5px 7px
+  );
+}
+
 /* A faint column grid, like the time axis of a printed timetable. */
 @utility bg-timegrid {
   background-image: linear-gradient(

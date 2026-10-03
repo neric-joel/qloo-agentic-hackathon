@@ -29,4 +29,9 @@ describe("cn", () => {
       "type-kicker text-muted-foreground mt-2",
     );
   });
+
+  it("keeps a background pattern next to a background colour", () => {
+    expect(cn("bg-hatch bg-card", "bg-muted")).toBe("bg-hatch bg-muted");
+    expect(cn("bg-timegrid", "bg-background")).toBe("bg-timegrid bg-background");
+  });
 });

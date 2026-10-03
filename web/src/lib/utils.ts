@@ -15,6 +15,8 @@ export const cn = createCn({
       // Set weight and tracking, and leave size to the caller.
       "type-face": [{ type: ["numeral"] }],
       "type-wordmark": [{ type: ["wordmark"] }],
+      // Background patterns (images), which must not be mistaken for background colours.
+      "bg-pattern": [{ bg: ["hatch", "timegrid"] }],
     },
     conflictingClassGroups: {
       "type-sized": ["font-size", "leading", "font-weight", "tracking"],

@@ -29,7 +29,7 @@ export const metadata: Metadata = {
     template: "%s | Clash Control",
   },
   description:
-    "Find the festival set-time clashes that actually split a crowd, using real audience-overlap data.",
+    "Clash Control prices every set-time clash on a festival timetable with Qloo: fans at stake times how many of them are the same people.",
   applicationName: "Clash Control",
 };
 

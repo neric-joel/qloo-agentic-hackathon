@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { Waypoints } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -74,6 +74,10 @@ export type TraceDrawerProps = {
   live?: boolean;
   triggerVariant?: "default" | "ink" | "outline" | "ghost";
   triggerClassName?: string;
+  /** Replaces the opening paragraph (which describes a live run). */
+  description?: ReactNode;
+  /** Replaces the run id line at the bottom. */
+  footnote?: string;
   /** Controlled open state (optional). */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -92,6 +96,8 @@ export function TraceDrawer({
   live = false,
   triggerVariant = "outline",
   triggerClassName,
+  description,
+  footnote,
   open,
   onOpenChange,
 }: TraceDrawerProps) {
@@ -167,8 +173,8 @@ export function TraceDrawer({
           className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-6 sm:px-6"
         >
           <SheetDescription className="max-w-prose text-[0.9375rem] leading-relaxed">
-            Every request this run sent to Qloo, in order. The API key stays on the server and is
-            never shown or sent to the browser.
+            {description ??
+              "Every request this run sent to Qloo, in order. The API key stays on the server and is never shown or sent to the browser."}
           </SheetDescription>
 
           <dl className="mt-6 grid grid-cols-3 gap-4 border-t-2 border-foreground pt-4">
@@ -266,8 +272,12 @@ export function TraceDrawer({
           </details>
 
           <p className="mt-8 font-mono text-xs break-all text-muted-foreground">
-            {runId ? `Run ${runId}` : "No run id yet"}
-            {mode ? ` · ${mode} mode` : ""}
+            {footnote ?? (
+              <>
+                {runId ? `Run ${runId}` : "No run id yet"}
+                {mode ? ` · ${mode} mode` : ""}
+              </>
+            )}
           </p>
         </div>
 

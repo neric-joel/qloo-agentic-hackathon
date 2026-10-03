@@ -1,8 +1,10 @@
 # Web
 
-Next.js (App Router, TypeScript strict, Tailwind v4, shadcn/ui) front end for Clash Control. It holds the
-shared kernel every screen is built on: the event-stream client, the run state, and the components that
-make Qloo's part in each answer visible.
+Next.js (App Router, TypeScript strict, Tailwind v4, shadcn/ui) front end for Clash Control. The landing
+page is the product: a preset festival day's published timetable with every clash priced by Qloo (fans at
+stake times how many of them are the same people), the Clash Budget Index, Qloo coverage, the costliest
+clashes, sourced hidden-clash examples and the twin card. It sits on a shared kernel: the event-stream
+client, the run state, and the components that make Qloo's part in each answer visible.
 
 ## Run it
 
@@ -16,7 +18,7 @@ npm run dev          # http://localhost:3000
 | `npm run dev` / `build` / `start` | Next.js dev server, production build, production server |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | Route types, then `tsc --noEmit` |
-| `npm test` | Vitest (event stream, event validation, run state, mock stream, formatters, config) |
+| `npm test` | Vitest (event stream, run state, presets, timetable layout, clash mapping, formatters, config) |
 | `npm run check` | Lint, typecheck and tests in one go |
 
 ### Environment
@@ -26,7 +28,7 @@ Copy `.env.example` to `.env.local` if you need to change anything.
 | Variable | Purpose |
 | --- | --- |
 | `BACKEND_URL` | Origin that `/api/*` is proxied to. Empty means `http://127.0.0.1:8000`. |
-| `NEXT_PUBLIC_MOCK_STREAM` | `1` replays a simulated event stream instead of calling the backend, and puts a "Simulated data" banner on every page. It is read at build time, so leave it unset in production. |
+| `NEXT_PUBLIC_MOCK_STREAM` | `1` serves a synthetic festival day (invented acts, no Qloo data) and simulated event streams instead of calling the backend, and puts a "Simulated data" banner on every page. It is read at build time, so leave it unset in production. |
 
 The browser only ever talks to this app. `next.config.ts` rewrites `/api/:path*` to
 `${BACKEND_URL}/api/:path*`, so there is no CORS and the Qloo and model keys stay on the server.
@@ -48,8 +50,15 @@ src/
     ui/                shadcn/ui primitives (button, sheet) and SegmentedControl
     theme/             light, dark and system theme
     site/              header, footer, logo
-    showcase/          the temporary landing page demo; delete when the real screens land
+    clash/             the landing screen: Clash Budget dial, coverage strip, timetable grid with clash
+                       links (desktop) and start-order list (mobile), ranked clash list, clash drawer,
+                       hidden-clash wall, twin cards, sources, skeletons, usePresets
   lib/
+    preset.ts          Preset types and a validator for /api/presets and /api/presets/{id}
+    clashes.ts         set views, receipts, the Qloo requests behind a clash, display formatting
+    timetable.ts       time-to-pixel scale, column frames, clash-link placement, arrow-key movement
+    clash-budget.ts    dial geometry for the Clash Budget Index
+    mock-preset.ts     synthetic festival day for NEXT_PUBLIC_MOCK_STREAM=1
     events.ts          AgentEvent and QlooRequestRecord types, plus a validator for incoming events
     sse.ts             streamRun(): POST + ReadableStream event-stream client
     run-state.ts       reducer that folds events into render state, plus selectors
@@ -57,6 +66,24 @@ src/
     format.ts          latency, count and HTTP status formatters
     utils.ts           cn(): class merger that also knows the type-* utilities
 ```
+
+## The landing screen
+
+`GET /api/presets` lists the preset festival days (the first is shown by default; `?preset=<id>` picks
+another) and `GET /api/presets/{id}` returns one with its festival, score report, the saved Qloo requests
+behind it, timetable sources and evidence. Preset data is Qloo-derived and is never copied into this
+folder: tests use the small hand-written fixture in `lib/fixtures/` and mock mode uses `lib/mock-preset.ts`,
+both invented.
+
+Copy rules the screen follows: every index says "by Qloo's measure"; draw is labelled as Qloo popularity
+and overlap as shared audience; acts without a Qloo signal are hatched and named, never scored as zero;
+hidden clashes from the press are sourced examples, not proof of detection; the festival shown does not
+use the tool, and the index is not a verdict on its programming.
+
+Accessibility: the timetable is one tab stop (arrow keys move between sets, Home and End jump within a
+stage, Enter opens a set's costliest clash), each clash link has a numbered badge button, and the clash
+drawer returns focus to whatever opened it. Hidden clashes differ by shape (diamond, dashed link) as well
+as colour.
 
 ## The event stream
 
@@ -83,7 +110,7 @@ Conventions on top of the contract:
   tool call (named after the tool), so `RunSteps` is never empty during a run.
 - **Prose.** `text_delta` events from several turns of the writer are joined into `state.text`; text that
   arrives after a tool call starts a new paragraph (`\n\n`).
-- **`summary` results** are only used by the landing page demo. Real screens define their own kinds.
+- **`summary` results** are only used by the simulated stream. Real screens define their own kinds.
 
 ## Using the kernel
 

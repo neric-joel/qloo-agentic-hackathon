@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { panelMode, parseHealth } from "./agent-status";
+import { pairCheckEnabled, panelMode, parseHealth } from "./agent-status";
 
 describe("parseHealth", () => {
   it("reads whether the language model is configured", () => {
@@ -42,5 +42,27 @@ describe("panelMode", () => {
     expect(panelMode("off", false, true)).toBe("checking");
     expect(panelMode("off", true, false)).toBe("off-recorded");
     expect(panelMode("on", false, true)).toBe("live");
+  });
+});
+
+describe("pairCheckEnabled", () => {
+  it("is true only when the health answer says pair_check is true", () => {
+    expect(pairCheckEnabled({ status: "ok", llm_configured: false, pair_check: true })).toBe(true);
+  });
+
+  it("is false for a missing flag, any other value or no answer", () => {
+    expect(pairCheckEnabled({ status: "ok", llm_configured: true })).toBe(false);
+    expect(pairCheckEnabled({ pair_check: false })).toBe(false);
+    expect(pairCheckEnabled({ pair_check: "true" })).toBe(false);
+    expect(pairCheckEnabled({ pair_check: 1 })).toBe(false);
+    expect(pairCheckEnabled({ pair_check: null })).toBe(false);
+    expect(pairCheckEnabled(null)).toBe(false);
+    expect(pairCheckEnabled(undefined)).toBe(false);
+    expect(pairCheckEnabled([{ pair_check: true }])).toBe(false);
+  });
+
+  it("leaves the agent status as it was", () => {
+    expect(parseHealth({ llm_configured: false, pair_check: true })).toBe("off");
+    expect(parseHealth({ llm_configured: true, pair_check: false })).toBe("on");
   });
 });

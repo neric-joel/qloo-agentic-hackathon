@@ -39,6 +39,15 @@ class Settings(BaseSettings):
     runs_per_visitor_day: int = 20
     runs_per_day: int = 150
 
+    # Live pair check (GET /api/pair): off unless switched on; each check sends 3 Qloo requests. Caps are per
+    # server instance. Below the floor (requests left in the month) neither the check nor the agent's
+    # Qloo-backed tools call Qloo.
+    pair_check_enabled: bool = False
+    pair_checks_per_visitor_hour: int = 8
+    pair_checks_per_visitor_day: int = 20
+    pair_checks_per_day: int = 100
+    qloo_quota_floor: int = 1500
+
     # Public surface: the generic "explore" scenario and the API docs are off unless switched on
     allow_explore: bool = False
     docs_enabled: bool = False

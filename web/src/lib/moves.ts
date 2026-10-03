@@ -1,0 +1,257 @@
+/**
+ * The human what-if, "Try a move": every legal place one set could go, priced by the timetable
+ * engine with no language model (`GET /api/presets/{id}/moves?act=<act_id>&limit=8`). The server
+ * computes every figure; this module only validates its answer and works out, from the published
+ * timetable, which sets the page offers and which clashes a place ends or adds. Pure functions, so
+ * they are unit tested.
+ */
+
+import type { MoveOption, MoveOptions } from "./agent-session";
+import { isFixedByLocks } from "./clashes";
+import { isRecord } from "./events";
+import type { PairClash, Preset, SetSlot } from "./preset";
+import { formatClock, overlapWindow, type TimeRange } from "./timetable";
+
+/** One of a set's clashes, in Clash Budget Index points (one decimal, as the server sends them). */
+export type PartnerPoints = { name: string; points: number };
+
+/** A legal place, with where and when it is and the set's clashes there. */
+export type PlacedOption = MoveOption & {
+  stageId: string;
+  end: string;
+  day: number;
+  /** At most three, largest first. */
+  clashesAfter: PartnerPoints[];
+};
+
+/** The endpoint's answer: the agent's `find_moves` data plus the set's clashes now and after. */
+export type MovesResult = Omit<MoveOptions, "options"> & {
+  actId: string;
+  /** At most three, largest first. Empty when the set cannot move. */
+  clashesNow: PartnerPoints[];
+  options: PlacedOption[];
+};
+
+function finite(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+/** A partner list, or null when it is not one. */
+function readPartners(value: unknown): PartnerPoints[] | null {
+  if (!Array.isArray(value)) return null;
+  const partners: PartnerPoints[] = [];
+  for (const item of value) {
+    if (!isRecord(item) || typeof item.with !== "string" || !item.with || !finite(item.points)) return null;
+    partners.push({ name: item.with, points: item.points });
+  }
+  return partners;
+}
+
+function readOption(value: unknown): PlacedOption | null {
+  if (!isRecord(value)) return null;
+  const { move, stage, stage_id, start, end, day, clash_budget_after } = value;
+  if (
+    typeof move !== "string" ||
+    typeof stage !== "string" ||
+    typeof stage_id !== "string" ||
+    typeof start !== "string" ||
+    typeof end !== "string" ||
+    !finite(day) ||
+    !finite(clash_budget_after)
+  ) {
+    return null;
+  }
+  const clashesAfter = readPartners(value.clashes_after);
+  if (!clashesAfter) return null;
+  return { move, stage, start, after: clash_budget_after, stageId: stage_id, end, day, clashesAfter };
+}
+
+/**
+ * Validates the moves endpoint's answer. Null when anything the page prints is missing or of the
+ * wrong type, so a contract change shows the error state instead of a half-drawn card. Never throws.
+ */
+export function parseMoves(json: unknown): MovesResult | null {
+  try {
+    if (!isRecord(json) || json.kind !== "move_options") return null;
+    const { act, act_id, from, movable } = json;
+    if (typeof act !== "string" || typeof act_id !== "string" || typeof from !== "string") return null;
+    if (typeof movable !== "boolean") return null;
+    const why = typeof json.why === "string" && json.why ? json.why : null;
+
+    if (!movable) {
+      return { act, actId: act_id, from, movable, why, before: null, legalPlaces: 0, clashesNow: [], options: [] };
+    }
+
+    if (!finite(json.clash_budget_before) || !finite(json.legal_places) || !Array.isArray(json.options)) return null;
+    const clashesNow = readPartners(json.clashes_now);
+    if (!clashesNow) return null;
+    const options: PlacedOption[] = [];
+    for (const item of json.options) {
+      const option = readOption(item);
+      if (!option) return null;
+      options.push(option);
+    }
+    return {
+      act,
+      actId: act_id,
+      from,
+      movable,
+      why,
+      before: json.clash_budget_before,
+      legalPlaces: json.legal_places,
+      clashesNow,
+      options,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** A set the visitor can pick, in the order the select lists them. */
+export type PickableSet = {
+  actId: string;
+  name: string;
+  stageId: string;
+  stageName: string;
+  /** "15:45". */
+  start: string;
+  locked: boolean;
+};
+
+/** Every set on one festival day, by stage (in festival order) and then by start time. */
+export function movableSets(preset: Pick<Preset, "festival">, day: number): PickableSet[] {
+  const { festival } = preset;
+  const acts = new Map(festival.acts.map((act) => [act.id, act]));
+  const stageIndex = new Map(festival.stages.map((stage, index) => [stage.id, index]));
+  return festival.timetable
+    .filter((slot) => slot.day === day && acts.has(slot.act_id) && stageIndex.has(slot.stage_id))
+    .sort(
+      (p, q) =>
+        (stageIndex.get(p.stage_id) ?? 0) - (stageIndex.get(q.stage_id) ?? 0) ||
+        p.start - q.start ||
+        p.act_id.localeCompare(q.act_id),
+    )
+    .map((slot) => ({
+      actId: slot.act_id,
+      name: acts.get(slot.act_id)?.name ?? slot.act_id,
+      stageId: slot.stage_id,
+      stageName: festival.stages[stageIndex.get(slot.stage_id) ?? 0].name,
+      start: formatClock(slot.start),
+      locked: slot.locked,
+    }));
+}
+
+/** How many of the day's costliest clashes the "Start with" buttons are drawn from. */
+export const STARTING_CLASHES = 6;
+
+/**
+ * Sets worth trying first: the acts in the day's costliest clashes (`ranked`, costliest first), in
+ * that order, each once, leaving out locked sets.
+ */
+export function startingSets(
+  ranked: readonly PairClash[],
+  isLocked: (actId: string) => boolean,
+  limit = 4,
+): { actId: string; name: string }[] {
+  const picked: { actId: string; name: string }[] = [];
+  const seen = new Set<string>();
+  for (const clash of ranked.slice(0, STARTING_CLASHES)) {
+    if (isFixedByLocks(clash, isLocked)) continue;
+    for (const side of [clash.a, clash.b]) {
+      if (picked.length >= limit) return picked;
+      if (seen.has(side.act_id) || isLocked(side.act_id)) continue;
+      seen.add(side.act_id);
+      picked.push({ actId: side.act_id, name: side.name });
+    }
+  }
+  return picked;
+}
+
+/** "19:45" -> 1185. Hours may pass 23 for a set after midnight. Null when it is not a time. */
+export function clockMinutes(text: string): number | null {
+  const match = /^(\d{1,2}):([0-5]\d)$/.exec(text.trim());
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+}
+
+/** Where a set plays: a day and a time range in minutes from the start of that day. */
+export type Placement = TimeRange & { day: number };
+
+/** Where a legal place puts the set, or null when its times cannot be read. */
+export function placementOf(option: Pick<PlacedOption, "day" | "start" | "end">): Placement | null {
+  const start = clockMinutes(option.start);
+  const end = clockMinutes(option.end);
+  if (start === null || end === null || end <= start) return null;
+  return { day: option.day, start, end };
+}
+
+/**
+ * Which acts would play at the same time as `actId` if it sat at `placement`, by name: every other
+ * set on that day whose time overlaps it. Every other set stays where the published timetable puts
+ * it, as the endpoint assumes.
+ */
+export function concurrentActs(
+  preset: Pick<Preset, "festival">,
+  actId: string,
+  placement: Placement,
+): Set<string> {
+  const names = new Map(preset.festival.acts.map((act) => [act.id, act.name]));
+  const concurrent = new Set<string>();
+  for (const slot of preset.festival.timetable) {
+    if (slot.act_id === actId || slot.day !== placement.day) continue;
+    if (overlapWindow(slot, placement)) concurrent.add(names.get(slot.act_id) ?? slot.act_id);
+  }
+  return concurrent;
+}
+
+/** The set's own place on the published timetable. */
+export function currentPlacement(preset: Pick<Preset, "festival">, actId: string): Placement | null {
+  const slot: SetSlot | undefined = preset.festival.timetable.find((item) => item.act_id === actId);
+  return slot ? { day: slot.day, start: slot.start, end: slot.end } : null;
+}
+
+/** A clash the move keeps, with its index points before and after. */
+export type KeptClash = { name: string; now: number; after: number };
+
+export type ClashChanges = {
+  /** Clashes the set has now that the move ends, with their index points now. */
+  ends: PartnerPoints[];
+  /** Clashes the move adds, with their index points after. */
+  adds: PartnerPoints[];
+  /**
+   * Clashes it has before and after, with both readings: a set moved a few minutes often keeps
+   * its clash and only shortens it. Only partners on both lists, so both readings are the server's.
+   */
+  keeps: KeptClash[];
+};
+
+/**
+ * Which of a set's clashes a move ends, which it adds and which it keeps, from the endpoint's two
+ * lists. A partner listed now and not after is ended; listed after and not now is added; on both
+ * lists, kept. Each list stops at three, so a partner can drop out of one only because others are
+ * larger: when the times are known (`concurrentNow`, `concurrentAfter`: the acts playing at the
+ * same time before and after the move), a clash only counts as ended when the two sets no longer
+ * overlap, and only as added when they did not overlap before. The points are the endpoint's,
+ * never recomputed.
+ */
+export function clashChanges(
+  now: readonly PartnerPoints[],
+  after: readonly PartnerPoints[],
+  concurrentNow: ReadonlySet<string> | null = null,
+  concurrentAfter: ReadonlySet<string> | null = null,
+): ClashChanges {
+  const listedNow = new Set(now.map((partner) => partner.name));
+  const pointsAfter = new Map(after.map((partner) => [partner.name, partner.points]));
+  const stillClashes = (name: string) => (concurrentAfter ? concurrentAfter.has(name) : pointsAfter.has(name));
+  return {
+    ends: now.filter((partner) => !stillClashes(partner.name)),
+    adds: after.filter((partner) =>
+      concurrentNow ? !concurrentNow.has(partner.name) : !listedNow.has(partner.name),
+    ),
+    keeps: now.flatMap((partner) => {
+      const later = pointsAfter.get(partner.name);
+      return stillClashes(partner.name) && later !== undefined
+        ? [{ name: partner.name, now: partner.points, after: later }]
+        : [];
+    }),
+  };
+}

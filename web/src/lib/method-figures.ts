@@ -10,6 +10,7 @@
  *   correlation with popularity, the hidden-clash rates) and Qloo coverage of the 624 acts tested.
  * - The two festival days the app shows: coverage from each preset's report.
  * - The move-suggestion check: the second run, with realistic movement limits, which governs.
+ * - The live re-check: how many requests one check sends (a definition, set by the API contract).
  */
 
 export type MethodId = "taste" | "genre" | "popularity" | "random";
@@ -122,6 +123,10 @@ export const METHOD_FIGURES = {
     measuredPoints: 7.1,
     movesDiffer: 7,
     movesCompared: 8,
+  },
+  liveCheck: {
+    /** Requests one live re-check sends to Qloo: an audience ranking for each act and one comparison. */
+    requests: 3,
   },
   /** Definitions rather than measurements, kept here so the page prints no stray number. */
   scale: {

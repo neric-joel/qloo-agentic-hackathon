@@ -34,9 +34,10 @@ export const metadata: Metadata = {
   },
   description: DESCRIPTION,
   applicationName: "Clash Control",
-  // Shared links and crawlers see the pitch and its caveat without running the page.
+  // Shared links and crawlers see the pitch and its caveat without running the page. The card image
+  // comes from the opengraph-image file convention; the large Twitter card reuses it.
   openGraph: { title: "Clash Control", description: DESCRIPTION, type: "website", siteName: "Clash Control" },
-  twitter: { card: "summary", title: "Clash Control", description: DESCRIPTION },
+  twitter: { card: "summary_large_image", title: "Clash Control", description: DESCRIPTION },
 };
 
 export const viewport: Viewport = {

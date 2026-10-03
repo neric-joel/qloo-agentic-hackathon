@@ -21,7 +21,7 @@ export const metadata = {
     "What Clash Control's taste overlap is, what we tested it against, and where it fell short.",
 } satisfies Metadata;
 
-const { backtest, coverage, index, moves, scale } = METHOD_FIGURES;
+const { backtest, coverage, index, liveCheck, moves, scale } = METHOD_FIGURES;
 const taste = methodRow("taste");
 const genre = methodRow("genre");
 const popularity = methodRow("popularity");
@@ -220,10 +220,11 @@ export default function MethodPage() {
           do not claim it does.
         </p>
         <p>
-          What it does show: taste overlap carries information a genre label does not (AUC{" "}
-          {formatAuc(taste.auc)} against {formatAuc(genre.auc)}), and it is nearly unrelated to
-          popularity (correlation {backtest.popularityCorrelation}), so it is a separate signal, not
-          popularity under another name.
+          What it does show: in this test taste overlap ranked the complained-about clashes above
+          genre tags did (AUC {formatAuc(taste.auc)} against {formatAuc(genre.auc)}), though the two
+          intervals overlap widely. It is nearly unrelated to popularity (correlation{" "}
+          {backtest.popularityCorrelation}), so it is a separate signal, not popularity under another
+          name.
         </p>
         <p>
           One festival drives much of the favourable result. At {backtest.glastonbury.label},{" "}
@@ -243,6 +244,11 @@ export default function MethodPage() {
             top-quarter taste overlap and no shared genre tag, {backtest.hidden.complained} were
             complained about ({formatPct(backtest.hidden.complainedPct)}, against{" "}
             {formatPct(backtest.hidden.basePct)} for all pairs).
+          </li>
+          <li>
+            The Hidden label on the timetable uses a stricter line than this count: taste overlap in
+            the day&rsquo;s top tenth, with no shared genre tag, where the count above uses the top
+            quarter.
           </li>
           <li>
             Qloo has a usable signal for {coverage.usableActs} of {coverage.totalActs} acts across the{" "}
@@ -289,6 +295,20 @@ export default function MethodPage() {
         <p>
           The festival days shown were built from saved Qloo responses; the festivals themselves do
           not use Clash Control.
+        </p>
+      </Section>
+
+      <Section id="live-check" kicker="On request" title="The live re-check">
+        <p>
+          Every priced clash can be re-checked with Qloo on request when live checks are switched
+          on. The check re-sends the two audience-ranking requests saved for the pair&rsquo;s acts
+          and asks Qloo for a fresh comparison, {liveCheck.requests} requests in all, then works out
+          the pair&rsquo;s taste overlap and tags again from the answers and shows them beside the
+          saved result with Qloo&rsquo;s request ids. It never replaces a number on the page:
+          Qloo&rsquo;s answers can change over time, and the saved values keep every figure
+          comparable. It is limited per visitor and per day, and it pauses when this demo&rsquo;s
+          monthly Qloo allowance runs low. While live checks are switched off, the drawer shows only
+          the saved results.
         </p>
       </Section>
 

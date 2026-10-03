@@ -11,6 +11,7 @@ import {
   sourceLabel,
   tagLabel,
 } from "@/lib/clashes";
+import { pluralize } from "@/lib/format";
 import type { Evidence, HiddenWallItem, SharedTag } from "@/lib/preset";
 
 import { DiamondGlyph, Meter } from "./marks";
@@ -147,6 +148,13 @@ function WallCard({ item }: { item: HiddenWallItem }) {
   );
 }
 
+/** The wall's count line: how many sourced examples it shows, and that the rest are left out. */
+export function wallCount(shown: number, total: number): string {
+  return shown < total
+    ? `Showing ${shown} of ${total} sourced examples, the rest are not shown here`
+    : pluralize(shown, "sourced example");
+}
+
 /**
  * Sourced examples of hidden clashes: pairs the press or fans called out where the two acts share
  * no genre tag but their taste overlap is among the highest of that day. Shown as examples with
@@ -185,9 +193,7 @@ export function HiddenWall({ evidence }: { evidence: Evidence | null }) {
         {items.length > 0 ? (
           <>
             <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-b-2 border-foreground pb-2">
-              <p className="type-kicker">
-                {items.length} of {evidence?.hidden_wall_total ?? items.length} examples
-              </p>
+              <p className="type-kicker">{wallCount(items.length, evidence?.hidden_wall_total ?? items.length)}</p>
               <ProvenanceChip provenance="recorded" size="sm" />
             </div>
             <ul className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

@@ -5,11 +5,13 @@ import {
   formatCaptured,
   formatInteger,
   formatLatency,
+  formatUtcTime,
   humanizeIdentifier,
   isSuccessStatus,
   latencyParts,
   median,
   pluralize,
+  summarizeParam,
 } from "./format";
 
 describe("formatLatency", () => {
@@ -104,5 +106,40 @@ describe("median", () => {
     expect(values).toEqual([30, 10, 20]);
     expect(median([10, 20, 30, 40])).toBe(25);
     expect(median([])).toBeNull();
+  });
+});
+
+describe("formatUtcTime", () => {
+  it("prints the UTC time of day with seconds", () => {
+    expect(formatUtcTime("2026-10-06T14:02:11Z")).toBe("14:02:11");
+    expect(formatUtcTime("2026-10-06T16:02:03+02:00")).toBe("14:02:03");
+    expect(formatUtcTime(new Date(Date.UTC(2026, 9, 6, 0, 5, 9)))).toBe("00:05:09");
+  });
+
+  it("is null for a missing or unreadable value", () => {
+    expect(formatUtcTime(undefined)).toBeNull();
+    expect(formatUtcTime("")).toBeNull();
+    expect(formatUtcTime("not a date")).toBeNull();
+  });
+});
+
+describe("summarizeParam", () => {
+  it("leaves a single value as sent", () => {
+    expect(summarizeParam("E-1")).toEqual({ shown: "E-1", hidden: 0, full: "E-1" });
+  });
+
+  it("leaves a list of up to three items as sent", () => {
+    expect(summarizeParam("E-1,E-2,E-3")).toEqual({ shown: "E-1,E-2,E-3", hidden: 0, full: "E-1,E-2,E-3" });
+  });
+
+  it("collapses a long list to its first three items and a count", () => {
+    const ids = Array.from({ length: 40 }, (_, i) => `E-${i + 1}`);
+    const full = ids.join(",");
+    expect(summarizeParam(full)).toEqual({ shown: "E-1, E-2, E-3", hidden: 37, full });
+  });
+
+  it("takes another limit and ignores empty items", () => {
+    expect(summarizeParam("a, b,,c, d", 2)).toEqual({ shown: "a, b", hidden: 2, full: "a, b,,c, d" });
+    expect(summarizeParam("")).toEqual({ shown: "", hidden: 0, full: "" });
   });
 });

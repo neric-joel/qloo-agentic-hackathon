@@ -9,13 +9,16 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from .agent.events import EventChannel
 from .agent.llm import LLMBackend, build_backend, llm_configured
 from .config import Settings, get_settings
+from .deps import get_qloo
 from .limits import RunLimiter, visitor_key
+from .pair import router as pair_router
 from .presets import Presets
 from .presets import router as presets_router
 from .qloo.client import QlooClient
 from .recordings import router as recordings_router
 from .runs import ClashInput, ExploreInput, RunRequest, SessionError, clash_state, execute_run
 from .schedule.api import router as schedule_router
+from .whatif import router as whatif_router
 
 MAX_ERRORS = 10  # validation errors returned in one 422 body
 MAX_ERROR_TEXT = 200
@@ -32,8 +35,9 @@ app = FastAPI(title="Clash Control API", version="0.1.0", **_docs_urls(get_setti
 app.include_router(schedule_router)
 app.include_router(presets_router)
 app.include_router(recordings_router)
+app.include_router(pair_router)
+app.include_router(whatif_router)
 
-_qloo: QlooClient | None = None
 _limiter: RunLimiter | None = None
 
 
@@ -51,21 +55,7 @@ async def validation_failed(request: Request, exc: RequestValidationError) -> JS
         }
         for error in exc.errors()[:MAX_ERRORS]
     ]
-    return JSONResponse(status_code=422, content={"detail": detail})
-
-
-def get_qloo() -> QlooClient:
-    """Create the shared Qloo client lazily (serverless-friendly: no lifespan hooks needed)."""
-    global _qloo
-    if _qloo is None:
-        settings = get_settings()
-        _qloo = QlooClient(
-            settings.qloo_api_key,
-            settings.qloo_base_url,
-            fixtures_dir=settings.fixtures_dir,
-            record_fixtures=settings.qloo_record_fixtures,
-        )
-    return _qloo
+    return JSONResponse(status_code=422, content={"detail": detail}, headers={"Cache-Control": "no-store"})
 
 
 def get_limiter() -> RunLimiter:
@@ -88,6 +78,7 @@ async def health(request: Request, settings: Annotated[Settings, Depends(get_set
         "status": "ok",
         "qloo_key_configured": bool(settings.qloo_api_key),
         "llm_configured": llm_configured(settings, dict(request.headers)),
+        "pair_check": settings.pair_check_enabled and bool(settings.qloo_api_key),
     }
 
 
@@ -133,6 +124,7 @@ async def create_run(
             max_qloo_calls=settings.agent_max_qloo_calls_per_run,
             max_reslots=settings.agent_max_reslots_per_run,
             max_engine_seconds=settings.agent_max_engine_seconds,
+            qloo_floor=settings.qloo_quota_floor,
         )
     )
 

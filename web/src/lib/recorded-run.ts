@@ -24,10 +24,24 @@ export type RecordedRun = {
   events: RecordedEvent[];
 };
 
-/** Longest wait between two events during a replay, so a slow tool call does not stall it. */
-export const MAX_GAP_MS = 700;
-/** Longest wait between two pieces of streamed text. */
-export const MAX_TEXT_GAP_MS = 60;
+/*
+ * Pacing. The saved text arrives in one burst after one model pause, so pacing from the saved
+ * times alone would play a whole run in a second or two. A replay is paced by event kind instead.
+ */
+
+/** Wait before each piece of streamed text that continues a burst. */
+export const TEXT_STEP_MS = 55;
+/**
+ * Shortest wait before a step a reader should see arrive: a tool call, a tool result, the first
+ * piece of text after anything else, and the result.
+ */
+export const MIN_STEP_MS = 650;
+/** Longest wait taken from the saved times: a step's saved gap is used, up to this, when it is longer. */
+export const MAX_GAP_MS = 1_200;
+/** Shortest a whole replay may take; a shorter run has its step waits stretched proportionally. */
+export const MIN_REPLAY_MS = 6_000;
+/** Longest a single step wait may be stretched to. */
+export const MAX_STEP_MS = 2_500;
 /** Longest a whole replay may take; longer runs are played proportionally faster. */
 export const MAX_REPLAY_MS = 14_000;
 
@@ -123,19 +137,75 @@ function asRecorded(event: AgentEvent): AgentEvent {
   }
 }
 
+type Paced = { after: number; step: boolean };
+
 /**
- * The run as replay beats: labelled recorded (see `asRecorded`) and paced from the saved times.
- * Each wait is the gap since the previous event, capped at `MAX_GAP_MS` (`MAX_TEXT_GAP_MS` before
- * streamed text), and a run that would still take longer than `MAX_REPLAY_MS` is played faster.
+ * The wait before each event, by kind. A step (a tool call, a tool result, the first piece of text
+ * after anything else, the result) waits its saved gap clamped to `MIN_STEP_MS`..`MAX_GAP_MS`; text
+ * that continues a burst waits `TEXT_STEP_MS`; anything else waits its saved gap, capped at
+ * `MAX_GAP_MS`. Saved times that go backwards count as no gap.
+ */
+function paceByKind(events: readonly RecordedEvent[]): Paced[] {
+  let previousT = events[0]?.t ?? 0;
+  return events.map(({ t, event }, i) => {
+    const gap = Math.max(0, t - previousT);
+    previousT = Math.max(previousT, t);
+    const capped = Math.min(gap, MAX_GAP_MS);
+    if (event.type === "text_delta" && events[i - 1]?.event.type === "text_delta") {
+      return { after: TEXT_STEP_MS, step: false };
+    }
+    const step =
+      event.type === "tool_call" ||
+      event.type === "tool_result" ||
+      event.type === "text_delta" ||
+      event.type === "result";
+    return step ? { after: Math.max(MIN_STEP_MS, capped), step } : { after: capped, step };
+  });
+}
+
+/**
+ * Stretches the step waits so the whole run takes `MIN_REPLAY_MS`, proportionally, with no step
+ * longer than `MAX_STEP_MS`. A step that reaches the cap stays there and the others take up the
+ * rest; a run with too few steps to reach the minimum ends as long as the caps allow.
+ */
+function stretchSteps(paced: Paced[]): Paced[] {
+  const total = paced.reduce((sum, beat) => sum + beat.after, 0);
+  if (total >= MIN_REPLAY_MS) return paced;
+  const fixed = paced.reduce((sum, beat) => sum + (beat.step ? 0 : beat.after), 0);
+  const capped = new Set<number>();
+  let factor = 1;
+  // Each pass fixes at least one more step at the cap, so this ends within one pass per step.
+  for (let pass = 0; pass <= paced.length; pass += 1) {
+    let free = 0;
+    let atCap = 0;
+    paced.forEach((beat, i) => {
+      if (!beat.step) return;
+      if (capped.has(i)) atCap += MAX_STEP_MS;
+      else free += beat.after;
+    });
+    if (free <= 0) break;
+    factor = Math.max(1, (MIN_REPLAY_MS - fixed - atCap) / free);
+    const over = paced.flatMap((beat, i) =>
+      beat.step && !capped.has(i) && beat.after * factor > MAX_STEP_MS ? [i] : [],
+    );
+    if (over.length === 0) break;
+    over.forEach((i) => capped.add(i));
+  }
+  return paced.map((beat, i) => {
+    if (!beat.step) return beat;
+    return { ...beat, after: capped.has(i) ? MAX_STEP_MS : Math.min(MAX_STEP_MS, beat.after * factor) };
+  });
+}
+
+/**
+ * The run as replay beats: labelled recorded (see `asRecorded`) and paced by event kind (see
+ * `paceByKind`). A run shorter than `MIN_REPLAY_MS` has its step waits stretched (`stretchSteps`),
+ * so it is long enough to watch and to skip; one longer than `MAX_REPLAY_MS` is played faster.
+ * Event order and every saved value are kept; only the waits are set here.
  */
 export function toReplayBeats(run: RecordedRun): ReplayBeat[] {
-  let previous = run.events[0]?.t ?? 0;
-  const beats = run.events.map(({ t, event }) => {
-    const gap = Math.max(0, t - previous);
-    previous = Math.max(previous, t);
-    const cap = event.type === "text_delta" ? MAX_TEXT_GAP_MS : MAX_GAP_MS;
-    return { after: Math.min(gap, cap), event: asRecorded(event) };
-  });
+  const paced = stretchSteps(paceByKind(run.events));
+  const beats = run.events.map(({ event }, i) => ({ after: paced[i].after, event: asRecorded(event) }));
   const total = beats.reduce((sum, beat) => sum + beat.after, 0);
   if (total <= MAX_REPLAY_MS) return beats;
   const scale = MAX_REPLAY_MS / total;

@@ -19,6 +19,7 @@ T = TypeVar("T")
 TOO_MANY_CALLS = "Too many tool calls in one turn; the rest were skipped."
 QLOO_BUDGET_USED = "Error: this run's Qloo budget is used up."
 ENGINE_BUDGET_USED = "Error: this run's calculation budget is used up."
+QLOO_PAUSED = "Error: Qloo's monthly allowance is nearly used up, so live Qloo requests are paused."
 QLOO_CALLS = "qloo_calls"  # ToolContext.state key: Qloo requests made so far in this run
 
 
@@ -49,6 +50,8 @@ class ToolContext:
     qloo_budget: int | None = None  # most Qloo requests one run may make; None means no cap
     reslot_budget: int | None = None  # most re-slots one run may make; None means no cap
     engine_budget: float | None = None  # most seconds of engine work one run may use; None means no cap
+    # Qloo requests to keep in the month: below it Qloo-backed tools are refused; None means no floor
+    qloo_floor: int | None = None
     reslots: int = 0
     engine_seconds: float = 0.0
 
@@ -76,8 +79,12 @@ class ToolContext:
         """Reserve one Qloo request before a Qloo-backed tool runs, or refuse it once the budget is used.
 
         Reserving up front keeps concurrent calls in one turn from all passing the check. A tool that
-        starts under the cap finishes; the cap stops the next one.
+        starts under the cap finishes; the cap stops the next one. Once the client has learned that the
+        requests left in Qloo's month are below the floor, every Qloo-backed tool is refused.
         """
+        remaining = self.qloo.month_remaining
+        if self.qloo_floor is not None and remaining is not None and remaining < self.qloo_floor:
+            raise ToolRefused(QLOO_PAUSED, "Qloo allowance paused")
         used = self.state.get(QLOO_CALLS, 0)
         if self.qloo_budget is not None and used >= self.qloo_budget:
             raise ToolRefused(QLOO_BUDGET_USED, "Qloo budget for this run is used up")

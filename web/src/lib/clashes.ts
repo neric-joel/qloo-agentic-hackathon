@@ -3,7 +3,7 @@
  * clashes, receipts per clash, the Qloo requests behind a clash, and display formatting.
  */
 
-import type { QlooRequestRecord } from "./events";
+import type { Provenance, QlooRequestRecord } from "./events";
 import type {
   Act,
   ClashLabel,
@@ -352,10 +352,15 @@ const REQUEST_GROUPS: readonly RequestGroup[] = [
 ];
 
 /**
- * Groups saved requests into the trace drawer's tool calls, by what they were used for. The order
- * of requests inside each group is kept.
+ * Groups requests into the trace drawer's tool calls, by what they were used for. The order of
+ * requests inside each group is kept. Saved requests are "recorded" (the default); a live pair
+ * check passes "qloo", so its calls carry the Qloo label.
  */
-export function traceToolCalls(records: readonly QlooRequestRecord[], idPrefix: string): ToolCallState[] {
+export function traceToolCalls(
+  records: readonly QlooRequestRecord[],
+  idPrefix: string,
+  provenance: Provenance = "recorded",
+): ToolCallState[] {
   const groups: { group: RequestGroup; requests: QlooRequestRecord[] }[] = REQUEST_GROUPS.map(
     (group) => ({ group, requests: [] }),
   );
@@ -370,7 +375,7 @@ export function traceToolCalls(records: readonly QlooRequestRecord[], idPrefix: 
     .map(({ group, requests }, index) => ({
       id: `${idPrefix}-${group.tool}`,
       tool: group.tool,
-      provenance: "recorded",
+      provenance,
       status: requests.every((r) => r.status >= 200 && r.status < 300) ? "done" : "error",
       summary: group.summary,
       requests,
@@ -380,7 +385,7 @@ export function traceToolCalls(records: readonly QlooRequestRecord[], idPrefix: 
     calls.push({
       id: `${idPrefix}-other`,
       tool: "other_requests",
-      provenance: "recorded",
+      provenance,
       status: "done",
       requests: other,
       seq: calls.length,

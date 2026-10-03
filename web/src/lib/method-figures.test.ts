@@ -14,14 +14,14 @@ import {
   numberWord,
 } from "./method-figures";
 
-const { backtest, coverage, index, moves, scale } = METHOD_FIGURES;
+const { backtest, coverage, index, liveCheck, moves, scale } = METHOD_FIGURES;
 
 /** The page as a reader (or a crawler) gets it: the static HTML with its tags removed. */
 function pageText(): string {
   const html = renderToStaticMarkup(createElement(MethodPage));
   return html
     .replace(/<[^>]+>/g, " ")
-    .replace(/&#x27;|&#39;|&rsquo;/g, "'")
+    .replace(/&#x27;|&#39;|&rsquo;|’/g, "'")
     .replace(/&amp;/g, "&")
     .replace(/&times;/g, "×")
     .replace(/\s+/g, " ")
@@ -107,6 +107,10 @@ describe("method figures", () => {
     expect(moves.measuredPoints).toBeLessThan(moves.barPoints);
     expect(scale).toEqual({ overlap: [0, 100], indexMultiplier: 100, intervalPct: 95 });
   });
+
+  it("pins the requests one live re-check sends", () => {
+    expect(liveCheck).toEqual({ requests: 3 });
+  });
 });
 
 describe("method formatters", () => {
@@ -169,6 +173,32 @@ describe("/method page", () => {
     const printed = pageText().match(/\d+(?:\.\d+)?/g) ?? [];
     expect(printed.length).toBeGreaterThan(30);
     expect(printed.filter((numeral) => !allowed.has(numeral))).toEqual([]);
+  });
+
+  it("states the genre comparison with its overlapping intervals, not as a flat finding", () => {
+    const text = pageText();
+    expect(text).toContain(
+      "What it does show: in this test taste overlap ranked the complained-about clashes above genre tags did (AUC 0.634 against 0.512), though the two intervals overlap widely.",
+    );
+    expect(text).toContain("It is nearly unrelated to popularity (correlation 0.08)");
+    expect(text).not.toContain("carries information a genre label does not");
+  });
+
+  it("tells the Hidden label's line apart from the hidden-clash count", () => {
+    const text = pageText();
+    const label = text.indexOf("The Hidden label on the timetable uses a stricter line than this count");
+    expect(label).toBeGreaterThan(text.indexOf("Hidden clashes are examples, not detections."));
+    expect(text).toContain("taste overlap in the day's top tenth, with no shared genre tag, where the count above uses the top quarter.");
+  });
+
+  it("describes the live re-check after the provenance labels, with no figure but its request count", () => {
+    const text = pageText();
+    const section = text.slice(text.indexOf("The live re-check"));
+    expect(text.indexOf("The live re-check")).toBeGreaterThan(text.indexOf("Where each number comes from"));
+    expect(section).toContain("asks Qloo for a fresh comparison, 3 requests in all,");
+    expect(section).toContain("It never replaces a number on the page: Qloo's answers can change over time");
+    expect(section).toContain("it pauses when this demo's monthly Qloo allowance runs low.");
+    expect(section.slice(0, section.indexOf("Back to the timetable")).match(/\d+/g)).toEqual(["3"]);
   });
 
   it("uses the word that denies prediction exactly once", () => {

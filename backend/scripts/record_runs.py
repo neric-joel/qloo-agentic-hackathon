@@ -188,6 +188,7 @@ def run_caps(settings: Settings, qloo_left: int) -> dict[str, Any]:
         "max_qloo_calls": max(0, min(settings.agent_max_qloo_calls_per_run, MAX_QLOO_PER_RUN, qloo_left)),
         "max_reslots": settings.agent_max_reslots_per_run,
         "max_engine_seconds": settings.agent_max_engine_seconds,
+        "qloo_floor": settings.qloo_quota_floor,
     }
 
 

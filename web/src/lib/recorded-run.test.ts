@@ -4,7 +4,10 @@ import { readClashReply } from "./agent-session";
 import {
   MAX_GAP_MS,
   MAX_REPLAY_MS,
-  MAX_TEXT_GAP_MS,
+  MAX_STEP_MS,
+  MIN_REPLAY_MS,
+  MIN_STEP_MS,
+  TEXT_STEP_MS,
   parseRecordings,
   replayFinalState,
   toReplayBeats,
@@ -209,9 +212,76 @@ describe("toReplayBeats", () => {
     expect(run.events[0].event).toMatchObject({ mode: "live" });
   });
 
-  it("paces from the saved times, with each gap capped", () => {
-    const beats = toReplayBeats(run);
-    expect(beats.map((beat) => beat.after)).toEqual([0, MAX_GAP_MS, 450, 50, 12, MAX_TEXT_GAP_MS, MAX_TEXT_GAP_MS, 20, 10]);
+  it("pins the pacing constants", () => {
+    expect({ TEXT_STEP_MS, MIN_STEP_MS, MAX_GAP_MS, MIN_REPLAY_MS, MAX_STEP_MS, MAX_REPLAY_MS }).toEqual({
+      TEXT_STEP_MS: 55,
+      MIN_STEP_MS: 650,
+      MAX_GAP_MS: 1_200,
+      MIN_REPLAY_MS: 6_000,
+      MAX_STEP_MS: 2_500,
+      MAX_REPLAY_MS: 14_000,
+    });
+  });
+
+  it("paces by event kind, with a step's saved gap clamped and text at a steady step", () => {
+    // Long enough (with 20 more pieces of text) that nothing is stretched.
+    const events = rawEvents();
+    const more = Array.from({ length: 20 }, (_, i) => ({ t: 4501 + i, event: { type: "text_delta", text: `w${i} ` } }));
+    const beats = toReplayBeats(only([rawRun({}, [...events.slice(0, 7), ...more, ...events.slice(7)])]));
+    expect(beats.map((beat) => beat.after)).toEqual([
+      0, // run_started
+      MAX_GAP_MS, // tool_call: saved 1,200
+      MIN_STEP_MS, // tool_result: saved 450
+      MIN_STEP_MS, // tool_call: saved 50
+      MIN_STEP_MS, // tool_result: saved 12
+      MAX_GAP_MS, // first text: saved 2,288
+      ...Array.from({ length: 21 }, () => TEXT_STEP_MS), // the rest of the burst
+      MIN_STEP_MS, // result
+      10, // run_finished: its saved gap
+    ]);
+    expect(beats.reduce((sum, beat) => sum + beat.after, 0)).toBeGreaterThanOrEqual(MIN_REPLAY_MS);
+  });
+
+  it("stretches a short run's steps to the minimum and keeps its events and ids as saved", () => {
+    // Shaped like the saved runs: one model pause, one tool call, then the answer as a burst of 23
+    // pieces of text arriving together. 28 events over 3.6 seconds as saved.
+    const start = { t: 0, event: { type: "run_started", run_id: "run_burst", mode: "live" } };
+    const [, call, result] = rawEvents();
+    const words = Array.from({ length: 23 }, (_, i) => ({ t: 3639 + i / 10, event: { type: "text_delta", text: `w${i} ` } }));
+    const end = rawEvents().slice(-2).map((item, i) => ({ ...item, t: 3642 + i / 10 }));
+    const burst = only([rawRun({}, [start, { ...call, t: 1612 }, { ...result, t: 1615 }, ...words, ...end])]);
+    expect(burst.events).toHaveLength(28);
+
+    const beats = toReplayBeats(burst);
+    const total = beats.reduce((sum, beat) => sum + beat.after, 0);
+    expect(total).toBeGreaterThanOrEqual(MIN_REPLAY_MS - 1e-6);
+    expect(total).toBeLessThanOrEqual(MAX_REPLAY_MS);
+    expect(total).toBeCloseTo(MIN_REPLAY_MS, 6);
+
+    // Same events in the same order, with the request id kept.
+    expect(beats.map((beat) => beat.event.type)).toEqual(burst.events.map(({ event }) => event.type));
+    const textOf = (event: { type: string; text?: string }) => (event.type === "text_delta" ? event.text : null);
+    expect(beats.map((beat) => textOf(beat.event))).toEqual(burst.events.map(({ event }) => textOf(event)));
+    const ids = selectRequests(replayFinalState(burst).toolCalls).map((item) => item.record.request_id);
+    expect(ids).toEqual([REQUEST_ID]);
+
+    // Every piece of text waits at least the text step; every step at least the minimum, at most the cap.
+    beats.forEach((beat) => {
+      if (beat.event.type === "text_delta") expect(beat.after).toBeGreaterThanOrEqual(TEXT_STEP_MS);
+      if (["tool_call", "tool_result", "result"].includes(beat.event.type)) {
+        expect(beat.after).toBeGreaterThanOrEqual(MIN_STEP_MS);
+        expect(beat.after).toBeLessThanOrEqual(MAX_STEP_MS);
+      }
+    });
+    // Only the steps are stretched: the text inside the burst keeps its steady step.
+    expect(beats.filter((beat) => beat.event.type === "text_delta").slice(1).every((beat) => beat.after === TEXT_STEP_MS)).toBe(true);
+  });
+
+  it("never stretches one step past the cap, even when the run cannot reach the minimum", () => {
+    const start = { t: 0, event: { type: "run_started", run_id: "run_tiny", mode: "live" } };
+    const end = rawEvents().slice(-2).map((item, i) => ({ ...item, t: 10 + i }));
+    const beats = toReplayBeats(only([rawRun({}, [start, { t: 5, event: { type: "text_delta", text: "Hi." } }, ...end])]));
+    expect(beats.map((beat) => beat.after)).toEqual([0, MAX_STEP_MS, MAX_STEP_MS, 1]);
   });
 
   it("plays a long run faster so the whole replay stays within the limit", () => {
@@ -222,6 +292,19 @@ describe("toReplayBeats", () => {
     const total = beats.reduce((sum, beat) => sum + beat.after, 0);
     expect(total).toBeLessThanOrEqual(MAX_REPLAY_MS + 1e-6);
     expect(total).toBeGreaterThan(MAX_REPLAY_MS - 1);
+    expect(beats.every((beat) => beat.after >= 0 && beat.after <= MAX_GAP_MS)).toBe(true);
+  });
+
+  it("ends within the limit when the saved gaps are long", () => {
+    const start = { t: 0, event: { type: "run_started", run_id: "run_slow", mode: "live" } };
+    const [, call, result] = rawEvents();
+    const steps = Array.from({ length: 12 }, (_, i) => [
+      { ...call, t: 20_000 * i + 10_000, event: { ...call.event, id: `call-${i}` } },
+      { ...result, t: 20_000 * i + 19_000, event: { ...result.event, id: `call-${i}` } },
+    ]).flat();
+    const end = rawEvents().slice(-4).map((item, i) => ({ ...item, t: 300_000 + 10_000 * i }));
+    const beats = toReplayBeats(only([rawRun({}, [start, ...steps, ...end])]));
+    expect(beats.reduce((sum, beat) => sum + beat.after, 0)).toBeLessThanOrEqual(MAX_REPLAY_MS + 1e-6);
     expect(beats.every((beat) => beat.after >= 0 && beat.after <= MAX_GAP_MS)).toBe(true);
   });
 

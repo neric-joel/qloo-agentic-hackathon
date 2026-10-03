@@ -336,4 +336,12 @@ describe("traceToolCalls", () => {
   it("returns no calls for no requests", () => {
     expect(traceToolCalls([], "x")).toEqual([]);
   });
+
+  it("labels the calls with the provenance it is given, recorded by default", () => {
+    const records = [record("/v2/insights", {}), record("/v2/analysis/compare", {}), record("/v2/other", {})];
+    expect(traceToolCalls(records, "x").map((call) => call.provenance)).toEqual(["recorded", "recorded", "recorded"]);
+    const live = traceToolCalls(records, "live", "qloo");
+    expect(live.map((call) => call.provenance)).toEqual(["qloo", "qloo", "qloo"]);
+    expect(live.map((call) => call.tool)).toEqual(["rank_audiences", "compare_audiences", "other_requests"]);
+  });
 });

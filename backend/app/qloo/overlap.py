@@ -181,14 +181,30 @@ async def _row(
             params["signal.location.query"] = city
         async with sem:
             response = await client.insights(params)
-        for entity in (response.get("results") or {}).get("entities") or []:
-            affinity = (entity.get("query") or {}).get("affinity")
-            if entity.get("entity_id") in chunk and isinstance(affinity, (int, float)):
-                scores[entity["entity_id"]] = float(affinity)
+        scores.update(row_scores(response, chunk))
     return scores
 
 
-def _percentiles(scores: dict[str, float]) -> dict[str, float]:
+def row_scores(response: dict[str, Any], candidate_ids: Sequence[str]) -> dict[str, float]:
+    """Each candidate's affinity in one Insights answer; entities outside the candidates are ignored."""
+    candidates = set(candidate_ids)
+    scores: dict[str, float] = {}
+    for entity in (response.get("results") or {}).get("entities") or []:
+        affinity = (entity.get("query") or {}).get("affinity")
+        if entity.get("entity_id") in candidates and isinstance(affinity, (int, float)):
+            scores[entity["entity_id"]] = float(affinity)
+    return scores
+
+
+def rank_position(scores: dict[str, float], entity_id: str) -> tuple[int, int] | None:
+    """``(1 + how many scored strictly higher, how many were scored)``, or None when the id was not scored."""
+    if entity_id not in scores:
+        return None
+    mine = scores[entity_id]
+    return 1 + sum(1 for value in scores.values() if value > mine), len(scores)
+
+
+def percentiles(scores: dict[str, float]) -> dict[str, float]:
     """Rank-normalize to 0-1 (1 = closest audience). Ties share the average rank."""
     if not scores:
         return {}
@@ -207,6 +223,9 @@ def _percentiles(scores: dict[str, float]) -> dict[str, float]:
             out[ordered[k][0]] = rank
         i = j + 1
     return out
+
+
+_percentiles = percentiles
 
 
 async def build_overlap(
@@ -233,7 +252,7 @@ async def build_overlap(
     async def row_for(act: ResolvedAct) -> tuple[str, dict[str, float]]:
         candidates = [i for i in by_id if i != act.entity_id] + control_ids
         try:
-            return act.entity_id, _percentiles(await _row(client, act.entity_id, candidates, city, sem))
+            return act.entity_id, percentiles(await _row(client, act.entity_id, candidates, city, sem))
         except QlooError as exc:
             notes.append(f"Overlap row for {act.name} failed ({exc.status or 'network'}).")
             return act.entity_id, {}
@@ -283,6 +302,11 @@ async def shared_taste(client: QlooClient, a_id: str, b_id: str, *, take: int = 
     response = await client.compare(
         {"a.signal.interests.entities": [a_id], "b.signal.interests.entities": [b_id], "take": 50}
     )
+    return parse_shared_tags(response, take)
+
+
+def parse_shared_tags(response: dict[str, Any], take: int) -> list[SharedTag]:
+    """The genre, subgenre and theme tags in one comparison answer, highest score first."""
     shared = []
     for tag in (response.get("results") or {}).get("tags") or []:
         kind = tag.get("subtype") or tag.get("type") or ""

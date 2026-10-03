@@ -6,7 +6,9 @@ import {
   MAX_TURN_CHARS,
   budgetDelta,
   buildClashBody,
+  changeLabel,
   historyFrom,
+  humanizeProblem,
   inlineSegments,
   latestSession,
   readClashReply,
@@ -282,6 +284,69 @@ describe("budgetDelta", () => {
     expect(budgetDelta(114.26, 114.3)).toBe(0);
     expect(budgetDelta(null, 3)).toBeNull();
     expect(budgetDelta(3, null)).toBeNull();
+  });
+});
+
+describe("changeLabel", () => {
+  it("says the direction in a word, never with a sign", () => {
+    expect(changeLabel(-2.4)).toBe("2.4 lower");
+    expect(changeLabel(0.6)).toBe("0.6 higher");
+    expect(changeLabel(-19.2)).toBe("19.2 lower");
+    expect(changeLabel(0)).toBe("No change");
+    expect(changeLabel(-0)).toBe("No change");
+    expect(changeLabel(budgetDelta(116.71, 114.26) ?? 0)).toBe("2.4 lower");
+  });
+});
+
+describe("humanizeProblem", () => {
+  const festival = {
+    stages: [
+      { id: "main", name: "Main" },
+      { id: "big-top", name: "Big Top Stage" },
+      { id: "park", name: "The Park" },
+    ],
+    days: ["Sun"],
+  };
+
+  it("names the stage and day the way the page does", () => {
+    expect(
+      humanizeProblem(
+        "That change is not possible: 'Act One' and 'Act Two' overlap on stage 'main', day 0 (15:00-15:45 vs 15:30-16:15)",
+        festival,
+      ),
+    ).toBe("Act One and Act Two would overlap on the Main stage (Sunday, 15:00–15:45 vs 15:30–16:15)");
+    expect(
+      humanizeProblem("'Act One' and 'Act Two' overlap on stage 'big-top', day 0 (15:00-15:45 vs 15:30-16:15)", festival),
+    ).toBe("Act One and Act Two would overlap on the Big Top Stage (Sunday, 15:00–15:45 vs 15:30–16:15)");
+    expect(
+      humanizeProblem("'Act One' and 'Act Two' overlap on stage 'park', day 0 (15:00-15:45 vs 15:30-16:15)", festival),
+    ).toBe("Act One and Act Two would overlap on The Park stage (Sunday, 15:00–15:45 vs 15:30–16:15)");
+  });
+
+  it("reads names the engine quoted with double quotes or escapes", () => {
+    expect(
+      humanizeProblem(
+        String.raw`That change is not possible: "Act's One" and 'Act \'Two\'' overlap on stage 'main', day 0 (15:00-15:45 vs 15:30-16:15)`,
+        festival,
+      ),
+    ).toBe("Act's One and Act 'Two' would overlap on the Main stage (Sunday, 15:00–15:45 vs 15:30–16:15)");
+  });
+
+  it("falls back when the stage or the day is not listed", () => {
+    expect(
+      humanizeProblem(
+        "That change is not possible: 'Act One' and 'Act Two' overlap on stage 'nowhere', day 2 (15:00-15:45 vs 15:30-16:15)",
+        festival,
+      ),
+    ).toBe("Act One and Act Two would overlap on the same stage (Day 3, 15:00–15:45 vs 15:30–16:15)");
+  });
+
+  it("only drops the lead-in from any other text", () => {
+    expect(humanizeProblem("That change is not possible: Act One cannot end after 26:00.", festival)).toBe(
+      "Act One cannot end after 26:00.",
+    );
+    expect(humanizeProblem("Keep Act One and Act Two apart.", festival)).toBe("Keep Act One and Act Two apart.");
+    expect(humanizeProblem("", festival)).toBe("");
   });
 });
 

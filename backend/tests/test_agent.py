@@ -246,7 +246,7 @@ def test_health_reports_configuration():
     with TestClient(app) as client:
         body = client.get("/api/health").json()
     assert body["status"] == "ok"
-    assert set(body) == {"status", "qloo_key_configured", "llm_configured"}
+    assert set(body) == {"status", "qloo_key_configured", "llm_configured", "pair_check"}
 
 
 def test_backend_omits_effort_for_haiku_and_enables_fallback_for_sonnet():
@@ -262,3 +262,79 @@ def test_backend_omits_effort_for_haiku_and_enables_fallback_for_sonnet():
     assert isinstance(sonnet, AnthropicBackend) and isinstance(haiku, AnthropicBackend)
     assert (sonnet.model, sonnet.fallbacks, sonnet.max_tokens) == ("claude-sonnet-5-5", True, 2500)
     assert (haiku.model, haiku.fallbacks) == ("claude-haiku-4-5", False)
+
+
+# ------------------------------------------------------------------------------- monthly Qloo floor
+
+
+async def test_qloo_backed_tools_stop_below_the_monthly_floor_and_derived_tools_run():
+    from types import SimpleNamespace
+
+    from app.agent.qloo_tools import RESOLVE_ENTITIES
+    from app.agent.tools import QLOO_PAUSED, Tool, ToolOutput, run_tool_calls
+
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=SEARCH)
+
+    async def derived(args, ctx):
+        return ToolOutput(content="ok", summary="worked out")
+
+    registry = {
+        "resolve_entities": RESOLVE_ENTITIES,
+        "derived": Tool("derived", "", {}, derived, provenance="derived"),
+    }
+    blocks = [
+        SimpleNamespace(id="t1", name="resolve_entities", input={"names": ["x"], "entity_type": ENTITY}),
+        SimpleNamespace(id="t2", name="derived", input={}),
+    ]
+    events = []
+
+    async def emit(event):
+        events.append(event)
+
+    qloo = qloo_client(handler)
+    ctx = ToolContext(qloo=qloo, qloo_floor=1500)
+    qloo.month_remaining = 1499
+    sent = await run_tool_calls(blocks, registry, ctx, emit)
+    results = [e for e in events if e["type"] == "tool_result"]
+    assert [(r["tool"], r["ok"]) for r in results] == [("resolve_entities", False), ("derived", True)]
+    assert results[0]["summary"] == "Qloo allowance paused" and results[0]["requests"] == []
+    assert sent[0]["is_error"] and sent[0]["content"] == QLOO_PAUSED
+    assert (
+        QLOO_PAUSED == "Error: Qloo's monthly allowance is nearly used up, so live Qloo requests are paused."
+    )
+    assert seen == [] and ctx.state["qloo_calls"] == 0
+
+    for remaining in (1500, None):  # at the floor, or not yet known: the tool runs
+        qloo.month_remaining = remaining
+        events.clear()
+        await run_tool_calls(blocks[:1], registry, ctx, emit)
+        assert next(e for e in events if e["type"] == "tool_result")["ok"] is True
+    assert len(seen) == 1  # the second answer came from the client's cache
+    await qloo.aclose()
+
+
+ENTITY = "urn:entity:artist"
+
+
+def test_the_run_endpoint_applies_the_floor_from_the_settings(tmp_path):
+    from tests.test_clash_runs import run, setup
+
+    preset = setup(tmp_path, [])
+    a, b = (act["id"] for act in preset["festival"]["acts"][:2])
+    script = [[{"tool": "explain_clash", "input": {"act_a": a, "act_b": b}}], [{"text": "Done."}]]
+    low = qloo_client()
+    low.month_remaining = 1499  # the default floor is 1,500
+    app.dependency_overrides[get_backend] = lambda: ScriptedBackend(script)
+    app.dependency_overrides[get_qloo] = lambda: low
+    try:
+        with TestClient(app) as client:
+            events = run(client, {"preset_id": "day", "message": "Why do these two clash?"})
+    finally:
+        app.dependency_overrides.clear()
+    result = next(e for e in events if e["type"] == "tool_result")
+    assert result["ok"] is False and result["summary"] == "Qloo allowance paused"
+    assert events[-1]["qloo_calls"] == 0 and "result" in [e["type"] for e in events]

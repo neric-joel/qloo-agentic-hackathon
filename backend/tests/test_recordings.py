@@ -451,6 +451,7 @@ def test_run_caps_pass_every_cap_execute_run_takes_from_the_settings():
         agent_max_qloo_calls_per_run=12,
         agent_max_reslots_per_run=1,
         agent_max_engine_seconds=7.5,
+        qloo_quota_floor=1500,
     )
     caps = record_runs.run_caps(settings, qloo_left=10)
     takes = {
@@ -463,6 +464,7 @@ def test_run_caps_pass_every_cap_execute_run_takes_from_the_settings():
         "max_qloo_calls": record_runs.MAX_QLOO_PER_RUN,
         "max_reslots": 1,
         "max_engine_seconds": 7.5,
+        "qloo_floor": 1500,
     }
     assert record_runs.run_caps(settings, qloo_left=2)["max_qloo_calls"] == 2
     tighter = settings.model_copy(update={"agent_max_qloo_calls_per_run": 1})

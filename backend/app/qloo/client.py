@@ -145,6 +145,9 @@ def request_key(path: str, params: Mapping[str, str]) -> str:
 class QlooClient:
     """Thin async wrapper around the Qloo REST API."""
 
+    # Requests left in this key's month, from the last response that said (None until one does)
+    month_remaining: int | None = None
+
     def __init__(
         self,
         api_key: str | None,
@@ -270,6 +273,8 @@ class QlooClient:
                 if attempt >= self.max_retries:
                     raise QlooError(f"Qloo request to {path} failed: {exc}") from exc
             else:
+                if (remaining := _month_remaining(response)) is not None:
+                    self.month_remaining = remaining
                 if response.status_code < 400:
                     return (
                         response.json(),
@@ -372,6 +377,12 @@ def _retry_after_seconds(response: httpx.Response) -> float | None:
         return max(0.0, float(value)) if value is not None else None
     except ValueError:
         return None
+
+
+def _month_remaining(response: httpx.Response) -> int | None:
+    """Qloo's ``X-Month-RateLimit-Remaining`` header as a whole number, or None when absent or malformed."""
+    value = (response.headers.get("x-month-ratelimit-remaining") or "").strip()
+    return int(value) if value.isascii() and value.isdigit() else None
 
 
 def _safe_json(response: httpx.Response) -> Any:

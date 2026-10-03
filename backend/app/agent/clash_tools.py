@@ -252,6 +252,20 @@ EXPLAIN_CLASH = Tool(
 # ----------------------------------------------------------------------------------------- what-if
 
 
+def index_points(report: ScoreReport, act_id: str) -> list[tuple[str, float]]:
+    """Each of the act's clashes as the partner's name and the Clash Budget Index points the clash adds (one
+    decimal), largest first: comparable before and after a move."""
+    points = [
+        (
+            c.b.name if c.a.act_id == act_id else c.a.name,
+            round(c.regret_share * report.metrics.clash_budget_index, 1),
+        )
+        for c in report.clashes
+        if act_id in (c.a.act_id, c.b.act_id)
+    ]
+    return sorted(points, key=lambda item: item[1], reverse=True)
+
+
 async def try_move(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
     festival, matrix, config = _state(ctx)
     act_id = _act_id(festival, args.get("act"))
@@ -303,22 +317,12 @@ async def try_move(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
         "clashes_after": involving(after),
     }
 
-    def index_points(report: ScoreReport) -> dict[str, float]:
-        """Each of the act's clashes as the index points it adds: comparable before and after the move."""
-        return {
-            (c.b.name if c.a.act_id == act_id else c.a.name): round(
-                c.regret_share * report.metrics.clash_budget_index, 1
-            )
-            for c in report.clashes
-            if act_id in (c.a.act_id, c.b.act_id)
-        }
-
     # What the model reads: index units only, never the engine's raw 0-1 clash costs.
     view = {k: v for k, v in data.items() if k not in ("clashes_before", "clashes_after")} | {
         "clash_budget_before": _budget(before.metrics.clash_budget_index),
         "clash_budget_after": _budget(after.metrics.clash_budget_index),
-        "clash_index_points_before": index_points(before),
-        "clash_index_points_after": index_points(after),
+        "clash_index_points_before": dict(index_points(before, act_id)),
+        "clash_index_points_after": dict(index_points(after, act_id)),
     }
     verdict = (
         "breaks a rule" if new_problems else f"{view['clash_budget_before']} -> {view['clash_budget_after']}"
@@ -367,21 +371,39 @@ async def find_moves(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
     return await ctx.engine(_find_moves, festival, matrix, config, act_id, limit)
 
 
-def _find_moves(
-    festival: Festival, matrix: OverlapMatrix, config: ScoringConfig, act_id: str, limit: int
-) -> ToolOutput:
+MAX_PARTNERS = 3  # clashes listed per place in the web's what-if
+
+
+def _partners(report: ScoreReport, act_id: str) -> list[dict[str, Any]]:
+    return [{"with": name, "points": points} for name, points in index_points(report, act_id)[:MAX_PARTNERS]]
+
+
+def compute_move_options(
+    festival: Festival,
+    matrix: OverlapMatrix,
+    config: ScoringConfig,
+    act_id: str,
+    limit: int,
+    *,
+    partners: bool = False,
+) -> dict[str, Any]:
+    """Every legal place one set could go, priced with the Clash Budget after the move, best first.
+
+    Checks every start on a 5-minute grid in the free time the set may use; a place that breaks a rule the
+    timetable did not already break is left out. This is ``find_moves``'s data. With ``partners`` (the web's
+    what-if) it also gives the act id, the set's clashes now and, per place, the stage id, end, day and the
+    clashes after the move, each as Clash Budget Index points (at most 3 partners, largest first).
+    """
     name = festival.act_by_id()[act_id].name
     layout = Layout.from_festival(festival)
     i = layout.rules.act_ids.index(act_id)
     old = {s.act_id: s for s in festival.timetable}[act_id]
     if layout.frozen[i]:
         why = "locked in place" if old.locked else "tied up in a rule the published timetable already breaks"
-        data = {"act": name, "from": _slot_text(festival, old), "movable": False, "why": why, "options": []}
-        return ToolOutput(
-            content=_compact(data),
-            summary=f"{name} cannot move: {why}",
-            data={"kind": "move_options", **data},
-        )
+        frozen: dict[str, Any] = {"act": name, "from": _slot_text(festival, old)}
+        if partners:
+            frozen = {"act": name, "act_id": act_id, "from": frozen["from"]}
+        return frozen | {"movable": False, "why": why, "options": []}
 
     before = score_festival(festival, matrix, config)
     seen: set[tuple[int, int, int]] = set()
@@ -409,33 +431,58 @@ def _find_moves(
         after = score_festival(trial, matrix, config)
         if {v.message for v in after.violations} - {v.message for v in before.violations}:
             continue
-        options.append(
-            {
-                "move": f"{name}: {_slot_text(festival, old)} -> {_slot_text(trial, moved)}",
-                "stage": festival.stage_by_id()[moved.stage_id].name,
-                "start": format_minutes(start),
-                "clash_budget_after": after.metrics.clash_budget_index,
+        option: dict[str, Any] = {
+            "move": f"{name}: {_slot_text(festival, old)} -> {_slot_text(trial, moved)}",
+            "stage": festival.stage_by_id()[moved.stage_id].name,
+            "start": format_minutes(start),
+            "clash_budget_after": after.metrics.clash_budget_index,
+        }
+        if partners:
+            option = {
+                "move": option["move"],
+                "stage": option["stage"],
+                "stage_id": moved.stage_id,
+                "start": option["start"],
+                "end": format_minutes(moved.end),
+                "day": day,
+                "clash_budget_after": option["clash_budget_after"],
+                "clashes_after": _partners(after, act_id),
             }
-        )
+        options.append(option)
     options.sort(key=lambda o: o["clash_budget_after"])
-    data = {
-        "act": name,
-        "from": _slot_text(festival, old),
-        "movable": True,
+    found: dict[str, Any] = {"act": name, "from": _slot_text(festival, old), "movable": True}
+    if partners:
+        found = {"act": name, "act_id": act_id, "from": found["from"], "movable": True, "why": None}
+    found |= {
         "clash_budget_before": before.metrics.clash_budget_index,
         "legal_places": len(options),
         "searched": f"every start on a {MOVE_GRID_MINUTES}-minute grid in the free time it may use",
-        "options": options[:limit],
     }
+    if partners:
+        found["clashes_now"] = _partners(before, act_id)
+    return found | {"options": options[:limit]}
+
+
+def _find_moves(
+    festival: Festival, matrix: OverlapMatrix, config: ScoringConfig, act_id: str, limit: int
+) -> ToolOutput:
+    data = compute_move_options(festival, matrix, config, act_id, limit)
+    name = data["act"]
+    if not data["movable"]:
+        return ToolOutput(
+            content=_compact(data),
+            summary=f"{name} cannot move: {data['why']}",
+            data={"kind": "move_options", **data},
+        )
     view = {
         **data,
         "clash_budget_before": _budget(data["clash_budget_before"]),
         "options": [{**o, "clash_budget_after": _budget(o["clash_budget_after"])} for o in data["options"]],
     }
     summary = (
-        f"{name}: {len(options)} legal places, best {view['clash_budget_before']} -> "
+        f"{name}: {data['legal_places']} legal places, best {view['clash_budget_before']} -> "
         f"{view['options'][0]['clash_budget_after']}"
-        if options
+        if data["options"]
         else f"{name}: no legal place to move"
     )
     return ToolOutput(content=_compact(view), summary=summary, data={"kind": "move_options", **data})
@@ -575,6 +622,13 @@ async def reslot(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
         }
     view = {key: _budget(value) if key.startswith("clash_budget") else value for key, value in data.items()}
     moved = len(data.get("moves", []))
+    if moved:
+        # What the model reads describes the plan it was handed, not the optimizer's best unconstrained option
+        sets = "1 set" if moved == 1 else f"{moved} sets"
+        view["message"] = (
+            f"This plan moves {sets} and takes the Clash Budget from {view['clash_budget_before']:.1f} "
+            f"to {view['clash_budget_after']:.1f}."
+        )
     return ToolOutput(
         content=_compact(view),
         summary=f"Re-slot: {moved} moves"

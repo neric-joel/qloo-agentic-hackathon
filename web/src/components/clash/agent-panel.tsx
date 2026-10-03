@@ -2,9 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import {
-  ArrowDown,
-  ArrowRight,
-  ArrowUp,
   Check,
   CornerDownLeft,
   History,
@@ -21,6 +18,7 @@ import {
   MAX_MESSAGE_CHARS,
   budgetDelta,
   buildClashBody,
+  humanizeProblem,
   latestSession,
   readClashReply,
   suggestedPrompts,
@@ -35,11 +33,12 @@ import {
 import { panelMode, type AgentStatus } from "@/lib/agent-status";
 import { formatOverlap } from "@/lib/clashes";
 import { formatLatency, humanizeIdentifier, pluralize } from "@/lib/format";
-import type { Preset } from "@/lib/preset";
+import type { Festival, Preset } from "@/lib/preset";
 import type { RecordedRun } from "@/lib/recorded-run";
 import type { ToolCallState } from "@/lib/run-state";
 import { cn } from "@/lib/utils";
 
+import { BudgetMove, scaleRange, signedDelta, type ScaleRange } from "./budget-move";
 import { RecordedNotice, RecordedRuns } from "./recorded-runs";
 import { AgentSkeleton } from "./skeletons";
 import { useRecordings } from "./use-recordings";
@@ -50,7 +49,7 @@ const TOOL_LABELS: Record<string, string> = {
   explain_clash: "Explained a clash",
   find_moves: "Found legal places",
   try_move: "Tested a move",
-  add_constraint: "Recorded a rule",
+  add_constraint: "Added a rule",
   reslot: "Suggested moves",
 };
 
@@ -78,14 +77,6 @@ const CAPABILITIES: { tool: string; title: string; text: string }[] = [
   },
   { tool: "reslot", title: "Suggest moves", text: "Suggest moves when you ask, graded by the same measure." },
 ];
-
-/** The range random re-orderings of this day score in (10th to 90th percentile), for scale. */
-type ScaleRange = { low: number; high: number } | null;
-
-/** A Clash Budget change, as the cards print it: "−2.4", "+0.6". */
-function signedDelta(delta: number): string {
-  return `${delta > 0 ? "+" : delta < 0 ? "−" : "±"}${Math.abs(delta).toFixed(1)}`;
-}
 
 function toolLabel(tool: string): string {
   return TOOL_LABELS[tool] ?? humanizeIdentifier(tool);
@@ -170,66 +161,6 @@ function ToolTrail({ calls }: { calls: readonly ToolCallState[] }) {
   );
 }
 
-function BudgetMove({
-  before,
-  after,
-  range,
-}: {
-  before: number | null;
-  after: number | null;
-  range: ScaleRange;
-}) {
-  const delta = budgetDelta(before, after);
-  if (before === null || after === null || delta === null) return null;
-  const better = delta < 0;
-  const Icon = delta === 0 ? ArrowRight : better ? ArrowDown : ArrowUp;
-  const scale = Math.max(before, after, 100) * 1.1;
-  const rows = [
-    { label: "Now", value: before, tone: "bg-foreground/35" },
-    { label: "After", value: after, tone: better ? "bg-success" : delta > 0 ? "bg-primary" : "bg-foreground/35" },
-  ];
-  return (
-    <div className="mt-3">
-      <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="type-numeral text-3xl leading-none">
-          {before.toFixed(1)}
-          <ArrowRight aria-label="to" className="mx-1.5 inline size-5 align-middle text-muted-foreground" />
-          {after.toFixed(1)}
-        </span>
-        <span
-          className={cn(
-            "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold",
-            better ? "border-success text-success" : delta > 0 ? "border-primary text-primary" : "border-border-strong",
-          )}
-        >
-          <Icon aria-hidden="true" className="size-3" />
-          {delta === 0 ? "No change" : `${signedDelta(delta)} ${better ? "lower" : "higher"}`}
-        </span>
-        <span className="text-xs text-muted-foreground">Clash Budget Index · lower is better</span>
-      </p>
-      <div className="mt-2.5 space-y-1.5" aria-hidden="true">
-        {rows.map((row) => (
-          <div key={row.label} className="grid grid-cols-[3rem_minmax(0,1fr)] items-center gap-2 text-xs">
-            <span className="text-muted-foreground">{row.label}</span>
-            <span className="relative block h-2 overflow-hidden rounded-full bg-muted">
-              <span
-                className={cn("absolute inset-y-0 left-0 rounded-full transition-[width] duration-700", row.tone)}
-                style={{ width: `${Math.min(100, (row.value / scale) * 100)}%` }}
-              />
-            </span>
-          </div>
-        ))}
-      </div>
-      {range ? (
-        <p className="mt-2 text-xs text-muted-foreground">
-          For scale, random re-orderings of this day score {Math.round(range.low)} to{" "}
-          {Math.round(range.high)}.
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
 function WhatIfCard({ whatIf, range }: { whatIf: WhatIf; range: ScaleRange }) {
   return (
     <div className="rounded-lg border border-border-strong bg-card p-4">
@@ -257,8 +188,11 @@ function WhatIfCard({ whatIf, range }: { whatIf: WhatIf; range: ScaleRange }) {
   );
 }
 
-/** Moves the agent tested that break a rule, in one card rather than one each. */
-function RuledOutCard({ whatIfs }: { whatIfs: readonly WhatIf[] }) {
+/**
+ * Moves the agent tested that break a rule, in one card rather than one each. The engine's reason
+ * is put in plain words with the stage and day named as the page names them (`festival`).
+ */
+function RuledOutCard({ whatIfs, festival }: { whatIfs: readonly WhatIf[]; festival: Festival }) {
   return (
     <div className="rounded-lg border border-dashed border-border-strong p-4">
       <div className="flex items-start justify-between gap-3">
@@ -271,7 +205,9 @@ function RuledOutCard({ whatIfs }: { whatIfs: readonly WhatIf[] }) {
         {whatIfs.map((whatIf, i) => (
           <li key={i}>
             <span className="font-semibold">{whatIf.move.replace(/ -> /g, " → ")}</span>
-            {whatIf.problems[0] ? <span className="text-muted-foreground"> · {whatIf.problems[0]}</span> : null}
+            {whatIf.problems[0] ? (
+              <span className="text-muted-foreground"> · {humanizeProblem(whatIf.problems[0], festival)}</span>
+            ) : null}
           </li>
         ))}
       </ul>
@@ -414,6 +350,7 @@ function ExchangeView({
   exchange,
   latest,
   range,
+  festival,
   onRetry,
   onSkip,
   onWatchRecorded,
@@ -421,6 +358,8 @@ function ExchangeView({
   exchange: PanelExchange;
   latest: boolean;
   range: ScaleRange;
+  /** Names the stages and days in the engine's reasons for a ruled-out move. */
+  festival: Festival;
   onRetry: () => void;
   /** Finishes a replay at once. */
   onSkip: () => void;
@@ -488,7 +427,7 @@ function ExchangeView({
                 <WhatIfCard key={`w${i}`} whatIf={whatIf} range={range} />
               ))}
             {reply.whatIfs.some((whatIf) => !whatIf.allowed) ? (
-              <RuledOutCard whatIfs={reply.whatIfs.filter((whatIf) => !whatIf.allowed)} />
+              <RuledOutCard whatIfs={reply.whatIfs.filter((whatIf) => !whatIf.allowed)} festival={festival} />
             ) : null}
             {reply.reslots.map((reslot, i) => (
               <ReslotCard key={`r${i}`} reslot={reslot} range={range} />
@@ -576,7 +515,7 @@ function AgentHeading({ isMock }: { isMock: boolean }) {
           Ask the agent {isMock ? <MockBadge /> : null}
         </p>
         <h2 id="agent-heading" className="type-headline mt-2">
-          What if you moved a set?
+          Or describe the change in plain words
         </h2>
       </div>
       <p className="text-[0.9375rem] leading-relaxed">
@@ -639,12 +578,7 @@ export function AgentPanel({
 
   const runs = recordings.runs;
   const mode = panelMode(agentStatus, runs.length > 0, recordings.status === "loading");
-  const range = useMemo<ScaleRange>(() => {
-    const baseline = preset.report.baseline;
-    return baseline && baseline.p10_index !== null && baseline.p90_index !== null
-      ? { low: baseline.p10_index, high: baseline.p90_index }
-      : null;
-  }, [preset]);
+  const range = useMemo<ScaleRange>(() => scaleRange(preset.report.baseline), [preset]);
 
   const all = useMemo<PanelExchange[]>(
     () =>
@@ -749,6 +683,7 @@ export function AgentPanel({
             exchange={exchange}
             latest={index === all.length - 1}
             range={range}
+            festival={preset.festival}
             onRetry={run.retry}
             onSkip={skip}
             onWatchRecorded={runs.length > 0 ? () => play(runs[0]) : undefined}

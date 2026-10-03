@@ -3,7 +3,7 @@ import { CircleAlert, CircleCheck, Clock, History, Radio, Zap } from "lucide-rea
 import { cn } from "@/lib/utils";
 
 import type { QlooRequestRecord } from "@/lib/events";
-import { describeStatus, formatLatency, isSuccessStatus } from "@/lib/format";
+import { describeStatus, formatLatency, isSuccessStatus, summarizeParam } from "@/lib/format";
 import type { TracedRequest } from "@/lib/run-state";
 
 /** Base look of the small status pills in the trace. Each also carries an icon and a text label. */
@@ -86,6 +86,28 @@ function SourcePill({ record }: { record: QlooRequestRecord }) {
   );
 }
 
+/**
+ * A parameter value. A long comma list (the candidate acts of an audience ranking run to dozens of
+ * ids) prints its first few items and a count; "Show all" holds the value exactly as sent.
+ */
+function ParamValue({ value }: { value: string }) {
+  const { shown, hidden, full } = summarizeParam(value);
+  if (hidden === 0) return <>{value}</>;
+  const total = full.split(",").filter((item) => item.trim()).length;
+  return (
+    <>
+      {shown}
+      <span className="font-sans whitespace-nowrap text-muted-foreground"> +{hidden} more</span>
+      <details className="mt-1">
+        <summary className="w-fit cursor-pointer rounded-sm font-sans font-semibold text-foreground select-none">
+          Show all {total}
+        </summary>
+        <p className="mt-1 break-all">{full}</p>
+      </details>
+    </>
+  );
+}
+
 function ParamsTable({ item }: { item: TracedRequest }) {
   const entries = Object.entries(item.record.params);
   if (entries.length === 0) {
@@ -105,7 +127,9 @@ function ParamsTable({ item }: { item: TracedRequest }) {
             >
               {key}
             </th>
-            <td className="py-1.5 align-top font-mono break-all">{value}</td>
+            <td className="py-1.5 align-top font-mono break-all">
+              <ParamValue value={value} />
+            </td>
           </tr>
         ))}
       </tbody>
@@ -114,9 +138,9 @@ function ParamsTable({ item }: { item: TracedRequest }) {
 }
 
 function requestIdNote(record: QlooRequestRecord): string {
-  if (record.recorded) return "replayed from a saved response";
-  if (record.cached) return "served from cache";
-  return "not provided";
+  if (record.recorded) return "not saved with this response";
+  if (record.cached) return "none (served from cache)";
+  return "none (not provided)";
 }
 
 /** One Qloo request: method, path, status, latency, source, parameters and request id. */
@@ -146,7 +170,7 @@ export function RequestItem({ item }: { item: TracedRequest }) {
         {record.request_id ? (
           <code className="font-mono break-all text-foreground">{record.request_id}</code>
         ) : (
-          <span>none ({requestIdNote(record)})</span>
+          <span>{requestIdNote(record)}</span>
         )}
       </p>
     </li>

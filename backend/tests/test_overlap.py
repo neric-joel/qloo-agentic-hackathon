@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 
 from app.qloo.client import QlooClient
@@ -6,8 +8,13 @@ from app.qloo.overlap import (
     _billing_parts,
     _normalize,
     _percentiles,
+    _row,
     build_overlap,
+    parse_shared_tags,
+    percentiles,
+    rank_position,
     resolve_acts,
+    row_scores,
     shared_taste,
 )
 
@@ -192,3 +199,62 @@ async def test_shared_taste_keeps_meaningful_tags_in_score_order():
         ("Indie Rock", "urn:tag:genre:music"),
     ]
     await client.aclose()
+
+
+# ----------------------------------------------------------------- pieces shared with the live pair check
+
+
+def test_percentiles_keeps_its_old_name():
+    assert _percentiles is percentiles
+
+
+async def test_row_scores_is_what_a_row_keeps_from_one_answer():
+    answer = {
+        "results": {
+            "entities": [
+                {"entity_id": "b", "query": {"affinity": 0.7}},
+                {"entity_id": "c", "query": {"affinity": 1}},
+                {"entity_id": "x", "query": {"affinity": 0.9}},  # not a candidate
+                {"entity_id": "d", "query": {"affinity": "high"}},  # not a number
+                {"entity_id": "e", "query": {}},
+                {"entity_id": "f"},
+            ]
+        }
+    }
+    candidates = ["b", "c", "d", "e", "f"]
+    assert row_scores(answer, candidates) == {"b": 0.7, "c": 1.0}
+    assert row_scores({}, candidates) == {} == row_scores({"results": {}}, candidates)
+
+    client = QlooClient(
+        "k",
+        backoff=0,
+        max_rps=None,
+        transport=httpx.MockTransport(lambda r: httpx.Response(200, json=answer)),
+    )
+    assert await _row(client, "a", candidates, None, asyncio.Semaphore(1)) == row_scores(answer, candidates)
+    await client.aclose()
+
+
+def test_parse_shared_tags_matches_shared_taste_and_takes_the_first_n():
+    tags = [
+        {"name": "Region", "tag_id": "r", "subtype": "urn:tag:region:qloo", "query": {"score": 0.99}},
+        {"name": "Folk", "tag_id": "g", "subtype": "urn:tag:genre:music", "query": {"score": 0.61}},
+        {"name": "Longing", "tag_id": "t", "subtype": "urn:tag:theme:qloo", "query": {"score": 0.8}},
+        {"name": "Indie", "tag_id": "s", "type": "urn:tag:subgenre", "query": {"score": 0.7}},
+        {"name": "", "tag_id": "n", "subtype": "urn:tag:genre:music", "query": {"score": 0.9}},
+    ]
+    parsed = parse_shared_tags({"results": {"tags": tags}}, 8)
+    assert [(t.name, t.kind, t.score) for t in parsed] == [
+        ("Longing", "urn:tag:theme:qloo", 0.8),
+        ("Indie", "urn:tag:subgenre", 0.7),
+        ("Folk", "urn:tag:genre:music", 0.61),
+    ]
+    assert [t.name for t in parse_shared_tags({"results": {"tags": tags}}, 1)] == ["Longing"]
+    assert parse_shared_tags({}, 8) == []
+
+
+def test_rank_position_counts_only_strictly_higher_scores():
+    scores = {"a": 0.9, "b": 0.5, "c": 0.5, "d": 0.1}
+    assert [rank_position(scores, key) for key in "abcd"] == [(1, 4), (2, 4), (2, 4), (4, 4)]
+    assert rank_position(scores, "missing") is None
+    assert rank_position({}, "a") is None

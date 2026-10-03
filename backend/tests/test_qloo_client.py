@@ -249,6 +249,40 @@ async def test_records_every_request_made_in_context():
     await client.aclose()
 
 
+async def test_reads_the_months_remaining_requests_on_success_and_on_error():
+    remaining = iter(["4321", "4320"])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        status = 500 if request.url.params["query"] == "down" else 200
+        return httpx.Response(status, json={}, headers={"X-Month-RateLimit-Remaining": next(remaining)})
+
+    client = make_client(handler, max_retries=0)
+    assert client.month_remaining is None  # nothing learned before the first response
+    await client.get("/search", {"query": "x"})
+    assert client.month_remaining == 4321
+    with pytest.raises(QlooError):
+        await client.get("/search", {"query": "down"})
+    assert client.month_remaining == 4320
+    assert make_client(handler).month_remaining is None  # each client learns its own
+    await client.aclose()
+
+
+@pytest.mark.parametrize("value", ["-1", "12.5", "1e3", "lots", "", " ", "１２".encode(), None])
+async def test_a_malformed_remaining_header_is_ignored(value):
+    sent = iter(["900", value])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        header = next(sent)
+        headers = {} if header is None else {"x-month-ratelimit-remaining": header}
+        return httpx.Response(200, json={}, headers=headers)
+
+    client = make_client(handler)
+    await client.get("/search", {"query": "first"})
+    await client.get("/search", {"query": "second"})
+    assert client.month_remaining == 900
+    await client.aclose()
+
+
 async def test_insights_requires_filter_type():
     client = make_client(lambda request: httpx.Response(200, json={}))
     with pytest.raises(ValueError):

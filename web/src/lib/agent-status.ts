@@ -18,6 +18,15 @@ export function parseHealth(json: unknown): AgentStatus {
 }
 
 /**
+ * Whether this server answers live pair checks (`GET /api/pair`). True only for `pair_check: true`
+ * in the health answer; a missing field, any other value or no answer at all means off, so the clash
+ * drawer never offers a check the server would refuse. Reading the health check calls nothing else.
+ */
+export function pairCheckEnabled(json: unknown): boolean {
+  return isRecord(json) && json.pair_check === true;
+}
+
+/**
  * What the agent panel shows:
  * - "checking": a placeholder while the health check is in flight (no question box yet);
  * - "live": the question box, for "on" and for "unknown" (a failed check must not hide the agent);

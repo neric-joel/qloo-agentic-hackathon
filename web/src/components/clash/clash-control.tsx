@@ -37,6 +37,7 @@ import { BoardSkeleton, ScoreSkeleton } from "./skeletons";
 import { TimetableGrid } from "./timetable-grid";
 import { TimetableLegend } from "./timetable-legend";
 import { TimetableList } from "./timetable-list";
+import { TRY_A_MOVE_ID, TryAMove } from "./try-a-move";
 import { TwinCards } from "./twin-cards";
 import { useAgentStatus } from "./use-agent-status";
 import { usePresets } from "./use-presets";
@@ -106,8 +107,9 @@ export function ClashControlFallback({ intro }: { intro: ReactNode }) {
 
 /**
  * The landing screen: loads the preset festival days, lets the visitor pick one, and shows its
- * Clash Budget Index and coverage, the priced timetable with the costliest clashes, the agent (live
- * or recorded runs), the hidden-clash examples and the twin card.
+ * Clash Budget Index and coverage, the priced timetable with the costliest clashes, "Try a move"
+ * (every legal place for a set, priced, with no language model), the agent (live or recorded runs),
+ * the hidden-clash examples and the twin card.
  */
 export function ClashControl({ intro }: { intro: ReactNode }) {
   const pathname = usePathname();
@@ -305,6 +307,10 @@ function PresetView({
             See the hidden clashes
             <ArrowDown aria-hidden="true" className="size-4" />
           </a>
+          <a href={`#${TRY_A_MOVE_ID}`} className={HERO_LINK}>
+            Try a move yourself
+            <ArrowDown aria-hidden="true" className="size-4" />
+          </a>
           {agentStatus === "on" || agentStatus === "unknown" ? (
             <a href="#agent" className={HERO_LINK}>
               Ask the agent what happens if a set moves
@@ -407,6 +413,8 @@ function PresetView({
           </div>
         </div>
       </BoardFrame>
+
+      <TryAMove preset={preset} day={day} ranked={ranked} isLocked={isLocked} />
 
       <AgentPanel preset={preset} day={day} agentStatus={agentStatus} />
 

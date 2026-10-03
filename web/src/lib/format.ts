@@ -42,6 +42,39 @@ export function formatCaptured(value: string | Date | undefined): string | null 
   return `${date.getUTCFullYear()}-${month}-${day} UTC`;
 }
 
+/**
+ * The time of day in UTC as "14:02:11", so the server and every browser print the same time. Null
+ * when the value is missing or not a date.
+ */
+export function formatUtcTime(value: string | Date | undefined): string | null {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return [date.getUTCHours(), date.getUTCMinutes(), date.getUTCSeconds()]
+    .map((part) => String(part).padStart(2, "0"))
+    .join(":");
+}
+
+/** How many items of a comma list a trace row prints before "+N more". */
+export const PARAM_LIST_LIMIT = 3;
+
+/**
+ * A request parameter for display. A comma list longer than `max` items is cut to its first `max`
+ * items ("a, b, c") and a count of the rest; anything else is shown as it is. `full` is always the
+ * value exactly as sent.
+ */
+export function summarizeParam(
+  value: string,
+  max = PARAM_LIST_LIMIT,
+): { shown: string; hidden: number; full: string } {
+  const items = value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (items.length <= max) return { shown: value, hidden: 0, full: value };
+  return { shown: items.slice(0, max).join(", "), hidden: items.length - max, full: value };
+}
+
 export function pluralize(count: number, singular: string, plural = `${singular}s`): string {
   return `${formatInteger(count)} ${count === 1 ? singular : plural}`;
 }

@@ -74,6 +74,8 @@ export type TraceDrawerProps = {
   live?: boolean;
   triggerVariant?: "default" | "ink" | "outline" | "ghost";
   triggerClassName?: string;
+  /** The trigger's text. Defaults to "How Qloo was used". */
+  triggerLabel?: string;
   /** Replaces the opening paragraph (which describes a live run). */
   description?: ReactNode;
   /** Replaces the run id line at the bottom. */
@@ -96,6 +98,7 @@ export function TraceDrawer({
   live = false,
   triggerVariant = "outline",
   triggerClassName,
+  triggerLabel = "How Qloo was used",
   description,
   footnote,
   open,
@@ -107,10 +110,14 @@ export function TraceDrawer({
   const total = records.length;
   const cachedCount = records.filter((record) => record.cached).length;
   const failedCount = records.filter((record) => !isSuccessStatus(record.status)).length;
-  const medianLive = latencyParts(
-    median(records.filter((record) => !record.cached && !record.recorded).map((r) => r.latency_ms)) ??
-      Number.NaN,
-  );
+  const liveLatencies = records
+    .filter((record) => !record.cached && !record.recorded)
+    .map((record) => record.latency_ms);
+  const recordedCount = records.filter((record) => record.recorded).length;
+  // A median only means something for requests that reached Qloo just now. A saved trace has none,
+  // so it counts its recorded requests instead of printing an empty median.
+  const hasLive = liveLatencies.length > 0;
+  const medianLive = hasLive ? latencyParts(median(liveLatencies) ?? Number.NaN) : null;
 
   // Requests are numbered across the whole run, so each tool call takes the next slice.
   const groups = useMemo(() => {
@@ -146,7 +153,7 @@ export function TraceDrawer({
         <Button variant={triggerVariant} className={triggerClassName}>
           <Waypoints aria-hidden="true" />
           <span>
-            How Qloo was used
+            {triggerLabel}
             <span className="sr-only">, {pluralize(total, "request")}</span>
           </span>
           <span
@@ -180,10 +187,16 @@ export function TraceDrawer({
           <dl className="mt-6 grid grid-cols-3 gap-4 border-t-2 border-foreground pt-4">
             <Stat value={String(total)} label={total === 1 ? "Request" : "Requests"} />
             <Stat value={String(cachedCount)} label="Cached" />
-            <Stat value={medianLive?.value ?? "n/a"} unit={medianLive?.unit} label="Median" />
+            {hasLive ? (
+              <Stat value={medianLive?.value ?? "n/a"} unit={medianLive?.unit} label="Median" />
+            ) : (
+              <Stat value={String(recordedCount)} label="Recorded" />
+            )}
           </dl>
           <p className="mt-3 mb-8 text-xs text-muted-foreground">
-            Cached means answered from this app&rsquo;s cache. The median covers live requests only.
+            {hasLive
+              ? "Cached means answered from this app’s cache. The median covers live requests only."
+              : "Cached means answered from this app’s cache. Recorded means replayed from a saved Qloo response, not fetched live."}
           </p>
 
           {/* Always mounted, so the end of the run is announced even while this drawer is open. */}

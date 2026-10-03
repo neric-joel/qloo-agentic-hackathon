@@ -5,7 +5,7 @@
  */
 
 import { isRecord } from "./events";
-import { heroClash, isFixedByLocks, topClashes } from "./clashes";
+import { dayName, heroClash, isFixedByLocks, topClashes } from "./clashes";
 import type { Evidence, PairClash, SetSlot } from "./preset";
 import type { RunResult, RunState } from "./run-state";
 
@@ -273,6 +273,64 @@ function oneDecimal(value: number): number {
 export function budgetDelta(before: number | null, after: number | null): number | null {
   if (before === null || after === null) return null;
   return Math.round((oneDecimal(after) - oneDecimal(before)) * 10) / 10;
+}
+
+/**
+ * A Clash Budget change in words, as the change chip prints it: "2.4 lower", "0.6 higher", "No
+ * change". The direction is a word, never a sign, so a drop never reads as a double negative.
+ */
+export function changeLabel(delta: number): string {
+  if (delta < 0) return `${Math.abs(delta).toFixed(1)} lower`;
+  if (delta > 0) return `${delta.toFixed(1)} higher`;
+  return "No change";
+}
+
+// ------------------------------------------------------------------------------------ problems
+
+const NOT_POSSIBLE = "That change is not possible: ";
+
+/** A Python-quoted name as the timetable engine writes it: 'Act One', or "Guns N' Roses". */
+const QUOTED = String.raw`(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)")`;
+
+/** The engine's same-stage message: 'A' and 'B' overlap on stage 'id', day 0 (15:00-15:45 vs ...). */
+const SAME_STAGE = new RegExp(
+  String.raw`^${QUOTED} and ${QUOTED} overlap on stage ${QUOTED}, day (\d+) \((.*)\)$`,
+);
+
+function unquote(single: string | undefined, double: string | undefined): string {
+  return (single ?? double ?? "").replace(/\\(.)/g, "$1");
+}
+
+/** "Other" -> "the Other stage"; "Other Stage" -> "the Other Stage"; "The Park" -> "The Park stage". */
+function stagePhrase(name: string): string {
+  if (/\bstage$/i.test(name)) return /^the\s/i.test(name) ? name : `the ${name}`;
+  return /^the\s/i.test(name) ? `${name} stage` : `the ${name} stage`;
+}
+
+/**
+ * A rule the timetable engine says a move breaks, in plain words. The engine's same-stage message,
+ * "That change is not possible: 'A' and 'B' overlap on stage 'other', day 0 (15:00-15:45 vs
+ * 15:30-16:15)", becomes "A and B would overlap on the Other stage (Sunday, 15:00–15:45 vs
+ * 15:30–16:15)", with the stage and day named as the page names them. A stage id the festival does
+ * not list reads "the same stage". Any other text only loses the "That change is not possible: "
+ * lead-in.
+ */
+export function humanizeProblem(
+  text: string,
+  festival: { stages: readonly { id: string; name: string }[]; days: readonly string[] },
+): string {
+  const body = text.startsWith(NOT_POSSIBLE) ? text.slice(NOT_POSSIBLE.length) : text;
+  const match = SAME_STAGE.exec(body.trim());
+  if (!match) return body;
+  const a = unquote(match[1], match[2]);
+  const b = unquote(match[3], match[4]);
+  const stageId = unquote(match[5], match[6]);
+  const day = Number(match[7]);
+  const stage = festival.stages.find((item) => item.id === stageId);
+  const label = festival.days[day];
+  const when = label ? dayName(label) : `Day ${day + 1}`;
+  const times = match[8].replace(/(\d{1,2}:\d{2})-(\d{1,2}:\d{2})/g, "$1–$2");
+  return `${a} and ${b} would overlap on ${stage ? stagePhrase(stage.name) : "the same stage"} (${when}, ${times})`;
 }
 
 // ---------------------------------------------------------------------------------------- text

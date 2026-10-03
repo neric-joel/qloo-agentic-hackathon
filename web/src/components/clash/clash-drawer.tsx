@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, ExternalLink, Lock, ShieldCheck, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -25,9 +25,11 @@ import {
   traceToolCalls,
 } from "@/lib/clashes";
 import { pluralize } from "@/lib/format";
+import { pairCheckKey, type PairCheck } from "@/lib/pair-check";
 import type { Act, PairClash, Preset, Receipt, SetSlot, Stage } from "@/lib/preset";
 import { formatRange, overlapWindow } from "@/lib/timetable";
 
+import { LiveRecheck } from "./live-recheck";
 import { LabelBadge, Meter } from "./marks";
 
 type ClashDrawerProps = {
@@ -201,6 +203,12 @@ export function ClashDrawer({
   useEffect(() => {
     if (shownKey) detailsRef.current?.scrollTo({ top: 0 });
   }, [shownKey]);
+  // Finished live checks, one per day and pair, so previous and next can come back to one. They
+  // live as long as the drawer, across closing and reopening it.
+  const [checks, setChecks] = useState<ReadonlyMap<string, PairCheck>>(() => new Map());
+  const rememberCheck = useCallback((key: string, check: PairCheck) => {
+    setChecks((previous) => new Map(previous).set(key, check));
+  }, []);
 
   if (!shown) return null;
 
@@ -216,6 +224,7 @@ export function ClashDrawer({
   const hiddenLine = preset.report.thresholds.hidden_overlap;
   const product = shown.audience_overlap * shown.concurrency * shown.draw;
   const weighted = Math.abs(product - shown.regret) > Math.max(0.01, shown.regret * 0.02);
+  const checkKey = pairCheckKey(preset.id, shown.a.act_id, shown.b.act_id);
   const counts = {
     search: requests.filter((r) => r.path.endsWith("/search")).length,
     insights: requests.filter((r) => r.path.endsWith("/insights")).length,
@@ -293,6 +302,17 @@ export function ClashDrawer({
             <ActPanel act={actA} slot={slotA} stage={stages.get(shown.a.stage_id)} />
             <ActPanel act={actB} slot={slotB} stage={stages.get(shown.b.stage_id)} />
           </div>
+
+          <LiveRecheck
+            key={checkKey}
+            preset={preset}
+            shown={shown}
+            actA={actA}
+            actB={actB}
+            receipt={receipt}
+            earlier={checks.get(checkKey) ?? null}
+            onResult={rememberCheck}
+          />
 
           <Section title="The price">
             <dl className="grid grid-cols-2 gap-x-5 gap-y-5">

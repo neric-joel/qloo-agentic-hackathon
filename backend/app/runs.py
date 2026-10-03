@@ -120,6 +120,12 @@ class SessionError(ValueError):
     """The client's session does not fit the preset it names."""
 
 
+def published_state(preset: Preset) -> dict[str, Any]:
+    """The published day as the engine scores it: festival, matrix and a config with the preset's baseline."""
+    baseline = BaselineStats.model_validate(preset.report["baseline"])
+    return {"festival": preset.festival, "matrix": preset.matrix, "config": ScoringConfig(baseline=baseline)}
+
+
 def clash_state(preset: Preset, data: ClashInput) -> dict[str, Any]:
     festival = preset.festival
     if data.timetable is not None or data.constraints is not None:
@@ -135,13 +141,7 @@ def clash_state(preset: Preset, data: ClashInput) -> dict[str, Any]:
             raise SessionError("The timetable is not valid for this festival day.") from exc
         if not _only_tightens(preset.festival, festival):
             raise SessionError("The timetable does not match this festival day.")
-    baseline = BaselineStats.model_validate(preset.report["baseline"])
-    return {
-        "festival": festival,
-        "matrix": preset.matrix,
-        "config": ScoringConfig(baseline=baseline),
-        "constraints": list(data.rules),
-    }
+    return {**published_state(preset), "festival": festival, "constraints": list(data.rules)}
 
 
 def _only_tightens(published: Festival, session: Festival) -> bool:
@@ -197,9 +197,11 @@ async def execute_run(
     max_qloo_calls: int | None = None,
     max_reslots: int | None = None,
     max_engine_seconds: float | None = None,
+    qloo_floor: int | None = None,
 ) -> None:
     """Run one agent request. The caps (model turns, tool calls per turn, Qloo requests, re-slots and
-    seconds of engine work) come from the caller's settings; ``None`` leaves that cap off."""
+    seconds of engine work) and the monthly Qloo floor come from the caller's settings; ``None`` leaves that
+    cap off."""
     run_id = new_id("run")
     started = time.perf_counter()
     qloo_calls = 0
@@ -232,10 +234,11 @@ async def execute_run(
                 qloo_budget=max_qloo_calls,
                 reslot_budget=max_reslots,
                 engine_budget=max_engine_seconds,
+                qloo_floor=qloo_floor,
             )
             system, prompt, tools = CLASH_SYSTEM, clash_prompt(state["festival"], data), CLASH_TOOLS
         else:
-            ctx = ToolContext(qloo=qloo, qloo_budget=max_qloo_calls)
+            ctx = ToolContext(qloo=qloo, qloo_budget=max_qloo_calls, qloo_floor=qloo_floor)
             system, tools = EXPLORE_SYSTEM, GENERAL_TOOLS
             prompt = f"My favorites: {', '.join(data.favorites)}. Recommend: {data.target}." + (
                 f" Location: {data.location}." if data.location else ""

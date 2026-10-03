@@ -310,3 +310,43 @@ async def test_a_rule_never_loosens_a_bound_the_set_already_has():
         ).content
     )
     assert "kept_stricter_bound" not in tighter and tighter["added"] == "Opener starts no later than 14:30"
+
+
+async def test_the_reslot_message_the_model_reads_describes_the_plan_it_was_handed():
+    from app.schedule.synthetic import synthetic_festival
+
+    festival, matrix = synthetic_festival(5, days=1, acts=12)
+    config = ScoringConfig(baseline=score_festival(festival, matrix).baseline)
+    state = {"festival": festival, "matrix": matrix, "config": config}
+    ctx = ToolContext(qloo=QlooClient(None), state=state)
+    out = await RESLOT.handler({"objective": 1, "move_budget": 2}, ctx)  # the best option moves more sets
+    content = json.loads(out.content)
+    summary = out.data["summary"]
+    assert len(content["moves"]) == 2
+    assert content["message"] == (
+        f"This plan moves 2 sets and takes the Clash Budget from {content['clash_budget_before']:.1f} "
+        f"to {content['clash_budget_after']:.1f}."
+    )
+    assert "options lower" not in content["message"] and "largest clash-cost drop" not in content["message"]
+    # What the web reads keeps the optimizer's own text and the engine's numbers
+    assert summary["message"] == out.data["report"]["message"] and "options lower" in summary["message"]
+    assert summary["clash_budget_after"] == out.data["report"]["options"][1]["metrics"]["clash_budget_index"]
+
+    one = json.loads(
+        (
+            await RESLOT.handler(
+                {"objective": 1, "move_budget": 1}, ToolContext(qloo=QlooClient(None), state=dict(state))
+            )
+        ).content
+    )
+    assert one["message"].startswith("This plan moves 1 set and takes the Clash Budget from ")
+
+
+async def test_the_no_gain_reslot_message_is_unchanged():
+    ctx = context()
+    for slot in ctx.state["festival"].timetable:
+        await ADD_CONSTRAINT.handler({"kind": "lock", "act": slot.act_id, "time": "", "other_act": ""}, ctx)
+    out = await RESLOT.handler({"objective": 1, "move_budget": 4}, ctx)
+    content = json.loads(out.content)
+    assert "moves" not in content and not content["message"].startswith("This plan")
+    assert content["message"] == out.data["summary"]["message"] == out.data["report"]["message"]

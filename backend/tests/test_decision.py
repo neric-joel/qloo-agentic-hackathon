@@ -40,7 +40,11 @@ MOVE_KEYS = {
     "budget_after",
     "minutes_shared_after",
     "same_index_alternative",
+    "stage_fit_flags_now",
+    "stage_fit_flags_after",
+    "costliest_after",
 }
+COSTLIEST_KEYS = {"a", "b", "minutes", "points"}
 ALTERNATIVE_KEYS = {"act_id", "act", "from", "stage_id", "stage", "day", "start", "end", "minutes_moved"}
 RULE_KEYS = {
     "kind",
@@ -63,6 +67,7 @@ FIX_KEYS = {
     "stage_fit_flags_after",
     "moves",
 }
+FIRST_FIX_KEYS = FIX_KEYS | {"costliest_after", "minutes_shared_after"}
 
 
 def no_qloo() -> QlooClient:
@@ -156,7 +161,8 @@ def visits(limiter: RunLimiter) -> int:
 
 def floats_outside_budgets(value, key=None) -> list[tuple[str | None, float]]:
     if isinstance(value, float):
-        return [] if key in {"budget_after", "published_budget"} else [(key, value)]
+        # budgets and clash points are index points: the day's own measure, never a taste value
+        return [] if key in {"budget_after", "published_budget", "points"} else [(key, value)]
     if isinstance(value, dict):
         return [f for k, v in value.items() for f in floats_outside_budgets(v, k)]
     if isinstance(value, list):
@@ -211,7 +217,9 @@ def test_the_body_follows_the_contract_and_carries_no_taste_value(client):
     rule = body["rule"]
     assert set(rule) == RULE_KEYS and rule["kind"] == "rule_fixes"
     assert rule["rule"] == f"{rule['a']['act']} and {rule['b']['act']} must not overlap"
-    assert all(set(fix) == FIX_KEYS for fix in rule["fixes"]) and len(rule["fixes"]) <= decision.HERO_LIMIT
+    assert len(rule["fixes"]) <= decision.HERO_LIMIT
+    assert set(rule["fixes"][0]) == FIRST_FIX_KEYS  # only the first change says what it leaves costliest
+    assert all(set(fix) == FIX_KEYS for fix in rule["fixes"][1:])
     assert floats_outside_budgets(body) == []
     text = json.dumps(body)
     for banned in ("matrix", "affinity", '"values"', "popularity", "audience_overlap", "taste_overlap"):
@@ -322,7 +330,12 @@ def test_the_decision_is_computed_once_per_preset_object_even_when_requests_arri
     # the hero pair is already searched: the rule route is a hit, no slot, no engine call
     pair = results[0]["clash"]
     got = client.get(rules_url(pair["a_id"], pair["b_id"], limit=3))
-    assert got.status_code == 200 and got.json() == results[0]["rule"]
+    embedded = results[0]["rule"]
+    assert set(embedded["fixes"][0]) == FIRST_FIX_KEYS  # the decision adds one field to its first change
+    without = {
+        k: v for k, v in embedded["fixes"][0].items() if k not in {"costliest_after", "minutes_shared_after"}
+    }
+    assert got.status_code == 200 and got.json() == embedded | {"fixes": [without, *embedded["fixes"][1:]]}
     assert calls["search"] == 1
 
 
@@ -638,3 +651,91 @@ def test_a_cold_request_for_one_day_never_waits_for_another_or_for_a_rule_search
         first.join(10)
     waiting.join(10)
     assert not waiting.is_alive() and decision.decision(preset, 0)["kind"] == "decision"
+
+
+# ------------------------------------------------------------------------------------ the trade-off
+
+
+def test_the_moves_costliest_clash_after_is_the_first_clash_post_whatif_lists_for_the_same_move(client):
+    body = client.get("/api/presets/day/decision").json()
+    move = body["move"]
+    after = move["costliest_after"]
+    assert set(after) == COSTLIEST_KEYS and isinstance(after["minutes"], int)
+    plan = client.post(
+        "/api/presets/day/whatif",
+        json={
+            "moves": [{"act": move["act_id"], "stage_id": move["stage_id"], "day": 0, "start": move["start"]}]
+        },
+    ).json()
+    listed = plan["plan"]["clashes"][0]
+    assert (after["a"], after["b"], after["points"]) == (listed["a"], listed["b"], listed["points"])
+    # the minutes are the ones those two sets share on the moved timetable
+    state = published_state(client.preset)
+    moved = apply_plan(
+        state["festival"],
+        state["matrix"],
+        state["config"],
+        [PlanMove(move["act_id"], move["stage_id"], 0, parse_minutes(move["start"]))],
+    )
+    clash = moved.report.clashes[0]
+    assert after["minutes"] == clash.overlap_minutes
+    assert after["points"] == round(clash.regret_share * plan["plan"]["budget"], 1)
+
+
+def test_the_rule_changes_costliest_clash_after_is_what_post_whatif_lists_for_that_step(client):
+    body = client.get("/api/presets/day/decision").json()
+    rule = body["rule"]
+    fix = rule["fixes"][0]
+    after = fix["costliest_after"]
+    assert set(after) == COSTLIEST_KEYS
+    assert fix["minutes_shared_after"] == 0  # a listed change ends the overlap
+    step = {
+        "rule": {"a": rule["a"]["act_id"], "b": rule["b"]["act_id"]},
+        "moves": [
+            {"act": m["act_id"], "stage_id": m["stage_id"], "day": m["day"], "start": m["start"]}
+            for m in fix["moves"]
+        ],
+    }
+    plan = client.post("/api/presets/day/whatif", json={"moves": [step]}).json()
+    assert plan["plan"]["budget"] == fix["budget_after"]
+    listed = plan["plan"]["clashes"][0]
+    assert (after["a"], after["b"], after["points"]) == (listed["a"], listed["b"], listed["points"])
+    # the other changes carry no such field, and the route that lists them does not either
+    assert all("costliest_after" not in other for other in rule["fixes"][1:])
+    listed_fixes = client.get(rules_url("r", "s")).json()["fixes"]
+    assert all("costliest_after" not in item for item in listed_fixes)
+
+
+def test_the_decision_does_not_write_costliest_after_into_the_cached_rule_search(client):
+    client.get("/api/presets/day/decision")
+    cached = decision.cached_rule_search(client.preset, "r", "s")
+    assert cached is not None and all("costliest_after" not in fix for fix in cached["fixes"])
+
+
+def test_the_stage_fit_flag_counts_before_and_after_are_whole_numbers_from_the_scorer(client):
+    body = client.get("/api/presets/day/decision").json()
+    move, state = body["move"], published_state(client.preset)
+    now = score_festival(state["festival"], state["matrix"], state["config"])
+    moved = apply_plan(
+        state["festival"],
+        state["matrix"],
+        state["config"],
+        [PlanMove(move["act_id"], move["stage_id"], 0, parse_minutes(move["start"]))],
+    )
+    assert move["stage_fit_flags_now"] == len(now.stage_fit)
+    assert move["stage_fit_flags_after"] == len(moved.report.stage_fit)
+    assert all(isinstance(move[key], int) for key in ("stage_fit_flags_now", "stage_fit_flags_after"))
+    # the rule answer's own counts start from the same published day
+    assert body["rule"]["fixes"][0]["stage_fit_flags_now"] == move["stage_fit_flags_now"]
+
+
+def test_costliest_is_none_when_no_clash_of_the_day_has_a_price(client):
+    state = published_state(client.preset)
+    report = score_festival(state["festival"], state["matrix"], state["config"])
+    assert decision._costliest(report, 7) is None  # no clash on a day the festival does not have
+    assert decision._costliest(report.model_copy(update={"clashes": []}), 0) is None
+    first = decision._costliest(report, 0)
+    assert first is not None and (first["a"], first["b"]) == (
+        report.clashes[0].a.name,
+        report.clashes[0].b.name,
+    )

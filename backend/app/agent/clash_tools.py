@@ -184,8 +184,9 @@ CLASH_REPORT = Tool(
     description=(
         "Score the working timetable: the Clash Budget Index (100 = average random legal timetable, lower is "
         "better) and the costliest clashes. Cost of a clash = taste overlap (0 to 100, a rank among this "
-        "day's acts, calculated from Qloo data) x combined draw (Qloo popularity, 0 to 100) x minutes "
-        "overlapping."
+        "day's acts, calculated from Qloo data) x the share of the shorter set the two sets play at once x "
+        "the two acts' draw (geometric mean of their Qloo popularity, 0 to 100) x a rarity factor (0.5 plus "
+        "the mean rarity of the two acts)."
     ),
     input_schema={
         "type": "object",

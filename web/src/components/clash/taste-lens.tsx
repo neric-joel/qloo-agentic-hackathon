@@ -238,7 +238,8 @@ export function TasteLens({
             </p>
             <p className="text-muted-foreground">
               Taste overlap only costs something when two sets share time: price = taste overlap
-              &times; time shared &times; combined draw.
+              &times; the share of the shorter set they play at once &times; the two acts&rsquo; draw
+              (their geometric mean) &times; a rarity factor.
             </p>
           </div>
         ) : null}

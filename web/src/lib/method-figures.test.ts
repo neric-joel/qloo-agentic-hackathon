@@ -24,7 +24,7 @@ import {
 } from "./method-figures";
 import { PUBLIC_SOURCES } from "./public-sources";
 
-const { backtest, complaints, coverage, exploratory, index, liveCheck, moves, scale, symmetry } =
+const { backtest, complaints, coverage, exploratory, index, liveCheck, moves, price, scale, symmetry } =
   METHOD_FIGURES;
 
 /** The page as a reader (or a crawler) gets it: the static HTML with its tags removed. */
@@ -206,6 +206,18 @@ describe("method figures", () => {
     for (const day of coverage.days) {
       expect(Math.round((100 * day.scored) / day.total)).toBe(day.pct);
     }
+  });
+
+  it("pins the rarity factor of the price and states the whole formula", () => {
+    expect(price).toEqual({ rarityFloor: 0.5, neutralRarity: 0.5, neutralFactor: 1 });
+    // The pair factor is the floor plus the mean of the two acts' rarity.
+    expect(price.rarityFloor + (price.neutralRarity + price.neutralRarity) / 2).toBe(price.neutralFactor);
+    const text = pageText();
+    expect(text).toContain(
+      "A clash's price is its taste overlap, times the share of the shorter set that the two sets play at once",
+    );
+    expect(text).toContain("times the two acts' draw (their geometric mean), times a rarity factor of 0.5 plus the average of the two acts' rarity");
+    expect(text).toContain("the mean total price of 300 sampled random valid timetables");
   });
 
   it("pins the index baseline and the move check", () => {
@@ -412,7 +424,7 @@ describe("/method page", () => {
     expect(text).not.toMatch(/affinity for a pair is the same/);
     expect(text).toContain("It says how alike Qloo ranks two audiences in taste, relative to that bill.");
     expect(text).not.toContain("both directions are turned into ranks");
-    expect(text).toContain("the average of 300 random valid timetables of the same lineup");
+    expect(text).toContain("the mean total price of 300 sampled random valid timetables of the same lineup");
   });
 
   it("does not promise a request id Qloo may not send", () => {

@@ -23,7 +23,10 @@
     ],
     "resolved": [[1080, 1140], [1154, 1200], [1215, 1260]],
     "settings": { "changeover": "15", "curfew": "", "pairs": [] },
-    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 1, "curfew": 0, "keep_apart": 0, "shared_pairs": 0 }
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 1, "curfew": 0, "keep_apart": 0, "shared_pairs": 0 },
+    "trials": [
+      { "target": {"kind": "break", "rule": 3, "rows": [1, 2]}, "change": null }
+    ]
   },
   {
     "name": "changeover_zero",
@@ -46,7 +49,10 @@
     ],
     "resolved": [[1080, 1140], [1160, 1200], [1230, 1260]],
     "settings": { "changeover": "30", "curfew": "", "pairs": [] },
-    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 1, "curfew": 0, "keep_apart": 0, "shared_pairs": 0 }
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 1, "curfew": 0, "keep_apart": 0, "shared_pairs": 0 },
+    "trials": [
+      { "target": {"kind": "break", "rule": 3, "rows": [1, 2]}, "change": null }
+    ]
   },
   {
     "name": "curfew_midnight",
@@ -59,7 +65,11 @@
     ],
     "resolved": [[1320, 1410], [1425, 1440], [1380, 1470], [1260, 1365]],
     "settings": { "changeover": "15", "curfew": "00:00", "pairs": [] },
-    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 0, "curfew": 1, "keep_apart": 0, "shared_pairs": 3 }
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 0, "curfew": 1, "keep_apart": 0, "shared_pairs": 3 },
+    "trials": [
+      { "target": {"kind": "break", "rule": 4, "rows": [3]}, "change": null },
+      { "target": {"kind": "shared", "rows": [3, 2]}, "change": {"moves": [{"row": 2, "stage": "Main", "start": 1290, "end": 1305}], "shared_pairs_after": 3} }
+    ]
   },
   {
     "name": "curfew_evening",
@@ -71,7 +81,10 @@
     ],
     "resolved": [[1260, 1320], [1335, 1381], [1290, 1380]],
     "settings": { "changeover": "15", "curfew": "23:00", "pairs": [] },
-    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 0, "curfew": 1, "keep_apart": 0, "shared_pairs": 2 }
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 0, "curfew": 1, "keep_apart": 0, "shared_pairs": 2 },
+    "trials": [
+      { "target": {"kind": "break", "rule": 4, "rows": [2]}, "change": null }
+    ]
   },
   {
     "name": "keep_apart_pairs",
@@ -83,7 +96,11 @@
     ],
     "resolved": [[1200, 1260], [1235, 1295], [1260, 1320]],
     "settings": { "changeover": "15", "curfew": "", "pairs": [["Tara", "Uma"], ["Tara", "Vik"]] },
-    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 0, "curfew": 0, "keep_apart": 1, "shared_pairs": 2 }
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 0, "curfew": 0, "keep_apart": 1, "shared_pairs": 2 },
+    "trials": [
+      { "target": {"kind": "break", "rule": 5, "rows": [1, 2]}, "change": {"moves": [{"row": 2, "stage": "Side", "start": 1260, "end": 1320}], "shared_pairs_after": 1} },
+      { "target": {"kind": "shared", "rows": [1, 2]}, "change": {"moves": [{"row": 2, "stage": "Side", "start": 1260, "end": 1320}], "shared_pairs_after": 1} }
+    ]
   },
   {
     "name": "double_booked_engine_rejects",
@@ -119,7 +136,11 @@
     ],
     "resolved": [[1380, 1470], [1480, 1530], [1545, 1590], [1440, 1500]],
     "settings": { "changeover": "15", "curfew": "", "pairs": [] },
-    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 1, "curfew": 0, "keep_apart": 0, "shared_pairs": 2 }
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 1, "curfew": 0, "keep_apart": 0, "shared_pairs": 2 },
+    "trials": [
+      { "target": {"kind": "break", "rule": 3, "rows": [1, 2]}, "change": {"moves": [{"row": 2, "stage": "Side", "start": 1515, "end": 1565}], "shared_pairs_after": 2} },
+      { "target": {"kind": "shared", "rows": [4, 2]}, "change": {"moves": [{"row": 4, "stage": "Side", "start": 1420, "end": 1480}], "shared_pairs_after": 1} }
+    ]
   },
   {
     "name": "one_of_each_the_engine_accepts",
@@ -132,7 +153,13 @@
     ],
     "resolved": [[1200, 1260], [1270, 1330], [1230, 1290], [1320, 1460]],
     "settings": { "changeover": "15", "curfew": "00:00", "pairs": [["Kai", "Lou"]] },
-    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 1, "curfew": 1, "keep_apart": 1, "shared_pairs": 3 }
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 1, "curfew": 1, "keep_apart": 1, "shared_pairs": 3 },
+    "trials": [
+      { "target": {"kind": "break", "rule": 3, "rows": [1, 2]}, "change": {"moves": [{"row": 2, "stage": "Main", "start": 1275, "end": 1335}], "shared_pairs_after": 3} },
+      { "target": {"kind": "break", "rule": 4, "rows": [4]}, "change": {"moves": [{"row": 3, "stage": "Main", "start": 1345, "end": 1405}, {"row": 4, "stage": "Side", "start": 1230, "end": 1370}], "shared_pairs_after": 3} },
+      { "target": {"kind": "break", "rule": 5, "rows": [1, 3]}, "change": {"moves": [{"row": 3, "stage": "Main", "start": 1345, "end": 1405}], "shared_pairs_after": 2} },
+      { "target": {"kind": "shared", "rows": [2, 4]}, "change": {"moves": [{"row": 2, "stage": "Side", "start": 1230, "end": 1290}, {"row": 3, "stage": "Main", "start": 1275, "end": 1335}], "shared_pairs_after": 3} }
+    ]
   },
   {
     "name": "case_and_spacing_do_not_hide_a_double_booking",
@@ -176,6 +203,21 @@
     ],
     "resolved": [[60, 120], [90, 180]],
     "settings": { "changeover": "15", "curfew": "02:30", "pairs": [["Hotel", "India"]] },
-    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 0, "curfew": 1, "keep_apart": 1, "shared_pairs": 1 }
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 0, "curfew": 1, "keep_apart": 1, "shared_pairs": 1 },
+    "trials": [
+      { "target": {"kind": "break", "rule": 4, "rows": [2]}, "change": null },
+      { "target": {"kind": "break", "rule": 5, "rows": [1, 2]}, "change": null }
+    ]
+  },
+  {
+    "name": "trial_swap_needed",
+    "note": "No one-set move on a 5-minute grid ends the tight changeover; a swap does (Kite takes a Side slot, Moss takes the Main slot).",
+    "rows": [["Jade", "Main", "18:00", "19:00"], ["Kite", "Main", "19:05", "20:05"], ["Lark", "Side", "18:00", "18:45"], ["Moss", "Side", "19:05", "19:50"]],
+    "resolved": [[1080, 1140], [1145, 1205], [1080, 1125], [1145, 1190]],
+    "settings": { "changeover": "15", "curfew": "", "pairs": [] },
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 1, "curfew": 0, "keep_apart": 0, "shared_pairs": 2 },
+    "trials": [
+      { "target": {"kind": "break", "rule": 3, "rows": [1, 2]}, "change": {"moves": [{"row": 2, "stage": "Side", "start": 1145, "end": 1205}, {"row": 4, "stage": "Main", "start": 1155, "end": 1200}], "shared_pairs_after": 2} }
+    ]
   }
 ]

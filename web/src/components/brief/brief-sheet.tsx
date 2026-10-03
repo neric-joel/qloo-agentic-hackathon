@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { ArrowLeft, LoaderCircle, Lock, Printer } from "lucide-react";
 
 import { DiamondGlyph } from "@/components/clash/marks";
+import { TradeoffTable } from "@/components/clash/tradeoff-table";
 import { Button } from "@/components/ui/button";
 import {
   BRIEF_CLASHES,
@@ -18,6 +19,7 @@ import {
   briefRows,
   briefSteps,
   briefTitle,
+  briefTradeoff,
   clashesTitle,
   coverageSentence,
   dayFigures,
@@ -35,8 +37,10 @@ import {
   sourceHosts,
   tableClashes,
   type BriefRow,
+  type BriefTradeoff,
 } from "@/lib/brief";
 import { daysWithSets } from "@/lib/clashes";
+import { requestDecision, type Decision } from "@/lib/decision";
 import { MOCK_PRESET_ID, mockPreset } from "@/lib/mock-preset";
 import { MOCK_STREAM_ENABLED } from "@/lib/mock-stream";
 import { PLAN_CAVEAT, RAISES_MARK } from "@/lib/plan-copy";
@@ -46,7 +50,10 @@ import { cn } from "@/lib/utils";
 
 // ------------------------------------------------------------------------------------ loading
 
-type Outcome = { status: "ready"; preset: Preset; plan: Plan | null } | { status: "missing" } | { status: "error" };
+type Outcome =
+  | { status: "ready"; preset: Preset; plan: Plan | null; decision: Decision | null }
+  | { status: "missing" }
+  | { status: "error" };
 
 class NotFound extends Error {}
 
@@ -68,34 +75,51 @@ async function loadPreset(id: string, signal: AbortSignal): Promise<Preset> {
   return parsePreset(await response.json());
 }
 
-/** The preset and, only when the link carries kept moves, their plan, priced by the server. */
-async function loadBrief(id: string, moves: readonly StackStep[], signal: AbortSignal): Promise<Outcome> {
+/**
+ * The preset and, only when the link carries kept moves, their plan, priced by the server, and the day's
+ * decision (for the card's side-by-side comparison). The decision never fails the brief: an older server, a
+ * failed request or mock mode leaves it null, and the brief prints without the comparison.
+ */
+async function loadBrief(
+  id: string,
+  dayText: string | null,
+  moves: readonly StackStep[],
+  signal: AbortSignal,
+): Promise<Outcome> {
   try {
-    const [preset, plan] = await Promise.all([
+    const day = dayText !== null && /^\d{1,2}$/.test(dayText) ? Number(dayText) : null;
+    const [preset, plan, decision] = await Promise.all([
       loadPreset(id, signal),
       moves.length > 0 ? fetchPlan(id, moves, null, signal) : Promise.resolve(null),
+      moves.length > 0 && !MOCK_STREAM_ENABLED
+        ? requestDecision(id, day, signal).catch(() => null)
+        : Promise.resolve(null),
     ]);
     if (moves.length > 0 && plan === null) return { status: "error" };
-    return { status: "ready", preset, plan };
+    return { status: "ready", preset, plan, decision };
   } catch (error) {
     return error instanceof NotFound ? { status: "missing" } : { status: "error" };
   }
 }
 
 /** Loads the brief's data once per preset and plan; a malformed preset id never reaches the network. */
-function useBrief(presetId: string | null, moves: readonly StackStep[]): Outcome | { status: "loading" } {
-  const key = `${presetId ?? ""}|${encodeMoves(moves)}`;
+function useBrief(
+  presetId: string | null,
+  dayText: string | null,
+  moves: readonly StackStep[],
+): Outcome | { status: "loading" } {
+  const key = `${presetId ?? ""}|${dayText ?? ""}|${encodeMoves(moves)}`;
   const safe = isSafeId(presetId);
   const [result, setResult] = useState<{ key: string; outcome: Outcome } | null>(null);
 
   useEffect(() => {
     if (!safe || presetId === null) return;
     const controller = new AbortController();
-    loadBrief(presetId, moves, controller.signal).then((outcome) => {
+    loadBrief(presetId, dayText, moves, controller.signal).then((outcome) => {
       if (!controller.signal.aborted) setResult({ key, outcome });
     });
     return () => controller.abort();
-  }, [safe, presetId, moves, key]);
+  }, [safe, presetId, dayText, moves, key]);
 
   if (!safe) return { status: "missing" };
   return result && result.key === key ? result.outcome : { status: "loading" };
@@ -160,7 +184,7 @@ export function BriefSheet() {
   const dayText = params.get("day");
   const movesText = params.get("moves");
   const moves = useMemo(() => decodeMoves(movesText), [movesText]);
-  const state = useBrief(presetId, moves);
+  const state = useBrief(presetId, dayText, moves);
   const back = backHref(presetId);
 
   if (state.status === "loading") {
@@ -189,7 +213,13 @@ export function BriefSheet() {
           Print this brief
         </Button>
       </div>
-      <BriefContent preset={state.preset} day={day} plan={state.plan} className="mt-4 print:mt-0" />
+      <BriefContent
+        preset={state.preset}
+        day={day}
+        plan={state.plan}
+        tradeoff={briefTradeoff(state.preset, state.decision, moves, day)}
+        className="mt-4 print:mt-0"
+      />
     </div>
   );
 }
@@ -382,11 +412,14 @@ export function BriefContent({
   preset,
   day,
   plan,
+  tradeoff = null,
   className,
 }: {
   preset: Preset;
   day: number;
   plan: Plan | null;
+  /** The decision card's two changes side by side, when the plan holds one of them. */
+  tradeoff?: BriefTradeoff | null;
   className?: string;
 }) {
   const { festival, day: dayLabel } = briefTitle(preset, day);
@@ -397,7 +430,11 @@ export function BriefContent({
   const withMoves = steps.length > 0;
   const twoColumns = steps.length > 3;
   // A long plan shortens the published-day table to three clashes so the sheet stays on one page.
-  const rows = briefRows(preset, day, withMoves ? tableClashes(steps, twoColumns ? 2 : 1) : BRIEF_CLASHES);
+  const rows = briefRows(
+    preset,
+    day,
+    withMoves ? tableClashes(steps, twoColumns ? 2 : 1, tradeoff !== null) : BRIEF_CLASHES,
+  );
   const tableTitle = clashesTitle(rows.length, withMoves);
   const planLines = plan && withMoves ? planClashLines(plan) : [];
   const verdict = plan && withMoves ? planVerdictSentence(plan, figures.range) : null;
@@ -434,8 +471,9 @@ export function BriefContent({
     </Block>
   );
 
+  // On paper the comparison takes the room of the list of hidden clashes, which the table's own marks repeat.
   const hiddenBlock = hidden ? (
-    <Block title="Hidden clashes" quietInPrint>
+    <Block title="Hidden clashes" quietInPrint className={tradeoff ? "print:hidden" : undefined}>
       <p className="print:text-[9pt]">{hidden}</p>
     </Block>
   ) : null;
@@ -501,6 +539,14 @@ export function BriefContent({
               ),
             )}
           </ol>
+          {tradeoff ? (
+            <TradeoffTable
+              print
+              tradeoff={tradeoff.tradeoff}
+              held={tradeoff.held}
+              className="mt-3 border-t border-border pt-2 print:mt-[3pt] print:pt-[2pt]"
+            />
+          ) : null}
           <p className="mt-2 text-sm text-muted-foreground print:mt-[4pt] print:text-[9pt]">{PLAN_CAVEAT}</p>
         </Block>
 

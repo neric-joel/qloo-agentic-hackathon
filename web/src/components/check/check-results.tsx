@@ -11,7 +11,10 @@ import {
   type CheckReport,
   type SharedPair,
 } from "@/lib/check";
+import { targetOfBreak, targetOfPair } from "@/lib/check-trial";
 import { cn } from "@/lib/utils";
+
+import { TrialControl, type TrialUi } from "./check-trial-panel";
 
 // The fixed paragraph, with its first words as a link to the home page (the text is unchanged).
 const PUBLISHED_DAYS = "The two published days";
@@ -31,6 +34,10 @@ type Props = {
   nonce: number;
   /** The first heading, which takes focus after a check. */
   headingRef?: Ref<HTMLHeadingElement>;
+  /** "Find a change" for each break and each pair; left out, the results carry no search. */
+  trial?: TrialUi;
+  /** The heading of a search result, which takes focus when a search ends. */
+  trialHeadingRef?: Ref<HTMLHeadingElement>;
 };
 
 const PANEL = "rounded-xl border border-border bg-card p-4 sm:p-6 print:rounded-none print:border-0 print:p-0";
@@ -40,11 +47,15 @@ function SharedRow({
   kept,
   isBreak,
   onKeep,
+  trial,
+  trialHeadingRef,
 }: {
   pair: SharedPair;
   kept: boolean;
   isBreak: boolean;
   onKeep: (id: string, kept: boolean) => void;
+  trial?: TrialUi;
+  trialHeadingRef?: Ref<HTMLHeadingElement>;
 }) {
   const names = `${pair.a.act} and ${pair.b.act}`;
   return (
@@ -80,11 +91,12 @@ function SharedRow({
           Still listed under rule breaks: you asked that they never overlap.
         </p>
       ) : null}
+      {trial && !kept ? <TrialControl target={targetOfPair(pair)} label={names} ui={trial} headingRef={trialHeadingRef} /> : null}
     </li>
   );
 }
 
-export function CheckResults({ report, kept, onKeep, showAll, onShowAll, nonce, headingRef }: Props) {
+export function CheckResults({ report, kept, onKeep, showAll, onShowAll, nonce, headingRef, trial, trialHeadingRef }: Props) {
   const { breaks, shared, settings, sets, stages, lockedCount } = report;
   const shown = showAll ? shared : shared.slice(0, SHARED_SHOWN);
   const hiddenCount = shared.length - shown.length;
@@ -129,6 +141,7 @@ export function CheckResults({ report, kept, onKeep, showAll, onShowAll, nonce, 
                 <p className="type-kicker text-muted-foreground">{RULE_LABELS[item.rule]}</p>
                 <p className="mt-1 font-semibold break-words">{item.text}</p>
                 <p className="mt-0.5 text-sm break-words text-muted-foreground">{item.detail}</p>
+                {trial ? <TrialControl target={targetOfBreak(item)} label={item.text} ui={trial} headingRef={trialHeadingRef} /> : null}
               </li>
             ))}
           </ol>
@@ -163,6 +176,8 @@ export function CheckResults({ report, kept, onKeep, showAll, onShowAll, nonce, 
                   kept={kept.has(pair.id)}
                   isBreak={breakPairs.has([pair.a.row, pair.b.row].sort((x, y) => x - y).join("-"))}
                   onKeep={onKeep}
+                  trial={trial}
+                  trialHeadingRef={trialHeadingRef}
                 />
               ))}
             </ul>

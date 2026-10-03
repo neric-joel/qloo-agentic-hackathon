@@ -251,6 +251,99 @@ describe("DecisionCard", () => {
   });
 });
 
+describe("the side-by-side comparison in the card", () => {
+  const ONE_SET_FIX = {
+    sets_moved: 1,
+    minutes_moved: 60,
+    stage_changes: 0,
+    budget_after: 99.1,
+    stage_fit_flags_now: 1,
+    stage_fit_flags_after: 2,
+    minutes_shared_after: 0,
+    costliest_after: { a: "Cy Twombly", b: "Di Vine", minutes: 30, points: 9.5 },
+    moves: [TWO_SET_FIX.moves[0]],
+  };
+  function compared(kept?: { move: boolean; change: boolean }) {
+    const built = copy({
+      move: {
+        act_id: "bo",
+        act: "Bo Diddly Squat",
+        from: "Side 20:30-22:00",
+        stage_id: "side",
+        stage: "Side",
+        day: 0,
+        start: "21:30",
+        end: "23:00",
+        minutes_moved: 60,
+        legal_places: 4,
+        stage_changed: false,
+        budget_after: 98.4,
+        minutes_shared_after: 0,
+        same_index_alternative: null,
+        stage_fit_flags_now: 1,
+        stage_fit_flags_after: 1,
+        costliest_after: { a: "Ed Sheeran-ish", b: "Fay Wray", minutes: 45, points: 1.2 },
+      },
+      rule: { ...RULE, fixes_found: 1, fixes: [ONE_SET_FIX] },
+    });
+    return renderToStaticMarkup(createElement(DecisionCard, { copy: built, kept }));
+  }
+
+  it("sits under the buttons and above the four lines, with both columns and every row", () => {
+    const html = compared();
+    const plain = text(html);
+    const order = [
+      "One decision on Tiny Fest Saturday",
+      "The two changes side by side",
+      "Move one set Keep the two apart",
+      "Sets moved",
+      "Start-time minutes moved",
+      "Time the pair shares after",
+      "Clash Budget Index, before → after",
+      "Stage-fit flags, now → after",
+      "Costliest clash after",
+      "How this was chosen",
+    ].map((part) => plain.indexOf(part));
+    order.forEach((at, i) => {
+      expect(at, `part ${i}`).toBeGreaterThan(-1);
+      if (i > 0) expect(at).toBeGreaterThan(order[i - 1]);
+    });
+    expect(plain).toContain("104.2 → 98.4");
+    expect(plain).toContain("104.2 → 99.1");
+    expect(plain).toContain("1 → 1");
+    expect(plain).toContain("1 → 2");
+    expect(plain).toContain("Ed Sheeran-ish and Fay Wray, 45 minutes, 1.2 index points");
+    expect(plain).toContain("Cy Twombly and Di Vine, 30 minutes, 9.5 index points");
+    expect(plain).toContain(STAGE_FIT_GLOSS);
+  });
+
+  it("keeps the attribution beside the index row and stacks every row on a phone", () => {
+    const html = compared();
+    // The note is the row right after the index row, in the same group.
+    expect(html).toMatch(/Clash Budget Index, before → after[\s\S]*?Selected and scored by this app’s index[\s\S]*?<\/tbody>/);
+    // A phone stacks it: the table is a block, each cell carries its column's name, and nothing is fixed wide.
+    expect(html).toMatch(/<table[^>]*class="[^"]*\bblock\b[^"]*sm:table[^"]*"/);
+    expect(html).toContain('data-label="Move one set"');
+    expect(html).toContain('data-label="Keep the two apart"');
+    expect(html).not.toMatch(/\bw-\[\d+px\]|min-w-\[|overflow-x/);
+    // Real table semantics for a screen reader: column and row headers.
+    expect(html).toContain('scope="col"');
+    expect(html).toContain('scope="row"');
+  });
+
+  it("says which column the plan already holds", () => {
+    expect(text(compared())).not.toContain("In your plan");
+    expect(text(compared({ move: true, change: false }))).toContain("Move one set · In your plan");
+    expect(text(compared({ move: false, change: true }))).toContain("Keep the two apart · In your plan");
+  });
+
+  it("is left out when the card has no change to compare the move with", () => {
+    const plain = text(renderToStaticMarkup(createElement(DecisionCard, { copy: copy({ rule: null }) })));
+    expect(plain).not.toContain("The two changes side by side");
+    expect(plain).not.toContain("Move one set Keep the two apart");
+  });
+});
+
 describe("WhyThisMatters", () => {
   it("prints the complaint figures, the failed pre-set test in the same block and the demand shell", () => {
     const plain = text(renderToStaticMarkup(createElement(WhyThisMatters)));

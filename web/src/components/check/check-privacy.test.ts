@@ -10,9 +10,11 @@ import CheckPage from "@/app/check/page";
 import { ThemeProvider } from "@/components/theme/theme-provider";
 import { announcement, runCheck } from "@/lib/check";
 import { SAMPLE_GRID, SAMPLE_SETTINGS } from "@/lib/check-sample";
+import { applyChange, findChange, targetOfBreak, trialSteps } from "@/lib/check-trial";
 
 import { CheckResults, SHARED_SHOWN } from "./check-results";
 import { CheckTool } from "./check-tool";
+import type { TrialState } from "./check-trial-panel";
 
 // Every name below is invented for the test.
 
@@ -81,6 +83,34 @@ describe("the check page makes no request", () => {
       }),
     );
     expect(text(html)).toContain("Rule breaks (4)");
+
+    // A search for every break and every pair, a change applied and the results drawn with the search's
+    // own panel, with every network stub still throwing.
+    for (const item of outcome.report.breaks) {
+      const result = findChange(outcome.report, targetOfBreak(item));
+      expect(result.changes.length).toBeGreaterThan(0);
+      const steps = trialSteps(outcome.report, targetOfBreak(item));
+      while (!steps.next().done);
+      const state: TrialState = {
+        targetId: `break-${item.rule}-${item.rows.join("-")}`,
+        label: item.text,
+        running: false,
+        progress: null,
+        result,
+      };
+      const drawn = renderToStaticMarkup(
+        createElement(CheckResults, {
+          report: applyChange(outcome.report, result.changes[0]),
+          kept: new Set<string>(),
+          onKeep: () => {},
+          showAll: false,
+          onShowAll: () => {},
+          nonce: 1,
+          trial: { state, onFind: () => {}, onApply: () => {}, onClose: () => {} },
+        }),
+      );
+      expect(text(drawn)).toContain("Find a change");
+    }
 
     const whole = text(
       renderToStaticMarkup(
@@ -161,6 +191,51 @@ describe("the page and its results", () => {
   it("gives the first result heading a focus target and the print view its own title", () => {
     expect(html).toMatch(/<h2 id="check-rules-heading" tabindex="-1"/);
     expect(html).toMatch(/hidden[^"]*print:block[^"]*">Draft check, not a verdict</);
+  });
+
+  it("offers Find a change for each rule break and each listed pair, and none in print", () => {
+    const controls = html.match(/<div class="mt-2 print:hidden"><button[^>]*>Find a change<span class="sr-only">/g) ?? [];
+    expect(controls).toHaveLength(4 + SHARED_SHOWN);
+    expect(page).not.toContain("What this search found");
+  });
+
+  it("draws a search result under its break, escapes the names in it and keeps it out of print", () => {
+    const hostile = "<img src=x onerror=alert(1)>,Main,18:00,19:00\nB,Main,19:05,20:00\nC,Side,18:00,21:00";
+    const outcome = runCheck({ grid: hostile, changeover: "15", curfew: "", pairs: "" });
+    if (!outcome.ok) throw new Error(outcome.errors.join(" | "));
+    const item = outcome.report.breaks[0];
+    const result = findChange(outcome.report, targetOfBreak(item));
+    expect(result.changes.length).toBeGreaterThan(0);
+    const out = renderToStaticMarkup(
+      createElement(CheckResults, {
+        report: outcome.report,
+        kept: new Set<string>(),
+        onKeep: () => {},
+        showAll: false,
+        onShowAll: () => {},
+        nonce: 1,
+        trial: {
+          state: {
+            targetId: `break-${item.rule}-${item.rows.join("-")}`,
+            label: item.text,
+            running: false,
+            progress: null,
+            result,
+          },
+          onFind: () => {},
+          onApply: () => {},
+          onClose: () => {},
+        },
+      }),
+    );
+    expect(out).not.toContain("<img src=x");
+    expect(out).toContain("&lt;img src=x onerror=alert(1)&gt;");
+    const shown = text(out);
+    expect(shown).toContain("What this search found");
+    expect(shown).toContain("Adds no rule break.");
+    expect(shown).toContain("Try it");
+    expect(shown).toContain("How it searched: one-set moves first, then two-set swaps");
+    expect(out).toMatch(/<div class="mt-2 print:hidden"><button[^>]*>Find a change<span class="sr-only">[\s\S]*What this search found/);
   });
 
   it("says plainly when nothing breaks", () => {
@@ -261,6 +336,7 @@ const ROUTE_FILES = [
   ...files(join(SRC, "components", "check")),
   join(SRC, "lib", "check.ts"),
   join(SRC, "lib", "check-sample.ts"),
+  join(SRC, "lib", "check-trial.ts"),
 ];
 
 const NETWORK: readonly [string, RegExp][] = [
@@ -283,7 +359,7 @@ const NETWORK: readonly [string, RegExp][] = [
 ];
 
 const ALLOWED_IMPORT =
-  /^(react|react-dom|lucide-react|next|next\/link|@\/components\/ui\/button|@\/lib\/check|@\/lib\/check-sample|@\/lib\/check-flag|@\/lib\/utils|@\/components\/check\/.+|\.\/.+)$/;
+  /^(react|react-dom|lucide-react|next|next\/link|@\/components\/ui\/button|@\/lib\/check|@\/lib\/check-sample|@\/lib\/check-trial|@\/lib\/check-flag|@\/lib\/utils|@\/components\/check\/.+|\.\/.+)$/;
 
 describe("the check route holds no network call", () => {
   it("finds the route's files", () => {
@@ -293,8 +369,10 @@ describe("the check route holds no network call", () => {
         "app/check/page.tsx",
         "components/check/check-tool.tsx",
         "components/check/check-results.tsx",
+        "components/check/check-trial-panel.tsx",
         "lib/check.ts",
         "lib/check-sample.ts",
+        "lib/check-trial.ts",
       ]),
     );
   });

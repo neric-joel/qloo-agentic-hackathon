@@ -24,6 +24,7 @@ import {
   lowerFirst,
   parseRuleFixes,
   ruleSentence,
+  STAGE_FIT_GLOSS,
   shiftBrief,
   shiftWords,
   type RuleFixes,
@@ -46,6 +47,9 @@ export type DecisionPlace = {
   minutesMoved: number;
 };
 
+/** The day's costliest clash on the timetable after a change, as the plan's own clash list prints one. */
+export type CostliestAfter = { a: string; b: string; minutes: number; points: number };
+
 export type DecisionMove = DecisionPlace & {
   legalPlaces: number;
   stageChanged: boolean;
@@ -54,6 +58,18 @@ export type DecisionMove = DecisionPlace & {
   minutesSharedAfter: number;
   /** The other set's first place, when it gives the same index. */
   alternative: DecisionPlace | null;
+  /** Stage-fit flags on the published day and with this move; null when the route sent none. */
+  flagsNow: number | null;
+  flagsAfter: number | null;
+  /** The day's costliest clash with this move: null when no clash on the day has a price, undefined when not sent. */
+  costliestAfter: CostliestAfter | null | undefined;
+};
+
+/** What the rule answer's first change leaves behind (the route's extra fields on that one change). */
+export type RuleChangeAfter = {
+  /** Minutes the pair shares after the change; null when not sent. */
+  minutesSharedAfter: number | null;
+  costliestAfter: CostliestAfter | null | undefined;
 };
 
 export type Decision = {
@@ -66,6 +82,8 @@ export type Decision = {
   clash: { aId: string; bId: string; rank: number; minutes: number } | null;
   move: DecisionMove | null;
   rule: RuleFixes | null;
+  /** What the rule answer's first change leaves behind; null without a rule answer or that change. */
+  ruleChange: RuleChangeAfter | null;
 };
 
 function finite(value: unknown): value is number {
@@ -85,6 +103,15 @@ function readPlace(value: unknown): DecisionPlace | null {
   return { actId: act_id, act, from, stageId: stage_id, stage, day, start, end, minutesMoved: minutes_moved };
 }
 
+/** A costliest clash: the object, null when the day has none, undefined when absent or mistyped. */
+function readCostliest(value: unknown): CostliestAfter | null | undefined {
+  if (value === null) return null;
+  if (!isRecord(value)) return undefined;
+  const { a, b, minutes, points } = value;
+  if (!text(a) || !text(b) || !finite(minutes) || !finite(points)) return undefined;
+  return { a, b, minutes, points };
+}
+
 function readMove(value: unknown): DecisionMove | null {
   const place = readPlace(value);
   if (!place || !isRecord(value)) return null;
@@ -101,6 +128,19 @@ function readMove(value: unknown): DecisionMove | null {
     budgetAfter: budget_after,
     minutesSharedAfter: minutes_shared_after,
     alternative,
+    flagsNow: finite(value.stage_fit_flags_now) ? value.stage_fit_flags_now : null,
+    flagsAfter: finite(value.stage_fit_flags_after) ? value.stage_fit_flags_after : null,
+    costliestAfter: readCostliest(value.costliest_after),
+  };
+}
+
+/** The extra fields of the rule answer's first listed change, or null when there is none. */
+function readRuleChange(rule: unknown): RuleChangeAfter | null {
+  if (!isRecord(rule) || !Array.isArray(rule.fixes) || !isRecord(rule.fixes[0])) return null;
+  const first = rule.fixes[0];
+  return {
+    minutesSharedAfter: finite(first.minutes_shared_after) ? first.minutes_shared_after : null,
+    costliestAfter: readCostliest(first.costliest_after),
   };
 }
 
@@ -128,7 +168,9 @@ export function parseDecision(json: unknown): Decision | null {
     // A rule answer that does not parse is dropped, not an error: the card then has no rule line.
     const rule = json.rule === null || json.rule === undefined ? null : parseRuleFixes(json.rule);
 
-    return { day: json.day, skippedLocked, skippedNoPlace, publishedBudget, clash, move, rule };
+    const ruleChange = rule ? readRuleChange(json.rule) : null;
+
+    return { day: json.day, skippedLocked, skippedNoPlace, publishedBudget, clash, move, rule, ruleChange };
   } catch {
     return null;
   }
@@ -171,6 +213,93 @@ export const LIMITS_WITH_RULE =
   "Lines 1 and 2 are selected and scored by this app’s index. Line 3 is checked against the timetable’s rules; the index in it is shown for information, not as a verdict. A reading, not a verdict.";
 export const LIMITS_NO_RULE = "Lines 1 and 2 are selected and scored by this app’s index. A reading, not a verdict.";
 
+export const TRADEOFF_HEADING = "The two changes side by side";
+export const TRADEOFF_MOVE_HEAD = "Move one set";
+export const TRADEOFF_RULE_HEAD = "Keep the two apart";
+export const NO_PRICED_CLASH = "No priced clash left on this day";
+
+/** "Sprints and Katy J Pearson". */
+function andList(names: readonly string[]): string {
+  return names.length <= 2 ? names.join(" and ") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
+
+/** "A and B, 30 minutes, 9.5 index points": the costliest clash as the plan's clash list prints it. */
+function costliestText(clash: CostliestAfter | null): string {
+  return clash
+    ? `${clash.a} and ${clash.b}, ${pluralize(clash.minutes, "minute")}, ${clash.points.toFixed(1)} index points`
+    : NO_PRICED_CLASH;
+}
+
+/**
+ * The comparison of the card's two changes, one row per figure the route gave for both. A row whose
+ * figure one side did not send is left out, never filled. Null unless the card has the single move,
+ * the rule's first change and the published index. Every number is the route's.
+ */
+export function buildTradeoff(decision: Decision | null): Tradeoff | null {
+  try {
+    if (!decision || !decision.move || !decision.rule || decision.publishedBudget === null) return null;
+    const { move, rule, publishedBudget: published } = decision;
+    const first = rule.fixes[0];
+    if (rule.holds || !first || (rule.a.locked && rule.b.locked)) return null;
+    const after = decision.ruleChange;
+    const rows: TradeoffRow[] = [
+      {
+        id: "sets",
+        label: "Sets moved",
+        move: `1 (${move.act})`,
+        rule: `${first.setsMoved} (${andList(first.moves.map((item) => item.act))})`,
+        note: null,
+      },
+      {
+        id: "minutes",
+        label: "Start-time minutes moved",
+        move: String(move.minutesMoved),
+        rule: String(first.minutesMoved),
+        note: null,
+      },
+    ];
+    if (after && after.minutesSharedAfter !== null) {
+      rows.push({
+        id: "shared",
+        label: "Time the pair shares after",
+        move: pluralize(move.minutesSharedAfter, "minute"),
+        rule: pluralize(after.minutesSharedAfter, "minute"),
+        note: null,
+      });
+    }
+    if (first.budgetAfter !== null) {
+      rows.push({
+        id: "index",
+        label: "Clash Budget Index, before → after",
+        move: `${published.toFixed(1)} → ${move.budgetAfter.toFixed(1)}`,
+        rule: `${published.toFixed(1)} → ${first.budgetAfter.toFixed(1)}`,
+        note: ATTRIBUTION,
+      });
+    }
+    if (move.flagsNow !== null && move.flagsAfter !== null) {
+      rows.push({
+        id: "flags",
+        label: "Stage-fit flags, now → after",
+        move: `${move.flagsNow} → ${move.flagsAfter}`,
+        rule: `${first.flagsNow} → ${first.flagsAfter}`,
+        note: STAGE_FIT_GLOSS,
+      });
+    }
+    if (move.costliestAfter !== undefined && after && after.costliestAfter !== undefined) {
+      rows.push({
+        id: "costliest",
+        label: "Costliest clash after",
+        move: costliestText(move.costliestAfter),
+        rule: costliestText(after.costliestAfter),
+        note: null,
+      });
+    }
+    return { heading: TRADEOFF_HEADING, moveHead: TRADEOFF_MOVE_HEAD, ruleHead: TRADEOFF_RULE_HEAD, rows };
+  } catch {
+    return null;
+  }
+}
+
 /** Rectangles are in drawing units on a 288-wide canvas, as the design spec draws them. */
 export type TimelineBar = { x: number; w: number };
 
@@ -184,6 +313,26 @@ export type SharedTimeline = {
   movingAfter: TimelineBar;
   bandAfter: TimelineBar | null;
   ticks: { x: number; label: string }[];
+};
+
+/** One row of the side-by-side comparison; both cells are printed text, built from the route's figures. */
+export type TradeoffRow = {
+  id: "sets" | "minutes" | "shared" | "index" | "flags" | "costliest";
+  label: string;
+  /** The cell under "Move one set". */
+  move: string;
+  /** The cell under "Keep the two apart". */
+  rule: string;
+  /** A line under the row (the index's attribution, the stage-fit gloss); null for none. */
+  note: string | null;
+};
+
+/** The two changes of the card in one place: the lowest-index single move and the smallest keep-apart change. */
+export type Tradeoff = {
+  heading: string;
+  moveHead: string;
+  ruleHead: string;
+  rows: TradeoffRow[];
 };
 
 export type DecisionCopy = {
@@ -225,6 +374,8 @@ export type DecisionCopy = {
   changeSummary: string | null;
   /** The status line a seeded move announces first, "Testing Sprints at 14:15." */
   testing: string | null;
+  /** The move and the keep-apart change side by side; null unless the card has both. */
+  tradeoff: Tradeoff | null;
 };
 
 function rangeOf(preset: Pick<Preset, "report">): ScaleRange {
@@ -401,6 +552,7 @@ export function buildDecisionCopy(preset: Preset, decision: Decision | null): De
           ? changeSummaryLine(decision.rule, decision.rule.fixes[0], published)
           : null,
       testing,
+      tradeoff: buildTradeoff(decision),
     };
   } catch {
     return null;

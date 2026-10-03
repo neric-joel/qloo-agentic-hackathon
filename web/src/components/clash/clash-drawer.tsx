@@ -237,7 +237,8 @@ export function ClashDrawer({
   const dayName = preset.festival.days[shown.day] ?? `Day ${shown.day + 1}`;
   const hiddenLine = preset.report.thresholds.hidden_overlap;
   const product = shown.audience_overlap * shown.concurrency * shown.draw;
-  const weighted = Math.abs(product - shown.regret) > Math.max(0.01, shown.regret * 0.02);
+  // The rarity factor (0.5 + mean rarity of the two acts) is whatever turns the three printed terms into the price.
+  const rarityFactor = product > 0 ? shown.regret / product : null;
   const checkKey = pairCheckKey(preset.id, shown.a.act_id, shown.b.act_id);
   const withoutTaste = rankWithoutTaste
     ? withoutTasteLine(rankWithoutTaste(shown.a.act_id, shown.b.act_id), rankWithoutTasteOf)
@@ -362,9 +363,10 @@ export function ClashDrawer({
               />
             </dl>
             <p className="mt-5 rounded-md bg-muted px-3 py-2.5 font-mono text-xs leading-relaxed">
-              price = taste overlap {shown.audience_overlap.toFixed(2)} &times; time shared{" "}
+              price = taste overlap {shown.audience_overlap.toFixed(2)} &times; share of the shorter set{" "}
               {shown.concurrency.toFixed(2)} &times; combined draw {shown.draw.toFixed(2)}
-              {weighted ? " × rarity weight" : ""} = {shown.regret.toFixed(3)}
+              {rarityFactor !== null ? ` × rarity factor ${rarityFactor.toFixed(2)}` : ""} ={" "}
+              {shown.regret.toFixed(3)}
             </p>
             {withoutTaste ? (
               <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{withoutTaste}</p>

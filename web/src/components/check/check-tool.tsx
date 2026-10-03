@@ -12,15 +12,32 @@ import {
   runCheck,
   type CheckInput,
   type CheckOutcome,
+  type CheckReport,
 } from "@/lib/check";
 import { SAMPLE_GRID, SAMPLE_SETTINGS } from "@/lib/check-sample";
+import {
+  TRIAL_COPY,
+  applyChange,
+  daySpan,
+  gridText,
+  targetId,
+  trialSteps,
+  wasPlace,
+  workingLabel,
+  type TrialChange,
+  type TrialTarget,
+} from "@/lib/check-trial";
 
 import { CheckResults } from "./check-results";
+import type { TrialState, TrialUi } from "./check-trial-panel";
 
 const FIELD =
   "mt-1.5 w-full min-w-0 rounded-md border border-border-strong bg-card px-3 text-[0.9375rem] text-foreground placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 
 type Run = { nonce: number; outcome: CheckOutcome; note: string };
+
+/** The pasted grid with some changes tried on it: a copy held in this tab, never the paste itself. */
+type Working = { report: CheckReport; applied: TrialChange[] };
 
 const EMPTY: CheckInput = { grid: "", changeover: "", curfew: "", pairs: "" };
 
@@ -43,7 +60,16 @@ export function CheckTool({
   );
   const [kept, setKept] = useState<ReadonlySet<string>>(() => new Set());
   const [showAll, setShowAll] = useState(false);
+  const [working, setWorking] = useState<Working | null>(null);
+  // What the live region says after a search or a try; blank means the counts of the check.
+  const [note, setNote] = useState("");
+  const [trial, setTrial] = useState<TrialState | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const trialHeadingRef = useRef<HTMLHeadingElement>(null);
+  const workingRef = useRef<HTMLElement>(null);
+  // The search runs a chunk at a time from a timer; a new search, a new check or leaving the page stops it.
+  const searchTimer = useRef<number | null>(null);
+  const searchToken = useRef(0);
   const ids = {
     grid: useId(),
     gridHelp: useId(),
@@ -57,19 +83,44 @@ export function CheckTool({
     errors: useId(),
   };
 
-  // After a check that read the grid, the first result heading takes focus.
+  // After a check that read the grid, or a change tried on it, the first result heading takes focus.
   useEffect(() => {
     const heading = headingRef.current;
     if (!run?.outcome.ok || !heading) return;
     heading.focus({ preventScroll: true });
-    heading.scrollIntoView({ block: "start" });
-  }, [run]);
+    // Over a working copy, the notice that says so sits just above the heading and scrolls into view with it.
+    (workingRef.current ?? heading).scrollIntoView({ block: "start" });
+  }, [run, working]);
 
-  const check = useCallback((next: CheckInput, note = "") => {
-    const outcome = runCheck(next);
-    setShowAll(false);
-    setRun((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, outcome, note }));
+  // When a search ends, its result heading takes focus.
+  const searchDone = trial?.result ?? null;
+  useEffect(() => {
+    const heading = trialHeadingRef.current;
+    if (!searchDone || !heading) return;
+    heading.focus({ preventScroll: true });
+    heading.scrollIntoView({ block: "nearest" });
+  }, [searchDone]);
+
+  const stopSearch = useCallback(() => {
+    searchToken.current += 1;
+    if (searchTimer.current !== null) window.clearTimeout(searchTimer.current);
+    searchTimer.current = null;
   }, []);
+
+  useEffect(() => stopSearch, [stopSearch]);
+
+  const check = useCallback(
+    (next: CheckInput, note = "") => {
+      const outcome = runCheck(next);
+      stopSearch();
+      setTrial(null);
+      setWorking(null);
+      setNote("");
+      setShowAll(false);
+      setRun((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, outcome, note }));
+    },
+    [stopSearch],
+  );
 
   function update(field: keyof CheckInput, value: string) {
     setInput((current) => ({ ...current, [field]: value }));
@@ -107,6 +158,58 @@ export function CheckTool({
   }
 
   const outcome = run?.outcome;
+  const pasted = outcome?.ok ? outcome.report : null;
+  const shown = working?.report ?? pasted;
+
+  function findChange(target: TrialTarget, label: string) {
+    if (!shown || !pasted) return;
+    stopSearch();
+    const token = searchToken.current;
+    const id = targetId(target);
+    const steps = trialSteps(shown, target, { span: daySpan(pasted) });
+    setTrial({ targetId: id, label, running: true, progress: null, result: null });
+    setNote("");
+    const tick = () => {
+      if (searchToken.current !== token) return;
+      const next = steps.next();
+      if (next.done) {
+        setTrial({ targetId: id, label, running: false, progress: null, result: next.value });
+        setNote(`${label.replace(/\.$/, "")}. ${next.value.summary}`);
+        return;
+      }
+      setTrial({ targetId: id, label, running: true, progress: next.value, result: null });
+      searchTimer.current = window.setTimeout(tick, 0);
+    };
+    searchTimer.current = window.setTimeout(tick, 0);
+  }
+
+  function tryChange(change: TrialChange) {
+    if (!shown) return;
+    stopSearch();
+    const report = applyChange(shown, change);
+    setTrial(null);
+    setShowAll(false);
+    setWorking((current) => ({ report, applied: [...(current?.applied ?? []), change] }));
+    setNote(`Change applied to a working copy of the grid. ${announcement({ ok: true, report })}`);
+  }
+
+  function backToPasted() {
+    stopSearch();
+    setTrial(null);
+    setShowAll(false);
+    setWorking(null);
+    setNote(pasted ? `Back to the pasted grid. ${announcement({ ok: true, report: pasted })}` : "");
+  }
+
+  const trialUi: TrialUi = {
+    state: trial,
+    onFind: findChange,
+    onApply: tryChange,
+    onClose: () => {
+      stopSearch();
+      setTrial(null);
+    },
+  };
 
   return (
     <div>
@@ -244,20 +347,58 @@ export function CheckTool({
       </form>
 
       <p role="status" aria-live="polite" className="sr-only">
-        {run && outcome?.ok ? `${run.note}${announcement(outcome)}` : ""}
+        {run && outcome?.ok ? note || `${run.note}${announcement(outcome)}` : ""}
       </p>
 
-      {run && outcome?.ok ? (
+      {run && outcome?.ok && shown ? (
         <>
           <p className="mt-8 hidden type-title print:mt-0 print:block print:text-[16pt]">{CHECK_COPY.printTitle}</p>
+          {working ? (
+            <section
+              ref={workingRef}
+              aria-label="Working copy"
+              className="mt-8 rounded-xl border-2 border-primary bg-card p-4 sm:p-6 print:mt-0 print:rounded-none print:border-0 print:p-0 print:text-[9pt]"
+            >
+              <p className="font-semibold">{workingLabel(working.applied.length)}</p>
+              <ul className="mt-2 space-y-1 text-sm break-words">
+                {working.applied.flatMap((change, at) =>
+                  change.moves.map((move, index) => (
+                    <li key={`${at}-${move.row}`}>
+                      {change.lines[index]} <span className="text-muted-foreground">(was {wasPlace(move)})</span>
+                    </li>
+                  )),
+                )}
+              </ul>
+              <div className="mt-3 flex flex-wrap gap-3 print:hidden">
+                <Button type="button" variant="outline" onClick={backToPasted}>
+                  {TRIAL_COPY.back}
+                </Button>
+              </div>
+              <details className="mt-3 print:hidden">
+                <summary className="min-h-11 cursor-pointer py-2.5 text-sm font-semibold">
+                  Working grid as text
+                </summary>
+                <textarea
+                  readOnly
+                  value={gridText(working.report.sets)}
+                  rows={Math.min(14, working.report.sets.length + 2)}
+                  spellCheck={false}
+                  aria-label="Working grid as text, to copy"
+                  className={`${FIELD} resize-y p-3 font-mono text-sm leading-relaxed`}
+                />
+              </details>
+            </section>
+          ) : null}
           <CheckResults
-            report={outcome.report}
+            report={shown}
             kept={kept}
             onKeep={keep}
             showAll={showAll}
             onShowAll={setShowAll}
-            nonce={run.nonce}
+            nonce={run.nonce * 1000 + (working?.applied.length ?? 0)}
             headingRef={headingRef}
+            trial={trialUi}
+            trialHeadingRef={trialHeadingRef}
           />
           <div className="mt-6 print:hidden">
             <Button type="button" variant="ink" size="sm" onClick={() => window.print()}>

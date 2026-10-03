@@ -20,6 +20,11 @@ The search is the public compute of these routes, so it is bounded:
   day's lock only. The hero result, its embedded rule answer included, is served from the cache afterwards
   (at most presets x days entries). A reloaded preset object replaces its entries. There is no global lock.
 
+The answer also carries what each change leaves behind, so a page can set the two side by side without a
+second request: ``costliest_after`` (the day's costliest clash on the timetable after the change, read from
+the same scorer ``POST /whatif`` uses, with its index points printed as that route's clash list prints them)
+and the number of stage-fit flags before and after. They are computed here, once, in the same warm step.
+
 Selection skips a clash whose sets cannot move (both locked, counted in ``skipped_locked``) and a clash for
 which no unlocked set has a legal place that lowers the index (counted in ``skipped_no_place``), looking at
 the day's first ``RANKED`` clashes at most.
@@ -35,7 +40,14 @@ from typing import Annotated, Any, NamedTuple
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request, Response
 
-from .agent.clash_tools import PlanMove, PlanResult, apply_plan, compute_move_options
+from .agent.clash_tools import (
+    IllegalStep,
+    PlanGroup,
+    PlanMove,
+    PlanResult,
+    apply_plan,
+    compute_move_options,
+)
 from .audit import NO_SETS, RANKED, _priced_pairs
 from .presets import CACHE_CONTROL, Preset, Presets
 from .runs import published_state
@@ -43,6 +55,7 @@ from .schedule import rulefix
 from .schedule.layout import Layout
 from .schedule.metrics import score_festival, shared_minutes
 from .schedule.models import Festival, ScoringConfig, SetSlot, parse_minutes
+from .schedule.reports import ScoreReport
 from .whatif import ID_PATTERN, NO_STORE, NOT_ON_THIS_DAY, AppSettings, Limiter, _refuse, _take_slot
 
 router = APIRouter(prefix="/api/presets", tags=["presets"])
@@ -229,6 +242,48 @@ def _candidates(
     return sorted(found, key=lambda c: (c.index, c.act_id))
 
 
+def _costliest(report: ScoreReport, day: int) -> dict[str, Any] | None:
+    """The day's costliest clash on a scored timetable, as ``POST /whatif`` lists a clash (names, and index
+    points = the clash's share of the day's price times the index, one decimal), plus the minutes the two sets
+    share. None when no clash on the day has a price."""
+    index = report.metrics.clash_budget_index
+    clash = next((c for c in report.clashes if c.day == day), None)
+    if clash is None:
+        return None
+    return {
+        "a": clash.a.name,
+        "b": clash.b.name,
+        "minutes": clash.overlap_minutes,
+        "points": round(clash.regret_share * (index or 0.0), 1),
+    }
+
+
+def _after_rule_change(
+    festival: Festival,
+    matrix: Any,
+    config: ScoringConfig,
+    fix: dict[str, Any],
+    rule: tuple[str, str],
+    day: int,
+) -> dict[str, Any]:
+    """What one rule change leaves on the day, taken as ``POST /whatif`` takes a kept rule step: the minutes
+    the pair shares after it and the day's costliest clash. Both None for a change the plan would refuse (a
+    change the search listed is legal by construction; the decision never fails over it)."""
+    step = PlanGroup(
+        tuple(PlanMove(m["act_id"], m["stage_id"], m["day"], _clock(m["start"])) for m in fix["moves"]),
+        rule,
+    )
+    try:
+        plan = apply_plan(festival, matrix, config, [step])
+    except IllegalStep:
+        return {"minutes_shared_after": None, "costliest_after": None}
+    slots = {slot.act_id: slot for slot in plan.festival.timetable}
+    return {
+        "minutes_shared_after": shared_minutes(slots[rule[0]], slots[rule[1]]),
+        "costliest_after": _costliest(plan.report, day),
+    }
+
+
 def compute_decision(preset: Preset, day: int) -> dict[str, Any]:
     """The decision for one day of a preset (see the module docstring)."""
     state = published_state(preset)
@@ -236,7 +291,8 @@ def compute_decision(preset: Preset, day: int) -> dict[str, Any]:
     slots = {slot.act_id: slot for slot in festival.timetable}
     names = {act.id: act.name for act in festival.acts}
     layout = Layout.from_festival(festival)
-    published = score_festival(festival, matrix, config).metrics.clash_budget_index
+    report_now = score_festival(festival, matrix, config)
+    published = report_now.metrics.clash_budget_index
     skipped_locked = skipped_no_place = 0
     answer: dict[str, Any] = {
         "kind": "decision",
@@ -275,7 +331,16 @@ def compute_decision(preset: Preset, day: int) -> dict[str, Any]:
             "budget_after": plan.steps[0].budget_after,
             "minutes_shared_after": shared_minutes(moved[act_id], moved[other_id]),
             "same_index_alternative": alternative,
+            "stage_fit_flags_now": len(report_now.stage_fit),
+            "stage_fit_flags_after": len(plan.report.stage_fit),
+            "costliest_after": _costliest(plan.report, day),
         }
+        rule = in_order(rule_search(preset, a_id, b_id), a_id, HERO_LIMIT)
+        if rule["fixes"]:  # the first change of the rule answer also says what it leaves behind
+            first_fix = rule["fixes"][0] | _after_rule_change(
+                festival, matrix, config, rule["fixes"][0], (a_id, b_id), day
+            )
+            rule = rule | {"fixes": [first_fix, *rule["fixes"][1:]]}
         answer |= {
             "skipped_locked": skipped_locked,
             "skipped_no_place": skipped_no_place,
@@ -286,7 +351,7 @@ def compute_decision(preset: Preset, day: int) -> dict[str, Any]:
                 "minutes": shared_minutes(slots[a_id], slots[b_id]),
             },
             "move": move,
-            "rule": in_order(rule_search(preset, a_id, b_id), a_id, HERO_LIMIT),
+            "rule": rule,
         }
         return answer
     return answer | {"skipped_locked": skipped_locked, "skipped_no_place": skipped_no_place}

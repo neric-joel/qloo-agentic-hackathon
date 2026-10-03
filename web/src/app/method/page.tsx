@@ -28,7 +28,7 @@ export const metadata = {
     "What Clash Control's taste overlap is, what we tested it against, and where it fell short.",
 } satisfies Metadata;
 
-const { backtest, complaints, coverage, exploratory, index, liveCheck, moves, scale, symmetry } =
+const { backtest, complaints, coverage, exploratory, index, liveCheck, moves, price, scale, symmetry } =
   METHOD_FIGURES;
 const reading = exploratoryReading();
 const taste = methodRow("taste");
@@ -300,10 +300,20 @@ export default function MethodPage() {
 
       <Section id="price" kicker="The number" title="What the price is">
         <p className="font-mono text-base font-medium sm:text-lg">
-          Price = taste overlap &times; time shared &times; combined draw.
+          Price = taste overlap &times; share of the shorter set played at once &times; combined draw &times;
+          rarity factor.
         </p>
         <p>
-          Draw is each act&rsquo;s popularity on Qloo, a percentile among Qloo artists. Taste overlap
+          A clash&rsquo;s price is its taste overlap, times the share of the shorter set that the two
+          sets play at once (counted only for sets on the same day and on different stages), times the
+          two acts&rsquo; draw (their geometric mean), times a rarity factor of {price.rarityFloor} plus
+          the average of the two acts&rsquo; rarity. On both saved days every act carries the neutral
+          rarity {price.neutralRarity}, so the factor is {price.neutralFactor.toFixed(1)} for every pair
+          and does not move any price.
+        </p>
+        <p>
+          Draw is each act&rsquo;s popularity on Qloo, a percentile among Qloo artists, and the two
+          acts&rsquo; draw is the square root of their product. Taste overlap
           is derived: for each act, Qloo ranks every other act on that day&rsquo;s bill by how
           strongly the act&rsquo;s audience leans toward them. In the{" "}
           {formatCount(symmetry.pairs)} saved pairs we checked, Qloo&rsquo;s affinity came back the
@@ -317,8 +327,9 @@ export default function MethodPage() {
         </p>
         <p>
           The Clash Budget Index is {scale.indexMultiplier} times the day&rsquo;s total price divided
-          by the average of {index.baselineSamples} random valid timetables of the same lineup, in
-          which each set stays inside its allowed window and stages and locked sets stay put. Lower
+          by the mean total price of {index.baselineSamples} sampled random valid timetables of the
+          same lineup, in which each set stays inside its allowed window and stages and locked sets
+          stay put. Lower
           is better. It counts only what clashes cost: taste overlap, time shared and draw.
         </p>
       </Section>

@@ -22,10 +22,21 @@ import {
 } from "./clashes";
 import { pluralize } from "./format";
 import { numberWord } from "./method-figures";
+import { buildDecisionCopy, type Decision, type Tradeoff } from "./decision";
 import { currentPlacement } from "./moves";
 import { planVerdict, publishedVerdict, raisesIndex } from "./plan-copy";
 import type { BaselineStats, Preset } from "./preset";
-import { isPlanRuleStep, ruleReceipt, ruleStepLine, shiftText, type Plan, type ScaleRange } from "./stack";
+import {
+  isPlanRuleStep,
+  isRuleStackStep,
+  ruleReceipt,
+  ruleStepLine,
+  sameStep,
+  shiftText,
+  type Plan,
+  type ScaleRange,
+  type StackStep,
+} from "./stack";
 import { formatRange, overlapWindow } from "./timetable";
 
 /** How many of the day's costliest clashes the brief's table lists. */
@@ -314,15 +325,22 @@ function stepLines(step: BriefStep, columns: 1 | 2): number {
 /** A plan that takes this many printed lines or more down its tallest column shortens the published-day table. */
 const HEAVY_PLAN_LINES = 8;
 
+/** With the comparison on the sheet, a plan this tall shortens the published-day table to one clash. */
+const TALL_PLAN_LINES = 6;
+
 /**
  * How many of the published day's costliest clashes the table lists. Five, unless the kept steps are so
  * long (three long two-set changes, in one column, take nine printed lines; eight single moves, in two
  * columns, take eight) that the sheet would run to the bottom of a Letter page or spill onto a second: then
  * three, and the heading says "three". `columns` is how many columns
- * the steps print in (two from four steps).
+ * the steps print in (two from four steps). With the side-by-side comparison on the sheet it is two, or one for a tall plan.
  */
-export function tableClashes(steps: readonly BriefStep[], columns: 1 | 2): number {
+export function tableClashes(steps: readonly BriefStep[], columns: 1 | 2, withTradeoff = false): number {
   const lines = steps.reduce((sum, step) => sum + stepLines(step, columns), 0);
+  // The side-by-side comparison takes about ten printed lines of its own, so the published day's table gives
+  // up three rows for it and lists two; a plan that takes six printed lines down its tallest column (a kept
+  // change and four single moves, say) leaves room for one.
+  if (withTradeoff) return lines / columns >= TALL_PLAN_LINES ? 1 : 2;
   return lines / columns >= HEAVY_PLAN_LINES ? 3 : BRIEF_CLASHES;
 }
 
@@ -389,6 +407,33 @@ export function planClashesTitle(count: number): string {
  */
 export function planClashLines(plan: Pick<Plan, "clashes">): string[] {
   return plan.clashes.map((clash, i) => `${i + 1}. ${clash.a} and ${clash.b} · ${clash.points.toFixed(1)} index points`);
+}
+
+// ------------------------------------------------------------------------------------ the trade-off
+
+/** The card's two changes side by side, and which of them the plan holds. */
+export type BriefTradeoff = { tradeoff: Tradeoff; held: { move: boolean; change: boolean } };
+
+/**
+ * The decision card's comparison for the brief, only when the plan holds the card's move or the card's
+ * change (the same two checks the card's buttons make); null otherwise, and for a card of another day.
+ * The figures are the route's, through the card's own copy.
+ */
+export function briefTradeoff(
+  preset: Preset,
+  decision: Decision | null,
+  steps: readonly StackStep[],
+  day: number,
+): BriefTradeoff | null {
+  if (!decision || decision.day !== day) return null;
+  const copy = buildDecisionCopy(preset, decision);
+  if (!copy || !copy.tradeoff) return null;
+  const { seedMove, seedChange } = copy;
+  const held = {
+    move: seedMove !== null && steps.some((step) => !isRuleStackStep(step) && sameStep(step, seedMove)),
+    change: seedChange !== null && steps.some((step) => sameStep(step, seedChange)),
+  };
+  return held.move || held.change ? { tradeoff: copy.tradeoff, held } : null;
 }
 
 // ------------------------------------------------------------------------------------ the footer

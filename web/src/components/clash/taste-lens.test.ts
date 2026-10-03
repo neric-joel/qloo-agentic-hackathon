@@ -164,7 +164,7 @@ describe("TasteLens", () => {
     );
     expect(html).toContain("High taste overlap, never on at the same time: Act Nine and Act Ten; Act Eleven and Act Twelve.");
     expect(html).toContain(
-      "Taste overlap only costs something when two sets share time: price = taste overlap × time shared × combined draw.",
+      "Taste overlap only costs something when two sets share time: price = taste overlap × the share of the shorter set they play at once × the two acts’ draw (their geometric mean) × a rarity factor.",
     );
   });
 });

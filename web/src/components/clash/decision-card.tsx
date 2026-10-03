@@ -8,6 +8,7 @@ import { ATTRIBUTION, type DecisionCopy, type SharedTimeline } from "@/lib/decis
 import { ALREADY_KEPT } from "@/lib/rule-fix";
 import { cn } from "@/lib/utils";
 
+import { TradeoffTable } from "./tradeoff-table";
 import { useAnnouncement } from "./use-announcement";
 
 /** The anchor of the card, for the hero button and the jump links. */
@@ -339,6 +340,10 @@ export function DecisionCard({
         <p id={changeSummaryId} className="mt-2 text-xs leading-snug text-muted-foreground">
           {copy.changeSummary}
         </p>
+      ) : null}
+
+      {copy.tradeoff ? (
+        <TradeoffTable tradeoff={copy.tradeoff} held={kept} className="mt-4 border-t border-border pt-3" />
       ) : null}
 
       <div className="mt-4 border-t border-border pt-1 sm:pt-3">

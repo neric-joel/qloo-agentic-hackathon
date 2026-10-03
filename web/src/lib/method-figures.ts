@@ -150,6 +150,14 @@ export const METHOD_FIGURES = {
     usablePct: 72,
     days: COVERAGE_DAYS,
   },
+  price: {
+    /** The rarity factor of a pair is rarityFloor plus the mean of the two acts' rarity. */
+    rarityFloor: 0.5,
+    /** Rarity every act carries on the two saved days (the neutral value). */
+    neutralRarity: 0.5,
+    /** rarityFloor + neutralRarity: the factor of every pair on the saved days. */
+    neutralFactor: 1,
+  },
   index: {
     /** Random valid timetables the Clash Budget Index is measured against. */
     baselineSamples: 300,

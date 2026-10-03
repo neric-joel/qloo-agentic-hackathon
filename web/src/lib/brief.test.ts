@@ -16,6 +16,7 @@ import {
   briefRows,
   briefSteps,
   briefTitle,
+  briefTradeoff,
   clashesTitle,
   coverageSentence,
   dayFigures,
@@ -33,9 +34,10 @@ import {
   tableClashes,
   type BriefStep,
 } from "./brief";
+import { parseDecision } from "./decision";
 import { PLAN_CAVEAT } from "./plan-copy";
 import type { PairClash, Preset, SetSlot } from "./preset";
-import type { Plan, PlanRuleStep, PlanStep } from "./stack";
+import type { Plan, PlanRuleStep, PlanStep, StackStep } from "./stack";
 
 // Every name, id, tag and figure below is invented for the test; none of it is Qloo data.
 
@@ -322,6 +324,18 @@ describe("how many published-day clashes the table lists", () => {
     expect(tableClashes([move(1), move(2), move(3), move(4), change(5), change(6)], 2)).toBe(3);
     // Eight single moves in two columns reach the foot of a Letter page.
     expect(tableClashes([0, 1, 2, 3, 4, 5, 6, 7].map((i) => move(i + 1)), 2)).toBe(3);
+  });
+
+  it("gives up rows to the side-by-side comparison: two, or one when the plan is tall", () => {
+    // One move: light, so two. A kept change and four singles (the worst case printed) is tall, so one.
+    expect(tableClashes([move(1)], 1, true)).toBe(2);
+    expect(tableClashes([change(1), move(2)], 1, true)).toBe(2);
+    expect(tableClashes([change(1), move(2), move(3), move(4), move(5)], 2, true)).toBe(1);
+    expect(tableClashes([0, 1, 2, 3, 4, 5, 6, 7].map((i) => move(i + 1)), 2, true)).toBe(1);
+    // Without the comparison nothing changes.
+    expect(tableClashes([change(1), move(2), move(3), move(4), move(5)], 2)).toBe(5);
+    expect(clashesTitle(1, true)).toBe("The costliest clash on the published day, before these moves");
+    expect(clashesTitle(2, true)).toBe("The two costliest clashes on the published day, before these moves");
   });
 
   it("says how many it lists in the heading", () => {
@@ -658,5 +672,130 @@ describe("kept changes in the brief", () => {
     for (const pattern of [/optimi[sz]/i, /improve/i, /recommend/i, /validated/i, /\bfix/i, /\bbest\b/i]) {
       expect(text).not.toMatch(pattern);
     }
+  });
+});
+
+
+// ------------------------------------------------------------------------------------ the trade-off
+
+/** A decision on the test festival: the card's move is Act Two to The Barn at 14:30, its change moves Act Three. */
+function decisionRaw(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  const where = (act_id: string, act: string, stage_id: string, stage: string, start: string, end: string) => ({
+    act_id,
+    act,
+    from: "North Field 14:15-15:15",
+    stage_id,
+    stage,
+    day: 0,
+    start,
+    end,
+    minutes_moved: 15,
+  });
+  return {
+    kind: "decision",
+    day: 0,
+    skipped_locked: 0,
+    skipped_no_place: 0,
+    clash: { a_id: "act-one", b_id: "act-two", rank: 1, minutes: 45 },
+    published_budget: 116.71,
+    move: {
+      ...where("act-two", "Act Two", "barn", "The Barn", "14:30", "15:30"),
+      legal_places: 5,
+      stage_changed: true,
+      budget_after: 110.2,
+      minutes_shared_after: 30,
+      same_index_alternative: null,
+      stage_fit_flags_now: 1,
+      stage_fit_flags_after: 2,
+      costliest_after: { a: "Act Four", b: "Act Five", minutes: 30, points: 9.5 },
+    },
+    rule: {
+      kind: "rule_fixes",
+      a: { act_id: "act-one", act: "Act One", locked: false, place: "North Field 14:00-15:00" },
+      b: { act_id: "act-two", act: "Act Two", locked: false, place: "South Tent 14:15-15:15" },
+      rule: "Act One and Act Two must not overlap",
+      shared_minutes: 45,
+      holds: false,
+      single_set_places: 0,
+      fixes_found: 1,
+      searched: "x",
+      fixes: [
+        {
+          sets_moved: 2,
+          minutes_moved: 75,
+          stage_changes: 0,
+          budget_after: 112.4,
+          stage_fit_flags_now: 1,
+          stage_fit_flags_after: 1,
+          minutes_shared_after: 0,
+          costliest_after: { a: "Act Two", b: "Act Three", minutes: 45, points: 8.1 },
+          moves: [
+            where("act-one", "Act One", "north", "North Field", "15:15", "16:15"),
+            where("act-three", "Act Three", "barn", "The Barn", "13:45", "14:45"),
+          ],
+        },
+      ],
+    },
+    ...overrides,
+  };
+}
+
+const CARD_MOVE: StackStep = { actId: "act-two", stageId: "barn", day: 0, start: "14:30" };
+const CARD_CHANGE: StackStep = {
+  rule: { aId: "act-one", bId: "act-two" },
+  moves: [
+    { actId: "act-one", stageId: "north", day: 0, start: "15:15" },
+    { actId: "act-three", stageId: "barn", day: 0, start: "13:45" },
+  ],
+};
+const OTHER_MOVE: StackStep = { actId: "act-four", stageId: "north", day: 0, start: "18:15" };
+
+describe("the brief's trade-off", () => {
+  it("is carried only when the plan holds the card's move or the card's change", () => {
+    const preset = makePreset();
+    const decision = parseDecision(decisionRaw());
+    const both = briefTradeoff(preset, decision, [OTHER_MOVE, CARD_MOVE, CARD_CHANGE], 0);
+    expect(both?.held).toEqual({ move: true, change: true });
+    expect(briefTradeoff(preset, decision, [CARD_MOVE], 0)?.held).toEqual({ move: true, change: false });
+    expect(briefTradeoff(preset, decision, [CARD_CHANGE, OTHER_MOVE], 0)?.held).toEqual({ move: false, change: true });
+    expect(briefTradeoff(preset, decision, [OTHER_MOVE], 0)).toBeNull();
+    expect(briefTradeoff(preset, decision, [], 0)).toBeNull();
+    // A near miss is not the card's move: same set and stage, another start.
+    expect(briefTradeoff(preset, decision, [{ ...CARD_MOVE, start: "14:45" }], 0)).toBeNull();
+  });
+
+  it("is absent without a decision, for another day's decision, and when the card has nothing to compare", () => {
+    const preset = makePreset();
+    expect(briefTradeoff(preset, null, [CARD_MOVE], 0)).toBeNull();
+    expect(briefTradeoff(preset, parseDecision(decisionRaw()), [CARD_MOVE], 1)).toBeNull();
+    expect(briefTradeoff(preset, parseDecision(decisionRaw({ rule: null })), [CARD_MOVE], 0)).toBeNull();
+  });
+
+  it("prints the same comparison as the card, under the plan and before its caveat, and none without it", () => {
+    const preset = makePreset();
+    const tradeoff = briefTradeoff(preset, parseDecision(decisionRaw()), [CARD_MOVE], 0);
+    const html = renderToStaticMarkup(createElement(BriefContent, { preset, day: 0, plan: PLAN, tradeoff }));
+    const plain = html
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&#x27;|&#39;/g, "'")
+      .replace(/\s+/g, " ");
+    const order = ["Your plan", "The two changes side by side", "Move one set · In your plan", "Keep the two apart", PLAN_CAVEAT];
+    const at = order.map((part) => plain.indexOf(part));
+    at.forEach((position, i) => {
+      expect(position, order[i]).toBeGreaterThan(-1);
+      if (i > 0) expect(position).toBeGreaterThan(at[i - 1]);
+    });
+    expect(plain).toContain("116.7 → 110.2");
+    expect(plain).toContain("116.7 → 112.4");
+    expect(plain).toContain("Act Four and Act Five, 30 minutes, 9.5 index points");
+    expect(plain).toContain("Selected and scored by this app’s index");
+    // Prints compact on paper, with no fixed-width cell.
+    expect(html).toContain("print:table");
+    expect(html).not.toMatch(/w-\[\d+px\]|min-w-\[/);
+    const without = renderToStaticMarkup(createElement(BriefContent, { preset, day: 0, plan: PLAN }));
+    expect(without).not.toContain("The two changes side by side");
+    // The list of hidden clashes gives its place on paper to the comparison, and stays on the screen.
+    expect(html).toMatch(/<section[^>]*class="[^"]*print:hidden[^"]*"[^>]*aria-labelledby="brief-hidden-clashes"|<section[^>]*aria-labelledby="brief-hidden-clashes"[^>]*class="[^"]*print:hidden/);
+    expect(without).not.toMatch(/aria-labelledby="brief-hidden-clashes"[^>]*class="[^"]*print:hidden/);
   });
 });

@@ -10,8 +10,10 @@ import {
   decisionDay,
   decisionPath,
   parseDecision,
+  buildTradeoff,
   sharedTimeline,
 } from "./decision";
+import { STAGE_FIT_GLOSS } from "./rule-fix";
 import { parsePreset } from "./preset";
 
 // Every name and figure below is invented for the test (the tiny preset and a made-up answer).
@@ -284,5 +286,104 @@ describe("sharedTimeline", () => {
     expect(line.bandAfter).toBeNull();
     const empty = { name: "A", start: 10, end: 10 };
     expect(sharedTimeline(empty, { ...empty, name: "B" }, { start: 10, end: 10 })).toBeNull();
+  });
+});
+
+
+/** The route's extra fields for the trade-off: the move's, and the rule's first change's. */
+function withAfter(): Raw {
+  const decision = rawDecision();
+  Object.assign(decision.move, {
+    stage_fit_flags_now: 2,
+    stage_fit_flags_after: 3,
+    costliest_after: { a: "Cy Twombly", b: "Di Vine", minutes: 30, points: 9.5 },
+  });
+  Object.assign(decision.rule.fixes[0], {
+    minutes_shared_after: 0,
+    costliest_after: { a: "Ed Sheeran-ish", b: "Fay Wray", minutes: 45, points: 1.2 },
+  });
+  return decision;
+}
+
+describe("the side-by-side comparison", () => {
+  it("reads the route's extra fields and keeps every number as the route gave it", () => {
+    const decision = parseDecision(withAfter())!;
+    expect(decision.move).toMatchObject({
+      flagsNow: 2,
+      flagsAfter: 3,
+      costliestAfter: { a: "Cy Twombly", b: "Di Vine", minutes: 30, points: 9.5 },
+    });
+    expect(decision.ruleChange).toEqual({
+      minutesSharedAfter: 0,
+      costliestAfter: { a: "Ed Sheeran-ish", b: "Fay Wray", minutes: 45, points: 1.2 },
+    });
+  });
+
+  it("builds one row per figure, move first and rule second, with the attribution and the gloss kept", () => {
+    const tradeoff = buildTradeoff(parseDecision(withAfter()))!;
+    expect([tradeoff.moveHead, tradeoff.ruleHead]).toEqual(["Move one set", "Keep the two apart"]);
+    expect(tradeoff.rows.map((row) => row.id)).toEqual(["sets", "minutes", "shared", "index", "flags", "costliest"]);
+    const row = (id: string) => tradeoff.rows.find((item) => item.id === id)!;
+    expect(row("sets")).toMatchObject({ move: "1 (Bo Diddly Squat)", rule: "1 (Bo Diddly Squat)" });
+    expect(row("minutes")).toMatchObject({ move: "60", rule: "60" });
+    expect(row("shared")).toMatchObject({ move: "0 minutes", rule: "0 minutes" });
+    expect(row("index")).toMatchObject({ move: "104.2 → 98.4", rule: "104.2 → 98.4", note: ATTRIBUTION });
+    expect(row("flags")).toMatchObject({ move: "2 → 3", rule: "1 → 1", note: STAGE_FIT_GLOSS });
+    expect(row("costliest")).toMatchObject({
+      move: "Cy Twombly and Di Vine, 30 minutes, 9.5 index points",
+      rule: "Ed Sheeran-ish and Fay Wray, 45 minutes, 1.2 index points",
+    });
+  });
+
+  it("names both sets of a two-set change and says so when no priced clash is left", () => {
+    const raw = withAfter();
+    raw.rule.fixes[0].sets_moved = 2;
+    raw.rule.fixes[0].moves.push({ ...raw.rule.fixes[0].moves[0], act_id: "ann", act: "Ann Arbor" });
+    raw.move.costliest_after = null;
+    const tradeoff = buildTradeoff(parseDecision(raw))!;
+    const row = (id: string) => tradeoff.rows.find((item) => item.id === id)!;
+    expect(row("sets").rule).toBe("2 (Bo Diddly Squat and Ann Arbor)");
+    expect(row("costliest").move).toBe("No priced clash left on this day");
+  });
+
+  it("leaves out a row the route did not send for both changes, and prints nothing it cannot read", () => {
+    // An older route: no flags, no costliest clash and no minutes after for the rule change.
+    const old = buildTradeoff(parseDecision(rawDecision()))!;
+    expect(old.rows.map((row) => row.id)).toEqual(["sets", "minutes", "index"]);
+    // Costliest only on one side: the row is left out, never half-filled.
+    const half = withAfter();
+    delete half.rule.fixes[0].costliest_after;
+    expect(buildTradeoff(parseDecision(half))!.rows.map((row) => row.id)).not.toContain("costliest");
+    // A mistyped figure is treated as not sent.
+    const bad = withAfter();
+    bad.move.costliest_after = { a: "x", b: "y", minutes: "30", points: 1 };
+    bad.move.stage_fit_flags_now = "2";
+    const ids = buildTradeoff(parseDecision(bad))!.rows.map((row) => row.id);
+    expect(ids).not.toContain("costliest");
+    expect(ids).not.toContain("flags");
+  });
+
+  it("is absent without a move, a listed change, a published index, or when the card has no rule to try", () => {
+    const raw = withAfter();
+    expect(buildTradeoff(null)).toBeNull();
+    expect(buildTradeoff(parseDecision({ ...raw, move: null }))).toBeNull();
+    expect(buildTradeoff(parseDecision({ ...raw, rule: null }))).toBeNull();
+    expect(buildTradeoff(parseDecision({ ...raw, published_budget: null }))).toBeNull();
+    expect(buildTradeoff(parseDecision({ ...raw, rule: rawRule({ fixes: [], fixes_found: 0 }) }))).toBeNull();
+    expect(buildTradeoff(parseDecision({ ...raw, rule: rawRule({ holds: true, fixes: [], shared_minutes: 0 }) }))).toBeNull();
+    const both = rawRule({ b: { act_id: "bo", act: "Bo Diddly Squat", locked: true, place: "y" } });
+    both.a.locked = true;
+    expect(buildTradeoff(parseDecision({ ...raw, rule: both }))).toBeNull();
+  });
+
+  it("is part of the card's copy, free of verdict words, and reads no taste value", () => {
+    const copy = buildDecisionCopy(preset(), parseDecision(withAfter()))!;
+    expect(copy.tradeoff).not.toBeNull();
+    const text = JSON.stringify(copy.tradeoff);
+    for (const banned of ["better", "worse", "winner", "best", "optimal", "recommend", "overlap", "popularity"]) {
+      expect(text.toLowerCase()).not.toContain(banned);
+    }
+    // No tradeoff on a card that has no single move to compare.
+    expect(buildDecisionCopy(preset(), parseDecision({ ...withAfter(), move: null }))!.tradeoff).toBeNull();
   });
 });

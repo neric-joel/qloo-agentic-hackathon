@@ -12,25 +12,28 @@ import {
   HIDDEN_NOTE,
   HOW_TO_READ,
   NO_MOVES,
-  PLAN_CAVEAT,
+  READING_NOTE,
   bandSentence,
   briefRows,
   briefSteps,
   briefTitle,
+  clashesTitle,
   coverageSentence,
   dayFigures,
   hiddenNames,
   hiddenSentence,
   indexSentence,
+  planClashLines,
+  planClashesTitle,
   planSummary,
   savedDate,
   sourceHosts,
   type BriefRow,
 } from "@/lib/brief";
 import { daysWithSets } from "@/lib/clashes";
-import { numberWord } from "@/lib/method-figures";
 import { MOCK_PRESET_ID, mockPreset } from "@/lib/mock-preset";
 import { MOCK_STREAM_ENABLED } from "@/lib/mock-stream";
+import { PLAN_CAVEAT, RAISES_MARK } from "@/lib/plan-copy";
 import { parsePreset, type Preset } from "@/lib/preset";
 import { decodeMoves, encodeMoves, fetchPlan, isSafeId, type Plan, type StackMove } from "@/lib/stack";
 import { cn } from "@/lib/utils";
@@ -190,8 +193,8 @@ export function BriefSheet() {
 function Block({ title, children, className }: { title: string; children: ReactNode; className?: string }) {
   const id = `brief-${title.toLowerCase().replace(/[^a-z]+/g, "-").replace(/^-|-$/g, "")}`;
   return (
-    <section aria-labelledby={id} className={cn("mt-7 break-inside-avoid print:mt-[8pt]", className)}>
-      <h2 id={id} className="type-kicker border-b-2 border-foreground pb-1.5 print:pb-[2pt] print:text-[7.5pt]">
+    <section aria-labelledby={id} className={cn("mt-7 break-inside-avoid print:mt-[5pt]", className)}>
+      <h2 id={id} className="type-kicker border-b-2 border-foreground pb-1.5 print:pb-[2pt] print:text-[8pt]">
         {title}
       </h2>
       <div className="mt-3 print:mt-[4pt]">{children}</div>
@@ -201,7 +204,7 @@ function Block({ title, children, className }: { title: string; children: ReactN
 
 function HiddenMark() {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-foreground px-1.5 py-0.5 text-[0.6875rem] leading-none font-semibold whitespace-nowrap print:px-[3pt] print:text-[7pt]">
+    <span className="inline-flex items-center gap-1 rounded-full border border-foreground px-1.5 py-0.5 text-[0.6875rem] leading-none font-semibold whitespace-nowrap print:px-[3pt] print:text-[8pt]">
       <DiamondGlyph className="size-2" />
       Hidden
     </span>
@@ -218,7 +221,7 @@ function LockedMark() {
 }
 
 const TH = "px-2 py-2 font-semibold align-bottom print:px-[3pt] print:py-[3pt]";
-const TD = "px-2 py-2 align-top print:px-[3pt] print:py-[2.5pt]";
+const TD = "px-2 py-2 align-top print:px-[3pt] print:py-[1pt]";
 
 /** The costliest clashes as a table (wide screens and print). */
 function ClashTable({ rows, captionId }: { rows: readonly BriefRow[]; captionId: string }) {
@@ -228,7 +231,7 @@ function ClashTable({ rows, captionId }: { rows: readonly BriefRow[]; captionId:
       className="hidden w-full border-collapse text-left text-sm sm:table print:table print:text-[8.5pt] print:leading-[1.25]"
     >
       <thead>
-        <tr className="border-b border-border-strong text-xs print:text-[7.5pt]">
+        <tr className="border-b border-border-strong text-xs print:text-[8pt]">
           <th scope="col" className={cn(TH, "w-8 text-right")}>
             #
           </th>
@@ -236,7 +239,7 @@ function ClashTable({ rows, captionId }: { rows: readonly BriefRow[]; captionId:
             Clash
           </th>
           <th scope="col" className={TH}>
-            Overlap in time
+            Time shared
           </th>
           <th scope="col" className={cn(TH, "text-right")}>
             Taste overlap
@@ -260,7 +263,7 @@ function ClashTable({ rows, captionId }: { rows: readonly BriefRow[]; captionId:
               <span className="font-semibold">
                 {row.a} and {row.b}
               </span>
-              <span className="block text-xs text-muted-foreground print:text-[7.5pt]">
+              <span className="block text-xs text-muted-foreground print:text-[8pt]">
                 {row.stageA} + {row.stageB}
                 {row.bothLocked ? (
                   <>
@@ -270,7 +273,7 @@ function ClashTable({ rows, captionId }: { rows: readonly BriefRow[]; captionId:
                 ) : null}
               </span>
             </td>
-            <td className={cn(TD, "font-mono text-xs whitespace-nowrap tabular-nums print:text-[7.5pt]")}>
+            <td className={cn(TD, "font-mono text-xs whitespace-nowrap tabular-nums print:text-[8pt]")}>
               {row.window ?? "Times not known"}
               <span className="block text-muted-foreground">{row.minutes} min</span>
             </td>
@@ -310,7 +313,6 @@ function ClashCards({ rows }: { rows: readonly BriefRow[] }) {
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">
               {row.stageA} + {row.stageB}
-              {row.window ? ` · ${row.window}` : ""} · {row.minutes} min
               {row.bothLocked ? (
                 <>
                   {" · "}
@@ -319,6 +321,13 @@ function ClashCards({ rows }: { rows: readonly BriefRow[] }) {
               ) : null}
             </p>
             <dl className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 font-mono text-xs tabular-nums">
+              <div>
+                <dt className="inline text-muted-foreground">Time shared </dt>
+                <dd className="inline">
+                  {row.window ? `${row.window} · ` : ""}
+                  {row.minutes} min
+                </dd>
+              </div>
               <div>
                 <dt className="inline text-muted-foreground">Taste overlap </dt>
                 <dd className="inline">{row.overlap} / 100</dd>
@@ -339,15 +348,12 @@ function ClashCards({ rows }: { rows: readonly BriefRow[] }) {
   );
 }
 
-/** "The five costliest clashes", or fewer when the day has fewer. */
-function clashesTitle(count: number): string {
-  return count === 1 ? "The costliest clash" : `The ${numberWord(count)} costliest clashes`;
-}
-
 /**
- * The one-page sheet itself: the day's Clash Budget Index against the random range, its costliest
- * clashes, its hidden clashes, any kept moves (from the plan answer), how to read the figures, and
- * where they come from. Every figure is the timetable page's own, through `lib/brief.ts`.
+ * The one-page sheet itself: the day's Clash Budget Index against the middle 80% of random valid
+ * timetables, its costliest clashes (labelled as the published day, before the moves, when moves
+ * were kept), its hidden clashes, any kept moves and the moved timetable's own costliest clashes
+ * (both from the plan answer), how to read the figures, and where they come from. Every figure is
+ * the timetable page's own or the server's, through `lib/brief.ts`.
  */
 export function BriefContent({
   preset,
@@ -366,6 +372,9 @@ export function BriefContent({
   const rows = briefRows(preset, day, BRIEF_CLASHES);
   const hidden = hiddenSentence(hiddenNames(preset, day));
   const steps = plan && plan.steps.length > 0 ? briefSteps(preset, plan) : [];
+  const withMoves = steps.length > 0;
+  const tableTitle = clashesTitle(rows.length, withMoves);
+  const planLines = plan && withMoves ? planClashLines(plan) : [];
   const saved = savedDate(preset);
   const hosts = sourceHosts(preset);
   const tableCaption = "brief-clashes-caption";
@@ -379,7 +388,7 @@ export function BriefContent({
         className,
       )}
     >
-      <p className="type-kicker text-muted-foreground print:text-[7.5pt]">
+      <p className="type-kicker text-muted-foreground print:text-[8pt]">
         Clash brief · {festival}, {dayLabel}
       </p>
       <h1
@@ -389,7 +398,7 @@ export function BriefContent({
         {festival} {dayLabel}: where the clash budget goes
       </h1>
       <p className="mt-2 text-muted-foreground print:mt-[3pt]">
-        Scored independently from the published timetable. {festival} does not use Clash Control.
+        Scored by this app from the published timetable. {festival} does not use Clash Control.
       </p>
 
       <Block title="The day">
@@ -400,7 +409,7 @@ export function BriefContent({
         <p className="mt-1 print:mt-[2pt]">{coverageSentence(figures)}</p>
       </Block>
 
-      <Block title={clashesTitle(rows.length)}>
+      <Block title={tableTitle}>
         {rows.length === 0 ? (
           <p className="text-muted-foreground">
             No priced clashes on this day: no two acts with a Qloo signal play at the same time.
@@ -408,18 +417,20 @@ export function BriefContent({
         ) : (
           <>
             <p id={tableCaption} className="sr-only">
-              {clashesTitle(rows.length)} on this day, costliest first
+              {withMoves ? `${tableTitle}, costliest first` : `${tableTitle} on this day, costliest first`}
             </p>
             <ClashTable rows={rows} captionId={tableCaption} />
             <ClashCards rows={rows} />
-            <p className="mt-2 text-sm text-muted-foreground print:mt-[3pt] print:text-[8pt]">{HIDDEN_NOTE}</p>
+            <p className="mt-2 text-sm text-muted-foreground print:mt-[3pt] print:text-[8pt]">
+              {HIDDEN_NOTE} {READING_NOTE}
+            </p>
           </>
         )}
       </Block>
 
       {hidden ? (
         <Block title="Hidden clashes">
-          <p>{hidden}</p>
+          <p className="print:text-[9pt]">{hidden}</p>
         </Block>
       ) : null}
 
@@ -443,6 +454,7 @@ export function BriefContent({
                     <span className="font-mono tabular-nums">
                       {step.before} → {step.after}
                     </span>
+                    {step.raises ? RAISES_MARK : null}
                   </span>
                 </li>
               ))}
@@ -454,15 +466,36 @@ export function BriefContent({
         )}
       </Block>
 
+      {plan && withMoves ? (
+        <Block title={planClashesTitle(planLines.length)}>
+          {planLines.length === 0 ? (
+            <p className="text-muted-foreground">None priced.</p>
+          ) : (
+            <ol
+              className={cn(
+                "grid gap-x-6 gap-y-1 print:flex print:flex-wrap print:gap-x-[14pt] print:gap-y-[1pt] print:text-[9pt]",
+                planLines.length > 2 && "md:grid-cols-2",
+              )}
+            >
+              {planLines.map((line) => (
+                <li key={line} className="min-w-0 break-words">
+                  {line}
+                </li>
+              ))}
+            </ol>
+          )}
+        </Block>
+      ) : null}
+
       <Block title="How to read this">
-        <ul className="list-disc space-y-1 pl-5 marker:text-muted-foreground print:space-y-[1pt] print:pl-[12pt]">
+        <ul className="list-disc space-y-1 pl-5 marker:text-muted-foreground print:space-y-[1pt] print:pl-[12pt] print:text-[9pt]">
           {HOW_TO_READ.map((line) => (
             <li key={line}>{line}</li>
           ))}
         </ul>
       </Block>
 
-      <div className="mt-8 border-t border-border pt-3 text-xs leading-relaxed text-muted-foreground print:mt-[10pt] print:pt-[4pt] print:text-[7.5pt] print:leading-[1.3]">
+      <div className="mt-8 border-t border-border pt-3 text-xs leading-relaxed text-muted-foreground print:mt-[6pt] print:pt-[3pt] print:text-[8pt] print:leading-[1.25]">
         <p>
           {saved
             ? `Figures are calculated by this app from Qloo audience data saved ${saved}.`
@@ -470,7 +503,7 @@ export function BriefContent({
           This is an independent hackathon entry, not endorsed by Qloo or {festival}. Prepared for visitors
           and judges of this demo; not for redistribution.
         </p>
-        {hosts.length > 0 ? <p className="mt-1">Timetable sources: {hosts.join(", ")}.</p> : null}
+        {hosts.length > 0 ? <p className="mt-1 print:mt-0">Timetable sources: {hosts.join(", ")}.</p> : null}
       </div>
     </article>
   );

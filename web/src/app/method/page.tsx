@@ -8,9 +8,11 @@ import type { Provenance } from "@/lib/events";
 import {
   METHOD_FIGURES,
   formatAuc,
+  formatCount,
   formatInterval,
   formatPct,
   formatWholePct,
+  formatWithin,
   methodRow,
   numberWord,
 } from "@/lib/method-figures";
@@ -21,7 +23,7 @@ export const metadata = {
     "What Clash Control's taste overlap is, what we tested it against, and where it fell short.",
 } satisfies Metadata;
 
-const { backtest, coverage, index, liveCheck, moves, scale } = METHOD_FIGURES;
+const { backtest, coverage, index, liveCheck, moves, scale, symmetry } = METHOD_FIGURES;
 const taste = methodRow("taste");
 const genre = methodRow("genre");
 const popularity = methodRow("popularity");
@@ -69,9 +71,11 @@ function ShortVersion() {
       <ul className="mt-4 space-y-3 text-[0.9375rem] leading-relaxed sm:text-base">
         <li>
           <strong className="font-semibold">The test we set before building failed.</strong>{" "}
-          Taste overlap put {formatPct(taste.topQuarterPct)} of complained-about clashes in the top
-          quarter of their day, {backtest.leadOverGenrePoints} points ahead of genre tags. The bar
-          was {backtest.bar.topQuarterPct}% and {backtest.bar.leadOverGenrePoints} points ahead.
+          Taste overlap put {formatPct(taste.topQuarterPct)} of complained-about clashes in the{" "}
+          {scale.topQuarterPct}% highest-ranked clashes among that day&rsquo;s pairs,{" "}
+          {backtest.leadOverGenrePoints} points ahead of genre tags. The bar we wrote down before
+          building was {backtest.bar.topQuarterPct}% and {backtest.bar.leadOverGenrePoints} points
+          ahead.
         </li>
         <li>
           <strong className="font-semibold">Popularity did better.</strong> On the same test,
@@ -79,8 +83,16 @@ function ShortVersion() {
         </li>
         <li>
           <strong className="font-semibold">The check on suggested moves failed too.</strong>{" "}
-          Suggestions made with taste overlap differed from popularity-only ones by{" "}
-          {moves.measuredPoints} index points; the bar was {moves.barPoints}.
+          Suggestions made with taste overlap differed from ones made with popularity alone by{" "}
+          {moves.measuredPoints} index points (one point is {scale.indexPointPct}% of the average
+          random timetable&rsquo;s cost); the bar was {moves.barPoints}.
+        </li>
+        <li>
+          <strong className="font-semibold">What it is good for.</strong> It ranks a day&rsquo;s
+          clashes with a number you can inspect, and it tests moves against the timetable&rsquo;s
+          rules. It tells apart two rivals of equal popularity when Qloo ranks one as much alike in
+          audience to an act and the other as unlike (the twin card shows one such case). It says nothing about attendance, and on our own check it did not
+          find complained-about clashes better than popularity does.
         </li>
       </ul>
     </section>
@@ -91,8 +103,9 @@ function BacktestTable() {
   return (
     <figure className="my-8">
       <figcaption id="backtest-caption" className="text-sm text-muted-foreground">
-        Share of complained-about clashes that rank in the top quarter of their day, and AUC with a{" "}
-        {scale.intervalPct}% interval
+        Share of complained-about clashes that rank in the top quarter of their day, and AUC (
+        {scale.auc.chance} means no better than chance; {scale.auc.perfect} means every listed clash
+        ranks above every unlisted pair) with a {scale.intervalPct}% interval
       </figcaption>
       <div
         role="region"
@@ -112,7 +125,7 @@ function BacktestTable() {
                 Method
               </th>
               <th scope="col" className="px-3 py-3 text-right font-semibold sm:px-4">
-                Complained-about clashes in the day&rsquo;s top quartile
+                Complained-about clashes in the day&rsquo;s top quarter
               </th>
               <th scope="col" className="px-3 py-3 text-right font-semibold sm:px-4">
                 AUC ({scale.intervalPct}% interval)
@@ -185,15 +198,21 @@ export default function MethodPage() {
         <p>
           Draw is each act&rsquo;s popularity on Qloo, a percentile among Qloo artists. Taste overlap
           is derived: for each act, Qloo ranks every other act on that day&rsquo;s bill by how
-          strongly the act&rsquo;s audience leans toward them; both directions are turned into
-          ranks, averaged and scaled {overlapLow} to {overlapHigh}. It says how alike two audiences
-          are in taste, relative to that bill. It is not a share of fans and not attendance.
+          strongly the act&rsquo;s audience leans toward them. In the{" "}
+          {formatCount(symmetry.pairs)} saved pairs we checked, Qloo&rsquo;s affinity came back the
+          same whichever act was the signal (the {formatCount(symmetry.readings)} readings agree in
+          both directions to within {formatWithin(symmetry.maxDifference)}), so for those pairs the
+          two directions are one reading, not two. The app turns that reading into a rank within each
+          act&rsquo;s row of the bill, averages the two ranks, so an act that is close to everyone
+          does not look close to everyone, and scales the result {overlapLow} to {overlapHigh}. It
+          says how alike Qloo ranks two audiences in taste, relative to that bill. It is not a share
+          of fans and not attendance.
         </p>
         <p>
           The Clash Budget Index is {scale.indexMultiplier} times the day&rsquo;s total price divided
-          by the average of {index.baselineSamples} random re-orderings of the same lineup in which
-          each set stays inside its allowed window and stages and locked sets stay put. Lower is
-          better. It counts taste-overlap cost only.
+          by the average of {index.baselineSamples} random valid timetables of the same lineup, in
+          which each set stays inside its allowed window and stages and locked sets stay put. Lower
+          is better. It counts only what clashes cost: taste overlap, time shared and draw.
         </p>
       </Section>
 
@@ -264,7 +283,8 @@ export default function MethodPage() {
             . Where there is none, the app leaves the clash unpriced and says so.
           </li>
           <li>
-            The Clash Budget Index compares a timetable with random re-orderings of itself. It is a
+            The Clash Budget Index compares a timetable with random valid timetables of the same
+            lineup. It is a
             reading of one kind of cost, not a verdict on a festival; real programming weighs much
             more than taste overlap.
           </li>
@@ -308,7 +328,8 @@ export default function MethodPage() {
           checks are switched on. The check re-sends the two audience-ranking requests saved for the
           pair&rsquo;s acts and asks Qloo for a fresh comparison, {liveCheck.requests} requests in all,
           then works out the pair&rsquo;s taste overlap and tags again from the answers and shows them
-          beside the saved result with Qloo&rsquo;s request ids. It never replaces a number on the
+          beside the saved result, with the request id Qloo returned for each request when it sent
+          one. It never replaces a number on the
           page: Qloo&rsquo;s answers can change over time, and the saved values keep every figure
           comparable. It is limited per visitor and per day, and it pauses when this demo&rsquo;s
           monthly Qloo allowance runs low. The timetable page offers the check only while it is

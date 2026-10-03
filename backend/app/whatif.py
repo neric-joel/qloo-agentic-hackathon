@@ -11,7 +11,8 @@ the moved timetable's 5 costliest clashes and, for one set, its places on the mo
 
 Answers are kept in small in-process caches, since a preset only changes on redeploy. These two routes are the
 public compute, so computed answers (not cache hits, not refusals) are capped per visitor and per day, per
-server instance.
+server instance. A plan takes its slot before it is priced, so an illegal plan costs one too; the step it
+failed on is remembered, and the same illegal plan again is answered from that with no slot and no work.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Res
 from pydantic import BaseModel, ConfigDict, Field
 
 from .agent.clash_tools import IllegalStep, PlanMove, PlanResult, apply_plan, compute_move_options
+from .config import Settings, get_settings
 from .limits import LimitMessages, RunLimiter, visitor_key
 from .presets import CACHE_CONTROL, Preset, Presets
 from .runs import published_state
@@ -42,11 +44,10 @@ NOT_ON_THIS_DAY = "That set is not on this festival day."
 PICK_ONCE = "Pick each set once."
 ILLEGAL_STEP = "Step {n} is not a legal place for that set after the steps before it."
 
-# Caps on computed answers of both routes, per server instance. If every visitor shares one address behind the
-# proxy, set the per-visitor numbers equal to the global one.
-MOVES_PER_VISITOR_HOUR = 600
-MOVES_PER_VISITOR_DAY = 3_000
-MOVES_PER_DAY = 20_000
+ILLEGAL_CACHE_SIZE = 256
+
+# Caps on computed answers of both routes, per server instance, come from the settings (``whatif_per_*``). If
+# every visitor shares one address behind the proxy, set the per-visitor numbers equal to the global one.
 WHATIF_MESSAGES = LimitMessages(
     hour="Too many what-if requests this hour. Please try again later.",
     day="You have reached today's limit of what-if requests. Please try again tomorrow.",
@@ -60,6 +61,7 @@ PlanKey = tuple[str, tuple[PlanMove, ...], str | None, int | None]
 
 _cache: OrderedDict[tuple[str, str, int], tuple[Preset, dict[str, Any]]] = OrderedDict()
 _plans: OrderedDict[PlanKey, tuple[Preset, dict[str, Any]]] = OrderedDict()
+_illegal: OrderedDict[PlanKey, tuple[Preset, int]] = OrderedDict()  # the plan's failing step
 _cache_lock = threading.Lock()
 _limiter: RunLimiter | None = None
 _limiter_lock = threading.Lock()
@@ -70,24 +72,30 @@ def get_whatif_limiter() -> RunLimiter:
     global _limiter
     with _limiter_lock:
         if _limiter is None:
+            settings = get_settings()
             _limiter = RunLimiter(
-                MOVES_PER_VISITOR_HOUR, MOVES_PER_VISITOR_DAY, MOVES_PER_DAY, messages=WHATIF_MESSAGES
+                settings.whatif_per_visitor_hour,
+                settings.whatif_per_visitor_day,
+                settings.whatif_per_day,
+                messages=WHATIF_MESSAGES,
             )
         return _limiter
 
 
 Limiter = Annotated[RunLimiter, Depends(get_whatif_limiter)]
+AppSettings = Annotated[Settings, Depends(get_settings)]
 
 
 def _refuse(status: int, detail: str) -> HTTPException:
     return HTTPException(status_code=status, detail=detail, headers=NO_STORE)
 
 
-def _take_slot(request: Request, limiter: RunLimiter) -> None:
+def _take_slot(request: Request, limiter: RunLimiter, settings: Settings) -> None:
     """Count one computed answer for this visitor, or refuse with 429 (a refusal stores nothing)."""
     host = request.client.host if request.client else None
+    key = visitor_key(dict(request.headers), host, settings.visitor_stamp_secret)
     with _limiter_lock:  # these routes run in the thread pool; the limiter's counts are plain deques
-        refusal = limiter.try_acquire(visitor_key(dict(request.headers), host))
+        refusal = limiter.try_acquire(key)
     if refusal:
         raise _refuse(429, refusal)
 
@@ -124,6 +132,7 @@ def get_moves(
     request: Request,
     response: Response,
     limiter: Limiter,
+    settings: AppSettings,
     act: Annotated[str, Query(max_length=80)],
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = 8,
 ) -> dict[str, Any]:
@@ -136,7 +145,7 @@ def get_moves(
         raise HTTPException(status_code=404, detail=NOT_ON_THIS_DAY)
     options = cached_move_options(preset, act, limit)
     if options is None:
-        _take_slot(request, limiter)
+        _take_slot(request, limiter, settings)
         options = move_options(preset, act, limit)
     response.headers["Cache-Control"] = CACHE_CONTROL
     return options
@@ -174,6 +183,21 @@ def _store_plan(preset: Preset, key: PlanKey, answer: dict[str, Any]) -> None:
         _plans.move_to_end(key)
         while len(_plans) > PLAN_CACHE_SIZE:
             _plans.popitem(last=False)
+
+
+def _known_illegal(preset: Preset, key: PlanKey) -> int | None:
+    """The step a plan already failed on for this preset, or None."""
+    with _cache_lock:
+        hit = _illegal.get(key)
+    return hit[1] if hit is not None and hit[0] is preset else None
+
+
+def _store_illegal(preset: Preset, key: PlanKey, step: int) -> None:
+    with _cache_lock:
+        _illegal[key] = (preset, step)
+        _illegal.move_to_end(key)
+        while len(_illegal) > ILLEGAL_CACHE_SIZE:
+            _illegal.popitem(last=False)
 
 
 def plan_answer(
@@ -227,6 +251,7 @@ def post_whatif(
     request: Request,
     response: Response,
     limiter: Limiter,
+    settings: AppSettings,
 ) -> dict[str, Any]:
     """Price a plan of kept moves stacked on the published timetable, in order, and optionally the places for
     one set on the moved timetable. Tested only: nothing changes."""
@@ -246,12 +271,15 @@ def post_whatif(
     key: PlanKey = (preset.id, moves, body.act, body.limit if body.act is not None else None)
     answer = _cached_plan(preset, key)
     if answer is None:
+        if (step := _known_illegal(preset, key)) is not None:
+            raise _refuse(422, ILLEGAL_STEP.format(n=step))
+        _take_slot(request, limiter, settings)  # before any engine work: an illegal plan costs a slot too
         state = published_state(preset)
         try:
             plan = apply_plan(state["festival"], state["matrix"], state["config"], moves)
         except IllegalStep as exc:
+            _store_illegal(preset, key, exc.step)
             raise _refuse(422, ILLEGAL_STEP.format(n=exc.step)) from None
-        _take_slot(request, limiter)
         answer = plan_answer(preset, state, plan, body.act, body.limit)
         _store_plan(preset, key, answer)
     response.headers.update(NO_STORE)

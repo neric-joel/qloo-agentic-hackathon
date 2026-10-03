@@ -33,11 +33,16 @@ class Layout:
     Constraint violations that already exist in the starting timetable are tolerated, and the sets they
     involve are frozen: a move is feasible when it creates no violation the start did not have.
 
+    With ``thaw`` (the agent's session, where a rule may be added over an overlap that already exists) those
+    sets are not frozen but *thawed*: a move of a thawed set is feasible only when, after it, the set is in no
+    violation at all, so a move never merely keeps the break. A locked set stays frozen. The default is the
+    published behaviour, unchanged.
+
     ``by_day`` and ``by_slot`` list sets by start time, ties by set index, so they depend only on where
     the sets are and not on the moves that put them there.
     """
 
-    __slots__ = ("rules", "day", "stage", "start", "by_day", "by_slot", "tolerated", "frozen")
+    __slots__ = ("rules", "day", "stage", "start", "by_day", "by_slot", "tolerated", "frozen", "thawed")
 
     def __init__(
         self,
@@ -47,6 +52,9 @@ class Layout:
         start: list[int],
         tolerated: frozenset[Issue] | None = None,
         frozen: tuple[bool, ...] | None = None,
+        *,
+        thaw: bool = False,
+        thawed: tuple[bool, ...] | None = None,
     ) -> None:
         self.rules = rules
         self.day = day
@@ -64,12 +72,17 @@ class Layout:
         if tolerated is None:
             tolerated = frozenset(self.issues())
             tied_up = involved_sets(list(tolerated))
-            frozen = tuple(rules.locked[i] or i in tied_up for i in range(rules.n_sets))
+            if thaw:
+                frozen = tuple(rules.locked)
+                thawed = tuple(not rules.locked[i] and i in tied_up for i in range(rules.n_sets))
+            else:
+                frozen = tuple(rules.locked[i] or i in tied_up for i in range(rules.n_sets))
         self.tolerated = tolerated
         self.frozen = frozen or tuple(rules.locked)
+        self.thawed = thawed or (False,) * rules.n_sets
 
     @classmethod
-    def from_festival(cls, festival: Festival) -> Layout:
+    def from_festival(cls, festival: Festival, *, thaw: bool = False) -> Layout:
         rules = build_rules(festival)
         stage_index = {stage_id: s for s, stage_id in enumerate(rules.stage_ids)}
         slots = festival.timetable
@@ -78,11 +91,18 @@ class Layout:
             [slot.day for slot in slots],
             [stage_index[slot.stage_id] for slot in slots],
             [slot.start for slot in slots],
+            thaw=thaw,
         )
 
     def copy(self) -> Layout:
         return Layout(
-            self.rules, list(self.day), list(self.stage), list(self.start), self.tolerated, self.frozen
+            self.rules,
+            list(self.day),
+            list(self.stage),
+            list(self.start),
+            self.tolerated,
+            self.frozen,
+            thawed=self.thawed,
         )
 
     def _order(self, i: int) -> tuple[int, int]:
@@ -107,6 +127,7 @@ class Layout:
             [p[2] for p in placements],
             self.tolerated,
             self.frozen,
+            thawed=self.thawed,
         )
 
     def apply(self, move: Move) -> None:
@@ -186,7 +207,11 @@ class Layout:
                 return False
             if not rules.allow_day_moves and day != rules.home_day[i]:
                 return False
-        return self.issues_after(move) <= self.tolerated
+        after = self.issues_after(move)
+        if not after <= self.tolerated:
+            return False
+        thawed = [i for i in move.sets if self.thawed[i]]
+        return not thawed or not any(i in issue[1:] for issue in after for i in thawed)
 
     def pair_sums(self, matrices: Sequence[Sequence[Sequence[float]]]) -> list[float]:
         """Sum of ``matrix[i][k] * concurrency(i, k)`` over concurrent pairs, for each matrix."""

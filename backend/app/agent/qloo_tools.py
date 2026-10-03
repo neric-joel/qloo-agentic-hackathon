@@ -62,6 +62,14 @@ def _round(value: Any, digits: int = 3) -> Any:
 # ------------------------------------------------------------------ resolve_entities
 
 
+def _search_count(args: dict[str, Any]) -> int:
+    """Qloo searches one resolve_entities call sends: one per name (a call with too many names is refused by
+    the handler before any request, so its count is capped)."""
+    names = args.get("names")
+    count = sum(1 for n in names if isinstance(n, str) and n.strip()) if isinstance(names, list) else 0
+    return min(count, MAX_NAMES)
+
+
 async def resolve_entities(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
     names = [n.strip() for n in args.get("names", []) if isinstance(n, str) and n.strip()]
     entity_type = args.get("entity_type")
@@ -114,6 +122,7 @@ RESOLVE_ENTITIES = Tool(
         "required": ["names", "entity_type"],
     },
     handler=resolve_entities,
+    qloo_calls=_search_count,
 )
 
 
@@ -175,6 +184,7 @@ RECOMMEND = Tool(
         "required": ["signal_entity_ids", "target_type", "location", "take"],
     },
     handler=recommend,
+    qloo_calls=lambda args: 1,
 )
 
 GENERAL_TOOLS = [RESOLVE_ENTITIES, RECOMMEND]

@@ -48,6 +48,21 @@ class Settings(BaseSettings):
     pair_checks_per_day: int = 60
     qloo_quota_floor: int = 1500
 
+    # What-if compute (GET /moves and POST /whatif together): caps on computed answers, per server
+    # instance. If every visitor shares one address behind the proxy, set the per-visitor numbers equal to
+    # the global one.
+    whatif_per_visitor_hour: int = 300
+    whatif_per_visitor_day: int = 1500
+    whatif_per_day: int = 5000
+
+    # Visitor stamp: the web proxy signs the caller's address (x-clash-visitor, x-clash-sig, HMAC-SHA256 with
+    # this secret) and the caps key on it. Unset: the caps key on X-Forwarded-For as before. The same value
+    # must be set on the web project.
+    visitor_stamp_secret: str | None = None
+    # Limiter probe: with this set, GET or HEAD /api/health with the header x-probe equal to it answers which
+    # limiter key the request got (hashed). Set it only while testing.
+    limiter_probe_token: str | None = None
+
     # Public surface: the generic "explore" scenario and the API docs are off unless switched on
     allow_explore: bool = False
     docs_enabled: bool = False

@@ -8,19 +8,10 @@ import { ProvenanceChip } from "@/components/kernel";
 import { Button } from "@/components/ui/button";
 import { currentPlacement } from "@/lib/moves";
 import type { Preset } from "@/lib/preset";
-import { briefHref, rangeVerdict, shiftText, type Plan, type ScaleRange, type StackMove } from "@/lib/stack";
+import { PLAN_CAVEAT, RAISES_MARK, planVerdict, raisesIndex } from "@/lib/plan-copy";
+import { briefHref, shiftText, type Plan, type ScaleRange, type StackMove } from "@/lib/stack";
 
 import { BudgetMove } from "./budget-move";
-
-/** Shown under every plan: what a lower number does and does not mean. */
-export const PLAN_CAVEAT =
-  "Scored by the same measure the places are found with, so a lower number shows what that measure rewards, not that audiences would be better served. It knows only the rules in the timetable, not an act’s own wishes.";
-
-const VERDICT: Record<"below" | "inside" | "above", string> = {
-  below: "This plan scores below that range.",
-  inside: "This plan scores inside that range.",
-  above: "This plan scores above that range.",
-};
 
 /** The plan's actions: undo the last kept move, start over, and open the plan as a brief. */
 function PlanActions({
@@ -82,7 +73,7 @@ export function ScratchPlan({
   const headingId = useId();
   const clashesId = useId();
   const { festival } = preset;
-  const verdict = rangeVerdict(plan.budget, range);
+  const verdict = planVerdict(plan.budget, plan.publishedBudget, range);
   const stageName = (stageId: string) => festival.stages.find((stage) => stage.id === stageId)?.name ?? stageId;
 
   return (
@@ -98,7 +89,7 @@ export function ScratchPlan({
         before={plan.publishedBudget}
         after={plan.budget}
         range={range}
-        verdict={verdict ? VERDICT[verdict] : null}
+        verdict={verdict}
       />
 
       <div className="mt-5 grid gap-6 border-t border-border pt-4 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:gap-8">
@@ -120,6 +111,7 @@ export function ScratchPlan({
                   <span className="tabular-nums">
                     {before.toFixed(1)} → {step.budgetAfter.toFixed(1)}
                   </span>
+                  {raisesIndex(before, step.budgetAfter) ? RAISES_MARK : null}
                 </p>
               </li>
             );

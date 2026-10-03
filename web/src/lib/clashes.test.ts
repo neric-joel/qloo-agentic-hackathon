@@ -13,6 +13,7 @@ import {
   formatPercent,
   formatShare,
   heroClash,
+  hiddenReason,
   hostOf,
   isFixedByLocks,
   isWebUrl,
@@ -27,6 +28,7 @@ import {
   tagLabel,
   topClashes,
   traceToolCalls,
+  withoutTasteLine,
 } from "./clashes";
 import type { QlooRequestRecord } from "./events";
 import { rawTinyPreset } from "./fixtures/tiny-preset";
@@ -343,5 +345,58 @@ describe("traceToolCalls", () => {
     const live = traceToolCalls(records, "live", "qloo");
     expect(live.map((call) => call.provenance)).toEqual(["qloo", "qloo", "qloo"]);
     expect(live.map((call) => call.tool)).toEqual(["rank_audiences", "compare_audiences", "other_requests"]);
+  });
+});
+
+describe("hiddenReason and withoutTasteLine", () => {
+  // Invented acts and genres.
+  const base = preset.report.clashes[0];
+  const hidden = (aGenre: string | null, bGenre: string | null): PairClash => ({
+    ...base,
+    label: "hidden",
+    audience_overlap: 0.9712,
+    a: { act_id: "x1", name: "Act X", stage_id: "s1", genre: aGenre },
+    b: { act_id: "y1", name: "Act Y", stage_id: "s2", genre: bGenre },
+  });
+
+  it("names both main genre tags and the taste-overlap rank out of 100", () => {
+    expect(hiddenReason(hidden("Indie Rock", "Post Punk"))).toBe(
+      "Act X: Indie Rock. Act Y: Post Punk. Main genre tags differ, and their taste overlap is 97 of 100, a rank among the acts compared for this bill.",
+    );
+  });
+
+  it("says when a genre tag was not saved", () => {
+    expect(hiddenReason(hidden(null, "  "))).toBe(
+      "Act X: no genre tag saved. Act Y: no genre tag saved. Main genre tags differ, and their taste overlap is 97 of 100, a rank among the acts compared for this bill.",
+    );
+  });
+
+  it("prints the draw-and-time rank as an ordinal, names draw as a Qloo field", () => {
+    expect(withoutTasteLine(21)).toBe("On draw and time alone (draw is also a Qloo field) this clash would rank 21st.");
+    expect(withoutTasteLine(2)).toBe("On draw and time alone (draw is also a Qloo field) this clash would rank 2nd.");
+  });
+
+  it("adds the denominator when the server sends it, and keeps the bare ordinal otherwise", () => {
+    expect(withoutTasteLine(21, 68)).toBe(
+      "On draw and time alone (draw is also a Qloo field) this clash would rank 21st of 68.",
+    );
+    expect(withoutTasteLine(21, undefined)).toBe(
+      "On draw and time alone (draw is also a Qloo field) this clash would rank 21st.",
+    );
+    // A denominator smaller than the rank cannot be right: print the bare ordinal.
+    expect(withoutTasteLine(21, 5)).toBe("On draw and time alone (draw is also a Qloo field) this clash would rank 21st.");
+  });
+
+  it("treats a null from the lens as no cost in that view, never as not concurrent", () => {
+    const line = withoutTasteLine(null);
+    expect(line).toBe("On draw and time alone this pair would not be ranked: it carries no cost in that view.");
+    expect(line).not.toMatch(/concurrent|same time/);
+  });
+
+  it("prints nothing without a lens reading or with a rank that is not a whole number from 1", () => {
+    expect(withoutTasteLine(undefined)).toBeNull();
+    expect(withoutTasteLine(0)).toBeNull();
+    expect(withoutTasteLine(2.5)).toBeNull();
+    expect(withoutTasteLine(Number.NaN)).toBeNull();
   });
 });

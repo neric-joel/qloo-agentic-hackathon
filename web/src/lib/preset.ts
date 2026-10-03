@@ -70,7 +70,7 @@ export type PairClash = {
   overlap_minutes: number;
   /** Shared minutes over the shorter set's minutes, 0 to 1. */
   concurrency: number;
-  /** Taste overlap: a rank among the other acts on this bill, derived from Qloo, 0 to 1. */
+  /** Taste overlap: a rank among the acts compared for this bill, derived from Qloo, 0 to 1. */
   audience_overlap: number;
   /** Geometric mean of the two acts' draw, 0 to 1. */
   draw: number;

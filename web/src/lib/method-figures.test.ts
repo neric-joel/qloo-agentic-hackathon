@@ -7,14 +7,16 @@ import MethodPage, { metadata } from "@/app/method/page";
 import {
   METHOD_FIGURES,
   formatAuc,
+  formatCount,
   formatInterval,
   formatPct,
   formatWholePct,
+  formatWithin,
   methodRow,
   numberWord,
 } from "./method-figures";
 
-const { backtest, coverage, index, liveCheck, moves, scale } = METHOD_FIGURES;
+const { backtest, coverage, index, liveCheck, moves, scale, symmetry } = METHOD_FIGURES;
 
 /** The page as a reader (or a crawler) gets it: the static HTML with its tags removed. */
 function pageText(): string {
@@ -28,6 +30,9 @@ function pageText(): string {
     .trim();
 }
 
+/** A printed numeral: "18,762", "0.634", "3". */
+const NUMERAL = /\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?/g;
+
 /** Every number the figures module holds, in each form the page may print it. */
 function allowedNumerals(): Set<string> {
   const allowed = new Set<string>();
@@ -35,10 +40,12 @@ function allowedNumerals(): Set<string> {
     allowed.add(String(value));
     allowed.add(value.toFixed(1));
     allowed.add(formatAuc(value));
+    allowed.add(formatCount(value));
+    allowed.add(formatWithin(value));
   };
   const walk = (value: unknown): void => {
     if (typeof value === "number") add(value);
-    else if (typeof value === "string") (value.match(/\d+(?:\.\d+)?/g) ?? []).forEach((n) => allowed.add(n));
+    else if (typeof value === "string") (value.match(NUMERAL) ?? []).forEach((n) => allowed.add(n));
     else if (Array.isArray(value)) value.forEach(walk);
     else if (value && typeof value === "object") Object.values(value).forEach(walk);
   };
@@ -105,11 +112,31 @@ describe("method figures", () => {
     expect(index.baselineSamples).toBe(300);
     expect(moves).toEqual({ barPoints: 10, measuredPoints: 7.1, movesDiffer: 7, movesCompared: 8 });
     expect(moves.measuredPoints).toBeLessThan(moves.barPoints);
-    expect(scale).toEqual({ overlap: [0, 100], indexMultiplier: 100, intervalPct: 95 });
+    expect(scale).toEqual({
+      overlap: [0, 100],
+      indexMultiplier: 100,
+      indexPointPct: 1,
+      intervalPct: 95,
+      topQuarterPct: 25,
+      auc: { chance: 0.5, perfect: 1 },
+    });
+    // AUC's chance level is the random row's AUC.
+    expect(scale.auc.chance).toBe(methodRow("random").auc);
   });
 
   it("pins the requests one live re-check sends", () => {
     expect(liveCheck).toEqual({ requests: 3 });
+  });
+
+  it("pins the symmetry check's printout: whole counts, one tiny difference, none above 1e-5", () => {
+    expect(Object.keys(symmetry).sort()).toEqual(["maxDifference", "pairs", "readings", "readingsAbove"]);
+    expect(symmetry).toEqual({ readings: 18762, pairs: 9381, maxDifference: 6.06e-8, readingsAbove: 0 });
+    expect(Number.isInteger(symmetry.readings) && Number.isInteger(symmetry.pairs)).toBe(true);
+    // Each pair is read in both directions.
+    expect(symmetry.readings).toBe(2 * symmetry.pairs);
+    expect(symmetry.maxDifference).toBeGreaterThan(0);
+    expect(symmetry.maxDifference).toBeLessThan(1e-5);
+    expect(symmetry.readingsAbove).toBe(0);
   });
 });
 
@@ -122,6 +149,18 @@ describe("method formatters", () => {
     expect(formatAuc(0.5)).toBe("0.500");
     expect(formatAuc(0.634)).toBe("0.634");
     expect(formatInterval([0.517, 0.755])).toBe("0.517 to 0.755");
+    expect(formatCount(18762)).toBe("18,762");
+    expect(formatCount(300)).toBe("300");
+  });
+
+  it("prints a tiny difference as a decimal bound rounded up, so 'within' stays true", () => {
+    expect(formatWithin(6.06e-8)).toBe("0.00000007");
+    expect(formatWithin(6e-8)).toBe("0.00000006");
+    expect(formatWithin(9.5e-8)).toBe("0.0000001");
+    expect(formatWithin(0.034)).toBe("0.04");
+    expect(formatWithin(3.2)).toBe("4");
+    expect(formatWithin(0)).toBe("0");
+    expect(Number(formatWithin(symmetry.maxDifference))).toBeGreaterThanOrEqual(symmetry.maxDifference);
   });
 
   it("spells out small whole numbers and leaves the rest as digits", () => {
@@ -170,7 +209,7 @@ describe("/method page", () => {
 
   it("prints no number that is not in the figures module", () => {
     const allowed = allowedNumerals();
-    const printed = pageText().match(/\d+(?:\.\d+)?/g) ?? [];
+    const printed = pageText().match(NUMERAL) ?? [];
     expect(printed.length).toBeGreaterThan(30);
     expect(printed.filter((numeral) => !allowed.has(numeral))).toEqual([]);
   });
@@ -233,6 +272,53 @@ describe("/method page", () => {
       "It is for evaluating this entry, it is not offered to festivals, and it leaves out Qloo's tags and identifiers.",
     );
     expect(section.match(/\d/g)).toBeNull();
+  });
+
+  it("opens with four short-version bullets, the fourth saying what the measure is good for", () => {
+    const html = renderToStaticMarkup(createElement(MethodPage));
+    const box = html.match(/<section aria-labelledby="short-heading"[\s\S]*?<\/section>/)?.[0] ?? "";
+    expect(box.match(/<li/g)).toHaveLength(4);
+    const text = pageText();
+    expect(text).toContain(
+      "What it is good for. It ranks a day's clashes with a number you can inspect, and it tests moves against the timetable's rules. It tells apart two rivals of equal popularity when Qloo ranks one as much alike in audience to an act and the other as unlike (the twin card shows one such case). It says nothing about attendance, and on our own check it did not find complained-about clashes better than popularity does.",
+    );
+    // The failed gate still comes first.
+    expect(text.indexOf("The test we set before building failed.")).toBeLessThan(text.indexOf("What it is good for."));
+  });
+
+  it("puts the terms in plain words at their first use", () => {
+    const text = pageText();
+    expect(text).toContain(
+      "Taste overlap put 46.8% of complained-about clashes in the 25% highest-ranked clashes among that day's pairs, 7.8 points ahead of genre tags. The bar we wrote down before building was 60% and 10 points ahead.",
+    );
+    expect(text).toContain("7.1 index points (one point is 1% of the average random timetable's cost)");
+    expect(text).toContain(
+      "AUC (0.5 means no better than chance; 1 means every listed clash ranks above every unlisted pair)",
+    );
+    // AUC can fall below 0.5, so the page never calls 0.5 its floor.
+    expect(text).not.toMatch(/from 0\.5/);
+    // Each term's plain words come before (or with) its first bare use.
+    expect(text.indexOf("AUC")).toBe(text.indexOf("AUC (0.5 means"));
+    expect(text.indexOf("25% highest-ranked")).toBeLessThan(text.indexOf("top quarter"));
+    expect(text).not.toMatch(/pre-set bar|re-ordering|top quartile/i);
+  });
+
+  it("states that the saved pairs checked read the same both ways, with the symmetry figures", () => {
+    const text = pageText();
+    expect(text).toContain(
+      "In the 9,381 saved pairs we checked, Qloo's affinity came back the same whichever act was the signal (the 18,762 readings agree in both directions to within 0.00000007), so for those pairs the two directions are one reading, not two. The app turns that reading into a rank within each act's row of the bill, averages the two ranks, so an act that is close to everyone does not look close to everyone, and scales the result 0 to 100.",
+    );
+    // A finding about the pairs checked, not a claim about every Qloo pair.
+    expect(text).not.toMatch(/affinity for a pair is the same/);
+    expect(text).toContain("It says how alike Qloo ranks two audiences in taste, relative to that bill.");
+    expect(text).not.toContain("both directions are turned into ranks");
+    expect(text).toContain("the average of 300 random valid timetables of the same lineup");
+  });
+
+  it("does not promise a request id Qloo may not send", () => {
+    const text = pageText();
+    expect(text).toContain("with the request id Qloo returned for each request when it sent one.");
+    expect(text).not.toContain("with Qloo's request ids");
   });
 
   it("uses the word that denies prediction exactly once", () => {

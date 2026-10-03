@@ -54,3 +54,59 @@ def test_no_presets_directory_means_an_empty_list(tmp_path):
             assert client.get("/api/presets").json() == []
     finally:
         app.dependency_overrides.clear()
+
+
+def decimals_of(value: float) -> int:
+    text = repr(value)
+    return len(text.split(".")[1]) if "." in text and "e" not in text else 99
+
+
+def test_served_popularity_is_rounded_but_the_engine_keeps_the_full_value(tmp_path):
+    from app.presets import POPULARITY_DECIMALS, get_presets, public_copy
+    from app.runs import published_state
+
+    write_preset(tmp_path, "a-day", "A Day")
+    path = tmp_path / "a-day.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for n, act in enumerate(data["festival"]["acts"]):  # unrounded values, as Qloo returns them
+        act["popularity"] = (n + 1) / 13 + 1e-7 * n
+    data["festival"]["acts"][0]["popularity"] = 0.8146694960713334  # 81.467: three decimals would print 82
+    path.write_text(json.dumps(data), encoding="utf-8")
+    settings = Settings(presets_dir=tmp_path, _env_file=None)
+    loaded = get_presets(settings)["a-day"]
+    originals = {act.id: act.popularity for act in loaded.festival.acts}
+    assert any(p is not None and decimals_of(p) > POPULARITY_DECIMALS for p in originals.values())
+    try:
+        with client_for(tmp_path) as client:
+            served = client.get("/api/presets/a-day").json()
+    finally:
+        app.dependency_overrides.clear()
+    popularity = [a["popularity"] for a in served["festival"]["acts"] if a["popularity"] is not None]
+    assert popularity and all(decimals_of(p) <= POPULARITY_DECIMALS for p in popularity)
+    # What the page prints (a whole number out of 100) does not move
+    for act in served["festival"]["acts"]:
+        original = originals[act["id"]]
+        assert (act["popularity"] is None) == (original is None)
+        if original is not None:
+            assert abs(act["popularity"] - original) <= 0.5 * 10**-POPULARITY_DECIMALS
+            assert round(act["popularity"] * 100) == round(original * 100)
+
+    # The engine reads the loaded preset: same object, same values, same matrix, same prices
+    state = published_state(loaded)
+    assert state["festival"] is loaded.festival
+    assert {act.id: act.popularity for act in state["festival"].acts} == originals
+    public = public_copy(loaded)
+    assert public is not loaded and public_copy(loaded) is public  # built once per preset object
+    assert public.matrix is loaded.matrix and public.report == loaded.report
+    assert {act.id: act.popularity for act in loaded.festival.acts} == originals
+    assert public_copy(loaded.model_copy()) is not public  # a reloaded preset gets its own copy
+
+
+def test_an_act_without_popularity_stays_without(tmp_path):
+    from app.presets import get_presets, public_copy
+
+    write_preset(tmp_path, "a-day", "A Day")
+    loaded = get_presets(Settings(presets_dir=tmp_path, _env_file=None))["a-day"]
+    acts = [loaded.festival.acts[0].model_copy(update={"popularity": None}), *loaded.festival.acts[1:]]
+    bare = loaded.model_copy(update={"festival": loaded.festival.model_copy(update={"acts": acts})})
+    assert public_copy(bare).festival.acts[0].popularity is None

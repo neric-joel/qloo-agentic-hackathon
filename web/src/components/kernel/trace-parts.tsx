@@ -140,7 +140,7 @@ function ParamsTable({ item }: { item: TracedRequest }) {
 function requestIdNote(record: QlooRequestRecord): string {
   if (record.recorded) return "not saved with this response";
   if (record.cached) return "none (served from cache)";
-  return "none (not provided)";
+  return "not supplied";
 }
 
 /** One Qloo request: method, path, status, latency, source, parameters and request id. */

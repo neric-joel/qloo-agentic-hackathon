@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from .agent.events import EventChannel
 from .agent.llm import LLMBackend, build_backend, llm_configured
+from .audit import router as audit_router
 from .config import Settings, get_settings
 from .deps import get_qloo
 from .limits import RunLimiter, visitor_key
@@ -15,6 +16,7 @@ from .pair import NoStoreOnPairRoute
 from .pair import router as pair_router
 from .presets import Presets
 from .presets import router as presets_router
+from .probe import install_probe
 from .qloo.client import QlooClient
 from .recordings import router as recordings_router
 from .runs import ClashInput, ExploreInput, RunRequest, SessionError, clash_state, execute_run
@@ -38,7 +40,9 @@ app.include_router(presets_router)
 app.include_router(recordings_router)
 app.include_router(pair_router)
 app.include_router(whatif_router)
+app.include_router(audit_router)
 app.add_middleware(NoStoreOnPairRoute)
+install_probe(app, get_settings())
 
 _limiter: RunLimiter | None = None
 
@@ -75,6 +79,7 @@ def get_backend(request: Request) -> LLMBackend | None:
 
 
 @app.get("/api/health")
+@app.head("/api/health", include_in_schema=False)  # monitors use HEAD; the schema keeps one operation
 async def health(request: Request, settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, object]:
     return {
         "status": "ok",
@@ -109,7 +114,7 @@ async def create_run(
         except SessionError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
     host = request.client.host if request.client else None
-    refusal = limiter.try_acquire(visitor_key(dict(request.headers), host))
+    refusal = limiter.try_acquire(visitor_key(dict(request.headers), host, settings.visitor_stamp_secret))
     if refusal:
         raise HTTPException(status_code=429, detail=refusal)
 

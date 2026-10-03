@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Sequence
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
-from .agent.clash_tools import CLASH_TOOLS
+from .agent.clash_tools import CLASH_TOOLS, bound_text, keep_apart_text, keep_stage_text, lock_text
 from .agent.events import Event, EventChannel, new_id
 from .agent.llm import LLMBackend
 from .agent.loop import MAX_TURNS, run_agent
@@ -31,8 +32,8 @@ words) that names the top picks and the favorites that drove them."""
 CLASH_SYSTEM = """You are Clash Control, a programming assistant for one day of a festival timetable.
 A clash is two sets on different stages at the same time. Its cost = how popular the two acts are (combined
 draw, Qloo popularity) x how much their audiences overlap in taste (taste overlap, 0-100: Qloo's affinity
-between the two acts' audiences, turned into a rank among this day's acts; tool results call it
-taste_overlap_out_of_100) x minutes overlapping. Taste overlap measures taste, not attendance.
+between the two acts' audiences, turned into a rank among the acts compared for this bill; tool results
+call it taste_overlap_out_of_100) x minutes overlapping. Taste overlap measures taste, not attendance.
 Never describe taste overlap as a percentage of fans or a headcount.
 State taste overlap and draw as whole numbers out of 100, exactly as the tools give them, for example
 "taste overlap 92 out of 100". Never write them as decimals.
@@ -141,7 +142,43 @@ def clash_state(preset: Preset, data: ClashInput) -> dict[str, Any]:
             raise SessionError("The timetable is not valid for this festival day.") from exc
         if not _only_tightens(preset.festival, festival):
             raise SessionError("The timetable does not match this festival day.")
-    return {**published_state(preset), "festival": festival, "constraints": list(data.rules)}
+    # The rules the model is told come from the timetable and constraints the engine will use, never from the
+    # client's own list of rule texts (``data.rules``, still accepted from older pages, is not read)
+    return {
+        **published_state(preset),
+        "festival": festival,
+        "constraints": recorded_rules(preset.festival, festival),
+    }
+
+
+def recorded_rules(published: Festival, session: Festival) -> list[str]:
+    """One line for each rule the session holds that the published day does not, worded as ``add_constraint``
+    words it: sets locked now but not published, sets kept on their stage, start bounds, and pairs kept apart.
+
+    Read from the structure the engine uses, so a line is there exactly when the engine holds the rule.
+    """
+    names = session.act_by_id()
+    stages = session.stage_by_id()
+    before = {slot.act_id: slot for slot in published.timetable}
+    kinds: dict[str, list[str]] = {"lock": [], "stage": [], "not_before": [], "not_after": []}
+    for slot in session.timetable:
+        was, name = before[slot.act_id], names[slot.act_id].name
+        if slot.locked and not was.locked:
+            kinds["lock"].append(lock_text(name))
+        pinned = slot.stages == [slot.stage_id] and was.stages != [slot.stage_id]
+        if pinned or (slot.stage_locked and not was.stage_locked):
+            kinds["stage"].append(keep_stage_text(name, stages[slot.stage_id].name))
+        for kind in ("not_before", "not_after"):
+            bound = getattr(slot, kind)
+            if bound is not None and bound != getattr(was, kind):
+                kinds[kind].append(bound_text(kind, name, bound))
+    lines = [line for group in kinds.values() for line in group]
+    held = {frozenset(pair) for pair in published.constraints.no_clash_with}
+    for a, b in session.constraints.no_clash_with:
+        if frozenset((a, b)) not in held:
+            held.add(frozenset((a, b)))
+            lines.append(keep_apart_text(names[a].name, names[b].name))
+    return lines
 
 
 def _only_tightens(published: Festival, session: Festival) -> bool:
@@ -174,10 +211,11 @@ def _slot_tightens(published: SetSlot, slot: SetSlot) -> bool:
     return published.stages is None or (slot.stages is not None and set(slot.stages) <= set(published.stages))
 
 
-def clash_prompt(festival: Festival, data: ClashInput) -> str:
+def clash_prompt(festival: Festival, data: ClashInput, rules: Sequence[str] = ()) -> str:
+    """The user turn: the day, the rules the session holds (``recorded_rules``) and the conversation."""
     lines = [f"Festival day: {festival.name}."]
-    if data.rules:
-        lines.append("Rules already recorded: " + "; ".join(data.rules) + ".")
+    if rules:
+        lines.append("Rules already recorded: " + "; ".join(rules) + ".")
     if data.history:
         lines.append("Earlier in this conversation:")
         lines += [f"{'User' if t.role == 'user' else 'You'}: {t.text}" for t in data.history[-MAX_HISTORY:]]
@@ -236,7 +274,11 @@ async def execute_run(
                 engine_budget=max_engine_seconds,
                 qloo_floor=qloo_floor,
             )
-            system, prompt, tools = CLASH_SYSTEM, clash_prompt(state["festival"], data), CLASH_TOOLS
+            system, prompt, tools = (
+                CLASH_SYSTEM,
+                clash_prompt(state["festival"], data, state["constraints"]),
+                CLASH_TOOLS,
+            )
         else:
             ctx = ToolContext(qloo=qloo, qloo_budget=max_qloo_calls, qloo_floor=qloo_floor)
             system, tools = EXPLORE_SYSTEM, GENERAL_TOOLS

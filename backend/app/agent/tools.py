@@ -75,20 +75,26 @@ class ToolContext:
         finally:
             self.engine_seconds += time.perf_counter() - started
 
-    def take_qloo_slot(self) -> None:
-        """Reserve one Qloo request before a Qloo-backed tool runs, or refuse it once the budget is used.
+    def reserve_qloo(self, worst_case: int) -> None:
+        """Reserve a Qloo-backed tool's worst-case requests before it runs, or refuse it.
 
-        Reserving up front keeps concurrent calls in one turn from all passing the check. A tool that
-        starts under the cap finishes; the cap stops the next one. Once the client has learned that the
-        requests left in Qloo's month are below the floor, or has sent too many requests without an answer
-        that said how many are left, every Qloo-backed tool is refused.
+        ``worst_case`` is the most requests the call can send: its calls times the client's attempts per call.
+        The run's remaining budget must cover all of it, and the client must be able to promise it against the
+        month's floor (``QlooClient.reserve``, the same reservation the pair check takes). Both are taken
+        before any await, so concurrent calls in one turn cannot all pass the check. Pair every successful
+        call with ``settle_qloo``, which swaps the reservation for the requests actually made.
         """
-        if self.qloo.allowance_low(self.qloo_floor):
-            raise ToolRefused(QLOO_PAUSED, "Qloo allowance paused")
         used = self.state.get(QLOO_CALLS, 0)
-        if self.qloo_budget is not None and used >= self.qloo_budget:
+        if self.qloo_budget is not None and used + worst_case > self.qloo_budget:
             raise ToolRefused(QLOO_BUDGET_USED, "Qloo budget for this run is used up")
-        self.state[QLOO_CALLS] = used + 1
+        if not self.qloo.reserve(self.qloo_floor, worst_case):
+            raise ToolRefused(QLOO_PAUSED, "Qloo allowance paused")
+        self.state[QLOO_CALLS] = used + worst_case
+
+    def settle_qloo(self, worst_case: int, made: int) -> None:
+        """Give back a reservation and charge the run for the ``made`` requests the tool actually sent."""
+        self.qloo.release(worst_case)
+        self.state[QLOO_CALLS] = max(0, self.state.get(QLOO_CALLS, 0) - worst_case) + made
 
 
 Handler = Callable[[dict[str, Any], ToolContext], Awaitable[ToolOutput]]
@@ -101,6 +107,17 @@ class Tool:
     input_schema: dict[str, Any]
     handler: Handler
     provenance: Provenance = "qloo"
+    # The tool changes the run's working state (the timetable or its rules), so within one model turn it runs
+    # before the tools that only read that state
+    mutates_state: bool = False
+    # How many Qloo calls one invocation can make, from its input (a Qloo-backed tool only); each call can be
+    # tried ``max_retries + 1`` times, so the request budget it reserves is this times the client's attempts
+    qloo_calls: Callable[[dict[str, Any]], int] | None = None
+
+    def worst_case_requests(self, args: dict[str, Any], qloo: QlooClient) -> int:
+        """The most Qloo requests one invocation can send: its calls times the client's attempts per call."""
+        calls = self.qloo_calls(args) if self.qloo_calls else 1
+        return max(1, calls) * (qloo.max_retries + 1)
 
     def to_api(self) -> dict[str, Any]:
         return {
@@ -118,11 +135,14 @@ async def run_tool_calls(
     emit: Emit,
     max_calls: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Run the tool calls from one model turn concurrently.
+    """Run the tool calls from one model turn: the ones that change the run's state first, then the rest
+    concurrently.
 
-    Calls past ``max_calls`` are not run: each gets an error result, so the model can carry on. Returns
-    the ``tool_result`` blocks in the original order so they can be sent back to the model in a single
-    user message.
+    A tool with ``mutates_state`` (a rule added with add_constraint) runs before the others, one call after
+    another in the order the model gave them, so a same-turn what-if or search already sees the rule. Calls
+    past ``max_calls`` are not run: each gets an error result, so the model can carry on. Returns the
+    ``tool_result`` blocks in the original order so they can be sent back to the model in a single user
+    message.
     """
 
     async def run_one(block: Any, skip: bool) -> dict[str, Any]:
@@ -138,7 +158,7 @@ async def run_tool_calls(
             }
         )
         started = time.perf_counter()
-        reserved = 0
+        reserved = 0  # worst-case Qloo requests held for this call until it ends
         with record_requests() as records:
             try:
                 if skip:
@@ -146,8 +166,9 @@ async def run_tool_calls(
                 if tool is None:
                     raise ToolInputError(f"Unknown tool '{block.name}'.")
                 if tool.provenance == "qloo":
-                    ctx.take_qloo_slot()
-                    reserved = 1
+                    worst_case = tool.worst_case_requests(dict(block.input), ctx.qloo)
+                    ctx.reserve_qloo(worst_case)
+                    reserved = worst_case
                 output = await tool.handler(dict(block.input), ctx)
                 ok, content, summary = True, output.content, output.summary
                 if output.data is not None:
@@ -166,9 +187,12 @@ async def run_tool_calls(
             except Exception:
                 log.exception("Tool %s failed", block.name)
                 ok, content, summary = False, "Error: the tool failed unexpectedly.", "Tool failed"
-
-        # Swap the reserved slot for the requests the tool actually made (failed ones count too).
-        ctx.state[QLOO_CALLS] = ctx.state.get(QLOO_CALLS, 0) + len(records) - reserved
+            finally:
+                # Swap the reservation for the requests the tool actually made (failed ones count too); this
+                # also runs when the run is cancelled mid-call.
+                if reserved:
+                    ctx.settle_qloo(reserved, len(records))
+                ctx.state.setdefault(QLOO_CALLS, 0)
         if records and all(r.recorded for r in records):
             provenance = "recorded"
         await emit(
@@ -189,4 +213,18 @@ async def run_tool_calls(
         return result
 
     limit = len(tool_uses) if max_calls is None else max_calls
-    return list(await asyncio.gather(*(run_one(block, i >= limit) for i, block in enumerate(tool_uses))))
+    results: list[dict[str, Any] | None] = [None] * len(tool_uses)
+
+    def changes_state(i: int, block: Any) -> bool:
+        tool = registry.get(block.name)
+        return i < limit and tool is not None and tool.mutates_state
+
+    first = [i for i, block in enumerate(tool_uses) if changes_state(i, block)]
+    for i in first:
+        results[i] = await run_one(tool_uses[i], False)
+    rest = [i for i in range(len(tool_uses)) if i not in first]
+    for i, result in zip(
+        rest, await asyncio.gather(*(run_one(tool_uses[i], i >= limit) for i in rest)), strict=True
+    ):
+        results[i] = result
+    return [result for result in results if result is not None]

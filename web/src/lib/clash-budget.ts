@@ -1,8 +1,8 @@
 /**
  * The Clash Budget Index: 100 x a timetable's total clash regret / the mean regret of random valid
- * re-orderings of the same lineup. 100 means "as costly as a random valid arrangement"; lower is
- * better. It counts taste-overlap cost only. Helpers here place it on the dial and put it into
- * words.
+ * timetables of the same lineup. 100 means "as costly as a random valid arrangement"; lower is
+ * better. It counts only what clashes cost: taste overlap, time shared and draw. Helpers here place
+ * it on the dial and put it into words.
  */
 
 import type { BaselineStats, SetSlot } from "./preset";
@@ -48,7 +48,7 @@ export function dialArc(from: number, to: number, cx: number, cy: number, r: num
 }
 
 /**
- * Where the index sits against the shaded band of random re-orderings (10th to 90th percentile),
+ * Where the index sits against the middle 80% of random valid timetables of this lineup (10th to 90th percentile),
  * compared as the dial prints them (whole numbers), so the words never contradict the figures.
  * Null when the band is unknown.
  */
@@ -67,16 +67,16 @@ export function rangePosition(
 }
 
 /**
- * "17% more taste-overlap cost than the average random re-ordering", "14% less ...", or "level
- * with the average random re-ordering".
+ * "17% more taste-overlap cost than the average random valid timetable", "14% less ...", or "level
+ * with the average random valid timetable".
  */
 export function describeVsRandom(index: number): string {
   const delta = Math.round(index - 100);
-  if (delta === 0) return "level with the average random re-ordering";
-  return `${Math.abs(delta)}% ${delta > 0 ? "more" : "less"} taste-overlap cost than the average random re-ordering`;
+  if (delta === 0) return "level with the average random valid timetable";
+  return `${Math.abs(delta)}% ${delta > 0 ? "more" : "less"} taste-overlap cost than the average random valid timetable`;
 }
 
-/** How far the random re-orderings behind the index may move each set. */
+/** How far the random valid timetables behind the index may move each set. */
 export type SamplingReach = {
   /** How far a set may start from its published start, either way, when every set shares one window. */
   windowMinutes: number | null;
@@ -115,7 +115,7 @@ function spanText(minutes: number): string {
 }
 
 /**
- * The rules every random re-ordering keeps, as a clause: "each set stays within 2 hours of its
+ * The rules every random valid timetable keeps, as a clause: "each set stays within 2 hours of its
  * published start, on its own stage or a neighbouring one, with the 5 locked sets fixed".
  */
 export function describeReach(reach: SamplingReach): string {

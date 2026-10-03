@@ -35,8 +35,9 @@ function text(html: string): string {
 }
 
 describe("wallCount", () => {
-  it("says the rest are left out when the wall shows fewer than it holds", () => {
-    expect(wallCount(8, 13)).toBe("Showing 8 of 13 sourced examples, the rest are not shown here");
+  it("says the rest are not saved when the wall shows fewer than the source counted", () => {
+    expect(wallCount(8, 13)).toBe("Showing 8 of 13 sourced examples. The other 5 are not saved with this day.");
+    expect(wallCount(3, 4)).toBe("Showing 3 of 4 sourced examples. The other one is not saved with this day.");
   });
 
   it("gives the plain count when the wall shows them all", () => {
@@ -48,15 +49,21 @@ describe("wallCount", () => {
 describe("HiddenWall", () => {
   it("prints the count line above the cards", () => {
     const partial = text(renderToStaticMarkup(createElement(HiddenWall, { evidence: evidence(2, 5) })));
-    expect(partial).toContain("Showing 2 of 5 sourced examples, the rest are not shown here");
+    expect(partial).toContain("Showing 2 of 5 sourced examples. The other 3 are not saved with this day.");
     const whole = text(renderToStaticMarkup(createElement(HiddenWall, { evidence: evidence(2, 2) })));
     expect(whole).toContain("2 sourced examples");
     expect(whole).not.toContain("Showing");
   });
 
-  it("prints no count line when the day has no examples", () => {
-    const empty = text(renderToStaticMarkup(createElement(HiddenWall, { evidence: null })));
-    expect(empty).toContain("No sourced examples were saved with this festival day.");
-    expect(empty).not.toMatch(/sourced examples,|Showing/);
+  it("renders no section at all when the day has no examples", () => {
+    expect(renderToStaticMarkup(createElement(HiddenWall, { evidence: null }))).toBe("");
+    expect(renderToStaticMarkup(createElement(HiddenWall, { evidence: evidence(0, 0) }))).toBe("");
+  });
+
+  it("prints the count line in sentence case, not as an all-caps label", () => {
+    const html = renderToStaticMarkup(createElement(HiddenWall, { evidence: evidence(2, 5) }));
+    const line = html.match(/<p class="([^"]*)">Showing/);
+    expect(line).not.toBeNull();
+    expect(line?.[1]).not.toContain("type-kicker");
   });
 });

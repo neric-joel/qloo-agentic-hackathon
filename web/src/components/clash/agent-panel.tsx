@@ -216,7 +216,7 @@ function RuledOutCard({ whatIfs, festival }: { whatIfs: readonly WhatIf[]; festi
 }
 
 function MoveOptionsCard({ options, range }: { options: MoveOptions; range: ScaleRange }) {
-  const [best, ...rest] = options.options;
+  const [lowest, ...rest] = options.options;
   return (
     <div className="rounded-lg border border-border-strong bg-card p-4 sm:col-span-2">
       <div className="flex items-start justify-between gap-3">
@@ -226,14 +226,14 @@ function MoveOptionsCard({ options, range }: { options: MoveOptions; range: Scal
       <p className="mt-1.5 text-sm text-muted-foreground">Now: {options.from}</p>
       {!options.movable ? (
         <p className="mt-2 text-sm font-semibold">It cannot move: {options.why ?? "it is fixed in place"}.</p>
-      ) : !best ? (
+      ) : !lowest ? (
         <p className="mt-2 text-sm font-semibold">No free slot it may use breaks no rule.</p>
       ) : (
         <>
           <p className="mt-3 font-semibold">
-            Best: {best.stage} at {best.start}
+            Lowest index: {lowest.stage} at {lowest.start}
           </p>
-          <BudgetMove before={options.before} after={best.after} range={range} />
+          <BudgetMove before={options.before} after={lowest.after} range={range} />
           {rest.length > 0 ? (
             <ol className="mt-3 space-y-1 border-t border-border pt-3 text-sm" aria-label="Other legal places">
               {rest.map((option) => {

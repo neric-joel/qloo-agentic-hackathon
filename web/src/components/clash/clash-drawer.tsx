@@ -14,6 +14,7 @@ import {
   formatOverlap,
   formatPercent,
   formatShare,
+  hiddenReason,
   hostOf,
   isFixedByLocks,
   isWebUrl,
@@ -23,6 +24,7 @@ import {
   requestsForActs,
   tagLabel,
   traceToolCalls,
+  withoutTasteLine,
 } from "@/lib/clashes";
 import { pluralize } from "@/lib/format";
 import { pairCheckKey, type PairCheck } from "@/lib/pair-check";
@@ -43,6 +45,16 @@ type ClashDrawerProps = {
   onClose: () => void;
   /** Gets focus back when the drawer closes. */
   returnFocusTo: HTMLElement | null;
+  /**
+   * Where a pair would rank on draw and time alone, from the lens endpoint, when it has loaded: a
+   * rank (1 = costliest), null when the pair is unpriced or costs nothing in that view (the timetable
+   * is the same, so a priced clash never stops being concurrent), undefined when there is no reading
+   * for it. Contract F types it `number | null`; undefined is accepted too. Without the prop the drawer
+   * prints no such line.
+   */
+  rankWithoutTaste?: (aId: string, bId: string) => number | null | undefined;
+  /** How many pairs are ranked on draw and time alone (the "of N" after that rank), when the server says. */
+  rankWithoutTasteOf?: number;
 };
 
 function Section({ title, children, className }: { title: string; children: ReactNode; className?: string }) {
@@ -179,6 +191,8 @@ export function ClashDrawer({
   onSelect,
   onClose,
   returnFocusTo,
+  rankWithoutTaste,
+  rankWithoutTasteOf,
 }: ClashDrawerProps) {
   const acts = useMemo(() => new Map(preset.festival.acts.map((act) => [act.id, act])), [preset]);
   const slots = useMemo(
@@ -225,6 +239,9 @@ export function ClashDrawer({
   const product = shown.audience_overlap * shown.concurrency * shown.draw;
   const weighted = Math.abs(product - shown.regret) > Math.max(0.01, shown.regret * 0.02);
   const checkKey = pairCheckKey(preset.id, shown.a.act_id, shown.b.act_id);
+  const withoutTaste = rankWithoutTaste
+    ? withoutTasteLine(rankWithoutTaste(shown.a.act_id, shown.b.act_id), rankWithoutTasteOf)
+    : null;
   const counts = {
     search: requests.filter((r) => r.path.endsWith("/search")).length,
     insights: requests.filter((r) => r.path.endsWith("/insights")).length,
@@ -286,8 +303,8 @@ export function ClashDrawer({
         >
           <SheetDescription className="max-w-prose text-[0.9375rem] leading-relaxed text-foreground">
             {shown.a.name} and {shown.b.name} play at the same time for {shown.overlap_minutes} minutes.
-            Their taste overlap is {formatOverlap(shown.audience_overlap)} out of 100 (rank among the
-            other acts on this bill, calculated from Qloo data), so this clash takes{" "}
+            Their taste overlap is {formatOverlap(shown.audience_overlap)} out of 100 (rank among the acts
+            compared for this bill, calculated from Qloo data), so this clash takes{" "}
             {formatShare(shown.regret_share)} of the day&rsquo;s clash cost. Taste overlap is not
             attendance.
           </SheetDescription>
@@ -320,7 +337,7 @@ export function ClashDrawer({
                 label="Taste overlap"
                 value={formatOverlap(shown.audience_overlap)}
                 unit="/ 100"
-                note="Rank among the other acts on this bill. Not a share of fans."
+                note="Rank among the acts compared for this bill. Not a share of fans."
                 chip={<ProvenanceChip provenance="derived" size="sm" />}
               />
               <Figure
@@ -349,6 +366,9 @@ export function ClashDrawer({
               {shown.concurrency.toFixed(2)} &times; combined draw {shown.draw.toFixed(2)}
               {weighted ? " × rarity weight" : ""} = {shown.regret.toFixed(3)}
             </p>
+            {withoutTaste ? (
+              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{withoutTaste}</p>
+            ) : null}
           </Section>
 
           <Section title="Label and confidence">
@@ -356,13 +376,9 @@ export function ClashDrawer({
               <p className="text-[0.9375rem] leading-relaxed">
                 <strong className="font-semibold">{LABEL_META[shown.label].name}.</strong>{" "}
                 {LABEL_META[shown.label].explain}{" "}
-                {shown.label === "hidden" ? (
-                  <>
-                    Genre tags: {shown.a.genre ?? "none"} and {shown.b.genre ?? "none"}. Taste overlap{" "}
-                    {formatOverlap(shown.audience_overlap)} / 100
-                    {hiddenLine !== null ? ` is above this day's hidden-clash line of ${formatOverlap(hiddenLine)}` : ""}.
-                  </>
-                ) : null}
+                {shown.label === "hidden" && hiddenLine !== null
+                  ? `This day’s hidden-clash line is a taste overlap of ${formatOverlap(hiddenLine)} / 100.`
+                  : null}
               </p>
             ) : (
               <p className="text-[0.9375rem] leading-relaxed">
@@ -376,6 +392,12 @@ export function ClashDrawer({
                 : "Weak signal: Qloo's signal for at least one act is weak, so read this price as rough."}
             </p>
           </Section>
+
+          {shown.label === "hidden" ? (
+            <Section title="Why it is called hidden">
+              <p className="text-[0.9375rem] leading-relaxed">{hiddenReason(shown)}</p>
+            </Section>
+          ) : null}
 
           <Section title="Tags Qloo returned for this pair">
             <PairTags receipt={receipt} hasEvidence={preset.evidence !== null} a={shown.a} b={shown.b} />

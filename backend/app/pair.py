@@ -14,8 +14,9 @@ body is read (a form or plain-text body is a 422 before anything else runs) and 
 site cannot start a check from a link, an image or a form.
 
 It is off unless ``PAIR_CHECK_ENABLED`` (and a Qloo key) is set, capped per visitor and per day, and paused
-while the requests left in Qloo's month are below the floor or after 6 requests sent without an answer that
-said how many are left. Only pairs the page already shows can be checked (the day's ranked clashes and its
+while the requests left in Qloo's month, less those reserved by checks still running, are below the floor, or
+after 6 requests sent without an answer that said how many are left (for 10 minutes after the last of them).
+Only pairs the page already shows can be checked (the day's ranked clashes and its
 clash receipts), so the saved value it returns is one the page already prints for that pair. No raw affinity
 is served.
 """
@@ -330,11 +331,14 @@ async def check_pair(
         or act_a.qloo_id not in _candidates(row_b)
     ):
         raise _refuse(422, NO_SAVED_ROWS)
-    if qloo.allowance_low(settings.qloo_quota_floor, CALLS_PER_CHECK):
+    # Reserve the check's requests against the floor before anything is awaited, so two checks started
+    # together at the floor cannot both pass in this process; every path below gives the reservation back.
+    if not qloo.reserve(settings.qloo_quota_floor, CALLS_PER_CHECK):
         raise _refuse(503, PAUSED)
     host = request.client.host if request.client else None
-    refusal = limiter.try_acquire(visitor_key(dict(request.headers), host))
+    refusal = limiter.try_acquire(visitor_key(dict(request.headers), host, settings.visitor_stamp_secret))
     if refusal:
+        qloo.release(CALLS_PER_CHECK)
         raise _refuse(429, refusal)
 
     compare = {
@@ -353,6 +357,8 @@ async def check_pair(
             qloo.month_remaining,
         )
         raise _refuse(503, NO_ANSWER) from exc
+    finally:
+        qloo.release(CALLS_PER_CHECK)
     log.info(
         "Live pair check on %s: %s and %s; Qloo month remaining %s", preset.id, a, b, qloo.month_remaining
     )

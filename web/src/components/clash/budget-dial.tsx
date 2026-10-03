@@ -22,7 +22,7 @@ const TRACK = 14;
 type BudgetDialProps = {
   index: number | null;
   baseline: BaselineStats | null;
-  /** The rules every random re-ordering keeps, as a clause (see `describeReach`). */
+  /** The rules every random valid timetable keeps, as a clause (see `describeReach`). */
   reach?: string;
   className?: string;
 };
@@ -30,9 +30,9 @@ type BudgetDialProps = {
 const ANY_REACH = describeReach({ windowMinutes: null, neighbourStages: false, locked: 0 });
 
 /**
- * The Clash Budget Index on a half dial: the band of random re-orderings, their average at 100, and
- * a needle at this timetable. The gap to 100 is filled in one neutral tone whichever side it falls
- * on, because the dial is a reading, not a grade of a real festival. Every reading is also printed,
+ * The Clash Budget Index on a half dial: the middle 80% of random valid timetables of this lineup,
+ * their average at 100, and a needle at this timetable. The gap to 100 is filled in one neutral
+ * tone whichever side it falls on, because the dial is a reading, not a grade of a real festival. Every reading is also printed,
  * so nothing depends on the colours.
  */
 export function BudgetDial({ index, baseline, reach = ANY_REACH, className }: BudgetDialProps) {
@@ -79,7 +79,7 @@ export function BudgetDial({ index, baseline, reach = ANY_REACH, className }: Bu
         >
           <title id={titleId}>{`Clash Budget Index ${rounded}`}</title>
           <desc id={descId}>
-            {`Taste-overlap cost, calculated from Qloo data. Dial from ${domain.min} to ${domain.max}. 100 is the average of random re-orderings of this lineup` +
+            {`Taste-overlap cost, calculated from Qloo data. Dial from ${domain.min} to ${domain.max}. 100 is the average of random valid timetables of this lineup` +
               (p10 !== null && p90 !== null
                 ? `; the middle 80% of them score ${Math.round(p10)} to ${Math.round(p90)}.`
                 : ".") +
@@ -145,12 +145,12 @@ export function BudgetDial({ index, baseline, reach = ANY_REACH, className }: Bu
 
       <figcaption className="mt-4 text-sm leading-relaxed">
         <p className="font-medium">
-          100 = the average of random re-orderings of this lineup in which {reach}. It counts
-          taste-overlap cost only, calculated from Qloo data.
+          100 = the average of random valid timetables of this lineup in which {reach}. It counts
+          only what clashes cost: taste overlap, time shared and draw, calculated from Qloo data.
         </p>
         <p className="mt-1.5 text-muted-foreground">
           {p10 !== null && p90 !== null
-            ? `Shaded: the middle 80% of those re-orderings (${Math.round(p10)} to ${Math.round(p90)}). `
+            ? `Shaded: the middle 80% of those random valid timetables (${Math.round(p10)} to ${Math.round(p90)}). `
             : ""}
           {position === "above" || position === "below" ? (
             <>

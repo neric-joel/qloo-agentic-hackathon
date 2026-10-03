@@ -451,3 +451,150 @@ async def test_insights_requires_filter_type():
     with pytest.raises(ValueError):
         await client.insights({"signal.interests.entities": "abc"})
     await client.aclose()
+
+
+# ------------------------------------------- the blind pause lifts for one probe; reservations; stale headers
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 1_000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def blind_client(clock: FakeClock, headers: dict[str, str] | None = None) -> QlooClient:
+    """A client whose answers carry ``headers`` (none: every answer is blind) on a fake clock."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={}, headers=headers or {})
+
+    return make_client(handler, clock=clock)
+
+
+async def send_blind(client: QlooClient, n: int, tag: str = "") -> None:
+    for i in range(n):
+        await client.get("/search", {"query": f"{tag}{i}"}, use_cache=False)
+
+
+async def test_six_blind_requests_pause_and_the_pause_lifts_for_one_probe_after_600_seconds():
+    clock = FakeClock()
+    client = blind_client(clock)
+    await send_blind(client, 6)
+    assert client.blind_requests == 6 and client.allowance_low(1500, 3) is True
+    clock.now += 599
+    assert client.allowance_low(1500, 3) is True  # +599 s: still paused
+    clock.now += 1
+    assert client.allowance_low(1500, 3) is False  # +600 s: one caller gets the probe lease
+    assert client.allowance_low(1500, 3) is True  # everyone else waits while it is out
+    await send_blind(client, 1, "probe")  # the probe's answer is blind too
+    assert client.allowance_low(1500, 3) is True  # the window starts again from that answer
+    clock.now += 599
+    assert client.allowance_low(1500, 3) is True
+    clock.now += 1
+    assert client.allowance_low(1500, 3) is False
+    assert client.allowance_low(None) is False  # no floor, no pause
+    await client.aclose()
+
+
+async def test_three_blind_answers_in_the_probe_keep_the_pause_for_another_600_seconds():
+    clock = FakeClock()
+    client = blind_client(clock)
+    await send_blind(client, 6)
+    clock.now += 600
+    assert client.allowance_low(1500, 3) is False
+    await send_blind(client, 3, "probe")
+    assert client.blind_requests == 9
+    clock.now += 599
+    assert client.allowance_low(1500, 3) is True  # paused again, counted from the probe's last answer
+    clock.now += 1
+    assert client.allowance_low(1500, 3) is False
+    await client.aclose()
+
+
+async def test_an_answer_with_the_header_clears_the_pause_for_good():
+    clock = FakeClock()
+    headers: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={}, headers=headers)
+
+    client = make_client(handler, clock=clock)
+    await send_blind(client, 6)
+    clock.now += 600
+    assert client.allowance_low(1500, 3) is False
+    headers["x-month-ratelimit-remaining"] = "9000"
+    await send_blind(client, 1, "probe")
+    assert client.blind_requests == 0 and client.month_remaining == 9000
+    assert all(client.allowance_low(1500, 3) is False for _ in range(5))  # no lease needed any more
+    await client.aclose()
+
+
+async def test_simultaneous_callers_after_the_window_get_one_lease_between_them():
+    clock = FakeClock()
+    client = blind_client(clock)
+    await send_blind(client, 6)
+    clock.now += 600
+    granted = [client.reserve(1500, 3) for _ in range(5)]
+    assert granted == [True, False, False, False, False]
+    client.release(3)  # the holder sent nothing (a cap refused it): the lease goes, the window stays open
+    assert client.reserve(1500, 3) is True and client.reserve(1500, 3) is False
+    clock.now += 61  # a lease never answered expires
+    assert client.allowance_low(1500, 3) is False
+    await client.aclose()
+
+
+async def test_a_cancelled_request_counts_as_blind_and_stamps_the_time():
+    clock = FakeClock()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(1)
+        return httpx.Response(200, json={}, headers={"x-month-ratelimit-remaining": "900"})
+
+    client = make_client(handler, clock=clock)
+    clock.now = 5_000.0
+    with pytest.raises(TimeoutError):
+        async with asyncio.timeout(0.02):
+            await client.get("/search", {"query": "slow"}, use_cache=False)
+    assert client.blind_requests == 1 and client._last_blind == 5_000.0
+    await client.aclose()
+
+
+async def test_reserve_holds_requests_against_the_floor_and_release_gives_them_back():
+    client = make_client(lambda request: httpx.Response(200, json={}))
+    client.month_remaining = 1503
+    assert client.reserve(1500, 3) is True
+    assert client.reserve(1500, 3) is False  # the first check's 3 are spoken for
+    assert client.allowance_low(1500, 3) is True
+    client.release(3)
+    assert client.reserve(1500, 3) is True
+    client.release(3)
+    client.release(3)  # never below zero
+    assert client._reserved == 0
+    assert client.reserve(None, 3) is True  # no floor, never paused
+    await client.aclose()
+
+
+async def test_a_stale_higher_header_is_ignored_for_120_seconds():
+    clock = FakeClock()
+    remaining = {"value": "5000"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={}, headers={"x-month-ratelimit-remaining": remaining["value"]})
+
+    client = make_client(handler, clock=clock)
+    await send_blind(client, 1, "first")
+    assert client.month_remaining == 5000
+    remaining["value"] = "5003"  # a slower answer from before the last one
+    clock.now += 119
+    await send_blind(client, 1, "stale")
+    assert client.month_remaining == 5000 and client.blind_requests == 0  # still counts as an answer
+    remaining["value"] = "4990"
+    await send_blind(client, 1, "lower")
+    assert client.month_remaining == 4990  # a lower value is always taken
+    clock.now += 120
+    remaining["value"] = "9000"  # a new month, 120 s after the value held
+    await send_blind(client, 1, "later")
+    assert client.month_remaining == 9000
+    await client.aclose()

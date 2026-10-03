@@ -287,8 +287,10 @@ def resolve(name: str) -> dict:
 
 
 async def test_qloo_backed_tools_stop_at_the_run_budget():
-    backend = RecordingBackend([[resolve("A"), resolve("B")], [resolve("C")], [{"text": "Done."}]])
-    ctx = ToolContext(qloo=qloo_client(), qloo_budget=2)
+    # One search can try up to 3 times, so each call needs 3 requests of room; a run of 4 fits two calls that
+    # each send one request (the reservation is swapped for what was sent) and refuses the third.
+    backend = RecordingBackend([[resolve("A")], [resolve("B")], [resolve("C")], [{"text": "Done."}]])
+    ctx = ToolContext(qloo=qloo_client(), qloo_budget=4)
     events = []
 
     async def emit(event):
@@ -299,7 +301,7 @@ async def test_qloo_backed_tools_stop_at_the_run_budget():
     assert outcome.stop == "done"
     assert [r["ok"] for r in results] == [True, True, False]
     assert results[2]["requests"] == []  # refused before any request went out
-    refused = backend.seen[2][-1]["content"][0]
+    refused = backend.seen[3][-1]["content"][0]
     assert refused["is_error"] and refused["content"] == QLOO_BUDGET_USED
     assert ctx.state["qloo_calls"] == 2
     await ctx.qloo.aclose()
@@ -314,7 +316,7 @@ async def test_execute_run_applies_the_qloo_budget():
     qloo = qloo_client()
     request = RunRequest(scenario="explore", input=ExploreInput(favorites=["Phoebe Bridgers"]))
     script = [[resolve("Phoebe Bridgers")], [recommend], [{"text": "Done."}]]
-    await execute_run(channel, ScriptedBackend(script), qloo, request, max_qloo_calls=1)
+    await execute_run(channel, ScriptedBackend(script), qloo, request, max_qloo_calls=3)
     events = parse_sse("".join([frame async for frame in channel.frames()]))
     results = [e for e in events if e["type"] == "tool_result"]
     assert [r["ok"] for r in results] == [True, False]

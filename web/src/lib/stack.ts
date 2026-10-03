@@ -11,6 +11,7 @@
  * their names and shapes.
  */
 
+import { budgetDelta, changeLabel } from "./agent-session";
 import { pluralize } from "./format";
 import { isRecord } from "./events";
 import { clockMinutes, parseMoves, type MovesResult, type Placement } from "./moves";
@@ -56,7 +57,7 @@ export type Plan = {
   options: MovesResult | null;
 };
 
-/** The range random valid timetables of this lineup score in (10th to 90th percentile). */
+/** The middle 80% of random valid timetables of this lineup (10th to 90th percentile). */
 export type ScaleRange = { low: number; high: number } | null;
 
 /** A set drawn at its tested place on the grid. Times are minutes from the start of the day. */
@@ -254,7 +255,7 @@ export async function fetchPlan(
 // ------------------------------------------------------------------------------------ wording
 
 /**
- * Where a Clash Budget Index sits against the range random valid timetables of this lineup score,
+ * Where a Clash Budget Index sits against the middle 80% of random valid timetables of this lineup,
  * compared as the page prints them (the index to one decimal, the range in whole numbers), so the
  * words never contradict the figures. Null when the range is unknown.
  */
@@ -277,6 +278,20 @@ export function shiftText(from: Placement | null, step: PlanStep, stageName: str
   if (start === null || start === from.start) return elsewhere;
   const minutes = pluralize(Math.abs(start - from.start), "minute");
   return `${minutes} ${start < from.start ? "earlier" : "later"}, same stage`;
+}
+
+/**
+ * What the page's status region says once a plan is priced after Keep, Undo or Start over: "Plan:
+ * 2 kept moves. Clash Budget Index 116.7 to 106.6, 10.1 lower." (or "0.6 higher", "no change"),
+ * read from the server's plan answer to one decimal; "Plan cleared." with no moves; nothing while
+ * the plan is still being priced.
+ */
+export function planAnnouncement(plan: Pick<Plan, "publishedBudget" | "budget"> | null, count: number): string {
+  if (count === 0) return "Plan cleared.";
+  if (!plan) return "";
+  const delta = budgetDelta(plan.publishedBudget, plan.budget) ?? 0;
+  const change = delta === 0 ? "no change" : changeLabel(delta);
+  return `Plan: ${pluralize(count, "kept move")}. Clash Budget Index ${plan.publishedBudget.toFixed(1)} to ${plan.budget.toFixed(1)}, ${change}.`;
 }
 
 /** The one-page brief for this day, with the kept moves when there are any. */

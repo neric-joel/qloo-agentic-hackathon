@@ -51,9 +51,12 @@ export function PresetSources({ preset }: { preset: Preset }) {
               <dt className="font-semibold">Taste overlap (rank on this bill)</dt>
               <dd className="text-muted-foreground">
                 For each act, Qloo ranks every other act on this day&rsquo;s bill by how strongly that
-                act&rsquo;s audience leans toward them. Both directions are turned into ranks and
-                averaged, then scaled 0 to 100. It says how alike two audiences are in taste,
-                relative to this bill. It is not a share of fans and not attendance.
+                act&rsquo;s audience leans toward them. In the saved pairs we checked, Qloo&rsquo;s
+                affinity came back the same whichever act was the signal, so for those pairs the two
+                directions are one reading. The app turns it into a rank within each act&rsquo;s row of
+                the bill, averages the two ranks and scales the result 0 to 100. It says how alike
+                Qloo ranks two audiences in taste, relative to this bill. It is not a share of fans
+                and not attendance.
               </dd>
             </div>
             <div>
@@ -67,8 +70,8 @@ export function PresetSources({ preset }: { preset: Preset }) {
               <dt className="font-semibold">Clash Budget Index</dt>
               <dd className="text-muted-foreground">
                 100 &times; the day&rsquo;s total clash price &divide; the average of{" "}
-                {samples ? `${samples} ` : ""}random valid re-orderings of this lineup ({reach}). It
-                counts taste-overlap cost only, and lower is better. It is not a verdict on the festival: real programming
+                {samples ? `${samples} ` : ""}random valid timetables of this lineup ({reach}). It
+                counts only what clashes cost: taste overlap, time shared and draw. Lower is better. It is not a verdict on the festival: real programming
                 weighs much more than taste overlap.
               </dd>
             </div>

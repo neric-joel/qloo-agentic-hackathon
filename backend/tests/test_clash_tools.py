@@ -76,6 +76,8 @@ async def test_list_and_report():
     report = json.loads((await CLASH_REPORT.handler({"limit": 3}, ctx)).content)
     assert {report["top_clashes"][0]["a"], report["top_clashes"][0]["b"]} == {"Indie Star", "Indie Twin"}
     assert report["top_clashes"][0]["taste_overlap_out_of_100"] == 95
+    assert "random valid timetables of this lineup" in report["index_meaning"]
+    assert "re-orderings" not in report["index_meaning"]
 
 
 async def test_explain_clash_uses_qloo_compare_and_names():
@@ -546,3 +548,193 @@ def test_an_illegal_step_names_its_number():
         with pytest.raises(IllegalStep) as refused:
             apply_plan(festival, matrix, config, [step_one, bad])
         assert refused.value.step == 2
+
+
+# ------------------------------------------------------------------- a rule added over an overlap
+
+
+APART = {"kind": "keep_apart", "act": "Indie Star", "time": "", "other_act": "Indie Twin"}
+BREAK_TEXT = "Indie Star and Indie Twin play at the same time, which their riders forbid"
+BREAK_NOTE = "The current timetable breaks this rule; find_moves lists the places that end the break: "
+BREAK_NOTE += BREAK_TEXT
+
+
+def overlap_of(festival, a: str, b: str) -> int:
+    slots = {s.act_id: s for s in festival.timetable}
+    return max(0, min(slots[a].end, slots[b].end) - max(slots[a].start, slots[b].start))
+
+
+def apart_in(slots: dict, a: str, b: str) -> bool:
+    """Whether two sets (as dicts or slots, keyed by act id) share no minute."""
+
+    def get(slot, name):
+        return slot[name] if isinstance(slot, dict) else getattr(slot, name)
+
+    x, y = slots[a], slots[b]
+    if get(x, "day") != get(y, "day"):
+        return True
+    return min(get(x, "end"), get(y, "end")) <= max(get(x, "start"), get(y, "start"))
+
+
+async def pin(ctx, act: str, at: str) -> None:
+    """Rules that leave a set one place only: its own stage, its own start."""
+    await ADD_CONSTRAINT.handler({"kind": "keep_stage", "act": act, "time": "", "other_act": ""}, ctx)
+    for kind in ("not_before", "not_after"):
+        await ADD_CONSTRAINT.handler({"kind": kind, "act": act, "time": at, "other_act": ""}, ctx)
+
+
+async def try_at(ctx, act: str, stage: str, start: str) -> dict:
+    return json.loads((await TRY_MOVE.handler({"act": act, "stage": stage, "start": start}, ctx)).content)
+
+
+async def test_the_add_constraint_note_says_find_moves_lists_the_places_that_end_the_break():
+    ctx = context()
+    out = json.loads((await ADD_CONSTRAINT.handler(APART, ctx)).content)
+    assert out["note"] == BREAK_NOTE
+    assert "re-slot must" not in out["note"]
+    other = {"kind": "keep_apart", "act": "Opener", "time": "", "other_act": "Headliner"}
+    assert "note" not in json.loads((await ADD_CONSTRAINT.handler(other, ctx)).content)  # nothing breaks it
+
+
+async def test_a_rule_over_an_overlap_then_find_moves_try_move_and_reslot_all_end_the_break():
+    ctx = context()
+    assert overlap_of(ctx.state["festival"], "indie-star", "indie-twin") > 0
+    await ADD_CONSTRAINT.handler(APART, ctx)
+    festival = ctx.state["festival"]
+
+    found = await FIND_MOVES.handler({"act": "Indie Star", "limit": 8}, ctx)
+    assert found.data["movable"] is True and found.data["options"]
+    view = json.loads(found.content)
+    assert view["note"] == "Every place listed ends the break." and view["breaks_now"] == [BREAK_TEXT]
+    # Every listed place leaves the two apart, and the same place tried one move at a time agrees
+    slots = {s.act_id: s for s in festival.timetable}
+    for option in found.data["options"]:
+        start = parse_minutes(option["start"])
+        stage = next(s.id for s in festival.stages if s.name == option["stage"])
+        placed = slots["indie-star"].model_copy(
+            update={"stage_id": stage, "start": start, "end": start + slots["indie-star"].duration}
+        )
+        assert apart_in({"indie-star": placed, "indie-twin": slots["indie-twin"]}, "indie-star", "indie-twin")
+        tried = await try_at(ctx, "Indie Star", option["stage"], option["start"])
+        assert tried["allowed"] is True and tried["problems"] == [] and tried["ends_the_break"] is True
+    listed = {(o["stage"], o["start"]) for o in found.data["options"]}
+    assert found.data["legal_places"] >= len(found.data["options"])
+
+    # A place that keeps the overlap is neither listed nor allowed
+    keeps = await try_at(ctx, "Indie Star", "Main", "17:05")
+    assert ("Main", "17:05") not in listed
+    assert keeps["allowed"] is False and keeps["ends_the_break"] is False
+    assert any("riders forbid" in p for p in keeps["problems"])
+
+    # reslot may move either act, and the plan it hands back ends the break
+    out = await RESLOT.handler({"objective": 1, "move_budget": 4}, ctx)
+    plan = json.loads(out.content)
+    assert plan["rule_breaks_now"] == [BREAK_TEXT] and plan["rule_breaks_after_plan"] == []
+    assert "note" not in plan
+    assert {m["act"] for m in plan["moves"]} & {"Indie Star", "Indie Twin"}
+    option = next(o for o in out.data["report"]["options"] if o["kind"] == "balanced")
+    final = {s["act_id"]: s for s in option["timetable"]}
+    assert apart_in(final, "indie-star", "indie-twin")
+    assert ctx.state["festival"] is festival  # a re-slot proposes; it never changes the session
+
+
+async def test_when_no_place_ends_the_break_the_tools_say_so_plainly():
+    ctx = context()
+    await ADD_CONSTRAINT.handler(APART, ctx)
+    await pin(ctx, "Indie Star", "17:00")
+    await pin(ctx, "Indie Twin", "17:15")
+
+    for act in ("Indie Star", "Indie Twin"):
+        found = await FIND_MOVES.handler({"act": act}, ctx)
+        view = json.loads(found.content)
+        assert found.data["options"] == [] and found.data["legal_places"] == 0
+        assert "no legal place" in found.summary
+        assert (
+            view["note"] == "No place for this set ends the break, so moving it alone cannot meet the rule."
+        )
+        assert view["breaks_now"] == [BREAK_TEXT]
+
+    # Nothing the pins allow ends it: try_move never calls such a move allowed
+    for stage, start in (("Tent", "19:00"), ("Main", "17:00"), ("Main", "17:05")):
+        out = await try_at(ctx, "Indie Star", stage, start)
+        assert out["allowed"] is False and out["problems"]
+
+    plan = json.loads((await RESLOT.handler({"objective": 1, "move_budget": 4}, ctx)).content)
+    assert plan["rule_breaks_now"] == plan["rule_breaks_after_plan"] == [BREAK_TEXT]
+    assert plan["note"] == (
+        "This search found no plan that ends these rule breaks (it moves priced sets only and keeps only "
+        "moves that lower the index); say so, name them, and say a person may still find a legal change: "
+        + BREAK_TEXT
+    )
+
+
+async def test_a_locked_set_in_a_broken_rule_still_cannot_move_but_its_partner_can():
+    ctx = context()
+    await ADD_CONSTRAINT.handler({"kind": "lock", "act": "Indie Twin", "time": "", "other_act": ""}, ctx)
+    await ADD_CONSTRAINT.handler(APART, ctx)
+    locked = await FIND_MOVES.handler({"act": "Indie Twin"}, ctx)
+    assert locked.data["movable"] is False and locked.data["why"] == "locked in place"
+    with pytest.raises(ToolInputError, match="locked"):
+        await TRY_MOVE.handler({"act": "Indie Twin", "stage": "Tent", "start": "19:00"}, ctx)
+    assert (await FIND_MOVES.handler({"act": "Indie Star", "limit": 8}, ctx)).data["options"]
+    plan = json.loads((await RESLOT.handler({"objective": 1, "move_budget": 4}, ctx)).content)
+    moved = {m["act"] for m in plan["moves"]}
+    assert "Indie Star" in moved and "Indie Twin" not in moved
+    assert plan["rule_breaks_after_plan"] == []
+
+
+async def test_without_thaw_a_standing_break_freezes_both_sets_as_the_public_routes_do():
+    ctx = context()
+    await ADD_CONSTRAINT.handler(APART, ctx)
+    festival, matrix, config = ctx.state["festival"], ctx.state["matrix"], ctx.state["config"]
+    plain = compute_move_options(festival, matrix, config, "indie-star", 8)
+    assert plain["movable"] is False and plain["options"] == []
+    assert "already breaks" in plain["why"]
+    thawed = compute_move_options(festival, matrix, config, "indie-star", 8, thaw=True)
+    assert thawed["movable"] is True and thawed["options"]
+
+    ends = [PlanMove("indie-star", "main", 0, 15 * 60 + 15)]
+    with pytest.raises(IllegalStep):
+        apply_plan(festival, matrix, config, ends)
+    result = apply_plan(festival, matrix, config, ends, thaw=True)
+    assert result.steps[0].start == 15 * 60 + 15
+    assert overlap_of(result.festival, "indie-star", "indie-twin") == 0
+    # A place that keeps the overlap is not a legal step even when thawed
+    with pytest.raises(IllegalStep):
+        apply_plan(festival, matrix, config, [PlanMove("indie-star", "main", 0, 17 * 60 + 5)], thaw=True)
+
+
+def test_on_a_day_with_no_break_thaw_changes_neither_places_nor_numbers():
+    festival, matrix = synthetic_festival(7, days=1, acts=20)
+    config = ScoringConfig(baseline=score_festival(festival, matrix).baseline)
+    for slot in festival.timetable[:6]:
+        plain = compute_move_options(festival, matrix, config, slot.act_id, 8, partners=True)
+        thawed = compute_move_options(festival, matrix, config, slot.act_id, 8, partners=True, thaw=True)
+        assert thawed == plain
+
+
+async def test_a_same_turn_search_honours_a_rule_added_later_in_the_turn():
+    from types import SimpleNamespace
+
+    from app.agent.clash_tools import CLASH_TOOLS
+    from app.agent.tools import run_tool_calls
+
+    ctx = context()
+    registry = {tool.name: tool for tool in CLASH_TOOLS}
+    blocks = [
+        SimpleNamespace(id="t1", name="find_moves", input={"act": "Indie Star", "limit": 8}),
+        SimpleNamespace(id="t2", name="add_constraint", input=APART),
+    ]
+
+    async def emit(event):
+        pass
+
+    sent = await run_tool_calls(blocks, registry, ctx, emit)
+    assert [r["tool_use_id"] for r in sent] == ["t1", "t2"]
+    found = json.loads(sent[0]["content"])
+    assert found["note"] == "Every place listed ends the break." and found["options"]
+    assert json.loads(sent[1]["content"])["note"] == BREAK_NOTE
+    assert ctx.state["tool_data"]["t1"]["movable"] is True
+    # On the published day (no rule yet) the same search carries no break note
+    plain = json.loads((await FIND_MOVES.handler({"act": "Indie Star", "limit": 8}, context())).content)
+    assert "note" not in plain

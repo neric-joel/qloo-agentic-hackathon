@@ -58,12 +58,12 @@ describe("dialFraction and dialPoint", () => {
 });
 
 describe("describeVsRandom", () => {
-  it("states the gap to the average random re-ordering as taste-overlap cost", () => {
-    expect(describeVsRandom(117)).toBe("17% more taste-overlap cost than the average random re-ordering");
-    expect(describeVsRandom(116.71)).toBe("17% more taste-overlap cost than the average random re-ordering");
-    expect(describeVsRandom(86.48)).toBe("14% less taste-overlap cost than the average random re-ordering");
-    expect(describeVsRandom(100)).toBe("level with the average random re-ordering");
-    expect(describeVsRandom(100.3)).toBe("level with the average random re-ordering");
+  it("states the gap to the average random valid timetable as taste-overlap cost", () => {
+    expect(describeVsRandom(117)).toBe("17% more taste-overlap cost than the average random valid timetable");
+    expect(describeVsRandom(116.71)).toBe("17% more taste-overlap cost than the average random valid timetable");
+    expect(describeVsRandom(86.48)).toBe("14% less taste-overlap cost than the average random valid timetable");
+    expect(describeVsRandom(100)).toBe("level with the average random valid timetable");
+    expect(describeVsRandom(100.3)).toBe("level with the average random valid timetable");
   });
 });
 

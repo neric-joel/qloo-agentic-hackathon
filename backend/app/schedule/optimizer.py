@@ -241,17 +241,26 @@ def optimize(
     weight: float = 1.0,
     move_budget: int = 6,
     config: ScoringConfig | None = None,
+    *,
+    thaw: bool = False,
 ) -> OptimizeReport:
-    """Propose re-slotted timetables: least regret, balanced within a move budget, and fewest moves."""
+    """Propose re-slotted timetables: least regret, balanced within a move budget, and fewest moves.
+
+    ``thaw`` (the agent's session only) lets the sets tied up in a rule the timetable already breaks move, but
+    only to places that end their part in the break (see ``Layout``); the default freezes them, as before.
+    """
     started = time.perf_counter()
     if not 0.0 <= weight <= 1.0:
         raise ScheduleInputError("weight must be between 0 and 1")
     if move_budget < 1:
         raise ScheduleInputError("move_budget must be at least 1")
     config = config or ScoringConfig()
-    layout = Layout.from_festival(festival)
+    layout = Layout.from_festival(festival, thaw=thaw)
     scorer = build_scorer(festival, matrix, config, layout)
-    baseline = config.baseline or estimate_baseline(layout, scorer, _with_samples(config))
+    # The baseline belongs to the published day, so it is sampled on the default layout: thawing sets for the
+    # search must not change what "random valid timetables of this lineup" means.
+    sampled = Layout.from_festival(festival) if thaw else layout
+    baseline = config.baseline or estimate_baseline(sampled, scorer, _with_samples(config))
     run = _Run(festival, layout, scorer, baseline, Pricing(scorer, baseline, weight), move_budget, started)
     before = measure(scorer, layout, baseline)
     mov = movability(scorer, layout)

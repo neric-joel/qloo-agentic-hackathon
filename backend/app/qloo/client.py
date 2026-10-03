@@ -18,7 +18,7 @@ import logging
 import random
 import time
 from collections import OrderedDict
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -34,6 +34,14 @@ RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 DEFAULT_MAX_RPS = 4.5  # hackathon keys allow 5 requests per second
 # Requests sent without an answer that carried the month's allowance header, after which live requests pause
 BLIND_REQUEST_LIMIT = 6
+# A pause for blind requests lifts after this long without a new blind request, for one probe at a time: a
+# single lease per client (per server instance). An answer with the header ends the pause for good; a blind
+# answer or a failure ends the lease and the window starts again. A lease never answered expires.
+BLIND_PROBE_AFTER_SECONDS = 600
+PROBE_LEASE_SECONDS = 60
+# A higher requests-left value than the one held is taken as stale (an answer that was slower than a later
+# one) unless the held value is at least this old
+STALE_REMAINING_SECONDS = 120
 
 Params = Mapping[str, Any]
 
@@ -166,8 +174,10 @@ class QlooClient:
         fixtures_first: bool = False,
         max_rps: float | None = DEFAULT_MAX_RPS,
         transport: httpx.AsyncBaseTransport | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.api_key = api_key
+        self.clock = clock
         self.max_retries = max_retries
         self.backoff = backoff
         self.cache = cache if cache is not None else TTLCache()
@@ -188,6 +198,13 @@ class QlooClient:
         # Requests sent since the last answer that carried the allowance header: a response without it, a
         # transport error, a timeout or a cancelled request adds one; an answer with it resets the count.
         self.blind_requests = 0
+        self._last_blind = 0.0  # when the last blind request was counted (``clock`` time)
+        self._lease_at: float | None = None  # when the probe lease in flight was granted, if one is
+        self._lease_reserved = False  # the lease was granted to a ``reserve`` (its ``release`` ends it)
+        self._leases = 0  # leases granted so far
+        self._remaining_at = 0.0  # when ``month_remaining`` was last taken from an answer
+        # Requests promised to live calls that have not finished yet (see ``reserve``)
+        self._reserved = 0
 
     async def aclose(self) -> None:
         await self._http.aclose()
@@ -204,14 +221,75 @@ class QlooClient:
         """True when live requests should pause to protect the month's allowance.
 
         That is when ``BLIND_REQUEST_LIMIT`` requests have gone out without an answer that carried the
-        allowance header (whatever an older answer said), or when the requests left are known and fewer than
-        ``floor`` plus the ``needed`` requests the caller is about to send. Never with no floor.
+        allowance header (whatever an older answer said), or when the requests left are known and, less the
+        requests reserved for live calls still running in this process, fewer than ``floor`` plus the
+        ``needed`` requests the caller is about to send. Never with no floor.
+
+        The blind pause lifts ``BLIND_PROBE_AFTER_SECONDS`` after the last blind request, for one caller at a
+        time: the first caller after the window gets a lease (False here) and every other caller is paused
+        while it is in flight. The lease ends when an answer arrives: with the header the pause is over, blind
+        or failed the window starts again. A lease never answered expires after ``PROBE_LEASE_SECONDS``.
         """
         if floor is None:
             return False
-        if self.blind_requests >= BLIND_REQUEST_LIMIT:
+        left = None if self.month_remaining is None else self.month_remaining - self._reserved
+        month_low = left is not None and left < floor + needed
+        if self.blind_requests < BLIND_REQUEST_LIMIT:
+            return month_low
+        now = self.clock()
+        if self._lease_at is not None and now - self._lease_at < PROBE_LEASE_SECONDS:
+            return True  # one probe is already out
+        if now - self._last_blind < BLIND_PROBE_AFTER_SECONDS or month_low:
             return True
-        return self.month_remaining is not None and self.month_remaining < floor + needed
+        self._lease_at = now
+        self._lease_reserved = False
+        self._leases += 1
+        return False
+
+    def reserve(self, floor: int | None, needed: int) -> bool:
+        """Promise ``needed`` requests to a live call, or return False when ``allowance_low`` says pause.
+
+        Synchronous (no ``await``), so the test and the reservation cannot interleave with another call on the
+        event loop: two calls started together at the floor cannot both pass in this process. The floor is
+        best-effort: other server instances keep their own counts, so it can still be crossed across
+        instances. Pair each True with ``release``.
+        """
+        leases = self._leases
+        if self.allowance_low(floor, needed):
+            return False
+        if self._leases != leases:  # this call was granted the probe lease
+            self._lease_reserved = True
+        self._reserved += needed
+        return True
+
+    def release(self, needed: int) -> None:
+        """Give back requests promised by ``reserve`` (never below zero). A probe lease taken by a reservation
+        that sent nothing (refused by a cap) ends here, without starting the window again."""
+        self._reserved = max(0, self._reserved - needed)
+        if self._lease_reserved:
+            self._lease_at = None
+            self._lease_reserved = False
+
+    def _count_blind(self) -> None:
+        self.blind_requests += 1
+        self._last_blind = self.clock()
+        self._lease_at = None  # a probe that went blind is over; the window starts again from now
+        self._lease_reserved = False
+
+    def _saw_remaining(self, remaining: int) -> None:
+        """An answer that carried the allowance header: the blind count resets, and the value is kept unless
+        it is higher than the one held and that one is recent (a slower answer arriving after a newer one)."""
+        self.blind_requests = 0
+        self._lease_at = None
+        self._lease_reserved = False
+        now = self.clock()
+        if (
+            self.month_remaining is None
+            or remaining <= self.month_remaining
+            or now - self._remaining_at >= STALE_REMAINING_SECONDS
+        ):
+            self.month_remaining = remaining
+            self._remaining_at = now
 
     async def get(
         self,
@@ -298,18 +376,17 @@ class QlooClient:
             try:
                 response = await self._http.get(path, params=query)
             except httpx.HTTPError as exc:  # a transport error or a timeout: sent, never answered
-                self.blind_requests += 1
+                self._count_blind()
                 if attempt >= retries:
                     raise QlooError(f"Qloo request to {path} failed: {exc}") from exc
             except asyncio.CancelledError:  # the caller gave up while the request was out
-                self.blind_requests += 1
+                self._count_blind()
                 raise
             else:
                 if (remaining := _month_remaining(response)) is not None:
-                    self.month_remaining = remaining
-                    self.blind_requests = 0
+                    self._saw_remaining(remaining)
                 else:
-                    self.blind_requests += 1
+                    self._count_blind()
                 if response.status_code < 400:
                     return (
                         response.json(),

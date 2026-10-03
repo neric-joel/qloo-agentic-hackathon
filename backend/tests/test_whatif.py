@@ -12,7 +12,7 @@ from app import whatif
 from app.agent.clash_tools import FIND_MOVES, TRY_MOVE, compute_move_options
 from app.agent.tools import ToolContext
 from app.config import Settings, get_settings
-from app.limits import RunLimiter
+from app.limits import RunLimiter, stamp_signature
 from app.main import app, get_qloo
 from app.presets import CACHE_CONTROL, get_presets
 from app.qloo.client import QlooClient
@@ -42,16 +42,19 @@ def no_qloo() -> QlooClient:
 
 
 @pytest.fixture
-def preset(tmp_path):
+def preset(tmp_path, monkeypatch):
     data = write_preset(tmp_path)
     if not any(slot["locked"] for slot in data["festival"]["timetable"]):
         data["festival"]["timetable"][0]["locked"] = True
         (tmp_path / "day.json").write_text(json.dumps(data), encoding="utf-8")
     app.dependency_overrides[get_settings] = lambda: Settings(presets_dir=tmp_path, _env_file=None)
     app.dependency_overrides[get_qloo] = no_qloo
+    # The limiter reads its caps from the settings the first time it is built: the defaults, not a local .env
+    monkeypatch.setattr(whatif, "get_settings", lambda: Settings(presets_dir=tmp_path, _env_file=None))
     with whatif._cache_lock:
         whatif._cache.clear()
         whatif._plans.clear()
+        whatif._illegal.clear()
     whatif._limiter = None  # a fresh cap per test
     yield get_presets(Settings(presets_dir=tmp_path, _env_file=None))["day"]
     app.dependency_overrides.clear()
@@ -222,16 +225,32 @@ def visits(client: TestClient) -> int:
     return len(whatif.get_whatif_limiter()._visitors.get("testclient", ()))
 
 
-def test_the_cap_is_per_visitor_and_per_day_with_the_planned_numbers():
+def test_the_cap_is_per_visitor_and_per_day_with_the_planned_numbers(monkeypatch):
+    for name in ("WHATIF_PER_VISITOR_HOUR", "WHATIF_PER_VISITOR_DAY", "WHATIF_PER_DAY"):
+        monkeypatch.delenv(name, raising=False)
+    settings = Settings(_env_file=None)
+    caps = (settings.whatif_per_visitor_hour, settings.whatif_per_visitor_day, settings.whatif_per_day)
+    assert caps == (300, 1_500, 5_000)
+    monkeypatch.setattr(whatif, "get_settings", lambda: settings)
     whatif._limiter = None
     limiter = whatif.get_whatif_limiter()
-    assert (limiter.per_hour, limiter.per_day, limiter.global_per_day) == (600, 3_000, 20_000)
+    assert (limiter.per_hour, limiter.per_day, limiter.global_per_day) == (300, 1_500, 5_000)
     assert limiter.messages == whatif.WHATIF_MESSAGES
     assert whatif.get_whatif_limiter() is limiter
+    assert not hasattr(whatif, "MOVES_PER_VISITOR_HOUR")  # the caps live in the settings only
     whatif._limiter = None
 
 
-def test_the_601st_computed_moves_answer_in_an_hour_is_refused(preset):
+def test_the_caps_come_from_the_settings(monkeypatch):
+    settings = Settings(_env_file=None, whatif_per_visitor_hour=7, whatif_per_visitor_day=8, whatif_per_day=9)
+    monkeypatch.setattr(whatif, "get_settings", lambda: settings)
+    whatif._limiter = None
+    limiter = whatif.get_whatif_limiter()
+    assert (limiter.per_hour, limiter.per_day, limiter.global_per_day) == (7, 8, 9)
+    whatif._limiter = None
+
+
+def test_the_301st_computed_moves_answer_in_an_hour_is_refused(preset):
     acts = movable_ids(preset)
     with TestClient(app) as client:
         assert moves(client, "nobody").status_code == 404
@@ -242,13 +261,13 @@ def test_the_601st_computed_moves_answer_in_an_hour_is_refused(preset):
         assert moves(client, acts[0]).status_code == 200  # a cache hit takes no slot
         assert visits(client) == 1
         limiter = whatif.get_whatif_limiter()
-        for _ in range(599):
+        for _ in range(299):
             assert limiter.try_acquire("testclient") is None
         refused = moves(client, acts[1])
         assert refused.status_code == 429
         assert refused.json() == {"detail": "Too many what-if requests this hour. Please try again later."}
         assert refused.headers["cache-control"] == NO_STORE
-        assert visits(client) == 600  # a refusal stores nothing
+        assert visits(client) == 300  # a refusal stores nothing
         assert moves(client, acts[0]).status_code == 200  # still served from the cache
         stacked = client.post("/api/presets/day/whatif", json={"moves": [], "act": acts[2]})
         assert stacked.status_code == 429 and stacked.headers["cache-control"] == NO_STORE
@@ -434,7 +453,8 @@ def test_an_illegal_place_names_its_step_and_nothing_else(preset):
             assert response.json() == {"detail": ILLEGAL_STEP_2}
         first_bad = plan(client, [at(second, other.stage_id, other.start)])
         assert first_bad.json() == {"detail": ILLEGAL_STEP_1}
-        assert visits(client) == 1  # only the GET /moves above was computed
+        # The GET /moves above, and one slot for each of the seven illegal plans: a plan is metered first
+        assert visits(client) == 8
 
 
 def freed_place(preset) -> tuple[dict, dict] | None:
@@ -598,3 +618,105 @@ def test_eight_kept_moves_is_the_most_a_plan_holds(preset):
     # A kept set may be priced again: its places start from where the plan put it
     assert body["options"]["from"] == body["plan"]["steps"][0]["move"].split(" -> ")[1]
     assert ninth.status_code == 422 and ninth.headers["cache-control"] == NO_STORE
+
+
+# ------------------------------------------------------------- illegal plans: metered before the engine works
+
+
+def counted_apply_plan(monkeypatch) -> list:
+    calls: list = []
+    real = whatif.apply_plan
+
+    def counted(*args, **kwargs):
+        calls.append(args[3])
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(whatif, "apply_plan", counted)
+    return calls
+
+
+def nowhere(act: str, i: int = 0) -> dict:
+    """A kept move to a stage the day does not have: always an illegal first step."""
+    return {"act": act, "stage_id": f"nowhere-{i}", "day": 0, "start": "12:00"}
+
+
+def test_the_same_illegal_plan_twice_is_worked_out_once_and_takes_one_slot(preset, monkeypatch):
+    calls = counted_apply_plan(monkeypatch)
+    act = movable_ids(preset)[0]
+    with TestClient(app) as client:
+        first = plan(client, [nowhere(act)])
+        again = plan(client, [nowhere(act)])
+        assert visits(client) == 1
+    for response in (first, again):
+        assert response.status_code == 422 and response.headers["cache-control"] == NO_STORE
+        assert response.json() == {"detail": ILLEGAL_STEP_1}
+    assert len(calls) == 1
+
+
+def test_the_failing_step_is_remembered_per_preset_and_the_memory_stays_bounded(preset):
+    app.dependency_overrides[whatif.get_whatif_limiter] = lambda: RunLimiter(
+        10_000, 10_000, 10_000, messages=whatif.WHATIF_MESSAGES
+    )
+    act = movable_ids(preset)[0]
+    with TestClient(app) as client:
+        for i in range(300):
+            assert plan(client, [nowhere(act, i)]).status_code == 422
+    assert len(whatif._illegal) == whatif.ILLEGAL_CACHE_SIZE == 256
+    key = next(iter(whatif._illegal))
+    assert whatif._known_illegal(preset, key) == 1
+    assert whatif._known_illegal(preset.model_copy(), key) is None  # a reloaded preset works it out again
+
+
+def test_a_legal_plan_refused_with_429_never_reaches_the_engine(preset, monkeypatch):
+    calls = counted_apply_plan(monkeypatch)
+    act = movable_ids(preset)[0]
+    full = RunLimiter(0, 10, 10, messages=whatif.WHATIF_MESSAGES)
+    app.dependency_overrides[whatif.get_whatif_limiter] = lambda: full
+    option = whatif.move_options(preset, act, 8)["options"][0]
+    with TestClient(app) as client:
+        legal = plan(client, [kept(act, option)])
+        illegal = plan(client, [nowhere(act)])
+    for response in (legal, illegal):
+        assert response.status_code == 429 and response.headers["cache-control"] == NO_STORE
+        assert response.json() == {"detail": "Too many what-if requests this hour. Please try again later."}
+    assert calls == []
+
+
+def test_650_illegal_plans_from_one_visitor_are_300_422s_then_429s(preset, monkeypatch):
+    calls = counted_apply_plan(monkeypatch)
+    act = movable_ids(preset)[0]
+    with TestClient(app) as client:
+        codes = [plan(client, [nowhere(act, i)]).status_code for i in range(650)]
+        assert visits(client) == 300
+    assert codes == [422] * 300 + [429] * 350
+    assert len(calls) == 300  # a refused plan never reaches the engine
+
+
+def test_the_301st_cached_legal_answer_takes_no_slot(preset):
+    act = movable_ids(preset)[0]
+    option = whatif.move_options(preset, act, 8)["options"][0]
+    with TestClient(app) as client:
+        first = plan(client, [kept(act, option)])
+        assert first.status_code == 200 and visits(client) == 1
+        limiter = whatif.get_whatif_limiter()
+        for _ in range(299):
+            assert limiter.try_acquire("testclient") is None
+        assert plan(client, [nowhere(act)]).status_code == 429  # the hour is used up
+        again = plan(client, [kept(act, option)])
+        assert visits(client) == 300
+    assert again.status_code == 200 and again.json() == first.json()
+
+
+def test_the_cap_keys_on_a_valid_visitor_stamp(preset, tmp_path):
+    act = movable_ids(preset)[0]
+    secret, visitor = "test-secret", "203.0.113.7"
+    stamp = {"x-clash-visitor": visitor, "x-clash-sig": stamp_signature(secret, visitor)}
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        presets_dir=tmp_path, visitor_stamp_secret=secret, _env_file=None
+    )
+    with TestClient(app) as client:
+        assert moves(client, act, headers={**stamp, "X-Forwarded-For": "198.51.100.4"}).status_code == 200
+        forged = {**stamp, "x-clash-sig": "0" * 64}
+        assert moves(client, act, limit=3, headers=forged).status_code == 200
+    counted = whatif.get_whatif_limiter()._visitors
+    assert set(counted) == {"stamp:203.0.113.7", "testclient"}  # a forged stamp falls back to the address

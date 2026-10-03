@@ -308,7 +308,11 @@ async def test_qloo_backed_tools_stop_below_the_monthly_floor_and_derived_tools_
     )
     assert seen == [] and ctx.state["qloo_calls"] == 0
 
-    for remaining in (1500, None):  # at the floor, or not yet known: the tool runs
+    qloo.month_remaining = 1502  # one search can try up to 3 times: it needs floor + 3
+    events.clear()
+    await run_tool_calls(blocks[:1], registry, ctx, emit)
+    assert next(e for e in events if e["type"] == "tool_result")["ok"] is False and seen == []
+    for remaining in (1503, None):  # room for the search's worst case, or not yet known: the tool runs
         qloo.month_remaining = remaining
         events.clear()
         await run_tool_calls(blocks[:1], registry, ctx, emit)
@@ -387,3 +391,236 @@ def test_the_run_endpoint_applies_the_floor_from_the_settings(tmp_path):
     result = next(e for e in events if e["type"] == "tool_result")
     assert result["ok"] is False and result["summary"] == "Qloo allowance paused"
     assert events[-1]["qloo_calls"] == 0 and "result" in [e["type"] for e in events]
+
+
+# ------------------------------------------------------------------------- same-turn ordering
+
+
+def ordering_tools(log: list[str]):
+    """A reader that reports the rules it sees and a writer that records one (after a pause)."""
+    import asyncio
+
+    from app.agent.tools import Tool, ToolOutput
+
+    async def read(args, ctx):
+        log.append("read")
+        return ToolOutput(
+            content="rules: " + (", ".join(ctx.state.get("rules", [])) or "none"), summary="read"
+        )
+
+    async def write(args, ctx):
+        await asyncio.sleep(args.get("pause", 0))
+        ctx.state.setdefault("rules", []).append(args["rule"])
+        log.append("write " + args["rule"])
+        return ToolOutput(content="added " + args["rule"], summary="wrote")
+
+    return {
+        "read": Tool("read", "", {}, read, provenance="derived"),
+        "write": Tool("write", "", {}, write, provenance="derived", mutates_state=True),
+    }
+
+
+def call(block_id: str, name: str, **input):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(id=block_id, name=name, input=input)
+
+
+async def test_a_same_turn_reader_sees_the_rule_a_writer_adds_later_in_the_turn():
+    from app.agent.tools import run_tool_calls
+
+    log, events = [], []
+
+    async def emit(event):
+        events.append(event)
+
+    ctx = ToolContext(qloo=qloo_client())
+    blocks = [
+        call("r1", "read"),
+        call("w1", "write", rule="keep A and B apart", pause=0.02),
+        call("r2", "read"),
+    ]
+    sent = await run_tool_calls(blocks, ordering_tools(log), ctx, emit)
+    assert [r["tool_use_id"] for r in sent] == ["r1", "w1", "r2"]  # the order of the calls
+    assert [r["content"] for r in sent] == [
+        "rules: keep A and B apart",
+        "added keep A and B apart",
+        "rules: keep A and B apart",
+    ]
+    assert log[0] == "write keep A and B apart"
+    assert ctx.state["rules"] == ["keep A and B apart"]
+
+
+async def test_writers_run_one_after_another_in_the_order_given():
+    from app.agent.tools import run_tool_calls
+
+    log = []
+
+    async def emit(event):
+        pass
+
+    ctx = ToolContext(qloo=qloo_client())
+    blocks = [call("w1", "write", rule="first", pause=0.03), call("w2", "write", rule="second")]
+    sent = await run_tool_calls(blocks, ordering_tools(log), ctx, emit)
+    assert ctx.state["rules"] == ["first", "second"] and log == ["write first", "write second"]
+    assert [r["tool_use_id"] for r in sent] == ["w1", "w2"]
+
+
+async def test_a_call_past_the_cap_still_gets_its_error_and_the_events_keep_their_shape():
+    from app.agent.tools import TOO_MANY_CALLS, run_tool_calls
+
+    log, events = [], []
+
+    async def emit(event):
+        events.append(event)
+
+    ctx = ToolContext(qloo=qloo_client())
+    blocks = [call("r1", "read"), call("w1", "write", rule="kept"), call("w2", "write", rule="skipped")]
+    sent = await run_tool_calls(blocks, ordering_tools(log), ctx, emit, max_calls=2)
+    assert [r["tool_use_id"] for r in sent] == ["r1", "w1", "w2"]
+    assert sent[2]["is_error"] and sent[2]["content"] == TOO_MANY_CALLS and "is_error" not in sent[0]
+    assert ctx.state["rules"] == ["kept"] and sent[0]["content"] == "rules: kept"
+    assert {e["type"] for e in events} == {"tool_call", "tool_result"}
+    calls = [e for e in events if e["type"] == "tool_call"]
+    results = [e for e in events if e["type"] == "tool_result"]
+    assert {e["id"] for e in calls} == {e["id"] for e in results} == {"r1", "w1", "w2"}
+    assert set(calls[0]) == {"type", "id", "tool", "input", "provenance"}
+    assert set(results[0]) == {
+        "type",
+        "id",
+        "tool",
+        "ok",
+        "summary",
+        "latency_ms",
+        "provenance",
+        "requests",
+    }
+
+
+def test_only_add_constraint_changes_the_run_state():
+    from app.agent.clash_tools import CLASH_TOOLS
+
+    assert [t.name for t in CLASH_TOOLS if t.mutates_state] == ["add_constraint"]
+    assert not any(t.mutates_state for t in GENERAL_TOOLS)
+
+
+# ---------------------------------------------------------------- worst-case reservation
+
+
+def _resolve_block(call_id: str, names: list[str]):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(id=call_id, name="resolve_entities", input={"names": names, "entity_type": ENTITY})
+
+
+async def _run(blocks, ctx, tools=None):
+    from app.agent.qloo_tools import RESOLVE_ENTITIES
+    from app.agent.tools import run_tool_calls
+
+    events = []
+
+    async def emit(event):
+        events.append(event)
+
+    sent = await run_tool_calls(blocks, tools or {"resolve_entities": RESOLVE_ENTITIES}, ctx, emit)
+    # in the order the model asked (a refused call finishes first, so the events come in another order)
+    results = {e["id"]: e for e in events if e["type"] == "tool_result"}
+    return sent, [results[block.id] for block in blocks]
+
+
+async def test_a_six_name_resolve_at_the_floor_plus_five_is_refused_with_no_requests():
+    from app.agent.tools import QLOO_PAUSED
+
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=SEARCH)
+
+    qloo = qloo_client(handler)
+    ctx = ToolContext(qloo=qloo, qloo_floor=1500)
+    qloo.month_remaining = 1505  # six searches can send 18 requests: it needs floor + 18
+    names = [f"act {i}" for i in range(6)]
+    sent, results = await _run([_resolve_block("t1", names)], ctx)
+    assert seen == [] and results[0]["requests"] == [] and results[0]["ok"] is False
+    assert sent[0]["content"] == QLOO_PAUSED and qloo._reserved == 0 and ctx.state["qloo_calls"] == 0
+
+    qloo.month_remaining = 1518  # room for the worst case: it runs, and gives the reservation back
+    sent, results = await _run([_resolve_block("t2", names)], ctx)
+    assert results[0]["ok"] is True and len(seen) == 6
+    assert qloo._reserved == 0 and ctx.state["qloo_calls"] == 6
+    await qloo.aclose()
+
+
+async def test_two_concurrent_qloo_tools_at_the_floor_edge_run_one_and_refuse_one():
+    qloo = qloo_client()
+    ctx = ToolContext(qloo=qloo, qloo_floor=1500)
+    qloo.month_remaining = 1503  # room for one search's worst case, not two
+    sent, results = await _run([_resolve_block("a", ["x"]), _resolve_block("b", ["y"])], ctx)
+    assert [r["ok"] for r in results] == [True, False]
+    assert results[1]["requests"] == [] and sent[1]["is_error"]
+    assert qloo._reserved == 0 and ctx.state["qloo_calls"] == 1
+    await qloo.aclose()
+
+
+async def test_two_concurrent_qloo_tools_at_the_run_cap_run_one_and_refuse_one():
+    from app.agent.tools import QLOO_BUDGET_USED
+
+    qloo = qloo_client()
+    ctx = ToolContext(qloo=qloo, qloo_budget=5)  # room for one search's worst case (3), not two
+    sent, results = await _run([_resolve_block("a", ["x"]), _resolve_block("b", ["y"])], ctx)
+    assert [r["ok"] for r in results] == [True, False]
+    assert results[1]["summary"] == "Qloo budget for this run is used up"
+    assert sent[1]["content"] == QLOO_BUDGET_USED and results[1]["requests"] == []
+    assert ctx.state["qloo_calls"] == 1 and qloo._reserved == 0  # the run is charged what was sent
+    await qloo.aclose()
+
+
+async def test_the_reservation_is_released_after_a_qloo_error_and_a_tool_failure():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"error": "down"})
+
+    qloo = qloo_client(handler)
+    ctx = ToolContext(qloo=qloo, qloo_floor=1500, qloo_budget=12)
+    qloo.month_remaining = 5000
+    _, results = await _run([_resolve_block("a", ["x"])], ctx)
+    assert results[0]["ok"] is False and qloo._reserved == 0
+    assert ctx.state["qloo_calls"] == len(results[0]["requests"]) == 1
+
+    _, results = await _run([_resolve_block("b", [])], ctx)  # refused input: nothing sent, nothing kept
+    assert results[0]["ok"] is False and qloo._reserved == 0 and ctx.state["qloo_calls"] == 1
+    await qloo.aclose()
+
+
+async def test_the_reservation_is_released_when_the_run_is_cancelled_mid_call():
+    import asyncio
+
+    started = asyncio.Event()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        started.set()
+        await asyncio.sleep(30)
+        return httpx.Response(200, json=SEARCH)
+
+    qloo = qloo_client(handler)
+    ctx = ToolContext(qloo=qloo, qloo_floor=1500, qloo_budget=12)
+    qloo.month_remaining = 5000
+    task = asyncio.create_task(_run([_resolve_block("a", ["x"])], ctx))
+    await asyncio.wait_for(started.wait(), 5)
+    assert qloo._reserved == 3  # held while the request is out
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    assert task.cancelled() and qloo._reserved == 0 and ctx.state["qloo_calls"] == 0
+    await qloo.aclose()
+
+
+async def test_a_tool_that_needs_more_than_the_run_has_left_is_refused_before_any_request():
+    # Twelve names would need 36 requests of a 12-request run; the handler would take them one by one
+    qloo = qloo_client()
+    ctx = ToolContext(qloo=qloo, qloo_budget=12)
+    sent, results = await _run([_resolve_block("a", [f"n{i}" for i in range(6)])], ctx)
+    assert results[0]["ok"] is False and results[0]["requests"] == [] and ctx.state["qloo_calls"] == 0
+    await qloo.aclose()

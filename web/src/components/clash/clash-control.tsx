@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { ArrowDown, ChevronDown } from "lucide-react";
 
@@ -24,8 +24,11 @@ import {
   type HeroClash,
 } from "@/lib/clashes";
 import { pluralize } from "@/lib/format";
+import { drawerRank, drawerRankOf } from "@/lib/lenses";
 import type { PairClash, Preset, PresetSummary } from "@/lib/preset";
+import { figureLine, type ServerSummary } from "@/lib/server-summary";
 import type { PlanPreview } from "@/lib/stack";
+import { cn } from "@/lib/utils";
 
 import { AgentPanel } from "./agent-panel";
 import { BudgetDial, Scorecard } from "./budget-dial";
@@ -35,13 +38,16 @@ import { CoverageMeter } from "./coverage-meter";
 import { HiddenWall } from "./hidden-wall";
 import { PresetSources } from "./preset-sources";
 import { RECORDED_RUNS_ID } from "./recorded-runs";
+import { SummaryBoard, SummaryScore } from "./server-summary";
 import { BoardSkeleton, ScoreSkeleton } from "./skeletons";
+import { TasteLens } from "./taste-lens";
 import { TimetableGrid } from "./timetable-grid";
 import { TimetableLegend } from "./timetable-legend";
 import { TimetableList } from "./timetable-list";
 import { TRY_A_MOVE_ID, TryAMove } from "./try-a-move";
 import { TwinCards } from "./twin-cards";
 import { useAgentStatus } from "./use-agent-status";
+import { useLenses } from "./use-lenses";
 import { usePresets } from "./use-presets";
 import { useRecordings } from "./use-recordings";
 
@@ -51,7 +57,7 @@ const TOP_LINKS = 10;
 const SOURCES_ID = "sources";
 
 const HERO_LINK =
-  "inline-flex items-center gap-1.5 text-sm font-semibold underline underline-offset-4 hover:text-primary";
+  "inline-flex items-center gap-1.5 py-1 text-sm font-semibold underline underline-offset-4 hover:text-primary";
 
 /** The hero button says what the first click opens, and only rank 1 is called the costliest. */
 const HERO_BUTTON: Record<HeroClash["kind"], string> = {
@@ -106,14 +112,45 @@ type JumpLink = { href: string; label: string };
  * anchor offset grows by its height so a jump lands below it; on a phone it is one row that
  * scrolls sideways.
  */
-function JumpNav({ agent }: { agent: JumpLink }) {
+function JumpNav({ agent, wall }: { agent: JumpLink; wall: boolean }) {
   const links: JumpLink[] = [
     { href: "#board-heading", label: "Timetable" },
     { href: `#${TRY_A_MOVE_ID}`, label: "Try a move" },
     agent,
-    { href: "#hidden-wall", label: "Hidden clashes" },
+    ...(wall ? [{ href: "#hidden-wall", label: "Hidden clashes" }] : []),
     { href: `#${SOURCES_ID}`, label: "Sources" },
   ];
+  const hrefs = links.map((link) => link.href).join("|");
+  const [current, setCurrent] = useState<string | null>(null);
+
+  // The section in view: the last anchor whose top is above 40% of the viewport; none at the very
+  // top of the page, before the first section has reached that line.
+  useEffect(() => {
+    const targets = hrefs.split("|").map((href) => ({ href, id: href.slice(1) }));
+    let frame = 0;
+    function measure() {
+      frame = 0;
+      const line = window.innerHeight * 0.4;
+      let active: string | null = null;
+      for (const { href, id } of targets) {
+        const element = document.getElementById(id);
+        if (element && element.getBoundingClientRect().top <= line) active = href;
+      }
+      setCurrent(active);
+    }
+    function schedule() {
+      if (frame === 0) frame = window.requestAnimationFrame(measure);
+    }
+    measure();
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    return () => {
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      if (frame !== 0) window.cancelAnimationFrame(frame);
+    };
+  }, [hrefs]);
+
   return (
     <nav
       aria-label="On this page"
@@ -124,7 +161,13 @@ function JumpNav({ agent }: { agent: JumpLink }) {
           <li key={link.href}>
             <a
               href={link.href}
-              className="rounded-sm py-1 text-sm font-semibold text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+              aria-current={current === link.href ? "location" : undefined}
+              className={cn(
+                "rounded-sm py-1.5 text-sm font-semibold underline-offset-4 hover:text-foreground hover:underline",
+                current === link.href
+                  ? "text-foreground underline decoration-2"
+                  : "text-muted-foreground",
+              )}
             >
               {link.label}
             </a>
@@ -135,15 +178,49 @@ function JumpNav({ agent }: { agent: JumpLink }) {
   );
 }
 
-export function ClashControlFallback({ intro }: { intro: ReactNode }) {
+/** The hero's figure line, below `lg` only: there the dial sits under the pitch, past the first screen. */
+function FigureLine({ text }: { text: string | null }) {
+  if (!text) return null;
+  return <p className="mt-4 max-w-2xl text-base leading-snug font-semibold lg:hidden">{text}</p>;
+}
+
+/**
+ * The first screen before the interactive page has a festival day: the server's summary of the day
+ * when there is one (the server HTML carries it), skeletons otherwise.
+ */
+function LoadingView({
+  intro,
+  summary,
+  picker,
+  status,
+}: {
+  intro: ReactNode;
+  summary: ServerSummary | null;
+  picker?: ReactNode;
+  status?: ReactNode;
+}) {
   return (
     <>
-      <HeroLayout intro={intro} aside={<ScoreSkeleton />} />
+      <HeroLayout intro={intro} aside={summary ? <SummaryScore summary={summary} /> : <ScoreSkeleton />}>
+        <FigureLine text={summary?.figure ?? null} />
+        {status}
+      </HeroLayout>
       <BoardFrame label="Timetable">
-        <BoardSkeleton />
+        {picker}
+        {summary ? <SummaryBoard summary={summary} /> : <BoardSkeleton />}
       </BoardFrame>
     </>
   );
+}
+
+export function ClashControlFallback({
+  intro,
+  summary = null,
+}: {
+  intro: ReactNode;
+  summary?: ServerSummary | null;
+}) {
+  return <LoadingView intro={intro} summary={summary} />;
 }
 
 /**
@@ -152,10 +229,11 @@ export function ClashControlFallback({ intro }: { intro: ReactNode }) {
  * (every legal place for a set, priced, with no language model), the agent (live or recorded runs),
  * the hidden-clash examples and the twin card.
  */
-export function ClashControl({ intro }: { intro: ReactNode }) {
+export function ClashControl({ intro, summary = null }: { intro: ReactNode; summary?: ServerSummary | null }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { list, preset, selectedId, retry } = usePresets(searchParams.get("preset"));
+  const requestedId = searchParams.get("preset");
+  const { list, preset, selectedId, retry } = usePresets(requestedId);
   // Asked once per page, alongside the presets, so the hero and the agent panel already know
   // whether the live agent is on when the festival day first renders.
   const agentStatus = useAgentStatus();
@@ -205,20 +283,23 @@ export function ClashControl({ intro }: { intro: ReactNode }) {
   }
 
   if (preset.status !== "ready" || list.status !== "ready") {
+    // The server's summary is shown only while the day it describes is the one being loaded.
+    const loadingId = selectedId ?? requestedId ?? summary?.id ?? null;
     return (
-      <>
-        <HeroLayout intro={intro} aside={<ScoreSkeleton />}>
+      <LoadingView
+        intro={intro}
+        summary={summary && summary.id === loadingId ? summary : null}
+        status={
           <p role="status" className="sr-only">
             Loading the festival day.
           </p>
-        </HeroLayout>
-        <BoardFrame label="Timetable">
-          {list.status === "ready" ? (
+        }
+        picker={
+          list.status === "ready" ? (
             <PresetPicker presets={list.value} selectedId={selectedId} onChange={choosePreset} className="mb-6" />
-          ) : null}
-          <BoardSkeleton />
-        </BoardFrame>
-      </>
+          ) : null
+        }
+      />
     );
   }
 
@@ -305,6 +386,11 @@ function PresetView({
   );
   const recordings = useRecordings(preset.id);
   const twins = preset.evidence?.twins ?? [];
+  // The wall's hero link and jump entry only when the day has examples to show.
+  const hasWall = (preset.evidence?.hidden_wall?.length ?? 0) > 0;
+  const index = report.metrics.clash_budget_index;
+  const lenses = useLenses(preset.id, day);
+  const lensRank = useMemo(() => drawerRank(lenses), [lenses]);
   const agentJump: JumpLink =
     agentStatus === "off" && recordings.runs.length > 0
       ? { href: `#${RECORDED_RUNS_ID}`, label: "Recorded runs" }
@@ -341,32 +427,24 @@ function PresetView({
         intro={intro}
         aside={
           <Scorecard>
-            <BudgetDial index={report.metrics.clash_budget_index} baseline={report.baseline} reach={reach} />
+            <BudgetDial index={index} baseline={report.baseline} reach={reach} />
           </Scorecard>
         }
       >
+        <FigureLine text={index === null ? null : figureLine(index)} />
         <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">
           {hero ? (
             <Button type="button" variant="ink" onClick={(event) => openClash(hero.clash, event.currentTarget)}>
               {HERO_BUTTON[hero.kind]}
             </Button>
           ) : null}
-          <a href="#hidden-wall" className={HERO_LINK}>
-            See the hidden clashes
-            <ArrowDown aria-hidden="true" className="size-4" />
-          </a>
           <a href={`#${TRY_A_MOVE_ID}`} className={HERO_LINK}>
             Try a move yourself
             <ArrowDown aria-hidden="true" className="size-4" />
           </a>
-          {agentStatus === "on" || agentStatus === "unknown" ? (
-            <a href="#agent" className={HERO_LINK}>
-              Ask the agent what happens if a set moves
-              <ArrowDown aria-hidden="true" className="size-4" />
-            </a>
-          ) : agentStatus === "off" && recordings.runs.length > 0 ? (
-            <a href={`#${RECORDED_RUNS_ID}`} className={HERO_LINK}>
-              Watch a recorded agent run
+          {hasWall ? (
+            <a href="#hidden-wall" className={HERO_LINK}>
+              See the hidden clashes
               <ArrowDown aria-hidden="true" className="size-4" />
             </a>
           ) : null}
@@ -377,7 +455,7 @@ function PresetView({
         </p>
       </HeroLayout>
 
-      <JumpNav agent={agentJump} />
+      <JumpNav agent={agentJump} wall={hasWall} />
 
       <BoardFrame labelledBy="board-heading">
         <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4 border-b border-border pb-4">
@@ -479,6 +557,8 @@ function PresetView({
         </div>
       </BoardFrame>
 
+      {lenses ? <TasteLens lenses={lenses} ranked={ranked} onOpen={openClash} /> : null}
+
       <TryAMove preset={preset} day={day} ranked={ranked} isLocked={isLocked} onPlanChange={setPlanPreview} />
 
       <AgentPanel preset={preset} day={day} agentStatus={agentStatus} />
@@ -504,6 +584,8 @@ function PresetView({
         onSelect={(clash) => openClash(clash, null)}
         onClose={() => setDrawer((previous) => ({ ...previous, open: false }))}
         returnFocusTo={drawer.trigger}
+        rankWithoutTaste={lensRank}
+        rankWithoutTasteOf={drawerRankOf(lenses)}
       />
     </>
   );

@@ -11,6 +11,7 @@ import {
   agreement,
   pairCheckKey,
   rankingsText,
+  requestIdLabels,
   savedTagsText,
   tagsAlsoSaved,
   verdictText,
@@ -75,6 +76,7 @@ function CheckResult({ check, receipt }: { check: PairCheck; receipt: Receipt | 
   const verdict = agreement(check.overlap.live, check.overlap.saved);
   const rankings = rankingsText(check);
   const { shown: tags, more } = leadingTags(check.tags);
+  const requestIds = requestIdLabels(check);
 
   return (
     <div className="mt-5 rounded-lg border border-border-strong bg-card p-4">
@@ -146,12 +148,27 @@ function CheckResult({ check, receipt }: { check: PairCheck; receipt: Receipt | 
         )}
       </div>
 
+      <p className="mt-5 text-xs leading-relaxed text-muted-foreground">
+        Request ids, in the order sent:{" "}
+        {requestIds.map((label, i) => (
+          <span key={i}>
+            {i > 0 ? ", " : ""}
+            {check.requests[i]?.request_id ? (
+              <code className="font-mono break-all text-foreground">{label}</code>
+            ) : (
+              label
+            )}
+          </span>
+        ))}
+        .
+      </p>
+
       <TraceDrawer
         toolCalls={toolCalls}
         mode="live"
         triggerLabel="How Qloo answered"
-        triggerClassName="mt-5"
-        description="The 3 requests this check sent to Qloo just now, with the request ids Qloo returned. None of these are saved responses."
+        triggerClassName="mt-3"
+        description="The 3 requests this check sent to Qloo just now, with the request id Qloo returned for each when it sent one. None of these are saved responses."
         footnote={`Live check · ${check.a.name} × ${check.b.name} · ${check.fetchedAt}`}
       />
     </div>

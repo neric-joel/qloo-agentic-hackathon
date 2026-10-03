@@ -3,28 +3,32 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { BriefContent } from "@/components/brief/brief-sheet";
-import { PLAN_CAVEAT as CARD_CAVEAT } from "@/components/clash/scratch-plan";
 import BriefPage, { metadata } from "@/app/brief/page";
 
 import {
   BRIEF_CLASHES,
   HOW_TO_READ,
+  HIDDEN_NOTE,
   NO_MOVES,
-  PLAN_CAVEAT,
+  READING_NOTE,
   bandSentence,
   briefRows,
   briefSteps,
   briefTitle,
+  clashesTitle,
   coverageSentence,
   dayFigures,
   formatIndex,
   hiddenNames,
   hiddenSentence,
   indexSentence,
+  planClashLines,
+  planClashesTitle,
   planSummary,
   savedDate,
   sourceHosts,
 } from "./brief";
+import { PLAN_CAVEAT } from "./plan-copy";
 import type { PairClash, Preset, SetSlot } from "./preset";
 import type { Plan, PlanStep } from "./stack";
 
@@ -172,6 +176,17 @@ const PLAN: Plan = {
   options: null,
 };
 
+/** A plan whose second step raises the index (110.2 to 111.0). */
+const RAISING_PLAN: Plan = {
+  ...PLAN,
+  budget: 108.4,
+  steps: [
+    PLAN.steps[0],
+    { ...PLAN.steps[1], budgetAfter: 110.96 },
+    { ...PLAN.steps[2], budgetAfter: 108.4 },
+  ],
+};
+
 /** The sheet as a reader gets it: the static HTML with its tags removed. */
 function sheetText(preset: Preset, plan: Plan | null, day = 0): string {
   return renderToStaticMarkup(createElement(BriefContent, { preset, day, plan }))
@@ -264,10 +279,10 @@ describe("the day's figures", () => {
     expect(coverageSentence({ scored: 12, total: 12, unpriced: 0 })).toBe("Taste overlap is priced for all 12 sets.");
   });
 
-  it("places the index below, inside or above the range, as the page prints them", () => {
+  it("places the index below, inside or above the middle 80%, as the page prints them", () => {
     const range = { low: 92.1568, high: 108.5582 };
     expect(bandSentence(116.71, range)).toBe(
-      "Random valid timetables of this lineup score 92 to 109; the published timetable reads above that range.",
+      "The middle 80% of random valid timetables of this lineup score 92 to 109; the published timetable reads above that range.",
     );
     expect(bandSentence(100, range)).toMatch(/reads inside that range\.$/);
     // 108.6 prints inside "92 to 109", so it reads inside.
@@ -301,6 +316,7 @@ describe("kept moves", () => {
         shift: "30 minutes later, same stage",
         before: "116.7",
         after: "110.2",
+        raises: false,
       },
       {
         n: 2,
@@ -309,9 +325,37 @@ describe("kept moves", () => {
         shift: "15 minutes earlier, same stage",
         before: "110.2",
         after: "108.0",
+        raises: false,
       },
-      { n: 3, act: "Act Five", place: "The Barn 18:30–19:00", shift: "Moves to The Barn, 18:30", before: "108.0", after: "106.6" },
+      {
+        n: 3,
+        act: "Act Five",
+        place: "The Barn 18:30–19:00",
+        shift: "Moves to The Barn, 18:30",
+        before: "108.0",
+        after: "106.6",
+        raises: false,
+      },
     ]);
+  });
+
+  it("marks a step that raises the index, compared as printed", () => {
+    const steps = briefSteps(makePreset(), RAISING_PLAN);
+    expect(steps.map((item) => item.raises)).toEqual([false, true, false]);
+  });
+
+  it("titles the tables before and with the moves", () => {
+    expect(clashesTitle(5)).toBe("The five costliest clashes");
+    expect(clashesTitle(1)).toBe("The costliest clash");
+    expect(clashesTitle(5, true)).toBe("The five costliest clashes on the published day, before these moves");
+    expect(planClashesTitle(5)).toBe("The five costliest clashes with these moves");
+    expect(planClashesTitle(3)).toBe("The three costliest clashes with these moves");
+    expect(planClashesTitle(1)).toBe("The costliest clash with these moves");
+  });
+
+  it("lists the moved timetable's clashes with the server's index points", () => {
+    expect(planClashLines(PLAN)).toEqual(["1. Act Two and Act Three · 9.5 index points"]);
+    expect(planClashLines({ clashes: [] })).toEqual([]);
   });
 });
 
@@ -329,12 +373,20 @@ describe("the brief sheet", () => {
     const text = sheetText(makePreset(), null);
     expect(text).toContain("Clash brief · Test Fest 2026, Sunday");
     expect(text).toContain("Test Fest 2026 Sunday: where the clash budget goes");
-    expect(text).toContain("Scored independently from the published timetable. Test Fest 2026 does not use Clash Control.");
+    expect(text).toContain("Scored by this app from the published timetable. Test Fest 2026 does not use Clash Control.");
     expect(text).toContain(
-      "Clash Budget Index 116.7. Random valid timetables of this lineup score 92 to 109; the published timetable reads above that range.",
+      "Clash Budget Index 116.7. The middle 80% of random valid timetables of this lineup score 92 to 109; the published timetable reads above that range.",
     );
     expect(text).toContain("The five costliest clashes");
-    expect(text).toContain("Hidden clashes: the two acts’ genres differ but their audiences overlap in taste.");
+    expect(text).not.toContain("before these moves");
+    expect(text).not.toContain("with these moves");
+    expect(text).toContain("Time shared");
+    expect(text).not.toMatch(/Overlap in time/);
+    expect(HIDDEN_NOTE).toBe(
+      "Hidden clashes: the two acts’ main genre tags differ, but their taste overlap is among this lineup’s highest.",
+    );
+    expect(text).toContain(`${HIDDEN_NOTE} ${READING_NOTE}`);
+    expect(READING_NOTE).toBe("A reading, not a verdict on the festival.");
     expect(text).toContain("both locked");
     expect(text).toContain(NO_MOVES);
     expect(text).not.toContain(PLAN_CAVEAT);
@@ -353,8 +405,26 @@ describe("the brief sheet", () => {
       "Scored by the same measure the places are found with, so a lower number shows what that measure rewards, not that audiences would be better served. It knows only the rules in the timetable, not an act’s own wishes.",
     );
     expect(text).not.toContain(NO_MOVES);
-    // The same caveat the plan card prints under every plan.
-    expect(PLAN_CAVEAT).toBe(CARD_CAVEAT);
+  });
+
+  it("labels the unmoved table and prints the plan's own costliest clashes after the moves", () => {
+    const text = sheetText(makePreset(), PLAN);
+    const before = text.indexOf("The five costliest clashes on the published day, before these moves");
+    const moves = text.indexOf("Tested moves");
+    const after = text.indexOf("The costliest clash with these moves");
+    expect(before).toBeGreaterThan(-1);
+    expect(moves).toBeGreaterThan(before);
+    expect(after).toBeGreaterThan(moves);
+    expect(text).toContain("1. Act Two and Act Three · 9.5 index points");
+    // Not a bare "The five costliest clashes" heading over the unmoved table.
+    expect(text).not.toMatch(/The five costliest clashes (?!on the published day)/);
+  });
+
+  it("marks a kept step that raises the index", () => {
+    const text = sheetText(makePreset(), RAISING_PLAN);
+    expect(text).toContain("110.2 → 111.0 · raises the index");
+    expect(text.match(/raises the index/g)).toHaveLength(1);
+    expect(sheetText(makePreset(), PLAN)).not.toContain("raises the index");
   });
 
   it("leaves out tags, entity ids, raw popularity and every way to take the page away", () => {

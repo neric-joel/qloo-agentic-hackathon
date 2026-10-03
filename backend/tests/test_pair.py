@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 from app import deps, pair
 from app.config import Settings, get_settings
 from app.deps import get_pair_limiter
-from app.limits import PAIR_MESSAGES, RunLimiter
+from app.limits import PAIR_MESSAGES, RunLimiter, stamp_signature
 from app.main import app, get_qloo
 from app.presets import Preset
 from app.qloo.client import QlooClient, normalize_params, request_key
@@ -886,3 +886,103 @@ def test_hostile_bodies_are_refused_before_any_request_and_echo_nothing(tmp_path
     assert all(no_store(r) for r in shaped + unknown)
     assert all("xxxxxxxxxx" not in r.text and len(r.text) < 2000 for r in shaped)
     assert fake.seen == [] and slots(limiter) == 0
+
+
+# ------------------------------------- round 5: the reservation, the single probe lease, the visitor stamp
+
+
+class GatedQloo(FakeQloo):
+    """A FakeQloo whose answers wait until ``gate`` is set, so one check stays in flight as another starts."""
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.gate = asyncio.Event()
+        self.three_out = asyncio.Event()  # set once a check's three requests are out and held
+
+    async def handler(self, request: httpx.Request) -> httpx.Response:
+        self.seen.append(request)
+        if len(self.seen) == 3:
+            self.three_out.set()
+        await self.gate.wait()
+        self.seen.pop()  # counted again by the parent
+        return await super().handler(request)
+
+
+async def two_checks_at_once(tmp_path, day, fake: GatedQloo, qloo: QlooClient, limiter: RunLimiter):
+    serve(tmp_path, qloo, limiter)
+    a, b = day.pair()
+    async with asgi_client() as client:
+        first = asyncio.create_task(client.post("/api/pair", json={"preset": "day", "a": a, "b": b}))
+        await asyncio.wait_for(fake.three_out.wait(), 2.0)  # the first check's requests are out and held
+        second = await client.post("/api/pair", json={"preset": "day", "a": a, "b": b})
+        sent_while_first_was_out = len(fake.seen)
+        fake.gate.set()
+        return await first, second, sent_while_first_was_out
+
+
+async def test_two_concurrent_checks_at_floor_plus_3_one_200_one_503_and_no_extra_requests(tmp_path, day):
+    fake = GatedQloo(remaining="1500")
+    qloo = fake.client()
+    qloo.month_remaining = 1503  # room for exactly one check above the floor of 1,500
+    limiter = counting_limiter()
+    first, second, sent = await two_checks_at_once(tmp_path, day, fake, qloo, limiter)
+    assert first.status_code == 200
+    assert second.status_code == 503 and second.json() == PAUSED and no_store(second)
+    assert sent == 3 and len(fake.seen) == 3  # the refused check sent nothing
+    assert slots(limiter) == 1 and qloo._reserved == 0
+
+
+async def test_the_reservation_is_given_back_when_qloo_fails(tmp_path, day):
+    fake = GatedQloo(status=500, remaining="1500")
+    qloo = fake.client()
+    qloo.month_remaining = 1503
+    first, second, _ = await two_checks_at_once(tmp_path, day, fake, qloo, counting_limiter())
+    assert first.status_code == 503 and first.json() == NO_ANSWER
+    assert second.status_code == 503 and second.json() == PAUSED
+    assert qloo._reserved == 0
+
+
+def test_a_limiter_refusal_gives_the_reservation_back(tmp_path, day):
+    fake = FakeQloo()
+    qloo = fake.client()
+    qloo.month_remaining = 1503
+    full = RunLimiter(0, 10, 10, messages=PAIR_MESSAGES)
+    serve(tmp_path, qloo, full)
+    with TestClient(app) as client:
+        refused = check(client, *day.pair())
+    assert refused.status_code == 429 and fake.seen == []
+    assert qloo._reserved == 0 and qloo.reserve(1500, 3) is True  # the room is free again
+
+
+async def test_after_the_blind_pause_simultaneous_checks_get_one_probe(tmp_path, day):
+    clock = [0.0]
+    fake = GatedQloo(remaining=None)  # Qloo stays blind
+    qloo = fake.client(clock=lambda: clock[0])
+    qloo.blind_requests, qloo._last_blind = 6, 0.0
+    clock[0] = 600.0  # the window has passed
+    limiter = counting_limiter()
+    first, second, sent = await two_checks_at_once(tmp_path, day, fake, qloo, limiter)
+    assert first.status_code == 200  # the probe check: answered, but blind
+    assert second.status_code == 503 and second.json() == PAUSED  # paused while the probe was out
+    assert sent == 3 and len(fake.seen) == 3 and slots(limiter) == 1
+    with TestClient(app) as client:
+        assert check(client, *day.pair()).json() == PAUSED  # blind answers: paused for another 600 s
+        clock[0] = 1_199.0
+        assert check(client, *day.pair()).json() == PAUSED
+    assert len(fake.seen) == 3
+
+
+def test_a_signed_visitor_stamp_is_the_key_and_a_forged_one_falls_back(tmp_path, day):
+    secret = "test-secret"
+    limiter = RunLimiter(1, 10, 10, messages=PAIR_MESSAGES)
+    serve(tmp_path, FakeQloo().client(), limiter, visitor_stamp_secret=secret)
+    a, b = day.pair()
+    signed = {"x-clash-visitor": "203.0.113.7", "x-clash-sig": stamp_signature(secret, "203.0.113.7")}
+    with TestClient(app) as client:
+        first = check(client, a, b, **signed, **{"x-forwarded-for": "198.51.100.1"})
+        # Same stamp, another forwarded address: the same visitor, so the hour's one check is used
+        again = check(client, a, b, **signed, **{"x-forwarded-for": "198.51.100.2"})
+        forged = check(client, a, b, **{**signed, "x-clash-visitor": "203.0.113.8"})
+    assert first.status_code == 200 and again.status_code == 429
+    assert forged.status_code == 200  # the forged stamp counted as the plain address instead
+    assert set(limiter._visitors) == {"stamp:203.0.113.7", "testclient"}

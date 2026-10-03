@@ -148,11 +148,14 @@ function WallCard({ item }: { item: HiddenWallItem }) {
   );
 }
 
-/** The wall's count line: how many sourced examples it shows, and that the rest are left out. */
+/** The wall's count line: how many sourced examples it shows, and that the rest were not saved. */
 export function wallCount(shown: number, total: number): string {
-  return shown < total
-    ? `Showing ${shown} of ${total} sourced examples, the rest are not shown here`
-    : pluralize(shown, "sourced example");
+  if (shown >= total) return pluralize(shown, "sourced example");
+  const rest = total - shown;
+  return (
+    `Showing ${shown} of ${total} sourced examples. ` +
+    (rest === 1 ? "The other one is not saved with this day." : `The other ${rest} are not saved with this day.`)
+  );
 }
 
 /**
@@ -162,6 +165,8 @@ export function wallCount(shown: number, total: number): string {
  */
 export function HiddenWall({ evidence }: { evidence: Evidence | null }) {
   const items = evidence?.hidden_wall ?? [];
+  // A day with no sourced examples has nothing to show: the section, its link and its nav entry stay out.
+  if (items.length === 0) return null;
   return (
     <section
       id="hidden-wall"
@@ -190,23 +195,17 @@ export function HiddenWall({ evidence }: { evidence: Evidence | null }) {
           </div>
         </div>
 
-        {items.length > 0 ? (
-          <>
-            <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-b-2 border-foreground pb-2">
-              <p className="type-kicker">{wallCount(items.length, evidence?.hidden_wall_total ?? items.length)}</p>
-              <ProvenanceChip provenance="recorded" size="sm" />
-            </div>
-            <ul className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              {items.map((item) => (
-                <WallCard key={`${item.festival}-${item.acts.join("|")}`} item={item} />
-              ))}
-            </ul>
-          </>
-        ) : (
-          <p className="mt-8 rounded-lg border-2 border-dashed border-border-strong p-5 text-sm text-muted-foreground">
-            No sourced examples were saved with this festival day.
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-b-2 border-foreground pb-2">
+          <p className="text-sm font-semibold">
+            {wallCount(items.length, evidence?.hidden_wall_total ?? items.length)}
           </p>
-        )}
+          <ProvenanceChip provenance="recorded" size="sm" />
+        </div>
+        <ul className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {items.map((item) => (
+            <WallCard key={`${item.festival}-${item.acts.join("|")}`} item={item} />
+          ))}
+        </ul>
       </div>
     </section>
   );

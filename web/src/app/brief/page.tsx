@@ -15,7 +15,7 @@ export const metadata = {
  */
 const PRINT_CSS = `
 @media print {
-  @page { margin: 12mm; }
+  @page { margin: 10mm; }
   body > header, body > footer, body > aside, body > a[href="#main"] { display: none !important; }
   :root, :root.dark {
     color-scheme: light;

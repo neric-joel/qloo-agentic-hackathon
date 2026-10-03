@@ -11,6 +11,7 @@ import {
   ghostSlot,
   isSafeId,
   parsePlan,
+  planAnnouncement,
   planBody,
   planPreview,
   planStarters,
@@ -273,6 +274,26 @@ describe("rangeVerdict", () => {
     expect(rangeVerdict(100, null)).toBeNull();
     expect(rangeVerdict(Number.NaN, range)).toBeNull();
     expect(rangeVerdict(100, { low: Number.NaN, high: 108 })).toBeNull();
+  });
+});
+
+describe("planAnnouncement", () => {
+  it("says what a priced plan does, from the server's two readings", () => {
+    expect(planAnnouncement({ publishedBudget: 116.71, budget: 106.62 }, 2)).toBe(
+      "Plan: 2 kept moves. Clash Budget Index 116.7 to 106.6, 10.1 lower.",
+    );
+    expect(planAnnouncement({ publishedBudget: 116.71, budget: 117.33 }, 1)).toBe(
+      "Plan: 1 kept move. Clash Budget Index 116.7 to 117.3, 0.6 higher.",
+    );
+    expect(planAnnouncement({ publishedBudget: 116.71, budget: 116.74 }, 1)).toBe(
+      "Plan: 1 kept move. Clash Budget Index 116.7 to 116.7, no change.",
+    );
+  });
+
+  it("says the plan is cleared with no moves, and nothing while it is being priced", () => {
+    expect(planAnnouncement(null, 0)).toBe("Plan cleared.");
+    expect(planAnnouncement({ publishedBudget: 116.71, budget: 106.62 }, 0)).toBe("Plan cleared.");
+    expect(planAnnouncement(null, 3)).toBe("");
   });
 });
 

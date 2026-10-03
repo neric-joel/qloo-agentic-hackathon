@@ -1,11 +1,12 @@
 import { ArrowDown, ArrowRight, ArrowUp } from "lucide-react";
 
 import { budgetDelta, changeLabel } from "@/lib/agent-session";
+import { rangeLead } from "@/lib/plan-copy";
 import type { BaselineStats } from "@/lib/preset";
 import type { ScaleRange } from "@/lib/stack";
 import { cn } from "@/lib/utils";
 
-/** The range random valid timetables of this lineup score in (10th to 90th percentile), for scale. */
+/** The middle 80% of random valid timetables of this lineup (10th to 90th percentile), for scale. */
 export type { ScaleRange };
 
 /** The day's scale range from its baseline, or null when the baseline has none. */
@@ -22,7 +23,8 @@ export function signedDelta(delta: number): string {
 
 /**
  * A tested move's Clash Budget Index, before and after: the two readings, a chip that says how
- * far it moved ("2.4 lower"), a Now and an After bar, and the day's scale line when it has one.
+ * far it moved ("2.4 lower"), a Now and an After bar, and the day's scale line when it has one:
+ * the middle 80% of random valid timetables (`rangeLead`), then the caller's verdict, if any.
  */
 export function BudgetMove({
   before,
@@ -37,6 +39,7 @@ export function BudgetMove({
   verdict?: string | null;
 }) {
   const delta = budgetDelta(before, after);
+  const lead = rangeLead(range);
   if (before === null || after === null || delta === null) return null;
   const better = delta < 0;
   const Icon = delta === 0 ? ArrowRight : better ? ArrowDown : ArrowUp;
@@ -77,10 +80,10 @@ export function BudgetMove({
           </div>
         ))}
       </div>
-      {range ? (
+      {lead ? (
         <p className="mt-2 text-xs text-muted-foreground">
-          For scale, random valid timetables of this lineup score {Math.round(range.low)} to{" "}
-          {Math.round(range.high)}.{verdict ? ` ${verdict}` : ""}
+          {lead}
+          {verdict ? ` ${verdict}` : ""}
         </p>
       ) : null}
     </div>

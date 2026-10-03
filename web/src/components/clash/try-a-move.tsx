@@ -26,6 +26,7 @@ import {
   MAX_STACK,
   applyMoves,
   encodeMoves,
+  planAnnouncement,
   planPreview,
   planStarters,
   readStoredMoves,
@@ -411,6 +412,9 @@ export function TryAMove({
   const timetable = useMemo(() => applyMoves(preset.festival.timetable, moves), [preset, moves]);
 
   const [picked, setPicked] = useState<string | null>(null);
+  // The plan Keep, Undo or Start over just made, and the set picked after it: the status region
+  // speaks the plan's reading until another set is picked.
+  const [planNews, setPlanNews] = useState<{ moves: string; picked: string | null } | null>(null);
   const [choice, setChoice] = useState<{ key: string; index: number } | null>(null);
   // A set from another day, a locked one or one already in the plan is never asked about.
   const actId =
@@ -459,8 +463,10 @@ export function TryAMove({
 
   function keep(option: PlacedOption) {
     if (!actId || moves.length >= MAX_STACK || moved.has(actId)) return;
-    update([...moves, { actId, stageId: option.stageId, day: option.day, start: option.start }]);
+    const next = [...moves, { actId, stageId: option.stageId, day: option.day, start: option.start }];
+    update(next);
     setPicked(null);
+    setPlanNews({ moves: encodeMoves(next), picked: null });
     // The places card goes; the plan card is where the kept move now shows.
     requestAnimationFrame(() => planRef.current?.focus());
   }
@@ -468,18 +474,30 @@ export function TryAMove({
   function undo() {
     const next = moves.slice(0, -1);
     update(next);
-    if (next.length === 0) requestAnimationFrame(() => selectRef.current?.focus());
+    setPlanNews({ moves: encodeMoves(next), picked });
+    // With moves left the plan card is where the change shows; with none, the set picker.
+    requestAnimationFrame(() => (next.length === 0 ? selectRef.current : planRef.current)?.focus());
   }
 
   function startOver() {
     update([]);
     setPicked(null);
+    setPlanNews({ moves: "", picked: null });
     requestAnimationFrame(() => selectRef.current?.focus());
   }
 
   const planned = moves.length > 0;
+  const planSpoken =
+    planNews &&
+    planNews.moves === encodeMoves(moves) &&
+    planNews.picked === picked &&
+    state.status !== "error" &&
+    state.status !== "invalid"
+      ? planAnnouncement(state.plan && state.plan.steps.length === moves.length ? state.plan : null, moves.length)
+      : null;
   const announcement =
-    state.status === "ready" && result
+    planSpoken ??
+    (state.status === "ready" && result
       ? result.movable
         ? `${pluralize(result.legalPlaces, "legal place")} for ${result.act}.`
         : `${result.act} cannot move.`
@@ -489,7 +507,7 @@ export function TryAMove({
           : "Could not load the places for this set."
         : state.status === "invalid"
           ? "That plan is no longer possible."
-          : "";
+          : "");
 
   return (
     <section
@@ -610,6 +628,8 @@ export function TryAMove({
           <div
             ref={planRef}
             tabIndex={-1}
+            role="group"
+            aria-label="Your tested moves"
             className="mt-8 rounded-xl focus:outline-none"
             aria-busy={state.status === "loading" && !state.plan}
           >

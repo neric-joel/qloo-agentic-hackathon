@@ -67,7 +67,7 @@ export function ClashList({
               cannot move.
             </>
           ) : null}{" "}
-          Draw is Qloo popularity; overlap is a rank on this bill.
+          Draw is Qloo popularity; taste overlap is a rank on this bill.
         </p>
       </div>
 
@@ -151,8 +151,8 @@ export function ClashList({
                       ) : null}
                     </span>
                     <span className="mt-2 grid grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-x-3 font-mono text-xs tabular-nums">
-                      <span title="Taste overlap, rank among the other acts on this bill">
-                        <span className="text-muted-foreground">Overlap </span>
+                      <span title="Taste overlap, a rank out of 100 among the acts compared for this bill">
+                        <span className="text-muted-foreground">Taste </span>
                         {formatOverlap(clash.audience_overlap)}
                         <span className="sr-only"> taste overlap, rank on this bill</span>
                       </span>

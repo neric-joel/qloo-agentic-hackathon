@@ -4,12 +4,14 @@ import {
   agreement,
   matchesPair,
   NETWORK_MESSAGE,
+  NO_REQUEST_ID,
   pairCheckBody,
   pairCheckError,
   pairCheckKey,
   parsePairCheck,
   rankingFor,
   rankingsText,
+  requestIdLabels,
   savedTagsText,
   tagsAlsoSaved,
   UNREADABLE_MESSAGE,
@@ -79,6 +81,20 @@ describe("parsePairCheck", () => {
     expect(check?.requests[0].latency_ms).toBe(412);
     // Lists and numbers in the parameters are flattened to the strings the trace prints.
     expect(check?.requests[2].params).toEqual({ "a.signal.interests.entities": "E-1", take: "50" });
+  });
+
+  it("accepts a request Qloo sent no id for, and labels it as not supplied", () => {
+    for (const missing of [null, undefined, ""]) {
+      const check = parsePairCheck(withRequest(1, { request_id: missing }));
+      expect(check, String(missing)).not.toBeNull();
+      expect(check?.requests[1]).not.toHaveProperty("request_id");
+      expect(check && requestIdLabels(check)).toEqual(["req-a", NO_REQUEST_ID, "req-c"]);
+    }
+    expect(NO_REQUEST_ID).toBe("request id not supplied");
+    const all = parsePairCheck(body());
+    expect(all && requestIdLabels(all)).toEqual(["req-a", "req-b", "req-c"]);
+    // An id that is not a string still breaks the contract.
+    expect(parsePairCheck(withRequest(0, { request_id: 42 }))).toBeNull();
   });
 
   it("gives null for a missing field", () => {

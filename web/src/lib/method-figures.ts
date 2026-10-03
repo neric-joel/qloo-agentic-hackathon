@@ -11,6 +11,8 @@
  * - The two festival days the app shows: coverage from each preset's report.
  * - The move-suggestion check: the second run, with realistic movement limits, which governs.
  * - The live re-check: how many requests one check sends (a definition, set by the API contract).
+ * - Symmetry of Qloo's affinity: the printout of the private, read-only script
+ *   `_private/backtest/symmetry_check.py` over the saved backtest responses (no request sent).
  */
 
 export type MethodId = "taste" | "genre" | "popularity" | "random";
@@ -114,7 +116,7 @@ export const METHOD_FIGURES = {
     days: COVERAGE_DAYS,
   },
   index: {
-    /** Random valid re-orderings the Clash Budget Index is measured against. */
+    /** Random valid timetables the Clash Budget Index is measured against. */
     baselineSamples: 300,
   },
   moves: {
@@ -128,14 +130,34 @@ export const METHOD_FIGURES = {
     /** Requests one live re-check sends to Qloo: an audience ranking for each act and one comparison. */
     requests: 3,
   },
+  /**
+   * Qloo's artist-to-artist affinity read in both directions, over every saved backtest answer whose
+   * reverse is also saved: affinity(A for B's audience) against affinity(B for A's audience).
+   */
+  symmetry: {
+    /** Directed readings whose reverse reading is also saved. */
+    readings: 18762,
+    /** Unordered pairs behind those readings. */
+    pairs: 9381,
+    /** Largest difference between a reading and its reverse, as the script printed it. */
+    maxDifference: 6.06e-8,
+    /** Readings whose difference from the reverse exceeds 1e-5. */
+    readingsAbove: 0,
+  },
   /** Definitions rather than measurements, kept here so the page prints no stray number. */
   scale: {
     /** Taste overlap is scaled from 0 to 100. */
     overlap: [0, 100],
     /** The Clash Budget Index is 100 times the day's price over the baseline average. */
     indexMultiplier: 100,
+    /** One index point is this percent of the average random timetable's cost. */
+    indexPointPct: 1,
     /** Width of the AUC intervals. */
     intervalPct: 95,
+    /** "Top quarter": the 25% highest-ranked clashes among a day's pairs. */
+    topQuarterPct: 25,
+    /** AUC reference points: 0.5 is no better than chance; 1 ranks every listed clash above every unlisted pair. */
+    auc: { chance: 0.5, perfect: 1 },
   },
 } as const;
 
@@ -164,6 +186,28 @@ export function formatAuc(value: number): string {
 /** "0.517 to 0.755". */
 export function formatInterval([low, high]: readonly [number, number]): string {
   return `${formatAuc(low)} to ${formatAuc(high)}`;
+}
+
+/** "18,762": a count with thousands separators. */
+export function formatCount(value: number): string {
+  return value.toLocaleString("en-US");
+}
+
+/**
+ * A tiny positive difference as a plain decimal bound, rounded up at its first significant digit, so
+ * "within" it stays true: 6.06e-8 -> "0.00000007". Zero prints "0".
+ */
+export function formatWithin(value: number): string {
+  if (!(value > 0)) return "0";
+  let exponent = Math.floor(Math.log10(value));
+  // toPrecision guards against float error in the division (6e-8 / 1e-8 is 5.999...).
+  let digit = Math.ceil(Number((value / 10 ** exponent).toPrecision(12)));
+  if (digit >= 10) {
+    digit = 1;
+    exponent += 1;
+  }
+  const places = Math.max(0, -exponent);
+  return exponent < 0 ? (digit / 10 ** places).toFixed(places) : String(digit * 10 ** exponent);
 }
 
 const WORDS = [

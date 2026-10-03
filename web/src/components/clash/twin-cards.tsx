@@ -84,15 +84,15 @@ function TwinCard({ twin, acts }: { twin: Twin; acts: readonly Act[] }) {
             : `${drawGap === 0 ? "Level" : `${drawGap} ${drawGap === 1 ? "point" : "points"} apart`} on draw, `}
           {overlapGap} apart on taste overlap.
         </strong>{" "}
-        Clashing {twin.act} with {twin.shared.act} puts two acts with much alike audiences against
-        each other; clashing {twin.act} with {twin.separate.act} puts two unlike audiences against
-        each other.
+        Clashing {twin.act} with {twin.shared.act} puts two acts whose audiences Qloo ranks as much
+        alike against each other; clashing {twin.act} with {twin.separate.act} puts two acts whose
+        audiences it ranks as unlike.
       </p>
     </li>
   );
 }
 
-/** "Same popularity, different audiences": one act, two rivals of near-equal draw, very different taste overlap. */
+/** "Same popularity, different taste overlap": one act, two rivals of near-equal draw, very different taste overlap. */
 export function TwinCards({ twins, acts }: { twins: readonly Twin[]; acts: readonly Act[] }) {
   if (twins.length === 0) return null;
   const spread = popularitySpread(acts);
@@ -102,7 +102,7 @@ export function TwinCards({ twins, acts }: { twins: readonly Twin[]; acts: reado
         <div>
           <p className="type-kicker text-muted-foreground">Why taste overlap matters</p>
           <h2 id="twins-heading" className="type-headline mt-2">
-            Same popularity, different audiences
+            Same popularity, different taste overlap
           </h2>
         </div>
         <div className="space-y-3 text-[0.9375rem] leading-relaxed">

@@ -7,6 +7,7 @@ Qloo-derived data, so that folder is git-ignored: it ships with the deployment, 
 from __future__ import annotations
 
 import json
+import threading
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any
@@ -21,6 +22,9 @@ router = APIRouter(prefix="/api/presets", tags=["presets"])
 
 # Presets change only on redeploy, so let the CDN serve them.
 CACHE_CONTROL = "public, s-maxage=3600, stale-while-revalidate=86400"
+# Decimals of Qloo popularity in the served copy. The page prints it as a whole number out of 100; at 3
+# decimals one saved act would round to a different whole number (round-5 parity check), so 4.
+POPULARITY_DECIMALS = 4
 
 
 class PresetSummary(BaseModel):
@@ -77,6 +81,32 @@ def summarize(preset: Preset) -> PresetSummary:
     )
 
 
+_public: dict[str, tuple[Preset, Preset]] = {}
+_public_lock = threading.Lock()
+
+
+def public_copy(preset: Preset) -> Preset:
+    """The preset as the page receives it: each act's popularity rounded to 4 decimals.
+
+    A copy, built once per preset object: the loaded preset (and everything the engine reads from it) keeps
+    the full values, since rounding those would change prices.
+    """
+    with _public_lock:
+        hit = _public.get(preset.id)
+    if hit is not None and hit[0] is preset:
+        return hit[1]
+    acts = [
+        act
+        if act.popularity is None
+        else act.model_copy(update={"popularity": round(act.popularity, POPULARITY_DECIMALS)})
+        for act in preset.festival.acts
+    ]
+    public = preset.model_copy(update={"festival": preset.festival.model_copy(update={"acts": acts})})
+    with _public_lock:
+        _public[preset.id] = (preset, public)
+    return public
+
+
 @router.get("", response_model=list[PresetSummary])
 def list_presets(presets: Presets, response: Response) -> list[PresetSummary]:
     """Preset festival days, in file-name order (the first is the landing preset)."""
@@ -89,9 +119,10 @@ def get_preset(preset_id: str, presets: Presets, response: Response) -> Preset:
     """A preset festival day with its score report and the Qloo requests behind it.
 
     The full overlap matrix stays on the server (the agent's tools read it); the page needs only the scores.
+    Popularity is served to 4 decimals; the engine keeps the full values.
     """
     preset = presets.get(preset_id)
     if preset is None:
         raise HTTPException(status_code=404, detail=f"No preset {preset_id!r}.")
     response.headers["Cache-Control"] = CACHE_CONTROL
-    return preset
+    return public_copy(preset)

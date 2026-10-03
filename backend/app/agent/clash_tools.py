@@ -14,11 +14,13 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
+from functools import partial
 from typing import Any
 
 from pydantic import ValidationError
 
 from ..qloo.overlap import shared_taste
+from ..schedule.constraints import describe_issue
 from ..schedule.layout import Layout, Placement
 from ..schedule.metrics import score_festival
 from ..schedule.models import Festival, OverlapMatrix, ScoringConfig, SetSlot, format_minutes, parse_minutes
@@ -163,7 +165,7 @@ async def clash_report(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
     data = {
         "clash_budget_index": _budget(report.metrics.clash_budget_index),
         "index_meaning": (
-            "100 = average of random re-orderings of this lineup that keep each set near its "
+            "100 = average of random valid timetables of this lineup that keep each set near its "
             "published slot; lower is better"
         ),
         "top_clashes": _clash_rows(report, min(int(limit), 20)),
@@ -311,6 +313,12 @@ async def try_move(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
         )
     after = score_festival(trial, matrix, wide)
     new_problems = sorted({v.message for v in after.violations} - {v.message for v in before.violations})
+    # A set already in a rule the timetable breaks (say a keep-apart added over an overlap): as in find_moves,
+    # its move is allowed only when the set breaks no rule afterwards, so a move never merely keeps the break
+    breaks = [v.message for v in before.violations if act_id in v.act_ids]
+    left = sorted({v.message for v in after.violations if act_id in v.act_ids})
+    if breaks:
+        new_problems = sorted({*new_problems, *left})
 
     def involving(report: ScoreReport) -> dict[str, float]:
         return {
@@ -336,6 +344,8 @@ async def try_move(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
         "clash_index_points_before": dict(index_points(before, act_id)),
         "clash_index_points_after": dict(index_points(after, act_id)),
     }
+    if breaks:
+        view["ends_the_break"] = not left  # whether the move ends the rule the timetable already breaks
     verdict = (
         "breaks a rule" if new_problems else f"{view['clash_budget_before']} -> {view['clash_budget_after']}"
     )
@@ -430,6 +440,7 @@ def compute_move_options(
     limit: int,
     *,
     partners: bool = False,
+    thaw: bool = False,
 ) -> dict[str, Any]:
     """Every legal place one set could go, priced with the Clash Budget after the move, best first.
 
@@ -438,9 +449,12 @@ def compute_move_options(
     what-if) it also gives the act id, whether the act is priced, the set's clashes now and, per place, the
     stage id, end, day and the clashes after the move, each as Clash Budget Index points (at most 3 partners,
     largest first, among all the day's pairs).
+
+    ``thaw`` (the agent's session only): a set tied up in a rule the timetable already breaks may move, and
+    only the places after which it breaks no rule are listed. The public what-if leaves it off.
     """
     name = festival.act_by_id()[act_id].name
-    layout = Layout.from_festival(festival)
+    layout = Layout.from_festival(festival, thaw=thaw)
     i = layout.rules.act_ids.index(act_id)
     old = {s.act_id: s for s in festival.timetable}[act_id]
     if layout.frozen[i]:
@@ -551,21 +565,27 @@ class IllegalStep(Exception):
 
 
 def apply_plan(
-    festival: Festival, matrix: OverlapMatrix, config: ScoringConfig, moves: Sequence[PlanMove]
+    festival: Festival,
+    matrix: OverlapMatrix,
+    config: ScoringConfig,
+    moves: Sequence[PlanMove],
+    *,
+    thaw: bool = False,
 ) -> PlanResult:
     """The timetable with the moves taken in order, each priced, and the final score. Nothing is stored.
 
     Each move must be a place ``compute_move_options`` would list for that set on the timetable as the earlier
     moves left it: a stage and start the set may use, on its grid, breaking no rule that timetable did not
     already break; locked and tied-up sets cannot move. Only the requested place is scored, never every
-    candidate. Raises ``IllegalStep`` with the move's 1-based number otherwise.
+    candidate. Raises ``IllegalStep`` with the move's 1-based number otherwise. ``thaw`` is passed as
+    ``compute_move_options`` takes it (agent sessions only).
     """
     current = festival
     before = score_festival(current, matrix, config)
     budget_before = before.metrics.clash_budget_index
     steps: list[PlanStep] = []
     for number, step in enumerate(moves, start=1):
-        layout = Layout.from_festival(current)
+        layout = Layout.from_festival(current, thaw=thaw)
         rules = layout.rules
         if step.act_id not in rules.act_ids or step.stage_id not in rules.stage_ids:
             raise IllegalStep(number)
@@ -603,7 +623,7 @@ def apply_plan(
 def _find_moves(
     festival: Festival, matrix: OverlapMatrix, config: ScoringConfig, act_id: str, limit: int
 ) -> ToolOutput:
-    data = compute_move_options(festival, matrix, config, act_id, limit)
+    data = compute_move_options(festival, matrix, config, act_id, limit, thaw=True)
     name = data["act"]
     if not data["movable"]:
         return ToolOutput(
@@ -622,6 +642,15 @@ def _find_moves(
         if data["options"]
         else f"{name}: no legal place to move"
     )
+    breaks = _breaks_of(festival, act_id)
+    if breaks:
+        # For the model only (the data stays the plain search): the rule the set is in, and any way out
+        view["breaks_now"] = breaks
+        view["note"] = (
+            "Every place listed ends the break."
+            if data["options"]
+            else "No place for this set ends the break, so moving it alone cannot meet the rule."
+        )
     return ToolOutput(content=_compact(view), summary=summary, data={"kind": "move_options", **data})
 
 
@@ -650,6 +679,24 @@ FIND_MOVES = Tool(
 # ------------------------------------------------------------------------------------- constraints
 
 
+def lock_text(name: str) -> str:
+    return f"{name} stays exactly where it is"
+
+
+def keep_stage_text(name: str, stage: str) -> str:
+    return f"{name} stays on {stage}"
+
+
+def bound_text(kind: str, name: str, minutes: int) -> str:
+    """The rule line of a start bound: ``kind`` is ``not_before`` or ``not_after``."""
+    bound = "no earlier" if kind == "not_before" else "no later"
+    return f"{name} starts {bound} than {format_minutes(minutes)}"
+
+
+def keep_apart_text(name: str, other: str) -> str:
+    return f"{name} and {other} must not overlap"
+
+
 async def add_constraint(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
     festival, matrix, config = _state(ctx)
     kind = args.get("kind")
@@ -664,11 +711,11 @@ async def add_constraint(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
     kept = None
     if kind == "lock":
         slots[index] = slot.model_copy(update={"locked": True})
-        text = f"{name} stays exactly where it is"
+        text = lock_text(name)
     elif kind == "keep_stage":
         # The set's own stage is in any stage list it already has, so this only ever narrows that list
         slots[index] = slot.model_copy(update={"stages": [slot.stage_id]})
-        text = f"{name} stays on {festival.stage_by_id()[slot.stage_id].name}"
+        text = keep_stage_text(name, festival.stage_by_id()[slot.stage_id].name)
     elif kind in ("not_before", "not_after"):
         asked = _minutes(args.get("time"), "time")
         bound = "no earlier" if kind == "not_before" else "no later"
@@ -680,14 +727,14 @@ async def add_constraint(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
                 f"{name} already starts {bound} than {format_minutes(time)}, which is stricter, so that stays"
             )
         slots[index] = slot.model_copy(update={kind: time})
-        text = f"{name} starts {bound} than {format_minutes(time)}"
+        text = bound_text(kind, name, time)
     else:
         other = _act_id(festival, args.get("other_act"))
         if other == act_id:
             raise ToolInputError("keep_apart needs two different acts.")
         pairs = [*constraints.no_clash_with, (act_id, other)]
         constraints = constraints.model_copy(update={"no_clash_with": pairs})
-        text = f"{name} and {festival.act_by_id()[other].name} must not overlap"
+        text = keep_apart_text(name, festival.act_by_id()[other].name)
     updated = _rebuild(festival, timetable=slots, constraints=constraints)
     ctx.state["festival"] = updated
     ctx.state.setdefault("constraints", []).append(text)
@@ -697,8 +744,9 @@ async def add_constraint(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
     if kept:
         content["kept_stricter_bound"] = kept
     if broken:
-        content["note"] = "The current timetable breaks this rule; a re-slot must fix it: " + "; ".join(
-            broken
+        content["note"] = (
+            "The current timetable breaks this rule; find_moves lists the places that end the break: "
+            + "; ".join(broken)
         )
     return ToolOutput(content=_compact(content), summary=f"Rule added: {text}")
 
@@ -727,10 +775,24 @@ ADD_CONSTRAINT = Tool(
     },
     handler=add_constraint,
     provenance="derived",
+    mutates_state=True,
 )
 
 
 # ------------------------------------------------------------------------------------------ re-slot
+
+
+def _breaks(festival: Festival) -> list[str]:
+    """The rules the timetable breaks, in words (no scoring)."""
+    layout = Layout.from_festival(festival)
+    return [describe_issue(issue, layout.rules) for issue in sorted(layout.issues(), key=str)]
+
+
+def _breaks_of(festival: Festival, act_id: str) -> list[str]:
+    """The rules the timetable breaks that the act is part of, in words."""
+    layout = Layout.from_festival(festival)
+    i = layout.rules.act_ids.index(act_id)
+    return [describe_issue(x, layout.rules) for x in sorted(layout.issues(), key=str) if i in x[1:]]
 
 
 async def reslot(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
@@ -745,7 +807,8 @@ async def reslot(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
     if not isinstance(budget, int) or not 1 <= budget <= MAX_MOVE_BUDGET:
         raise ToolInputError(f"move_budget must be 1-{MAX_MOVE_BUDGET}.")
     ctx.take_reslot()
-    report = await ctx.engine(optimize, festival, matrix, float(weight), budget, config)
+    # Thawed as find_moves is: sets in a rule the timetable already breaks may move, only to end the break
+    report = await ctx.engine(partial(optimize, thaw=True), festival, matrix, float(weight), budget, config)
     option = next((o for o in report.options if o.kind == "balanced"), None)
     data: dict[str, Any] = {"status": report.status, "message": report.message}
     if option is not None and option.improved:
@@ -766,6 +829,19 @@ async def reslot(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
             f"This plan moves {sets} and takes the Clash Budget from {view['clash_budget_before']:.1f} "
             f"to {view['clash_budget_after']:.1f}."
         )
+    breaks = _breaks(festival)
+    if breaks:
+        # What the model reads says whether the plan it was handed ends the rules the timetable breaks now
+        after = _breaks(_rebuild(festival, timetable=option.timetable)) if moved and option else breaks
+        remaining = [text for text in breaks if text in after]
+        view["rule_breaks_now"] = breaks
+        view["rule_breaks_after_plan"] = remaining
+        if remaining:
+            view["note"] = (
+                "This search found no plan that ends these rule breaks (it moves priced sets only and keeps "
+                "only moves that lower the index); say so, name them, and say a person may still find a "
+                "legal change: " + "; ".join(remaining)
+            )
     return ToolOutput(
         content=_compact(view),
         summary=f"Re-slot: {moved} moves"

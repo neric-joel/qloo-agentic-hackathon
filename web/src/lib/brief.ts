@@ -21,20 +21,22 @@ import {
   topClashes,
 } from "./clashes";
 import { pluralize } from "./format";
+import { numberWord } from "./method-figures";
 import { currentPlacement } from "./moves";
+import { publishedVerdict, raisesIndex } from "./plan-copy";
 import type { BaselineStats, Preset } from "./preset";
-import { rangeVerdict, shiftText, type Plan, type ScaleRange } from "./stack";
+import { shiftText, type Plan, type ScaleRange } from "./stack";
 import { formatRange, overlapWindow } from "./timetable";
 
 /** How many of the day's costliest clashes the brief's table lists. */
 export const BRIEF_CLASHES = 5;
 
-/** The plan card's caveat, word for word: a kept plan is graded by the measure that found it. */
-export const PLAN_CAVEAT =
-  "Scored by the same measure the places are found with, so a lower number shows what that measure rewards, not that audiences would be better served. It knows only the rules in the timetable, not an act’s own wishes.";
+/** Under the table: what the Hidden mark means, in the words of the drawer and the legend. */
+export const HIDDEN_NOTE =
+  "Hidden clashes: the two acts’ main genre tags differ, but their taste overlap is among this lineup’s highest.";
 
-/** Under the table: what the Hidden mark means. */
-export const HIDDEN_NOTE = "Hidden clashes: the two acts’ genres differ but their audiences overlap in taste.";
+/** Under the table, after the Hidden note. */
+export const READING_NOTE = "A reading, not a verdict on the festival.";
 
 /** Shown when the link carries no kept moves (or moves this page cannot read). */
 export const NO_MOVES =
@@ -42,9 +44,9 @@ export const NO_MOVES =
 
 /** The "How to read this" block, in order. */
 export const HOW_TO_READ: readonly string[] = [
-  "Taste overlap is calculated by this app from Qloo data: how highly Qloo ranks each act for the other’s audience, as a rank among this day’s acts, 0 to 100. It measures taste, not attendance.",
+  "Taste overlap is calculated by this app from Qloo data: how highly Qloo ranks each act for the other’s audience, as a rank among the acts compared for this bill, 0 to 100. It measures taste, not attendance.",
   "Combined draw is the two acts’ Qloo popularity, 0 to 100.",
-  "The Clash Budget Index is 100 for the average random valid timetable of this lineup; lower is better; it counts taste-overlap cost only. It is a reading, not a verdict on the festival: real programming weighs much more than taste overlap.",
+  "The Clash Budget Index is 100 for the average random valid timetable of this lineup; lower is better; it counts only what clashes cost: taste overlap, time shared and draw. It is a reading, not a verdict on the festival: real programming weighs much more than taste overlap.",
 ];
 
 /** The Clash Budget Index as the brief prints it: one decimal, as the cards show it. */
@@ -63,7 +65,7 @@ export function briefTitle(preset: Pick<Preset, "festival">, day: number): { fes
 export type DayFigures = {
   /** The day's Clash Budget Index as the report gives it; null when the day has none. */
   index: number | null;
-  /** The range random valid timetables of this lineup score in, or null when unknown. */
+  /** The middle 80% of random valid timetables of this lineup (10th to 90th percentile), or null. */
   range: ScaleRange;
   /** Sets whose act has a usable Qloo signal, so its clashes are priced. */
   scored: number;
@@ -93,14 +95,12 @@ export function dayFigures(preset: Pick<Preset, "report">): DayFigures {
 }
 
 /**
- * "Random valid timetables of this lineup score 92 to 109; the published timetable reads above that
- * range." The range in whole numbers and the verdict compared as printed (`rangeVerdict`). Null
- * when the day has no range.
+ * "The middle 80% of random valid timetables of this lineup score 92 to 109; the published
+ * timetable reads above that range." The band in whole numbers and the verdict compared as printed
+ * (`publishedVerdict` in `plan-copy.ts`, shared with the plan card). Null when the day has no band.
  */
 export function bandSentence(index: number, range: ScaleRange): string | null {
-  const verdict = rangeVerdict(index, range);
-  if (!range || !verdict) return null;
-  return `Random valid timetables of this lineup score ${Math.round(range.low)} to ${Math.round(range.high)}; the published timetable reads ${verdict} that range.`;
+  return publishedVerdict(index, range);
 }
 
 /** "Clash Budget Index 116.7.", or a plain statement that the day has none. */
@@ -169,6 +169,16 @@ export function briefRows(preset: Pick<Preset, "festival" | "report">, day: numb
   });
 }
 
+/**
+ * The table's heading: "The five costliest clashes", or "The costliest clash" when the day has one.
+ * When the link carries kept moves the table still shows the unmoved day, so it says so: "The five
+ * costliest clashes on the published day, before these moves".
+ */
+export function clashesTitle(count: number, withMoves = false): string {
+  const base = count === 1 ? "The costliest clash" : `The ${numberWord(count)} costliest clashes`;
+  return withMoves ? `${base} on the published day, before these moves` : base;
+}
+
 /** The day's ranked clashes labelled hidden, costliest first, as "A and B". */
 export function hiddenNames(preset: Pick<Preset, "report">, day: number): string[] {
   return topClashes(preset.report.clashes, day, Number.POSITIVE_INFINITY)
@@ -209,6 +219,8 @@ export type BriefStep = {
   /** The index before and after this step, one decimal. */
   before: string;
   after: string;
+  /** This step raised the index, compared as printed; the brief marks it " · raises the index". */
+  raises: boolean;
 };
 
 /** "20:30-21:30" as the page prints a range: "20:30–21:30". */
@@ -234,8 +246,27 @@ export function briefSteps(preset: Pick<Preset, "festival">, plan: Pick<Plan, "p
       shift: shiftText(from, step, fromStage ? (stages.get(fromStage) ?? fromStage) : ""),
       before: formatIndex(before),
       after: formatIndex(step.budgetAfter),
+      raises: raisesIndex(before, step.budgetAfter),
     };
   });
+}
+
+/**
+ * The heading over the moved timetable's own costliest clashes: "The five costliest clashes with
+ * these moves", fewer when the plan answer lists fewer.
+ */
+export function planClashesTitle(count: number): string {
+  if (count === 1) return "The costliest clash with these moves";
+  if (count === 0) return "The costliest clashes with these moves";
+  return `The ${numberWord(count)} costliest clashes with these moves`;
+}
+
+/**
+ * The moved timetable's costliest clashes as the plan card lists them, numbered: "1. Act Two and
+ * Act Three · 9.5 index points". Index points are the server's, one decimal.
+ */
+export function planClashLines(plan: Pick<Plan, "clashes">): string[] {
+  return plan.clashes.map((clash, i) => `${i + 1}. ${clash.a} and ${clash.b} · ${clash.points.toFixed(1)} index points`);
 }
 
 // ------------------------------------------------------------------------------------ the footer

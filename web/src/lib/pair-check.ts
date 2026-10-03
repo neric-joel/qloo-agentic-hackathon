@@ -186,6 +186,14 @@ export function parsePairCheck(json: unknown): PairCheck | null {
   }
 }
 
+/** Printed where a request id would show when Qloo sent none with its answer. */
+export const NO_REQUEST_ID = "request id not supplied";
+
+/** Each request's id as Qloo sent it, in request order, or {@link NO_REQUEST_ID} when it sent none. */
+export function requestIdLabels(check: Pick<PairCheck, "requests">): string[] {
+  return check.requests.map((request) => request.request_id || NO_REQUEST_ID);
+}
+
 /** Where the drawer keeps a finished check: one per festival day and pair. */
 export function pairCheckKey(presetId: string, a: string, b: string): string {
   return `${presetId}:${pairKey(a, b)}`;

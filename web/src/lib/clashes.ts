@@ -172,6 +172,39 @@ export const LABEL_META: Record<ClashLabel, { name: string; short: string; expla
   },
 };
 
+/** Printed for an act whose main genre tag was not saved. */
+export const NO_GENRE_SAVED = "no genre tag saved";
+
+/**
+ * Why a clash carries the Hidden label, in words a reader can check against the cards: "Act A: Indie
+ * Rock. Act B: no genre tag saved. Main genre tags differ, and their taste overlap is 97 of 100, a
+ * rank among the acts compared for this bill."
+ */
+export function hiddenReason(clash: Pick<PairClash, "a" | "b" | "audience_overlap">): string {
+  const genre = (side: PairClash["a"]) => side.genre?.trim() || NO_GENRE_SAVED;
+  return (
+    `${clash.a.name}: ${genre(clash.a)}. ${clash.b.name}: ${genre(clash.b)}. ` +
+    `Main genre tags differ, and their taste overlap is ${formatOverlap(clash.audience_overlap)} of 100, ` +
+    "a rank among the acts compared for this bill."
+  );
+}
+
+/**
+ * Where a clash would rank if taste overlap counted the same for every priced pair, from the lens
+ * endpoint: "On draw and time alone (draw is also a Qloo field) this clash would rank 21st of 68." The
+ * timetable is the same in both views, so a null from the lens means the pair is unpriced or costs
+ * nothing in that view, never that it stops being concurrent; it gets its own sentence. Undefined
+ * (no lens reading for the pair) gets none. `of` is how many pairs are ranked in that view, when the
+ * server says; without it the line keeps the bare ordinal.
+ */
+export function withoutTasteLine(rank: number | null | undefined, of?: number): string | null {
+  if (rank === undefined) return null;
+  if (rank === null) return "On draw and time alone this pair would not be ranked: it carries no cost in that view.";
+  if (!Number.isInteger(rank) || rank < 1) return null;
+  const place = Number.isInteger(of) && of !== undefined && of >= rank ? `${ordinal(rank)} of ${of}` : ordinal(rank);
+  return `On draw and time alone (draw is also a Qloo field) this clash would rank ${place}.`;
+}
+
 // ---------------------------------------------------------------------------
 // Timetable views
 // ---------------------------------------------------------------------------
@@ -341,7 +374,7 @@ const REQUEST_GROUPS: readonly RequestGroup[] = [
   {
     tool: "rank_audiences",
     summary:
-      "For one act's fans, ranked every other act on the day. Both directions, rank-normalized and averaged, give the audience overlap.",
+      "For one act's fans, ranked every other act on the day. Qloo's affinity for a pair is the same in both directions; the app ranks it within each act's row and averages the two ranks to give the taste overlap.",
     match: (path) => path.endsWith("/insights"),
   },
   {

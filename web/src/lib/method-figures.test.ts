@@ -201,6 +201,40 @@ describe("/method page", () => {
     expect(section.slice(0, section.indexOf("Back to the timetable")).match(/\d+/g)).toEqual(["3"]);
   });
 
+  it("says the check is offered only while it is switched on, for the day's costliest clashes", () => {
+    const text = pageText();
+    expect(text).toContain(
+      "Each of the day's costliest clashes can be re-checked with Qloo on request while live checks are switched on.",
+    );
+    expect(text).toContain(
+      "The timetable page offers the check only while it is switched on; they can be switched off to protect that allowance, and then the drawer shows only the saved results.",
+    );
+    expect(text).not.toContain("Every priced clash can be re-checked");
+  });
+
+  it("lists the kept-moves limit after the hidden-clash items", () => {
+    const text = pageText();
+    const limit = text.indexOf(
+      "A plan of kept moves is scored by the same measure the places are found with, so it shows what the measure rewards, not what would suit the real festival.",
+    );
+    expect(limit).toBeGreaterThan(text.indexOf("The Hidden label on the timetable uses a stricter line"));
+    expect(limit).toBeLessThan(text.indexOf("Moving sets"));
+  });
+
+  it("describes the one-page brief after the live re-check, with no figure and no festival offer", () => {
+    const text = pageText();
+    const start = text.indexOf("The one-page brief");
+    expect(start).toBeGreaterThan(text.indexOf("The live re-check"));
+    const section = text.slice(start, text.indexOf("Back to the timetable"));
+    expect(section).toContain(
+      "The brief page prints this day's costliest clashes, the day's Clash Budget Index and any moves you kept, using only figures the timetable page already shows.",
+    );
+    expect(section).toContain(
+      "It is for evaluating this entry, it is not offered to festivals, and it leaves out Qloo's tags and identifiers.",
+    );
+    expect(section.match(/\d/g)).toBeNull();
+  });
+
   it("uses the word that denies prediction exactly once", () => {
     expect(pageText().match(/predict/gi)).toHaveLength(1);
   });

@@ -6,9 +6,11 @@ import { cn } from "@/lib/utils";
 
 import { clashKey, formatDraw, formatShare, LABEL_META, partnerOf, type SetView } from "@/lib/clashes";
 import type { PairClash, Stage } from "@/lib/preset";
+import type { GhostSlot, PlanPreview } from "@/lib/stack";
 import {
   blockDensity,
   columnFrames,
+  columnGap,
   formatClock,
   formatRange,
   isNavKey,
@@ -19,10 +21,10 @@ import {
   timeScale,
   timeTicks,
   type LinkInput,
+  type TimeRange,
 } from "@/lib/timetable";
 
 const AXIS_WIDTH = 52;
-const COLUMN_GAP = 20;
 const PX_PER_MINUTE = 1.7;
 const BADGE = 26;
 
@@ -41,14 +43,44 @@ type TimetableGridProps = {
   onHighlightSet: (id: string | null) => void;
   onHighlightClash: (key: string | null) => void;
   onOpen: (clash: PairClash, trigger: HTMLElement) => void;
+  /** A tested plan to preview: kept moves and the place being tried, drawn as ghosts. */
+  plan?: PlanPreview | null;
   className?: string;
 };
 
+type Ghost = { slot: GhostSlot; name: string; col: number; range: TimeRange; trying: boolean };
+
+/** Where a tested place is drawn: its stage column and its minutes, kept inside the drawn day. */
+function placeGhosts(
+  plan: PlanPreview | null | undefined,
+  views: ReadonlyMap<string, SetView>,
+  stages: readonly Stage[],
+  domain: TimeRange,
+): Ghost[] {
+  if (!plan) return [];
+  const slots = [
+    ...plan.kept.map((slot) => ({ slot, trying: false })),
+    ...(plan.trying ? [{ slot: plan.trying, trying: true }] : []),
+  ];
+  return slots.flatMap(({ slot, trying }) => {
+    const view = views.get(slot.actId);
+    const col = stages.findIndex((stage) => stage.id === slot.stageId);
+    if (!view || view.slot.day !== slot.day || col < 0) return [];
+    // A start written past midnight as "00:30" belongs after the day's last hour.
+    const shift = slot.start < domain.start && slot.start + 1440 < domain.end ? 1440 : 0;
+    const start = Math.max(domain.start, slot.start + shift);
+    const end = Math.min(domain.end, slot.end + shift);
+    if (end <= start) return [];
+    return [{ slot, name: view.act.name, col, range: { start, end }, trying }];
+  });
+}
+
 /** What a set block adds for screen readers after its visible text. */
-function describeSetTail(view: SetView): string {
+function describeSetTail(view: SetView, moved: boolean): string {
   const parts = [
     view.coverage === "weak" ? "Weak Qloo signal." : "",
     view.slot.locked ? "Locked set." : "",
+    moved ? "Moved in your tested plan." : "",
   ];
   const [first] = view.clashes;
   if (first) {
@@ -63,10 +95,14 @@ function describeSetTail(view: SetView): string {
 }
 
 /**
- * The day's timetable: stages as columns on a shared time axis, sets sized by length, and a link
- * between the two sets of each of the costliest clashes (thicker and stronger = costlier; dashed
- * with a diamond badge = hidden clash). Arrow keys move between sets; Enter opens a set's
- * costliest clash; each badge opens its clash.
+ * The day's timetable: stages as columns on a shared time axis, sets sized by length, and an arc
+ * between the two sets of each of the costliest clashes, visible without a hover (thicker and
+ * stronger = costlier; dashed with a diamond badge = hidden clash). Arrow keys move between sets;
+ * Enter opens a set's costliest clash; each badge opens its clash. A tested plan, when given, shows
+ * as dashed ghosts at the tested places; the links and badges stay on the published timetable.
+ *
+ * Below 768 px the board sits in a sideways scroller (see `clash-control.tsx`): the stage names
+ * scroll with it instead of sticking, and the time axis stays at the left edge.
  */
 export function TimetableGrid({
   views,
@@ -80,20 +116,33 @@ export function TimetableGrid({
   onHighlightSet,
   onHighlightClash,
   onOpen,
+  plan = null,
   className,
 }: TimetableGridProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const areaRef = useRef<HTMLDivElement>(null);
   const setRefs = useRef(new Map<string, HTMLButtonElement>());
   const [width, setWidth] = useState(0);
+  const [boardWidth, setBoardWidth] = useState(0);
   const [rovingId, setRovingId] = useState<string | null>(null);
 
   useEffect(() => {
-    const element = areaRef.current;
-    if (!element) return;
-    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
-    observer.observe(element);
+    const root = rootRef.current;
+    const area = areaRef.current;
+    if (!root || !area) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.target === root) setBoardWidth(entry.contentRect.width);
+        else setWidth(entry.contentRect.width);
+      }
+    });
+    observer.observe(root);
+    observer.observe(area);
     return () => observer.disconnect();
   }, []);
+
+  // Wider gutters once the board has room, so the arcs between neighbouring stages show.
+  const gap = columnGap(boardWidth);
 
   const domain = useMemo(() => timeDomain(views.map((view) => view.slot)), [views]);
   const scale = useMemo(() => timeScale(domain, PX_PER_MINUTE), [domain]);
@@ -102,8 +151,10 @@ export function TimetableGrid({
     () => timeTicks(domain, 30).filter((minute) => minute % 60 !== 0),
     [domain],
   );
-  const frames = useMemo(() => columnFrames(width, stages.length, COLUMN_GAP), [width, stages.length]);
+  const frames = useMemo(() => columnFrames(width, stages.length, gap), [width, stages.length, gap]);
   const byId = useMemo(() => new Map(views.map((view) => [view.id, view])), [views]);
+  const ghosts = useMemo(() => placeGhosts(plan, byId, stages, domain), [plan, byId, stages, domain]);
+  const movedIds = useMemo(() => new Set((plan?.kept ?? []).map((slot) => slot.actId)), [plan]);
   const navItems = useMemo(
     () => views.map((view) => ({ id: view.id, col: view.col, start: view.slot.start, end: view.slot.end })),
     [views],
@@ -134,17 +185,18 @@ export function TimetableGrid({
   const columnsTemplate = `${AXIS_WIDTH}px repeat(${stages.length}, minmax(0, 1fr))`;
 
   return (
-    <div className={cn("relative", className)}>
-      {/* Stage names stay in view while the day scrolls past. */}
+    <div ref={rootRef} className={cn("relative", className)}>
+      {/* Stage names stay in view while the day scrolls past, under the site header and the
+          page's jump nav. In the phone scroller they scroll with the board instead. */}
       <div
-        className="sticky top-16 z-20 grid border-b-2 border-foreground bg-background/95 py-2.5 backdrop-blur supports-backdrop-filter:bg-background/85"
-        style={{ gridTemplateColumns: columnsTemplate, columnGap: COLUMN_GAP }}
+        className="z-20 grid border-b-2 border-foreground bg-background/95 py-2.5 backdrop-blur supports-backdrop-filter:bg-background/85 md:sticky md:top-27"
+        style={{ gridTemplateColumns: columnsTemplate, columnGap: gap }}
       >
         <p className="type-kicker self-end text-muted-foreground">{dayLabel}</p>
         {stages.map((stage) => {
           const count = views.filter((view) => view.stage.id === stage.id).length;
           return (
-            <div key={stage.id} className="min-w-0">
+            <div key={stage.id} className="min-w-0 snap-start">
               <p className="type-wordmark truncate text-lg">{stage.name}</p>
               <p className="font-mono text-[0.6875rem] text-muted-foreground">
                 {count} {count === 1 ? "set" : "sets"}
@@ -156,10 +208,14 @@ export function TimetableGrid({
 
       <div
         className="relative mt-3 grid"
-        style={{ gridTemplateColumns: `${AXIS_WIDTH}px minmax(0, 1fr)`, columnGap: COLUMN_GAP }}
+        style={{ gridTemplateColumns: `${AXIS_WIDTH}px minmax(0, 1fr)`, columnGap: gap }}
       >
-        {/* Time axis */}
-        <div aria-hidden="true" className="relative" style={{ height: scale.height }}>
+        {/* Time axis. In the phone scroller it stays at the left edge while the stages pass. */}
+        <div
+          aria-hidden="true"
+          className="relative max-md:sticky max-md:left-0 max-md:z-20 max-md:bg-background"
+          style={{ height: scale.height }}
+        >
           {hours.map((minute) => (
             <span
               key={minute}
@@ -221,8 +277,6 @@ export function TimetableGrid({
                     strokeLinecap={dash ? "butt" : "round"}
                     strokeDasharray={dash}
                   />
-                  <circle cx={layout.x1} cy={layout.y} r={4} fill="var(--primary)" stroke="var(--background)" strokeWidth={1.5} />
-                  <circle cx={layout.x2} cy={layout.y} r={4} fill="var(--primary)" stroke="var(--background)" strokeWidth={1.5} />
                 </g>
               );
             })}
@@ -233,10 +287,10 @@ export function TimetableGrid({
             role="group"
             aria-label={`${dayLabel} timetable. Use the arrow keys to move between sets.`}
             className="absolute inset-0 grid"
-            style={{ gridTemplateColumns: `repeat(${stages.length}, minmax(0, 1fr))`, columnGap: COLUMN_GAP }}
+            style={{ gridTemplateColumns: `repeat(${stages.length}, minmax(0, 1fr))`, columnGap: gap }}
           >
             {stages.map((stage) => (
-              <div key={stage.id} className="relative">
+              <div key={stage.id} className="relative snap-start">
                 {views
                   .filter((view) => view.stage.id === stage.id)
                   .map((view) => {
@@ -247,6 +301,7 @@ export function TimetableGrid({
                     const isFocus = focusSetId === view.id;
                     const costliest = view.clashes[0];
                     const none = view.coverage === "none";
+                    const moved = movedIds.has(view.id);
                     return (
                       <button
                         key={view.id}
@@ -278,6 +333,7 @@ export function TimetableGrid({
                               ? "border-dotted border-border-strong bg-card"
                               : "border-border-strong bg-card",
                           view.slot.locked && "border-2 border-foreground",
+                          moved && "bg-hatch",
                           costliest ? "cursor-pointer hover:bg-accent" : "cursor-default",
                           isFocus && "border-foreground bg-accent",
                           related && !isFocus && "shadow-[0_0_0_2px_var(--primary)]",
@@ -322,12 +378,15 @@ export function TimetableGrid({
                                 <span className="text-muted-foreground">Draw</span>{" "}
                                 <span className="tabular-nums">{formatDraw(view.act.popularity)}</span>
                                 <span className="sr-only">. </span>
-                                <span aria-hidden="true" className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
-                                  <span
-                                    className="block h-full bg-foreground/70"
-                                    style={{ width: `${view.act.popularity * 100}%` }}
-                                  />
-                                </span>
+                                {/* The bar shows only on the set in hand; at rest the number is enough. */}
+                                {isFocus ? (
+                                  <span aria-hidden="true" className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
+                                    <span
+                                      className="block h-full bg-foreground/70"
+                                      style={{ width: `${view.act.popularity * 100}%` }}
+                                    />
+                                  </span>
+                                ) : null}
                               </>
                             ) : null}
                             {view.coverage === "weak" ? (
@@ -343,13 +402,78 @@ export function TimetableGrid({
                                 : ""}
                           </span>
                         )}
-                        <span className="sr-only">{describeSetTail(view)}</span>
+                        <span className="sr-only">{describeSetTail(view, moved)}</span>
                       </button>
                     );
                   })}
               </div>
             ))}
           </div>
+
+          {/* Tested places from "Try a move": a dashed ghost per kept move (the place being tried
+              is lighter). Decorative: the moved set's own block says it moved. */}
+          {ghosts.length > 0 ? (
+            <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+              {ghosts.map((ghost) => {
+                const frame = frames[ghost.col];
+                if (!frame) return null;
+                const top = scale.y(ghost.range.start);
+                const height = scale.y(ghost.range.end) - top;
+                return (
+                  <div
+                    key={`${ghost.trying ? "trying" : "kept"}-${ghost.slot.actId}`}
+                    data-ghost={ghost.trying ? "trying" : "kept"}
+                    className={cn(
+                      "absolute flex flex-col overflow-hidden rounded-md border-2 border-dashed px-2 py-1 text-left",
+                      ghost.trying
+                        ? "border-primary/55 bg-background/70 text-foreground/80"
+                        : "border-primary bg-background/85 text-foreground",
+                    )}
+                    style={{ left: frame.left, width: frame.width, top: top + 1, height: Math.max(height - 2, 18) }}
+                  >
+                    <span className="truncate text-[0.75rem] leading-tight font-bold [font-variation-settings:'wdth'_85]">
+                      {ghost.name} · tested
+                    </span>
+                    {height >= 36 ? (
+                      <span className="truncate font-mono text-[0.6875rem] text-muted-foreground tabular-nums">
+                        {formatRange(ghost.range)}
+                      </span>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {/* Over the sets: a faint trace of each link where it passes behind a set in between, so
+              the arc reads end to end without hiding the set's text, and the two ends where the
+              link meets its sets. */}
+          <svg
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 overflow-visible"
+            width={width}
+            height={scale.height}
+          >
+            {layouts.map((layout) => {
+              const clash = clashByKey.get(layout.id);
+              const active = activeClashKeys.has(layout.id);
+              const opacity = dimmed ? (active ? 1 : 0.12) : layout.opacity;
+              return (
+                <g key={layout.id} style={{ opacity }} className="transition-opacity duration-150">
+                  <path
+                    d={layout.path}
+                    fill="none"
+                    stroke="var(--primary)"
+                    strokeOpacity={0.4}
+                    strokeWidth={1.5}
+                    strokeDasharray={clash?.label === "hidden" ? "4 4" : undefined}
+                  />
+                  <circle cx={layout.x1} cy={layout.y} r={4} fill="var(--primary)" stroke="var(--background)" strokeWidth={1.5} />
+                  <circle cx={layout.x2} cy={layout.y} r={4} fill="var(--primary)" stroke="var(--background)" strokeWidth={1.5} />
+                </g>
+              );
+            })}
+          </svg>
 
           {/* Rank badges: one button per drawn clash */}
           <ul aria-label="Clash links" className="absolute inset-0 z-10" style={{ pointerEvents: "none" }}>

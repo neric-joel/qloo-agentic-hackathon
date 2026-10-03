@@ -1,14 +1,23 @@
 """Live pair check: ask Qloo again about one pair of acts, with no language model.
 
-``GET /api/pair?preset=<id>&a=<act_id>&b=<act_id>`` sends 3 Qloo requests: the saved audience-ranking request
-for each act, re-sent exactly as the preset build sent it (so the live request is the saved request), and one
-comparison of the two acts. From the answers it works out the pair's taste overlap again with the build's own
-rank arithmetic, where each act came in the other's ranking, and the tags, and returns them beside the saved
-value with the three request records and Qloo's request ids. It never changes a preset and never serves a
-cached or saved answer as live: every 200 is a live answer, and nothing is cached.
+``POST /api/pair`` with the JSON body ``{"preset": <id>, "a": <act_id>, "b": <act_id>}`` sends 3 Qloo
+requests: the saved audience-ranking request for each act, re-sent exactly as the preset build sent it (so
+the live request is the saved request), and one comparison of the two acts. From the answers it works out the
+pair's taste overlap again with the build's own rank arithmetic, where each act came in the other's ranking,
+and the tags, and returns them beside the saved value with the three request records and Qloo's request ids.
+It never changes a preset and never serves a cached or saved answer as live: every 200 is a live answer, and
+nothing is cached. Every response, refusals included, is ``Cache-Control: no-store``.
+
+A check is at most 3 Qloo requests whether it succeeds or fails (no retries), and each is private: it neither
+shares nor joins an identical request in flight, so checks running at once never fail each other. Only a JSON
+body is read (a form or plain-text body is a 422 before anything else runs) and there is no GET, so another
+site cannot start a check from a link, an image or a form.
 
 It is off unless ``PAIR_CHECK_ENABLED`` (and a Qloo key) is set, capped per visitor and per day, and paused
-while the requests left in Qloo's month are below the floor. No raw affinity or matrix cell is served.
+while the requests left in Qloo's month are below the floor or after 6 requests sent without an answer that
+said how many are left. Only pairs the page already shows can be checked (the day's ranked clashes and its
+clash receipts), so the saved value it returns is one the page already prints for that pair. No raw affinity
+is served.
 """
 
 from __future__ import annotations
@@ -20,8 +29,10 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from pydantic import BaseModel, ConfigDict, Field
+from starlette.datastructures import MutableHeaders
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from .config import Settings, get_settings
 from .deps import get_pair_limiter, get_qloo
@@ -51,6 +62,7 @@ if not log.handlers:  # app loggers print nothing below WARNING unless the host 
 
 router = APIRouter(prefix="/api", tags=["pair"])
 
+PAIR_PATH = "/api/pair"
 NO_STORE = {"Cache-Control": "no-store"}
 QLOO_TIMEOUT_SECONDS = 8.0  # for all three requests together
 CALLS_PER_CHECK = 3
@@ -66,11 +78,22 @@ SAME_SET = "Pick two different sets."
 NOT_PRICED = (
     "Qloo has no usable signal for one of these acts, so this pair is not priced and cannot be re-checked."
 )
+NOT_ON_THE_PAGE = "That pair is not one of this day's ranked clashes, so it cannot be re-checked."
 NO_SAVED_ROWS = "This pair's saved audience rankings are not available, so it cannot be re-checked."
 PAUSED = (
     "Live checks are paused to protect this demo's monthly Qloo allowance. The saved result is unchanged."
 )
 NO_ANSWER = "Qloo did not answer in time, so nothing was re-checked. The saved result is unchanged."
+
+
+class PairRequest(BaseModel):
+    """The body of a check: the festival day and the two acts, nothing else."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    preset: str = Field(max_length=80)
+    a: str = Field(max_length=80)
+    b: str = Field(max_length=80)
 
 
 class PairAct(BaseModel):
@@ -125,6 +148,46 @@ def _refuse(status: int, detail: str) -> HTTPException:
     return HTTPException(status_code=status, detail=detail, headers=NO_STORE)
 
 
+class NoStoreOnPairRoute:
+    """Marks every response on the pair route ``Cache-Control: no-store``, the framework's own included (the
+    405 for a GET, a 422 for a body that is not JSON), so no cache ever keeps a check or a refusal."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope["path"].rstrip("/") != PAIR_PATH:
+            await self.app(scope, receive, send)
+            return
+
+        async def send_no_store(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                MutableHeaders(scope=message).update(NO_STORE)
+            await send(message)
+
+        await self.app(scope, receive, send_no_store)
+
+
+def page_pairs(preset: Preset) -> set[frozenset[str]]:
+    """The pairs the page shows a taste overlap for: the day's ranked clashes and its clash receipts.
+
+    Receipts are keyed by the two act ids joined with ``|``; a key that is not two ids is skipped.
+    """
+    pairs: set[frozenset[str]] = set()
+    clashes = preset.report.get("clashes")
+    for clash in clashes if isinstance(clashes, list) else []:
+        sides = [clash.get(side) if isinstance(clash, dict) else None for side in ("a", "b")]
+        ids = [side.get("act_id") if isinstance(side, dict) else None for side in sides]
+        if all(isinstance(act_id, str) for act_id in ids):
+            pairs.add(frozenset(ids))
+    receipts = (preset.evidence or {}).get("receipts")
+    for key in receipts if isinstance(receipts, dict) else {}:
+        ids = key.split("|") if isinstance(key, str) else []
+        if len(ids) == 2:
+            pairs.add(frozenset(ids))
+    return {pair for pair in pairs if len(pair) == 2}
+
+
 def saved_row(preset: Preset, act: Act) -> dict[str, str] | None:
     """The params of the one saved Insights request that ranked the candidates for this act's audience.
 
@@ -157,8 +220,10 @@ def _live(record: RequestRecord) -> bool:
 
 
 async def _fetch(qloo: QlooClient, path: str, params: dict[str, Any]) -> tuple[Any, list[RequestRecord]]:
-    with record_requests() as records:  # each call in its own task, so each gets exactly its own record
-        body = await qloo.get(path, params, use_cache=False)
+    # Each call in its own task, so each gets exactly its own record. Private (no cache, no sharing of a
+    # request in flight) and never retried, so a check is at most 3 Qloo requests, answered or not.
+    with record_requests() as records:
+        body = await qloo.get(path, params, use_cache=False, max_retries=0)
     return body, records
 
 
@@ -225,25 +290,27 @@ def _priced(preset: Preset, act: Act) -> bool:
     return bool(act.qloo_id) and act.id in matrix.act_ids and matrix.coverage_of(act.id) != "none"
 
 
-@router.get("/pair", response_model=PairCheck)
+@router.post("/pair", response_model=PairCheck)
 async def check_pair(
+    body: PairRequest,
     request: Request,
     response: Response,
     presets: Presets,
     settings: Annotated[Settings, Depends(get_settings)],
     qloo: Annotated[QlooClient, Depends(get_qloo)],
     limiter: Annotated[RunLimiter, Depends(get_pair_limiter)],
-    preset_id: Annotated[str, Query(alias="preset", max_length=80)],
-    a: Annotated[str, Query(max_length=80)],
-    b: Annotated[str, Query(max_length=80)],
 ) -> PairCheck:
     """Re-send a pair's two saved audience rankings to Qloo, ask for a fresh comparison, and work the pair's
-    taste overlap and tags out again, beside the saved value. Nothing on the preset changes."""
+    taste overlap and tags out again, beside the saved value. Nothing on the preset changes.
+
+    Every refusal comes before the limiter and the limiter before Qloo, so a refused check costs nothing and a
+    check that reaches Qloo always takes a slot."""
     if not (settings.pair_check_enabled and settings.qloo_api_key):
         raise _refuse(503, SWITCHED_OFF)
-    preset = presets.get(preset_id)
+    a, b = body.a, body.b
+    preset = presets.get(body.preset)
     if preset is None:
-        raise _refuse(404, f"No preset {preset_id!r}.")
+        raise _refuse(404, f"No preset {body.preset!r}.")
     acts = preset.festival.act_by_id()
     scheduled = {slot.act_id for slot in preset.festival.timetable}
     if not {a, b} <= scheduled or not {a, b} <= acts.keys():
@@ -253,6 +320,8 @@ async def check_pair(
     act_a, act_b = acts[a], acts[b]
     if not (_priced(preset, act_a) and _priced(preset, act_b)):
         raise _refuse(422, NOT_PRICED)
+    if frozenset((a, b)) not in page_pairs(preset):
+        raise _refuse(422, NOT_ON_THE_PAGE)
     row_a, row_b = saved_row(preset, act_a), saved_row(preset, act_b)
     if (
         row_a is None
@@ -261,8 +330,7 @@ async def check_pair(
         or act_a.qloo_id not in _candidates(row_b)
     ):
         raise _refuse(422, NO_SAVED_ROWS)
-    remaining = qloo.month_remaining
-    if remaining is not None and remaining < settings.qloo_quota_floor + CALLS_PER_CHECK:
+    if qloo.allowance_low(settings.qloo_quota_floor, CALLS_PER_CHECK):
         raise _refuse(503, PAUSED)
     host = request.client.host if request.client else None
     refusal = limiter.try_acquire(visitor_key(dict(request.headers), host))

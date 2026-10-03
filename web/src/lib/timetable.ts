@@ -75,6 +75,17 @@ export function blockDensity(heightPx: number): BlockDensity {
 
 export type ColumnFrame = { left: number; width: number };
 
+/** The gutter between stage columns: narrow on a small board, wider once the board has room. */
+export const NARROW_GAP = 20;
+export const WIDE_GAP = 36;
+/** Board width (time axis included) from which the gutters widen; the board is wider than this at
+ * 1280 px and up, and narrower inside the phone scroller. */
+export const WIDE_BOARD = 780;
+
+export function columnGap(boardWidth: number): number {
+  return boardWidth >= WIDE_BOARD ? WIDE_GAP : NARROW_GAP;
+}
+
 /** Equal-width columns across `width` pixels with `gap` pixels between them. */
 export function columnFrames(width: number, count: number, gap: number): ColumnFrame[] {
   if (count <= 0) return [];
@@ -109,8 +120,8 @@ export type LinkLayout = {
   /** The height the link leaves both sets at. */
   y: number;
   /**
-   * Where the rank badge sits: in the gutter beside the left-hand set, so it never covers the text
-   * of a set the link passes behind.
+   * Where the rank badge sits: on the link's curve, in the gutter beside the left-hand set, so it
+   * never covers the text of a set the link passes behind.
    */
   badge: { x: number; y: number };
   strokeWidth: number;
@@ -127,12 +138,20 @@ export type LinkOptions = {
   maxBulge?: number;
 };
 
+/** The thinnest and faintest a drawn link gets at rest, so even the cheapest of them reads. */
+export const MIN_LINK_OPACITY = 0.55;
+/** The least a link rises, so a link between neighbouring stages shows as an arc, not a dash. */
+export const NEIGHBOUR_RISE = 14;
+
 const clamp01 = (value: number) => Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0));
 
-/** Height of the curve's rise: flat between neighbours, rising more for each stage it jumps over. */
+/**
+ * Height of the curve's rise: a low arc between neighbours, rising more for each stage it jumps
+ * over, up to a cap.
+ */
 export function linkBulge(columnsApart: number, perColumn = 18, max = 64): number {
-  if (columnsApart <= 1) return 0;
-  return Math.min(max, perColumn * (columnsApart - 1) + 10);
+  if (columnsApart < 1) return 0;
+  return Math.min(max, Math.max(NEIGHBOUR_RISE, perColumn * (columnsApart - 1) + 10));
 }
 
 function linkPath(x1: number, x2: number, y: number, bulge: number): string {
@@ -143,11 +162,19 @@ function linkPath(x1: number, x2: number, y: number, bulge: number): string {
   return `M ${r(x1)} ${r(y)} Q ${r(xm)} ${r(y - 2 * bulge)} ${r(x2)} ${r(y)}`;
 }
 
+/** How far the curve has risen above its ends at `x` (the curve's x is linear in its parameter). */
+function riseAt(x: number, x1: number, x2: number, bulge: number): number {
+  if (x2 <= x1) return 0;
+  const t = Math.min(1, Math.max(0, (x - x1) / (x2 - x1)));
+  return 4 * bulge * t * (1 - t);
+}
+
 /**
  * Places a link for each clash: from the facing edges of the two sets, at the middle of the minutes
- * they share, rising over any stage in between. Links are placed costliest first; when a badge would
- * land on one already placed, the link slides up or down inside its shared window (or just past
- * it, if the window is too short).
+ * they share, arcing up between them and over any stage in between. The rank badge sits on the arc
+ * in the gutter beside the left-hand set (at its peak, between neighbours). Links are placed
+ * costliest first; when a badge would land on one already placed, the link slides up or down inside
+ * its shared window (or just past it, if the window is too short).
  */
 export function layoutLinks(
   links: readonly LinkInput[],
@@ -181,9 +208,13 @@ export function layoutLinks(
     const bottom = scale.y(link.window.end);
     const centre = (top + bottom) / 2;
     const bx = x1 + gutter / 2;
+    // The badge rides on the arc, this far above the link's ends.
+    const lift = riseAt(bx, x1, x2, bulge);
 
     const collides = (y: number) =>
-      placed.some((other) => Math.abs(other.x - bx) < badgeSize && Math.abs(other.y - y) < badgeSize);
+      placed.some(
+        (other) => Math.abs(other.x - bx) < badgeSize && Math.abs(other.y - (y - lift)) < badgeSize,
+      );
 
     // Try the centre first, then alternate below and above, preferring spots inside the window.
     const candidates = [centre];
@@ -194,8 +225,9 @@ export function layoutLinks(
     const inside = candidates.filter((y) => y >= top + pad && y <= bottom - pad);
     const outside = candidates.filter((y) => !inside.includes(y));
     const y = [...inside, ...outside].find((candidate) => !collides(candidate)) ?? centre;
+    const badge = { x: bx, y: Math.round((y - lift) * 10) / 10 };
 
-    placed.push({ x: bx, y });
+    placed.push(badge);
     const weight = clamp01(link.weight);
     result.set(link.id, {
       id: link.id,
@@ -203,9 +235,9 @@ export function layoutLinks(
       x1,
       x2,
       y,
-      badge: { x: bx, y },
+      badge,
       strokeWidth: minStroke + (maxStroke - minStroke) * weight,
-      opacity: 0.45 + 0.55 * weight,
+      opacity: MIN_LINK_OPACITY + (1 - MIN_LINK_OPACITY) * weight,
     });
   }
 

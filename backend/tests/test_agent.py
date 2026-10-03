@@ -317,6 +317,55 @@ async def test_qloo_backed_tools_stop_below_the_monthly_floor_and_derived_tools_
     await qloo.aclose()
 
 
+async def test_qloo_backed_tools_stop_after_six_blind_requests_and_derived_tools_run():
+    from types import SimpleNamespace
+
+    from app.agent.qloo_tools import RESOLVE_ENTITIES
+    from app.agent.tools import QLOO_PAUSED, Tool, ToolOutput, run_tool_calls
+
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=SEARCH)  # never says how many requests are left in the month
+
+    async def derived(args, ctx):
+        return ToolOutput(content="ok", summary="worked out")
+
+    registry = {
+        "resolve_entities": RESOLVE_ENTITIES,
+        "derived": Tool("derived", "", {}, derived, provenance="derived"),
+    }
+    events = []
+
+    async def emit(event):
+        events.append(event)
+
+    def resolve(name: str) -> SimpleNamespace:
+        return SimpleNamespace(
+            id=name, name="resolve_entities", input={"names": [name], "entity_type": ENTITY}
+        )
+
+    qloo = qloo_client(handler)
+    ctx = ToolContext(qloo=qloo, qloo_floor=1500)
+    for i in range(6):  # six different names, so none is answered from the client's cache
+        events.clear()
+        await run_tool_calls([resolve(f"act {i}")], registry, ctx, emit)
+        assert next(e for e in events if e["type"] == "tool_result")["ok"] is True
+    assert len(seen) == 6 and qloo.blind_requests == 6 and qloo.month_remaining is None
+
+    events.clear()
+    sent = await run_tool_calls(
+        [resolve("act 6"), SimpleNamespace(id="d", name="derived", input={})], registry, ctx, emit
+    )
+    results = [e for e in events if e["type"] == "tool_result"]
+    assert [(r["tool"], r["ok"]) for r in results] == [("resolve_entities", False), ("derived", True)]
+    assert results[0]["summary"] == "Qloo allowance paused" and results[0]["requests"] == []
+    assert sent[0]["is_error"] and sent[0]["content"] == QLOO_PAUSED
+    assert len(seen) == 6 and ctx.state["qloo_calls"] == 6
+    await qloo.aclose()
+
+
 ENTITY = "urn:entity:artist"
 
 

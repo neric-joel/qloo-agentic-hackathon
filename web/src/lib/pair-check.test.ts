@@ -4,6 +4,7 @@ import {
   agreement,
   matchesPair,
   NETWORK_MESSAGE,
+  pairCheckBody,
   pairCheckError,
   pairCheckKey,
   parsePairCheck,
@@ -153,6 +154,19 @@ describe("matchesPair and rankingFor", () => {
     if (!check) throw new Error("fixture must parse");
     expect(rankingFor(check, "act-two", "act-one")?.position).toBe(5);
     expect(rankingFor(check, "act-one", "act-three")).toBeNull();
+  });
+});
+
+describe("pairCheckBody", () => {
+  it("is a JSON object with the day and the two acts and nothing else", () => {
+    const text = pairCheckBody("example-day", "act-one", "act-two");
+    expect(text).toBe('{"preset":"example-day","a":"act-one","b":"act-two"}');
+    expect(Object.keys(JSON.parse(text))).toEqual(["preset", "a", "b"]);
+  });
+
+  it("keeps characters a query string would mangle exactly as given", () => {
+    const parsed = JSON.parse(pairCheckBody("day & night", "a+b", 'say "hi"?'));
+    expect(parsed).toEqual({ preset: "day & night", a: "a+b", b: 'say "hi"?' });
   });
 });
 

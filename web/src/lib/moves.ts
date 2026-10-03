@@ -27,6 +27,11 @@ export type PlacedOption = MoveOption & {
 /** The endpoint's answer: the agent's `find_moves` data plus the set's clashes now and after. */
 export type MovesResult = Omit<MoveOptions, "options"> & {
   actId: string;
+  /**
+   * False when Qloo has no usable signal for the set: its clashes are not priced, so every place
+   * leaves the Clash Budget Index where it is. Answers from before the field existed count as priced.
+   */
+  priced: boolean;
   /** At most three, largest first. Empty when the set cannot move. */
   clashesNow: PartnerPoints[];
   options: PlacedOption[];
@@ -77,9 +82,10 @@ export function parseMoves(json: unknown): MovesResult | null {
     if (typeof act !== "string" || typeof act_id !== "string" || typeof from !== "string") return null;
     if (typeof movable !== "boolean") return null;
     const why = typeof json.why === "string" && json.why ? json.why : null;
+    const priced = typeof json.priced === "boolean" ? json.priced : true;
 
     if (!movable) {
-      return { act, actId: act_id, from, movable, why, before: null, legalPlaces: 0, clashesNow: [], options: [] };
+      return { act, actId: act_id, from, movable, why, before: null, legalPlaces: 0, priced, clashesNow: [], options: [] };
     }
 
     if (!finite(json.clash_budget_before) || !finite(json.legal_places) || !Array.isArray(json.options)) return null;
@@ -99,6 +105,7 @@ export function parseMoves(json: unknown): MovesResult | null {
       why,
       before: json.clash_budget_before,
       legalPlaces: json.legal_places,
+      priced,
       clashesNow,
       options,
     };

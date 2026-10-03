@@ -3,16 +3,20 @@ import { describe, expect, it } from "vitest";
 import {
   blockDensity,
   columnFrames,
+  columnGap,
   formatClock,
   formatRange,
   isNavKey,
   layoutLinks,
   linkBulge,
+  MIN_LINK_OPACITY,
+  NEIGHBOUR_RISE,
   nextNavItem,
   overlapWindow,
   timeDomain,
   timeScale,
   timeTicks,
+  type LinkInput,
   type NavItem,
 } from "./timetable";
 
@@ -109,12 +113,27 @@ describe("columnFrames", () => {
   });
 });
 
+describe("columnGap", () => {
+  it("widens the gutters once the board has room", () => {
+    expect(columnGap(760)).toBe(20);
+    expect(columnGap(779)).toBe(20);
+    expect(columnGap(780)).toBe(36);
+    expect(columnGap(960)).toBe(36);
+  });
+});
+
 describe("linkBulge", () => {
-  it("is flat between neighbouring stages and rises with distance, up to a cap", () => {
-    expect(linkBulge(1)).toBe(0);
+  it("arcs at least 14 px between neighbouring stages and rises with distance, up to a cap", () => {
+    expect(NEIGHBOUR_RISE).toBeGreaterThanOrEqual(14);
+    expect(linkBulge(1)).toBe(14);
     expect(linkBulge(2)).toBe(28);
     expect(linkBulge(3)).toBe(46);
+    expect(linkBulge(4)).toBe(64);
     expect(linkBulge(10)).toBe(64);
+  });
+
+  it("does not rise for a link inside one stage", () => {
+    expect(linkBulge(0)).toBe(0);
   });
 });
 
@@ -131,10 +150,28 @@ describe("layoutLinks", () => {
     expect(link.x1).toBe(120);
     expect(link.x2).toBe(150);
     expect(link.y).toBe(180);
-    expect(link.badge).toEqual({ x: 135, y: 180 });
-    expect(link.path).toBe("M 120 180 L 150 180");
+    // Neighbours get a visible arc, 14 px high, with the badge on its peak.
+    expect(link.path).toBe("M 120 180 Q 135 152 150 180");
+    expect(link.badge).toEqual({ x: 135, y: 166 });
     expect(link.strokeWidth).toBe(7);
     expect(link.opacity).toBe(1);
+  });
+
+  it("raises every neighbour link by at least 14 px", () => {
+    const links = layoutLinks(
+      [
+        { id: "p", colA: 0, colB: 1, window: { start: 660, end: 720 }, weight: 0 },
+        { id: "q", colA: 2, colB: 1, window: { start: 780, end: 840 }, weight: 0.5 },
+      ],
+      columns,
+      scale,
+    );
+    for (const link of links) {
+      const control = Number(/ Q [\d.]+ ([\d.-]+) /.exec(link.path)?.[1]);
+      // A quadratic curve peaks halfway to its control point.
+      expect((link.y - control) / 2).toBeGreaterThanOrEqual(14);
+      expect(link.y - link.badge.y).toBeGreaterThanOrEqual(14);
+    }
   });
 
   it("curves over the stage in between", () => {
@@ -146,10 +183,78 @@ describe("layoutLinks", () => {
     expect(link.x1).toBe(120);
     expect(link.x2).toBe(300);
     // The badge sits in the gutter beside the left-hand set, not over the stage in between.
-    expect(link.badge).toEqual({ x: 135, y: 180 });
+    // It rides on the curve, a little above the link's ends.
+    expect(link.badge).toEqual({ x: 135, y: 171.4 });
     expect(link.path).toBe("M 120 180 Q 210 124 300 180");
     expect(link.strokeWidth).toBe(2);
-    expect(link.opacity).toBeCloseTo(0.45);
+    expect(link.opacity).toBeCloseTo(0.55);
+  });
+
+  it("never draws a link fainter than the idle minimum", () => {
+    expect(MIN_LINK_OPACITY).toBeGreaterThanOrEqual(0.55);
+    const links = layoutLinks(
+      [0, 0.1, 0.5, 1, -2, Number.NaN].map((weight, index) => ({
+        id: `w${index}`,
+        colA: 0,
+        colB: 1 + (index % 2),
+        window: { start: 600 + index * 40, end: 640 + index * 40 },
+        weight,
+      })),
+      columns,
+      scale,
+    );
+    expect(links).toHaveLength(6);
+    for (const link of links) {
+      expect(link.opacity).toBeGreaterThanOrEqual(0.55);
+      expect(link.opacity).toBeLessThanOrEqual(1);
+      expect(link.strokeWidth).toBeGreaterThanOrEqual(2);
+      expect(link.strokeWidth).toBeLessThanOrEqual(7);
+    }
+  });
+
+  it("keeps the 64 px cap for links across several stages", () => {
+    const wide = columnFrames(1180, 10, 20);
+    const [four, nine] = layoutLinks(
+      [
+        { id: "four", colA: 0, colB: 4, window: { start: 660, end: 720 }, weight: 1 },
+        { id: "nine", colA: 9, colB: 0, window: { start: 780, end: 840 }, weight: 1 },
+      ],
+      wide,
+      scale,
+    );
+    for (const link of [four, nine]) {
+      const control = Number(/ Q [\d.]+ ([\d.-]+) /.exec(link.path)?.[1]);
+      expect((link.y - control) / 2).toBe(64);
+      // The badge stays in the first gutter, on the curve, below the peak.
+      expect(link.badge.x).toBe(wide[0].left + wide[0].width + 10);
+      expect(link.y - link.badge.y).toBeGreaterThan(0);
+      expect(link.y - link.badge.y).toBeLessThan(64);
+    }
+  });
+
+  it("keeps ten links' badges apart on a crowded day", () => {
+    const five = columnFrames(900, 5, 36);
+    const late = { start: 1290, end: 1350 };
+    const inputs: LinkInput[] = [
+      { id: "1", colA: 0, colB: 1, window: late, weight: 1 },
+      { id: "2", colA: 0, colB: 3, window: late, weight: 0.95 },
+      { id: "3", colA: 1, colB: 2, window: late, weight: 0.9 },
+      { id: "4", colA: 2, colB: 3, window: late, weight: 0.85 },
+      { id: "5", colA: 0, colB: 2, window: { start: 1300, end: 1340 }, weight: 0.8 },
+      { id: "6", colA: 3, colB: 4, window: late, weight: 0.7 },
+      { id: "7", colA: 1, colB: 3, window: { start: 1305, end: 1320 }, weight: 0.6 },
+      { id: "8", colA: 0, colB: 4, window: { start: 1290, end: 1305 }, weight: 0.5 },
+      { id: "9", colA: 1, colB: 4, window: late, weight: 0.4 },
+      { id: "10", colA: 2, colB: 4, window: late, weight: 0.3 },
+    ];
+    const links = layoutLinks(inputs, five, timeScale({ start: 1200, end: 1440 }, 1.7), { badgeSize: 26 });
+    expect(links).toHaveLength(10);
+    for (const [index, p] of links.entries()) {
+      for (const q of links.slice(index + 1)) {
+        const apart = Math.abs(p.badge.x - q.badge.x) >= 26 || Math.abs(p.badge.y - q.badge.y) >= 26;
+        expect(apart, `${p.id} and ${q.id}`).toBe(true);
+      }
+    }
   });
 
   it("moves a cheaper link's badge off a costlier one's, inside the shared window", () => {

@@ -2,10 +2,11 @@ import { ArrowDown, ArrowRight, ArrowUp } from "lucide-react";
 
 import { budgetDelta, changeLabel } from "@/lib/agent-session";
 import type { BaselineStats } from "@/lib/preset";
+import type { ScaleRange } from "@/lib/stack";
 import { cn } from "@/lib/utils";
 
-/** The range random re-orderings of this day score in (10th to 90th percentile), for scale. */
-export type ScaleRange = { low: number; high: number } | null;
+/** The range random valid timetables of this lineup score in (10th to 90th percentile), for scale. */
+export type { ScaleRange };
 
 /** The day's scale range from its baseline, or null when the baseline has none. */
 export function scaleRange(baseline: BaselineStats | null): ScaleRange {
@@ -27,10 +28,13 @@ export function BudgetMove({
   before,
   after,
   range,
+  verdict = null,
 }: {
   before: number | null;
   after: number | null;
   range: ScaleRange;
+  /** A sentence that follows the scale line, such as where a plan sits against that range. */
+  verdict?: string | null;
 }) {
   const delta = budgetDelta(before, after);
   if (before === null || after === null || delta === null) return null;
@@ -75,8 +79,8 @@ export function BudgetMove({
       </div>
       {range ? (
         <p className="mt-2 text-xs text-muted-foreground">
-          For scale, random re-orderings of this day score {Math.round(range.low)} to{" "}
-          {Math.round(range.high)}.
+          For scale, random valid timetables of this lineup score {Math.round(range.low)} to{" "}
+          {Math.round(range.high)}.{verdict ? ` ${verdict}` : ""}
         </p>
       ) : null}
     </div>

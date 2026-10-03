@@ -36,7 +36,7 @@ function Section({
 }: {
   id: string;
   kicker: string;
-  title: string;
+  title: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -251,6 +251,10 @@ export default function MethodPage() {
             quarter.
           </li>
           <li>
+            A plan of kept moves is scored by the same measure the places are found with, so it shows
+            what the measure rewards, not what would suit the real festival.
+          </li>
+          <li>
             Qloo has a usable signal for {coverage.usableActs} of {coverage.totalActs} acts across the{" "}
             {numberWord(backtest.festivals)} festivals tested ({formatWholePct(coverage.usablePct)}).
             On the two days shown it is{" "}
@@ -300,15 +304,33 @@ export default function MethodPage() {
 
       <Section id="live-check" kicker="On request" title="The live re-check">
         <p>
-          Every priced clash can be re-checked with Qloo on request when live checks are switched
-          on. The check re-sends the two audience-ranking requests saved for the pair&rsquo;s acts
-          and asks Qloo for a fresh comparison, {liveCheck.requests} requests in all, then works out
-          the pair&rsquo;s taste overlap and tags again from the answers and shows them beside the
-          saved result with Qloo&rsquo;s request ids. It never replaces a number on the page:
-          Qloo&rsquo;s answers can change over time, and the saved values keep every figure
+          Each of the day&rsquo;s costliest clashes can be re-checked with Qloo on request while live
+          checks are switched on. The check re-sends the two audience-ranking requests saved for the
+          pair&rsquo;s acts and asks Qloo for a fresh comparison, {liveCheck.requests} requests in all,
+          then works out the pair&rsquo;s taste overlap and tags again from the answers and shows them
+          beside the saved result with Qloo&rsquo;s request ids. It never replaces a number on the
+          page: Qloo&rsquo;s answers can change over time, and the saved values keep every figure
           comparable. It is limited per visitor and per day, and it pauses when this demo&rsquo;s
-          monthly Qloo allowance runs low. While live checks are switched off, the drawer shows only
-          the saved results.
+          monthly Qloo allowance runs low. The timetable page offers the check only while it is
+          switched on; they can be switched off to protect that allowance, and then the drawer shows
+          only the saved results.
+        </p>
+      </Section>
+
+      <Section
+        id="brief"
+        kicker="Print view"
+        title={
+          <>
+            The <span className="whitespace-nowrap">one-page</span> brief
+          </>
+        }
+      >
+        <p>
+          The brief page prints this day&rsquo;s costliest clashes, the day&rsquo;s Clash Budget Index
+          and any moves you kept, using only figures the timetable page already shows. It is for
+          evaluating this entry, it is not offered to festivals, and it leaves out Qloo&rsquo;s tags and
+          identifiers.
         </p>
       </Section>
 

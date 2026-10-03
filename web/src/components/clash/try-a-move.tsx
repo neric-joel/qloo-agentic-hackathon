@@ -1,7 +1,7 @@
 "use client";
 
-import { useId, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Equal, LoaderCircle, Minus, Plus, RotateCcw } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { ArrowDown, ArrowUp, Check, Equal, LoaderCircle, Minus, Plus, RotateCcw } from "lucide-react";
 
 import { ProvenanceChip } from "@/components/kernel";
 import { Button } from "@/components/ui/button";
@@ -21,11 +21,24 @@ import {
   type PickableSet,
   type PlacedOption,
 } from "@/lib/moves";
-import type { PairClash, Preset } from "@/lib/preset";
+import type { PairClash, Preset, SetSlot } from "@/lib/preset";
+import {
+  MAX_STACK,
+  applyMoves,
+  encodeMoves,
+  planPreview,
+  planStarters,
+  readStoredMoves,
+  storeMoves,
+  type GhostSlot,
+  type PlanPreview,
+  type StackMove,
+} from "@/lib/stack";
 import { cn } from "@/lib/utils";
 
 import { BudgetMove, scaleRange, signedDelta, type ScaleRange } from "./budget-move";
-import { useMoves } from "./use-moves";
+import { ScratchPlan } from "./scratch-plan";
+import { usePlan } from "./use-moves";
 
 /** Where the section sits on the page, for links that point at it. */
 export const TRY_A_MOVE_ID = "try-a-move";
@@ -45,6 +58,16 @@ function byStage(sets: readonly PickableSet[]): StageGroup[] {
     else groups.push({ stageId: set.stageId, stageName: set.stageName, sets: [set] });
   }
   return groups;
+}
+
+/**
+ * The plan kept for this preset in this tab, when every move is still a set of this festival that
+ * may move. Anything else is dropped, and the server checks the rest.
+ */
+function storedPlan(preset: Preset): StackMove[] {
+  const stored = readStoredMoves(preset.id);
+  const movable = new Set(preset.festival.timetable.filter((slot) => !slot.locked).map((slot) => slot.act_id));
+  return stored.every((move) => movable.has(move.actId)) ? stored : [];
 }
 
 function ClashChangeList({
@@ -164,38 +187,53 @@ function PlaceButton({
   );
 }
 
-/** The answer for one set: its legal places as a list, and the chosen one priced in full. */
+/** Keeping the chosen place: the button, or why the plan cannot take another move. */
+type KeepControl = { full: boolean; onKeep: (option: PlacedOption) => void };
+
+/**
+ * The answer for one set: its legal places as a list, and the chosen one priced in full. With kept
+ * moves the places are priced on top of them (`result.before` is the plan's Clash Budget Index) and
+ * `timetable` is the published one with those moves made, so the clashes a place ends and adds are
+ * read against where every set plays in the plan.
+ */
 function MovesCard({
   result,
   preset,
+  timetable,
+  kept,
   range,
-  index,
+  chosen,
+  keep,
   onChoose,
 }: {
   result: MovesResult;
   preset: Preset;
+  timetable: readonly SetSlot[];
+  kept: number;
   range: ScaleRange;
-  index: number;
+  chosen: PlacedOption | null;
+  keep: KeepControl;
   onChoose: (index: number) => void;
 }) {
   const detailId = useId();
+  const fullHelpId = useId();
   const detailRef = useRef<HTMLDivElement | null>(null);
   const { festival } = preset;
-  const chosen = result.options[Math.min(index, result.options.length - 1)] ?? null;
   const multiDay = festival.days.length > 1;
   const chosenDelta = chosen ? budgetDelta(result.before, chosen.after) : null;
 
   const changes = useMemo(() => {
     if (!chosen) return null;
-    const home = currentPlacement(preset, result.actId);
+    const planned = { festival: { ...festival, timetable: [...timetable] } };
+    const home = currentPlacement(planned, result.actId);
     const after = placementOf(chosen);
     return clashChanges(
       result.clashesNow,
       chosen.clashesAfter,
-      home ? concurrentActs(preset, result.actId, home) : null,
-      after ? concurrentActs(preset, result.actId, after) : null,
+      home ? concurrentActs(planned, result.actId, home) : null,
+      after ? concurrentActs(planned, result.actId, after) : null,
     );
-  }, [chosen, preset, result]);
+  }, [chosen, festival, timetable, result]);
 
   const dayLabelOf = (option: PlacedOption) =>
     multiDay ? dayName(festival.days[option.day] ?? `Day ${option.day + 1}`) : null;
@@ -231,6 +269,12 @@ function MovesCard({
         <p className="mt-4 text-[0.9375rem] font-semibold">No free slot it may use breaks no rule.</p>
       ) : (
         <>
+          {!result.priced ? (
+            <p className="mt-4 rounded-md border border-border bg-muted/50 px-3 py-2 text-sm">
+              Qloo has no usable signal for {result.act}, so its clashes are not priced and no place changes the
+              Clash Budget Index.
+            </p>
+          ) : null}
           <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-8">
             <div className="min-w-0">
               <p className="type-kicker text-muted-foreground">
@@ -276,11 +320,30 @@ function MovesCard({
                   {changes.keeps.length > 0 ? <KeptClashList items={changes.keeps} /> : null}
                 </div>
               ) : null}
+              <div className="mt-5 border-t border-border pt-4">
+                <Button
+                  type="button"
+                  variant="ink"
+                  disabled={keep.full}
+                  aria-describedby={keep.full ? fullHelpId : undefined}
+                  onClick={() => keep.onKeep(chosen)}
+                >
+                  {keep.full ? null : <Check aria-hidden="true" />}
+                  {keep.full ? "Plan is full" : "Keep this move"}
+                </Button>
+                {keep.full ? (
+                  <p id={fullHelpId} className="mt-2 text-sm text-muted-foreground">
+                    Eight moves is the most a plan holds here. Undo one or start over.
+                  </p>
+                ) : null}
+              </div>
             </div>
           </div>
           <p className="mt-5 text-xs text-muted-foreground">
-            {pluralize(result.legalPlaces, "legal place")}, checking every start on a 5-minute grid. Tested
-            only: the timetable above is unchanged.
+            {kept > 0
+              ? `${pluralize(result.legalPlaces, "legal place")} on top of your ${pluralize(kept, "kept move")}, checking every start on a 5-minute grid.`
+              : `${pluralize(result.legalPlaces, "legal place")}, checking every start on a 5-minute grid.`}{" "}
+            Tested only: the timetable above is unchanged.
           </p>
         </>
       )}
@@ -288,47 +351,145 @@ function MovesCard({
   );
 }
 
+/** A plan that could not be priced: try again, or start over. */
+function PlanError({ onRetry, onStartOver }: { onRetry: () => void; onStartOver: () => void }) {
+  return (
+    <div role="alert" className="rounded-xl border border-destructive/50 bg-danger-bg p-5">
+      <p className="text-[0.9375rem] font-semibold">Could not price this plan.</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button type="button" variant="outline" onClick={onRetry}>
+          <RotateCcw aria-hidden="true" />
+          Try again
+        </Button>
+        <Button type="button" variant="outline" onClick={onStartOver}>
+          Start over
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * "Try a move": the visitor picks a set and sees every legal place it could go, priced by the
  * timetable engine, with the Clash Budget move and the clashes it ends and adds for the place they
- * choose. No language model is involved and nothing is applied: the answer comes from
- * `GET /api/presets/{id}/moves`, which uses the published timetable and its locks, and the
- * timetable above never changes. `ranked` is the day's priced clashes, costliest first.
+ * choose. A place can be kept, and the next set is then priced on top of the kept moves; the plan
+ * card shows them priced together against the published reading. No language model is involved
+ * and nothing is applied: with no kept moves the answer comes from `GET /api/presets/{id}/moves`,
+ * with kept moves from `POST /api/presets/{id}/whatif`, and the timetable above never changes.
+ * `ranked` is the day's priced clashes, costliest first. `onPlanChange` hears the kept moves and the
+ * place being tried, so the grid can draw them, and null when there is neither.
  */
 export function TryAMove({
   preset,
   day,
   ranked,
   isLocked,
+  onPlanChange,
 }: {
   preset: Preset;
   day: number;
   ranked: readonly PairClash[];
   isLocked: (actId: string) => boolean;
+  onPlanChange?: (preview: PlanPreview | null) => void;
 }) {
   const selectId = useId();
   const startLabelId = useId();
+  const selectRef = useRef<HTMLSelectElement | null>(null);
+  const planRef = useRef<HTMLDivElement | null>(null);
   const sets = useMemo(() => movableSets(preset, day), [preset, day]);
   const groups = useMemo(() => byStage(sets), [sets]);
-  const starters = useMemo(() => startingSets(ranked, isLocked), [ranked, isLocked]);
   const range = useMemo(() => scaleRange(preset.report.baseline), [preset]);
+  const unpriced = useMemo(
+    () => new Set(preset.report.coverage.unscored.map((act) => act.act_id)),
+    [preset],
+  );
+
+  // The page is drawn in the browser once the festival day has loaded, so the tab's saved plan can
+  // be read when this section first renders.
+  const [moves, setMoves] = useState<readonly StackMove[]>(() => storedPlan(preset));
+  const moved = useMemo(() => new Set(moves.map((move) => move.actId)), [moves]);
+  const timetable = useMemo(() => applyMoves(preset.festival.timetable, moves), [preset, moves]);
 
   const [picked, setPicked] = useState<string | null>(null);
-  const [choice, setChoice] = useState<{ actId: string; index: number } | null>(null);
-  // A set from another day, or a locked one, is never asked about.
-  const actId = picked && sets.some((set) => set.actId === picked && !set.locked) ? picked : null;
+  const [choice, setChoice] = useState<{ key: string; index: number } | null>(null);
+  // A set from another day, a locked one or one already in the plan is never asked about.
+  const actId =
+    picked && !moved.has(picked) && sets.some((set) => set.actId === picked && !set.locked) ? picked : null;
   const pickedName = sets.find((set) => set.actId === actId)?.name ?? null;
-  const moves = useMoves(preset.id, actId);
-  const index = choice && choice.actId === actId ? choice.index : 0;
+  const state = usePlan(preset.id, moves, actId);
+  const result = state.status === "ready" ? state.options : null;
+  const choiceKey = `${encodeMoves(moves)}:${actId ?? ""}`;
+  const index = choice && choice.key === choiceKey ? choice.index : 0;
+  const chosen =
+    result && result.movable ? (result.options[Math.min(index, result.options.length - 1)] ?? null) : null;
 
+  const starters = useMemo(() => {
+    if (moves.length > 0 && state.plan) {
+      const pickable = sets.map((set) => ({ ...set, locked: set.locked || isLocked(set.actId) }));
+      return planStarters(state.plan.clashes, pickable, moved);
+    }
+    return startingSets(ranked, isLocked).filter((set) => !moved.has(set.actId));
+  }, [moves.length, state.plan, sets, ranked, isLocked, moved]);
+
+  // What the grid may draw: the kept moves and the place being tried on top of them.
+  const trying = useMemo<GhostSlot | null>(() => {
+    const at = chosen ? placementOf(chosen) : null;
+    return chosen && at && result
+      ? { actId: result.actId, stageId: chosen.stageId, day: at.day, start: at.start, end: at.end }
+      : null;
+  }, [chosen, result]);
+  const preview = useMemo(() => planPreview(preset.festival.timetable, moves, trying), [preset, moves, trying]);
+  const previewKey = JSON.stringify(preview);
+  const notify = useRef(onPlanChange);
+  useEffect(() => {
+    notify.current = onPlanChange;
+  }, [onPlanChange]);
+  const previewRef = useRef(preview);
+  useEffect(() => {
+    previewRef.current = preview;
+  }, [preview]);
+  useEffect(() => {
+    notify.current?.(previewRef.current);
+  }, [previewKey]);
+
+  function update(next: readonly StackMove[]) {
+    setMoves(next);
+    storeMoves(preset.id, next);
+  }
+
+  function keep(option: PlacedOption) {
+    if (!actId || moves.length >= MAX_STACK || moved.has(actId)) return;
+    update([...moves, { actId, stageId: option.stageId, day: option.day, start: option.start }]);
+    setPicked(null);
+    // The places card goes; the plan card is where the kept move now shows.
+    requestAnimationFrame(() => planRef.current?.focus());
+  }
+
+  function undo() {
+    const next = moves.slice(0, -1);
+    update(next);
+    if (next.length === 0) requestAnimationFrame(() => selectRef.current?.focus());
+  }
+
+  function startOver() {
+    update([]);
+    setPicked(null);
+    requestAnimationFrame(() => selectRef.current?.focus());
+  }
+
+  const planned = moves.length > 0;
   const announcement =
-    moves.status === "ready"
-      ? moves.result.movable
-        ? `${pluralize(moves.result.legalPlaces, "legal place")} for ${moves.result.act}.`
-        : `${moves.result.act} cannot move.`
-      : moves.status === "error"
-        ? "Could not load the places for this set."
-        : "";
+    state.status === "ready" && result
+      ? result.movable
+        ? `${pluralize(result.legalPlaces, "legal place")} for ${result.act}.`
+        : `${result.act} cannot move.`
+      : state.status === "error"
+        ? planned
+          ? "Could not price this plan."
+          : "Could not load the places for this set."
+        : state.status === "invalid"
+          ? "That plan is no longer possible."
+          : "";
 
   return (
     <section
@@ -346,8 +507,9 @@ export function TryAMove({
           </div>
           <p className="text-[0.9375rem] leading-relaxed">
             Pick a set. The timetable engine lists every place it could legally go, checking every
-            start on a 5-minute grid, and prices each one. Locked sets stay put. Nothing here uses the
-            language model, and nothing changes the timetable above.
+            start on a 5-minute grid, and prices each one. Keep a move to test the next one on top of
+            it. Locked sets stay put. Nothing here uses the language model, and nothing changes the
+            timetable above.
           </p>
         </div>
 
@@ -358,6 +520,7 @@ export function TryAMove({
             </label>
             <select
               id={selectId}
+              ref={selectRef}
               value={actId ?? ""}
               onChange={(event) => setPicked(event.target.value || null)}
               className="mt-1.5 h-11 w-full min-w-0 rounded-md border border-border-strong bg-card px-3 text-[0.9375rem] text-foreground sm:w-80"
@@ -368,9 +531,15 @@ export function TryAMove({
               {groups.map((group) => (
                 <optgroup key={group.stageId} label={group.stageName}>
                   {group.sets.map((set) => (
-                    <option key={set.actId} value={set.actId} disabled={set.locked}>
+                    <option key={set.actId} value={set.actId} disabled={set.locked || moved.has(set.actId)}>
                       {set.start} {set.name}
-                      {set.locked ? " (locked)" : ""}
+                      {moved.has(set.actId)
+                        ? " (already moved)"
+                        : set.locked
+                          ? " (locked)"
+                          : unpriced.has(set.actId)
+                            ? " (not priced)"
+                            : ""}
                     </option>
                   ))}
                 </optgroup>
@@ -403,30 +572,74 @@ export function TryAMove({
           ) : null}
         </div>
 
-        <div className="mt-8" aria-busy={moves.status === "loading"}>
-          {moves.status === "loading" ? (
-            <div className="flex min-h-32 items-center gap-2 rounded-xl border border-dashed border-border-strong p-6 text-sm text-muted-foreground">
-              <LoaderCircle aria-hidden="true" className="size-4 motion-safe:animate-spin" />
-              Pricing every legal place for {pickedName ?? "this set"}
-            </div>
-          ) : moves.status === "error" ? (
-            <div role="alert" className="rounded-xl border border-destructive/50 bg-danger-bg p-5">
-              <p className="text-[0.9375rem] font-semibold">Could not load the places for this set.</p>
-              <Button type="button" variant="outline" className="mt-3" onClick={moves.retry}>
-                <RotateCcw aria-hidden="true" />
-                Try again
-              </Button>
-            </div>
-          ) : moves.status === "ready" ? (
-            <MovesCard
-              result={moves.result}
-              preset={preset}
-              range={range}
-              index={index}
-              onChoose={(next) => setChoice({ actId: moves.result.actId, index: next })}
-            />
-          ) : null}
-        </div>
+        {actId ? (
+          <div className="mt-8" aria-busy={state.status === "loading"}>
+            {state.status === "loading" ? (
+              <div className="flex min-h-32 items-center gap-2 rounded-xl border border-dashed border-border-strong p-6 text-sm text-muted-foreground">
+                <LoaderCircle aria-hidden="true" className="size-4 motion-safe:animate-spin" />
+                Pricing every legal place for {pickedName ?? "this set"}
+              </div>
+            ) : state.status === "error" ? (
+              planned ? (
+                <PlanError onRetry={state.retry} onStartOver={startOver} />
+              ) : (
+                <div role="alert" className="rounded-xl border border-destructive/50 bg-danger-bg p-5">
+                  <p className="text-[0.9375rem] font-semibold">Could not load the places for this set.</p>
+                  <Button type="button" variant="outline" className="mt-3" onClick={state.retry}>
+                    <RotateCcw aria-hidden="true" />
+                    Try again
+                  </Button>
+                </div>
+              )
+            ) : result ? (
+              <MovesCard
+                result={result}
+                preset={preset}
+                timetable={timetable}
+                kept={moves.length}
+                range={range}
+                chosen={chosen}
+                keep={{ full: moves.length >= MAX_STACK, onKeep: keep }}
+                onChoose={(next) => setChoice({ key: choiceKey, index: next })}
+              />
+            ) : null}
+          </div>
+        ) : null}
+
+        {planned ? (
+          <div
+            ref={planRef}
+            tabIndex={-1}
+            className="mt-8 rounded-xl focus:outline-none"
+            aria-busy={state.status === "loading" && !state.plan}
+          >
+            {state.status === "invalid" ? (
+              <div role="alert" className="rounded-xl border border-destructive/50 bg-danger-bg p-5">
+                <p className="text-[0.9375rem] font-semibold">That plan is no longer possible. Start over to try again.</p>
+                <Button type="button" variant="outline" className="mt-3" onClick={startOver}>
+                  Start over
+                </Button>
+              </div>
+            ) : state.plan ? (
+              <ScratchPlan
+                preset={preset}
+                day={day}
+                plan={state.plan}
+                moves={moves}
+                range={range}
+                onUndo={undo}
+                onStartOver={startOver}
+              />
+            ) : state.status === "error" && !actId ? (
+              <PlanError onRetry={state.retry} onStartOver={startOver} />
+            ) : state.status === "loading" ? (
+              <div className="flex min-h-32 items-center gap-2 rounded-xl border border-dashed border-border-strong p-6 text-sm text-muted-foreground">
+                <LoaderCircle aria-hidden="true" className="size-4 motion-safe:animate-spin" />
+                Pricing your tested moves
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         <p role="status" aria-live="polite" className="sr-only">
           {announcement}

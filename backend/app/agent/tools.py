@@ -80,10 +80,10 @@ class ToolContext:
 
         Reserving up front keeps concurrent calls in one turn from all passing the check. A tool that
         starts under the cap finishes; the cap stops the next one. Once the client has learned that the
-        requests left in Qloo's month are below the floor, every Qloo-backed tool is refused.
+        requests left in Qloo's month are below the floor, or has sent too many requests without an answer
+        that said how many are left, every Qloo-backed tool is refused.
         """
-        remaining = self.qloo.month_remaining
-        if self.qloo_floor is not None and remaining is not None and remaining < self.qloo_floor:
+        if self.qloo.allowance_low(self.qloo_floor):
             raise ToolRefused(QLOO_PAUSED, "Qloo allowance paused")
         used = self.state.get(QLOO_CALLS, 0)
         if self.qloo_budget is not None and used >= self.qloo_budget:

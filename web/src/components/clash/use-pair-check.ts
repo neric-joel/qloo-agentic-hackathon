@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   matchesPair,
+  pairCheckBody,
   pairCheckError,
   parsePairCheck,
   unreadablePairCheck,
@@ -20,10 +21,11 @@ export type PairCheckState =
 const IDLE: PairCheckState = { status: "idle" };
 
 /**
- * One live pair check at a time (`GET /api/pair`). It never starts by itself: only `run` sends a
- * request, with the festival day's id and the two act ids and nothing else. A second `run` while
- * one is in flight is ignored, so a double click never sends two. `reset` and unmounting abort a
- * request in flight. `run` settles with the check, or null when it failed or was aborted.
+ * One live pair check at a time (`POST /api/pair`). It never starts by itself: only `run` sends a
+ * request, a JSON body with the festival day's id and the two act ids and nothing else, and no
+ * query string. A second `run` while one is in flight is ignored, so a double click never sends
+ * two. `reset` and unmounting abort a request in flight. `run` settles with the check, or null when
+ * it failed or was aborted.
  */
 export function usePairCheck(): {
   state: PairCheckState;
@@ -56,11 +58,12 @@ export function usePairCheck(): {
 
     let next: PairCheckState;
     try {
-      const query = new URLSearchParams({ preset: presetId, a, b });
-      const response = await fetch(`/api/pair?${query.toString()}`, {
+      const response = await fetch("/api/pair", {
+        method: "POST",
         cache: "no-store",
         signal,
-        headers: { Accept: "application/json" },
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: pairCheckBody(presetId, a, b),
       });
       const body: unknown = await response.json().catch(() => null);
       if (!response.ok) {

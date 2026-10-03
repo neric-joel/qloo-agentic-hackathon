@@ -21,8 +21,19 @@ function Block({ className, children }: { className?: string; children?: ReactNo
   );
 }
 
-/** Key to the timetable. Every mark differs by shape or pattern as well as colour. */
-export function TimetableLegend({ showLinks = true, className }: { showLinks?: boolean; className?: string }) {
+/**
+ * Key to the timetable. Every mark differs by shape or pattern as well as colour. While a tested
+ * plan shows on the grid, it says the links still describe the published timetable.
+ */
+export function TimetableLegend({
+  showLinks = true,
+  planShown = false,
+  className,
+}: {
+  showLinks?: boolean;
+  planShown?: boolean;
+  className?: string;
+}) {
   return (
     <ul
       aria-label="Timetable key"
@@ -46,9 +57,9 @@ export function TimetableLegend({ showLinks = true, className }: { showLinks?: b
           <Item
             swatch={
               <svg viewBox="0 0 36 20" className="h-5 w-9">
-                <path d="M2 10 H34" stroke="var(--primary)" strokeWidth="5" strokeLinecap="round" />
-                <circle cx="18" cy="10" r="7" fill="var(--foreground)" />
-                <text x="18" y="13" textAnchor="middle" className="fill-background font-mono text-[9px] font-bold">
+                <path d="M3 17 Q18 1 33 17" fill="none" stroke="var(--primary)" strokeWidth="4" strokeLinecap="round" />
+                <circle cx="18" cy="9" r="7" fill="var(--foreground)" />
+                <text x="18" y="12" textAnchor="middle" className="fill-background font-mono text-[9px] font-bold">
                   1
                 </text>
               </svg>
@@ -59,14 +70,14 @@ export function TimetableLegend({ showLinks = true, className }: { showLinks?: b
           <Item
             swatch={
               <svg viewBox="0 0 36 20" className="h-5 w-9">
-                <path d="M2 10 H34" stroke="var(--primary)" strokeWidth="3" strokeDasharray="5 4" />
+                <path d="M3 17 Q18 1 33 17" fill="none" stroke="var(--primary)" strokeWidth="3" strokeDasharray="5 4" />
                 <rect
                   x="12"
-                  y="4"
+                  y="3"
                   width="12"
                   height="12"
                   rx="1.5"
-                  transform="rotate(45 18 10)"
+                  transform="rotate(45 18 9)"
                   fill="var(--highlight)"
                   stroke="var(--foreground)"
                   strokeWidth="1.6"
@@ -77,6 +88,11 @@ export function TimetableLegend({ showLinks = true, className }: { showLinks?: b
             Hidden clash: genres differ, taste overlap is high
           </Item>
         </>
+      ) : null}
+      {planShown ? (
+        <li className="basis-full font-semibold text-foreground">
+          Lines and rank badges show the published timetable.
+        </li>
       ) : null}
     </ul>
   );

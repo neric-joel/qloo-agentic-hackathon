@@ -11,6 +11,7 @@ from .agent.llm import LLMBackend, build_backend, llm_configured
 from .config import Settings, get_settings
 from .deps import get_qloo
 from .limits import RunLimiter, visitor_key
+from .pair import NoStoreOnPairRoute
 from .pair import router as pair_router
 from .presets import Presets
 from .presets import router as presets_router
@@ -37,6 +38,7 @@ app.include_router(presets_router)
 app.include_router(recordings_router)
 app.include_router(pair_router)
 app.include_router(whatif_router)
+app.add_middleware(NoStoreOnPairRoute)
 
 _limiter: RunLimiter | None = None
 

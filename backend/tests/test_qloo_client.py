@@ -283,6 +283,169 @@ async def test_a_malformed_remaining_header_is_ignored(value):
     await client.aclose()
 
 
+# ----------------------------------------------- per-request retries, private requests, the allowance guard
+
+
+@pytest.mark.parametrize("status", [500, 429])
+async def test_max_retries_zero_sends_one_request_and_the_default_still_retries_twice(status):
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(status, json={})
+
+    client = make_client(handler)
+    with pytest.raises(QlooError):
+        await client.get("/search", {"query": "once"}, max_retries=0)
+    assert len(calls) == 1
+    with pytest.raises(QlooError):
+        await client.get("/search", {"query": "default"})
+    assert len(calls) == 4  # the default sent the request and retried it twice
+    assert client.blind_requests == 4  # none of the answers said how many requests are left
+    await client.aclose()
+
+
+async def test_max_retries_zero_sends_one_request_on_a_transport_error():
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        raise httpx.ConnectError("unreachable", request=request)
+
+    client = make_client(handler)
+    with pytest.raises(QlooError):
+        await client.get("/search", {"query": "x"}, use_cache=False, max_retries=0)
+    assert len(calls) == 1 and client.blind_requests == 1
+    await client.aclose()
+
+
+async def test_private_requests_at_once_each_go_out_and_nothing_is_kept():
+    calls = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        await asyncio.sleep(0.02)
+        return httpx.Response(200, json={"ok": True}, headers={"x-month-ratelimit-remaining": "900"})
+
+    client = make_client(handler)
+    with record_requests() as records:
+        first, second = await asyncio.gather(
+            client.get("/search", {"query": "x"}, use_cache=False),
+            client.get("/search", {"query": "x"}, use_cache=False),
+        )
+    assert first == second == {"ok": True}
+    assert len(calls) == 2
+    assert [(r.status, r.cached, r.recorded) for r in records] == [(200, False, False)] * 2
+    assert client._inflight == {} and len(client.cache) == 0
+    await client.get("/search", {"query": "x"})  # a later shared call finds nothing cached
+    assert len(calls) == 3
+    await client.aclose()
+
+
+async def test_a_private_request_beside_shared_ones_leaves_their_sharing_intact():
+    calls = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        await asyncio.sleep(0.02)
+        return httpx.Response(200, json={"n": len(calls)})
+
+    client = make_client(handler)
+    with record_requests() as records:
+        await asyncio.gather(
+            client.get("/search", {"query": "x"}),
+            client.get("/search", {"query": "x"}, use_cache=False),
+            client.get("/search", {"query": "x"}),
+        )
+    assert len(calls) == 2  # one shared request, one private
+    assert sorted(r.cached for r in records) == [False, False, True]
+    assert client._inflight == {}
+    await client.aclose()
+
+
+async def test_blind_requests_count_answers_without_the_header_and_failures_and_reset_on_one_with_it():
+    plan = iter(
+        [
+            ("ok", None),
+            ("ok", ""),
+            ("error", "4000"),  # an error answer that says counts like any answer that says
+            ("ok", None),
+            ("down", None),
+            ("timeout", None),
+            ("ok", "lots"),
+            ("ok", "1500"),
+            ("ok", None),
+        ]
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        kind, remaining = next(plan)
+        if kind == "down":
+            raise httpx.ConnectError("unreachable", request=request)
+        if kind == "timeout":
+            raise httpx.ReadTimeout("slow", request=request)
+        headers = {} if remaining is None else {"x-month-ratelimit-remaining": remaining}
+        return httpx.Response(500 if kind == "error" else 200, json={}, headers=headers)
+
+    client = make_client(handler, max_retries=0)
+    counts = []
+    for i in range(9):
+        try:
+            await client.get("/search", {"query": str(i)})
+        except QlooError:
+            pass
+        counts.append(client.blind_requests)
+    assert counts == [1, 2, 0, 1, 2, 3, 4, 0, 1]
+    assert client.month_remaining == 1500
+    await client.aclose()
+
+
+async def test_a_request_given_up_on_counts_as_blind():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(1)
+        return httpx.Response(200, json={}, headers={"x-month-ratelimit-remaining": "900"})
+
+    client = make_client(handler)
+    with pytest.raises(TimeoutError):
+        async with asyncio.timeout(0.02):
+            await client.get("/search", {"query": "slow"}, use_cache=False)
+    assert client.blind_requests == 1 and client._inflight == {}
+    await client.aclose()
+
+
+async def test_six_blind_requests_lower_the_allowance_even_after_a_known_value():
+    headers = iter([{"x-month-ratelimit-remaining": "9000"}] + [{}] * 6)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={}, headers=next(headers))
+
+    client = make_client(handler)
+    await client.get("/search", {"query": "known"})
+    assert client.allowance_low(1500) is False
+    for i in range(5):
+        await client.get("/search", {"query": f"blind {i}"})
+    assert client.blind_requests == 5 and client.allowance_low(1500) is False
+    await client.get("/search", {"query": "blind 5"})
+    assert client.blind_requests == 6 and client.month_remaining == 9000
+    assert client.allowance_low(1500) is True and client.allowance_low(1500, 3) is True
+    assert client.allowance_low(None) is False  # no floor, no pause
+    await client.aclose()
+
+
+async def test_allowance_low_compares_the_requests_left_with_the_floor_plus_what_is_needed():
+    client = make_client(lambda request: httpx.Response(200, json={}))
+    assert client.allowance_low(1500) is False  # not known yet, and nothing sent blind
+    client.month_remaining = 1502
+    assert client.allowance_low(1500, 3) is True
+    client.month_remaining = 1503
+    assert client.allowance_low(1500, 3) is False
+    assert client.allowance_low(1500) is False
+    client.month_remaining = 1499
+    assert client.allowance_low(1500) is True
+    assert client.allowance_low(None) is False
+    await client.aclose()
+
+
 async def test_insights_requires_filter_type():
     client = make_client(lambda request: httpx.Response(200, json={}))
     with pytest.raises(ValueError):

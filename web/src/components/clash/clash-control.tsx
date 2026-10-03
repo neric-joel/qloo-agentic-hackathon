@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { ArrowDown } from "lucide-react";
+import { ArrowDown, ChevronDown } from "lucide-react";
 
 import { AbstainState, ErrorState, TraceDrawer } from "@/components/kernel";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,9 @@ import {
   traceToolCalls,
   type HeroClash,
 } from "@/lib/clashes";
+import { pluralize } from "@/lib/format";
 import type { PairClash, Preset, PresetSummary } from "@/lib/preset";
+import type { PlanPreview } from "@/lib/stack";
 
 import { AgentPanel } from "./agent-panel";
 import { BudgetDial, Scorecard } from "./budget-dial";
@@ -44,6 +46,9 @@ import { usePresets } from "./use-presets";
 import { useRecordings } from "./use-recordings";
 
 const TOP_LINKS = 10;
+
+/** The anchor of the sources section, for the jump nav. */
+const SOURCES_ID = "sources";
 
 const HERO_LINK =
   "inline-flex items-center gap-1.5 text-sm font-semibold underline underline-offset-4 hover:text-primary";
@@ -91,6 +96,42 @@ function BoardFrame({
     <section aria-label={label} aria-labelledby={labelledBy} className="border-t border-border">
       <div className="mx-auto w-full max-w-[96rem] px-4 pt-7 pb-14 sm:px-6 sm:pb-16 lg:px-10">{children}</div>
     </section>
+  );
+}
+
+type JumpLink = { href: string; label: string };
+
+/**
+ * In-page links under the hero. From 768 px up it sticks under the site header, and the page's
+ * anchor offset grows by its height so a jump lands below it; on a phone it is one row that
+ * scrolls sideways.
+ */
+function JumpNav({ agent }: { agent: JumpLink }) {
+  const links: JumpLink[] = [
+    { href: "#board-heading", label: "Timetable" },
+    { href: `#${TRY_A_MOVE_ID}`, label: "Try a move" },
+    agent,
+    { href: "#hidden-wall", label: "Hidden clashes" },
+    { href: `#${SOURCES_ID}`, label: "Sources" },
+  ];
+  return (
+    <nav
+      aria-label="On this page"
+      className="z-30 h-11 border-y border-border bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/85 md:sticky md:top-16 md:[html:has(&)]:scroll-pt-31"
+    >
+      <ul className="container-page flex h-full items-center gap-x-6 overflow-x-auto whitespace-nowrap [scrollbar-width:none]">
+        {links.map((link) => (
+          <li key={link.href}>
+            <a
+              href={link.href}
+              className="rounded-sm py-1 text-sm font-semibold text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            >
+              {link.label}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
   );
 }
 
@@ -239,6 +280,8 @@ function PresetView({
   const [day, setDay] = useState(days[0] ?? 0);
   const [highlight, setHighlight] = useState<Highlight>(null);
   const [drawer, setDrawer] = useState<DrawerState>({ clash: null, open: false, trigger: null });
+  // The tested plan from "Try a move", previewed on the grid as ghosts. Never changes the dial.
+  const [planPreview, setPlanPreview] = useState<PlanPreview | null>(null);
 
   const { festival, report } = preset;
   const name = festivalName(festival);
@@ -261,6 +304,11 @@ function PresetView({
     [ranked, isLocked],
   );
   const recordings = useRecordings(preset.id);
+  const twins = preset.evidence?.twins ?? [];
+  const agentJump: JumpLink =
+    agentStatus === "off" && recordings.runs.length > 0
+      ? { href: `#${RECORDED_RUNS_ID}`, label: "Recorded runs" }
+      : { href: "#agent", label: "Agent" };
 
   const { activeSetIds, activeClashKeys } = useMemo(() => {
     const setIds = new Set<string>();
@@ -329,6 +377,8 @@ function PresetView({
         </p>
       </HeroLayout>
 
+      <JumpNav agent={agentJump} />
+
       <BoardFrame labelledBy="board-heading">
         <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4 border-b border-border pb-4">
           <div className="min-w-0">
@@ -355,7 +405,7 @@ function PresetView({
         <div className="mt-4 grid gap-x-10 gap-y-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
           <CoverageMeter coverage={report.coverage} metrics={report.metrics} />
           <div className="max-md:hidden">
-            <TimetableLegend />
+            <TimetableLegend planShown={planPreview !== null} />
             <p className="mt-2.5 text-xs text-muted-foreground">
               Lines join the {links.length} costliest clashes; draw on each set is its Qloo
               popularity. Hover or focus a set to see its clashes, and open any clash for the figures
@@ -379,7 +429,7 @@ function PresetView({
         ) : null}
 
         <div className="mt-6 grid gap-10 xl:grid-cols-[22rem_minmax(0,1fr)] xl:gap-12">
-          <div className="xl:sticky xl:top-20 xl:max-h-[calc(100dvh-6rem)] xl:self-start xl:overflow-y-auto xl:pr-2 xl:[scrollbar-width:thin]">
+          <div className="xl:sticky xl:top-31 xl:max-h-[calc(100dvh-8.75rem)] xl:self-start xl:overflow-y-auto xl:pr-2 xl:[scrollbar-width:thin]">
             <ClashList
               clashes={links}
               slots={slots}
@@ -394,34 +444,57 @@ function PresetView({
             />
           </div>
           <div className="min-w-0">
-            <TimetableGrid
-              className="max-md:hidden"
-              views={views}
-              stages={festival.stages}
-              links={links}
-              dayLabel={dayLabel}
-              activeSetIds={activeSetIds}
-              activeClashKeys={activeClashKeys}
-              dimmed={highlight !== null}
-              focusSetId={highlight?.kind === "set" ? highlight.id : null}
-              onHighlightSet={(id) => setHighlight(id ? { kind: "set", id } : null)}
-              onHighlightClash={(key) => setHighlight(key ? { kind: "clash", key } : null)}
-              onOpen={openClash}
-            />
-            <TimetableLegend showLinks={false} className="mb-4 md:hidden" />
-            <TimetableList className="md:hidden" views={views} dayLabel={dayLabel} onOpen={openClash} />
+            {/* Below 768 px: the clash list above, then the board itself in a sideways scroller
+                that snaps to the stage columns, then the start-order list behind a summary. */}
+            <TimetableLegend planShown={planPreview !== null} className="mb-3 md:hidden" />
+            <p className="mb-3 text-xs text-muted-foreground md:hidden">Scroll sideways to see every stage.</p>
+            <div className="max-md:snap-x max-md:snap-mandatory max-md:scroll-pl-[72px] max-md:overflow-x-auto max-md:overscroll-x-contain max-md:pb-3">
+              <TimetableGrid
+                className="max-md:min-w-[760px]"
+                views={views}
+                stages={festival.stages}
+                links={links}
+                dayLabel={dayLabel}
+                activeSetIds={activeSetIds}
+                activeClashKeys={activeClashKeys}
+                dimmed={highlight !== null}
+                focusSetId={highlight?.kind === "set" ? highlight.id : null}
+                onHighlightSet={(id) => setHighlight(id ? { kind: "set", id } : null)}
+                onHighlightClash={(key) => setHighlight(key ? { kind: "clash", key } : null)}
+                onOpen={openClash}
+                plan={planPreview}
+              />
+            </div>
+            <details className="group mt-8 md:hidden">
+              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-md border border-border-strong bg-card px-4 py-2.5 text-sm font-semibold hover:bg-accent [&::-webkit-details-marker]:hidden">
+                Show the start-order list ({pluralize(views.length, "set")})
+                <ChevronDown
+                  aria-hidden="true"
+                  className="size-4 shrink-0 group-open:rotate-180 motion-safe:transition-transform motion-safe:duration-150"
+                />
+              </summary>
+              <TimetableList className="mt-4" views={views} dayLabel={dayLabel} onOpen={openClash} />
+            </details>
           </div>
         </div>
       </BoardFrame>
 
-      <TryAMove preset={preset} day={day} ranked={ranked} isLocked={isLocked} />
+      <TryAMove preset={preset} day={day} ranked={ranked} isLocked={isLocked} onPlanChange={setPlanPreview} />
 
       <AgentPanel preset={preset} day={day} agentStatus={agentStatus} />
 
       <HiddenWall evidence={preset.evidence} />
-      <TwinCards twins={preset.evidence?.twins ?? []} acts={festival.acts} />
+      {twins.length > 0 ? (
+        <TwinCards twins={twins} acts={festival.acts} />
+      ) : (
+        <p className="container-page py-8 text-sm text-muted-foreground">
+          This day has no same-size twin pairs to show.
+        </p>
+      )}
 
-      <PresetSources preset={preset} />
+      <div id={SOURCES_ID}>
+        <PresetSources preset={preset} />
+      </div>
 
       <ClashDrawer
         preset={preset}

@@ -1,8 +1,9 @@
 /**
- * The live pair check: `GET /api/pair?preset=&a=&b=` re-sends the two saved audience-ranking
- * requests for a clash's acts and one fresh comparison, and answers with the taste overlap worked
- * out again from Qloo's answers, beside the saved value. The page never replaces a saved number
- * with a live one; this module only reads the answer and words its outcome.
+ * The live pair check: `POST /api/pair` with the JSON body `{ preset, a, b }` re-sends the two
+ * saved audience-ranking requests for a clash's acts and one fresh comparison, and answers with the
+ * taste overlap worked out again from Qloo's answers, beside the saved value. The page never
+ * replaces a saved number with a live one; this module writes the request body, reads the answer
+ * and words its outcome.
  */
 
 import { ordinal, pairKey, tagLabel } from "./clashes";
@@ -38,6 +39,14 @@ export type PairCheck = {
 
 /** How many requests one check sends to Qloo. The copy says "3 requests", so an answer must list 3. */
 export const PAIR_CHECK_REQUESTS = 3;
+
+/**
+ * The JSON body of a check: the festival day's id and the two act ids, and nothing else (the
+ * server refuses any other field). Sent as `application/json`, never in a query string.
+ */
+export function pairCheckBody(presetId: string, a: string, b: string): string {
+  return JSON.stringify({ preset: presetId, a, b });
+}
 
 class PairCheckFormatError extends Error {}
 
@@ -141,7 +150,7 @@ function parseRequest(raw: unknown, at: string): QlooRequestRecord {
 }
 
 /**
- * Reads a `GET /api/pair` 200 body. Null when the body does not match the contract, and also when
+ * Reads a `POST /api/pair` 200 body. Null when the body does not match the contract, and also when
  * any request is flagged cached or recorded, so an answer that did not come from Qloo just now is
  * never shown as live. Never throws.
  */

@@ -144,9 +144,29 @@ describe("parseMoves", () => {
       why: "locked in place",
       before: null,
       legalPlaces: 0,
+      priced: true,
       clashesNow: [],
       options: [],
     });
+  });
+
+  it("reads whether the set is priced, and counts an answer without the field as priced", () => {
+    expect(parseMoves(body())?.priced).toBe(true);
+    expect(parseMoves(body({ priced: true }))?.priced).toBe(true);
+    expect(parseMoves(body({ priced: false }))?.priced).toBe(false);
+    expect(parseMoves(body({ priced: "no" }))?.priced).toBe(true);
+    const locked = {
+      kind: "move_options",
+      act: "Act Five",
+      act_id: "act-five",
+      from: "Field 20:30-21:15",
+      movable: false,
+      why: "locked in place",
+      priced: false,
+      options: [],
+    };
+    expect(parseMoves(locked)?.priced).toBe(false);
+    expect(parseMoves({ ...locked, priced: undefined })?.priced).toBe(true);
   });
 
   it("reads a movable set with no legal place", () => {

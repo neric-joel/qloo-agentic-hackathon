@@ -11,6 +11,12 @@ from app.agent.clash_tools import (
     LIST_TIMETABLE,
     RESLOT,
     TRY_MOVE,
+    IllegalStep,
+    PlanMove,
+    all_pairs,
+    apply_plan,
+    compute_move_options,
+    index_points,
 )
 from app.agent.tools import ToolContext, ToolInputError
 from app.lineups.overlap_matrix import apply_overlap
@@ -18,7 +24,8 @@ from app.lineups.timetable import PublishedTimetable, Reach, to_festival
 from app.qloo.client import QlooClient
 from app.qloo.overlap import OverlapResult, ResolvedAct
 from app.schedule.metrics import score_festival
-from app.schedule.models import ScoringConfig
+from app.schedule.models import ScoringConfig, parse_minutes
+from app.schedule.synthetic import synthetic_festival
 
 TIMETABLE = PublishedTimetable.model_validate(
     {
@@ -350,3 +357,192 @@ async def test_the_no_gain_reslot_message_is_unchanged():
     content = json.loads(out.content)
     assert "moves" not in content and not content["message"].startswith("This plan")
     assert content["message"] == out.data["summary"]["message"] == out.data["report"]["message"]
+
+
+# ------------------------------------------------------------- a set's clashes among all the day's pairs
+
+TRY_MOVE_DATA_KEYS = {
+    "kind",
+    "move",
+    "allowed",
+    "problems",
+    "clash_budget_before",
+    "clash_budget_after",
+    "clashes_before",
+    "clashes_after",
+}
+
+
+def wide_day():
+    """A synthetic day with more scored clashes than the 15 the day's report ranks."""
+    festival, matrix = synthetic_festival(7, days=1, acts=20)
+    config = ScoringConfig(baseline=score_festival(festival, matrix).baseline)
+    return festival, matrix, config
+
+
+def moved_to(festival, act_id: str, option: dict):
+    start = parse_minutes(option["start"])
+    place = {"day": option["day"], "stage_id": option["stage_id"], "start": start}
+    timetable = [
+        s.model_copy(update={**place, "end": start + s.duration}) if s.act_id == act_id else s
+        for s in festival.timetable
+    ]
+    return festival.model_copy(update={"timetable": timetable})
+
+
+def as_pairs(partners: list[dict]) -> list[tuple[str, float]]:
+    return [(p["with"], p["points"]) for p in partners]
+
+
+def involving(report, act_id: str) -> dict[str, float]:
+    """``try_move``'s data before this change: the act's clashes among the day's ranked clashes."""
+    return {
+        (c.b.name if c.a.act_id == act_id else c.a.name): round(c.regret_share * report.metrics.regret, 4)
+        for c in report.clashes
+        if act_id in (c.a.act_id, c.b.act_id)
+    }
+
+
+def test_partner_lists_come_from_every_pair_not_only_the_days_15_costliest():
+    festival, matrix, config = wide_day()
+    ranked = score_festival(festival, matrix, config)
+    every = score_festival(festival, matrix, all_pairs(config))
+    assert len(ranked.clashes) == 15 < len(every.clashes)
+    below_now = below_after = empty_before = 0
+    for slot in festival.timetable:
+        data = compute_move_options(festival, matrix, config, slot.act_id, 12, partners=True)
+        if not data["movable"]:
+            continue
+        assert as_pairs(data["clashes_now"]) == index_points(every, slot.act_id)[:3]
+        top_15 = [name for name, _ in index_points(ranked, slot.act_id)[:3]]
+        below_now += any(p["with"] not in top_15 for p in data["clashes_now"])
+        for option in data["options"]:
+            trial = moved_to(festival, slot.act_id, option)
+            every_after = index_points(score_festival(trial, matrix, all_pairs(config)), slot.act_id)
+            assert as_pairs(option["clashes_after"]) == every_after[:3]
+            old = [name for name, _ in index_points(score_festival(trial, matrix, config), slot.act_id)[:3]]
+            below_after += any(p["with"] not in old for p in option["clashes_after"])
+            empty_before += not old and bool(option["clashes_after"])
+    # Partners ranked below 15 now appear, and places whose list used to print empty now list their clashes
+    assert below_now and below_after and empty_before
+
+
+def test_ranking_every_pair_changes_no_budget_order_or_place():
+    festival, matrix, config = wide_day()
+    for slot in festival.timetable:
+        wide = compute_move_options(festival, matrix, config, slot.act_id, 12, partners=True)
+        plain = compute_move_options(festival, matrix, config, slot.act_id, 12)
+        assert wide["movable"] == plain["movable"]
+        if not plain["movable"]:
+            continue
+        assert wide["legal_places"] == plain["legal_places"]
+        assert wide["clash_budget_before"] == plain["clash_budget_before"]
+        assert [(o["move"], o["clash_budget_after"]) for o in wide["options"]] == [
+            (o["move"], o["clash_budget_after"]) for o in plain["options"]
+        ]
+
+
+async def test_find_moves_data_is_the_plain_search_unchanged():
+    festival, matrix, config = wide_day()
+    ctx = ToolContext(qloo=QlooClient(None), state={"festival": festival, "matrix": matrix, "config": config})
+    for slot in festival.timetable:
+        data = (await FIND_MOVES.handler({"act": slot.act_id, "limit": 8}, ctx)).data
+        plain = compute_move_options(festival, matrix, config, slot.act_id, 8)
+        assert data == {"kind": "move_options", **plain}
+        assert "priced" not in data and "clashes_now" not in data
+
+
+async def test_try_move_tells_the_model_every_clash_and_keeps_its_data():
+    festival, matrix, config = wide_day()
+    ctx = ToolContext(qloo=QlooClient(None), state={"festival": festival, "matrix": matrix, "config": config})
+    ranked_before = score_festival(festival, matrix, config)
+    checked = 0
+    for slot in festival.timetable:
+        data = compute_move_options(festival, matrix, config, slot.act_id, 12, partners=True)
+        for option in data["options"]:
+            trial = moved_to(festival, slot.act_id, option)
+            ranked_after = score_festival(trial, matrix, config)
+            old = dict(index_points(ranked_after, slot.act_id))
+            below = [p["with"] for p in option["clashes_after"] if p["with"] not in old]
+            if not below:
+                continue
+            out = await TRY_MOVE.handler(
+                {"act": slot.act_id, "stage": option["stage_id"], "start": option["start"]}, ctx
+            )
+            content = json.loads(out.content)
+            every_after = index_points(score_festival(trial, matrix, all_pairs(config)), slot.act_id)
+            assert content["clash_index_points_after"] == dict(every_after)
+            assert below[0] in content["clash_index_points_after"]
+            # The data the web's card reads is what it was: the day's 15 ranked clashes, in engine units
+            assert set(out.data) == TRY_MOVE_DATA_KEYS
+            assert below[0] not in out.data["clashes_after"]
+            assert out.data["clashes_before"] == involving(ranked_before, slot.act_id)
+            assert out.data["clashes_after"] == involving(ranked_after, slot.act_id)
+            assert out.data["clash_budget_after"] == ranked_after.metrics.clash_budget_index
+            checked += 1
+            break
+    assert checked
+
+
+def test_priced_says_whether_the_act_has_a_usable_qloo_signal():
+    festival, matrix, config = wide_day()
+    locked = next(s.act_id for s in festival.timetable if s.locked)
+    unpriced_seen = 0
+    for slot in festival.timetable:
+        data = compute_move_options(festival, matrix, config, slot.act_id, 12, partners=True)
+        assert data["priced"] is (matrix.coverage_of(slot.act_id) != "none")
+        if not data["priced"]:  # an unpriced set's places all leave the budget where it was
+            unpriced_seen += 1
+            assert data["movable"] and data["options"] and data["clashes_now"] == []
+            assert {o["clash_budget_after"] for o in data["options"]} == {data["clash_budget_before"]}
+            assert all(o["clashes_after"] == [] for o in data["options"])
+    assert unpriced_seen
+    assert compute_move_options(festival, matrix, config, locked, 8, partners=True)["priced"] is True
+    unpriced = matrix.model_copy(update={"coverage": {**matrix.coverage, locked: "none"}})
+    frozen = compute_move_options(festival, unpriced, config, locked, 8, partners=True)
+    assert frozen["movable"] is False and frozen["priced"] is False
+    assert "priced" not in compute_move_options(festival, unpriced, config, locked, 8)
+
+
+# ----------------------------------------------------------------------------------- stacked moves
+
+
+def test_a_plan_prices_each_kept_move_on_the_timetable_the_earlier_ones_left():
+    festival, matrix, config = wide_day()
+    published = score_festival(festival, matrix, config)
+    empty = apply_plan(festival, matrix, config, [])
+    assert empty.steps == () and empty.report.metrics == published.metrics
+    assert empty.budget_before == published.metrics.clash_budget_index
+    current, kept = festival, []
+    for act_id in [s.act_id for s in festival.timetable if not s.locked][:3]:
+        option = compute_move_options(current, matrix, config, act_id, 1, partners=True)["options"][0]
+        kept.append(PlanMove(act_id, option["stage_id"], option["day"], parse_minutes(option["start"])))
+        current = moved_to(current, act_id, option)
+        plan = apply_plan(festival, matrix, config, kept)
+        assert plan.steps[-1].budget_after == option["clash_budget_after"]
+        assert plan.steps[-1].move == option["move"]
+        assert plan.festival.timetable == current.timetable
+        assert plan.report.metrics == score_festival(current, matrix, config).metrics
+        assert plan.budget_before == published.metrics.clash_budget_index
+    assert festival.timetable == wide_day()[0].timetable  # nothing is kept on the published day
+
+
+def test_an_illegal_step_names_its_number():
+    festival, matrix, config = wide_day()
+    movable = [s for s in festival.timetable if not s.locked]
+    first = compute_move_options(festival, matrix, config, movable[0].act_id, 1, partners=True)["options"][0]
+    step_one = PlanMove(movable[0].act_id, first["stage_id"], 0, parse_minutes(first["start"]))
+    locked = next(s for s in festival.timetable if s.locked)
+    other = movable[1]
+    taken = next(s for s in movable[2:] if s.stage_id != other.stage_id)
+    for bad in (
+        PlanMove(locked.act_id, locked.stage_id, 0, locked.start + 60),  # a locked set
+        PlanMove("nobody", other.stage_id, 0, other.start + 30),  # not on the day
+        PlanMove(other.act_id, "nowhere", 0, other.start),  # no such stage
+        PlanMove(other.act_id, other.stage_id, 0, other.start),  # where it already is
+        PlanMove(other.act_id, taken.stage_id, 0, taken.start),  # a taken slot
+        PlanMove(other.act_id, other.stage_id, 1, other.start),  # another day
+    ):
+        with pytest.raises(IllegalStep) as refused:
+            apply_plan(festival, matrix, config, [step_one, bad])
+        assert refused.value.step == 2

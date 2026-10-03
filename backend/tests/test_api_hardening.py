@@ -98,6 +98,22 @@ def test_bad_requests_never_take_a_limiter_slot(tmp_path, overrides):
 
 
 @pytest.mark.parametrize(
+    "content_type",
+    ["text/plain", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x", None],
+)
+def test_a_run_body_not_sent_as_json_is_422_and_takes_no_slot(tmp_path, overrides, content_type):
+    """FastAPI's strict content type: what a page on another site can send without a preflight is refused."""
+    setup_presets(tmp_path, [[{"text": "ok"}]], limiter=RunLimiter(per_hour=1, per_day=5, global_per_day=5))
+    raw = json.dumps(clash({"preset_id": "day", "message": "hi"})).encode()
+    headers = {} if content_type is None else {"content-type": content_type}
+    with TestClient(app) as client:
+        refused = client.post("/api/runs", content=raw, headers=headers)
+        good = client.post("/api/runs", json=clash({"preset_id": "day", "message": "hi"}))
+    assert_no_echo(refused)
+    assert good.status_code == 200  # the refused body took no slot
+
+
+@pytest.mark.parametrize(
     "body",
     [
         clash({"preset_id": "day", "message": "hi", "rules": ["x" * 201]}),

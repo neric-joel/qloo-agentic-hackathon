@@ -12,13 +12,14 @@ decimal. The data keeps the engine's values unchanged.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass
 from typing import Any
 
 from pydantic import ValidationError
 
 from ..qloo.overlap import shared_taste
-from ..schedule.layout import Layout
+from ..schedule.layout import Layout, Placement
 from ..schedule.metrics import score_festival
 from ..schedule.models import Festival, OverlapMatrix, ScoringConfig, SetSlot, format_minutes, parse_minutes
 from ..schedule.moves import grid_moves
@@ -28,6 +29,9 @@ from .tools import Tool, ToolContext, ToolInputError, ToolOutput
 
 MAX_MOVE_BUDGET = 12
 CONSTRAINT_KINDS = ["lock", "keep_stage", "not_before", "not_after", "keep_apart"]
+# Clashes ranked when a set's own clashes are listed: every pair (the day's report ranks its 15 costliest).
+# The Clash Budget Index is computed from every pair either way, so this changes lists, never a budget.
+ALL_PAIRS = 200
 
 
 def _compact(data: Any) -> str:
@@ -252,6 +256,11 @@ EXPLAIN_CLASH = Tool(
 # ----------------------------------------------------------------------------------------- what-if
 
 
+def all_pairs(config: ScoringConfig) -> ScoringConfig:
+    """The same scoring with every clash ranked, so a set's clashes are listed even below the day's top 15."""
+    return config.model_copy(update={"top_clashes": ALL_PAIRS})
+
+
 def index_points(report: ScoreReport, act_id: str) -> list[tuple[str, float]]:
     """Each of the act's clashes as the partner's name and the Clash Budget Index points the clash adds (one
     decimal), largest first: comparable before and after a move."""
@@ -283,7 +292,10 @@ async def try_move(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
         raise ToolInputError(f"{festival.act_by_id()[act_id].name} is locked in place.")
     moved = old.model_copy(update={"stage_id": stage.id, "start": start, "end": start + old.duration})
     name = festival.act_by_id()[act_id].name
-    before = score_festival(festival, matrix, config)
+    # Scored with every clash ranked, so the model reads the act's clashes among all pairs; the data keeps the
+    # day's ranked clashes (the first ``top_clashes`` of the same ranking) as before.
+    wide = all_pairs(config)
+    before = score_festival(festival, matrix, wide)
     try:
         trial = _rebuild(festival, timetable=[moved if s.act_id == act_id else s for s in festival.timetable])
     except ToolInputError as exc:  # the slot is already taken on that stage
@@ -297,13 +309,13 @@ async def try_move(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
             summary=f"What if {name} moves: slot taken",
             data={"kind": "what_if", **data},
         )
-    after = score_festival(trial, matrix, config)
+    after = score_festival(trial, matrix, wide)
     new_problems = sorted({v.message for v in after.violations} - {v.message for v in before.violations})
 
     def involving(report: ScoreReport) -> dict[str, float]:
         return {
             (c.b.name if c.a.act_id == act_id else c.a.name): round(c.regret_share * report.metrics.regret, 4)
-            for c in report.clashes
+            for c in report.clashes[: config.top_clashes]
             if act_id in (c.a.act_id, c.b.act_id)
         }
 
@@ -378,6 +390,38 @@ def _partners(report: ScoreReport, act_id: str) -> list[dict[str, Any]]:
     return [{"with": name, "points": points} for name, points in index_points(report, act_id)[:MAX_PARTNERS]]
 
 
+def is_priced(matrix: OverlapMatrix, act_id: str) -> bool:
+    """Whether Qloo has a usable signal for the act, so its clashes are priced (the scorer's own test)."""
+    return act_id in matrix.act_ids and matrix.coverage_of(act_id) != "none"
+
+
+def _evaluate_place(
+    festival: Festival,
+    matrix: OverlapMatrix,
+    config: ScoringConfig,
+    old: SetSlot,
+    place: Placement,
+    stage_ids: Sequence[str],
+    known_problems: set[str],
+) -> tuple[Festival, SetSlot, ScoreReport] | None:
+    """The timetable with one set at ``place``, the set's new slot and the score; None when the place is
+    taken or breaks a rule the timetable did not already break (``known_problems``)."""
+    day, stage, start = place
+    moved = old.model_copy(
+        update={"day": day, "stage_id": stage_ids[stage], "start": start, "end": start + old.duration}
+    )
+    try:
+        trial = _rebuild(
+            festival, timetable=[moved if s.act_id == old.act_id else s for s in festival.timetable]
+        )
+    except ToolInputError:  # the place is already taken on that stage
+        return None
+    after = score_festival(trial, matrix, config)
+    if {v.message for v in after.violations} - known_problems:
+        return None
+    return trial, moved, after
+
+
 def compute_move_options(
     festival: Festival,
     matrix: OverlapMatrix,
@@ -391,8 +435,9 @@ def compute_move_options(
 
     Checks every start on a 5-minute grid in the free time the set may use; a place that breaks a rule the
     timetable did not already break is left out. This is ``find_moves``'s data. With ``partners`` (the web's
-    what-if) it also gives the act id, the set's clashes now and, per place, the stage id, end, day and the
-    clashes after the move, each as Clash Budget Index points (at most 3 partners, largest first).
+    what-if) it also gives the act id, whether the act is priced, the set's clashes now and, per place, the
+    stage id, end, day and the clashes after the move, each as Clash Budget Index points (at most 3 partners,
+    largest first, among all the day's pairs).
     """
     name = festival.act_by_id()[act_id].name
     layout = Layout.from_festival(festival)
@@ -402,35 +447,26 @@ def compute_move_options(
         why = "locked in place" if old.locked else "tied up in a rule the published timetable already breaks"
         frozen: dict[str, Any] = {"act": name, "from": _slot_text(festival, old)}
         if partners:
-            frozen = {"act": name, "act_id": act_id, "from": frozen["from"]}
+            priced = is_priced(matrix, act_id)
+            frozen = {"act": name, "act_id": act_id, "priced": priced, "from": frozen["from"]}
         return frozen | {"movable": False, "why": why, "options": []}
 
-    before = score_festival(festival, matrix, config)
-    seen: set[tuple[int, int, int]] = set()
+    # Every pair is ranked for the web's lists; budgets, order and legal places do not depend on it
+    scoring = all_pairs(config) if partners else config
+    before = score_festival(festival, matrix, scoring)
+    known = {v.message for v in before.violations}
+    seen: set[Placement] = set()
     options: list[dict[str, Any]] = []
     for move in grid_moves(layout, i, step=MOVE_GRID_MINUTES):
         place = move.to[0]
         if place in seen or not layout.is_feasible(move):
             continue
         seen.add(place)
-        day, stage, start = place
-        moved = old.model_copy(
-            update={
-                "day": day,
-                "stage_id": layout.rules.stage_ids[stage],
-                "start": start,
-                "end": start + old.duration,
-            }
-        )
-        try:
-            trial = _rebuild(
-                festival, timetable=[moved if s.act_id == act_id else s for s in festival.timetable]
-            )
-        except ToolInputError:
+        evaluated = _evaluate_place(festival, matrix, scoring, old, place, layout.rules.stage_ids, known)
+        if evaluated is None:
             continue
-        after = score_festival(trial, matrix, config)
-        if {v.message for v in after.violations} - {v.message for v in before.violations}:
-            continue
+        trial, moved, after = evaluated
+        day, _, start = place
         option: dict[str, Any] = {
             "move": f"{name}: {_slot_text(festival, old)} -> {_slot_text(trial, moved)}",
             "stage": festival.stage_by_id()[moved.stage_id].name,
@@ -452,7 +488,14 @@ def compute_move_options(
     options.sort(key=lambda o: o["clash_budget_after"])
     found: dict[str, Any] = {"act": name, "from": _slot_text(festival, old), "movable": True}
     if partners:
-        found = {"act": name, "act_id": act_id, "from": found["from"], "movable": True, "why": None}
+        found = {
+            "act": name,
+            "act_id": act_id,
+            "priced": is_priced(matrix, act_id),
+            "from": found["from"],
+            "movable": True,
+            "why": None,
+        }
     found |= {
         "clash_budget_before": before.metrics.clash_budget_index,
         "legal_places": len(options),
@@ -461,6 +504,100 @@ def compute_move_options(
     if partners:
         found["clashes_now"] = _partners(before, act_id)
     return found | {"options": options[:limit]}
+
+
+# ------------------------------------------------------------------------------------ stacked moves
+
+
+@dataclass(frozen=True, slots=True)
+class PlanMove:
+    """One kept move: a set to a stage, day and start (minutes from the start of the day)."""
+
+    act_id: str
+    stage_id: str
+    day: int
+    start: int
+
+
+@dataclass(frozen=True, slots=True)
+class PlanStep:
+    """One kept move as it was priced on the timetable the earlier moves left."""
+
+    act_id: str
+    act: str
+    move: str
+    stage_id: str
+    stage: str
+    day: int
+    start: int
+    end: int
+    budget_after: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class PlanResult:
+    festival: Festival
+    budget_before: float | None
+    steps: tuple[PlanStep, ...]
+    report: ScoreReport
+
+
+class IllegalStep(Exception):
+    """A kept move is not a legal place for its set on the timetable the earlier moves left (1-based)."""
+
+    def __init__(self, step: int) -> None:
+        super().__init__(f"step {step} is not a legal place")
+        self.step = step
+
+
+def apply_plan(
+    festival: Festival, matrix: OverlapMatrix, config: ScoringConfig, moves: Sequence[PlanMove]
+) -> PlanResult:
+    """The timetable with the moves taken in order, each priced, and the final score. Nothing is stored.
+
+    Each move must be a place ``compute_move_options`` would list for that set on the timetable as the earlier
+    moves left it: a stage and start the set may use, on its grid, breaking no rule that timetable did not
+    already break; locked and tied-up sets cannot move. Only the requested place is scored, never every
+    candidate. Raises ``IllegalStep`` with the move's 1-based number otherwise.
+    """
+    current = festival
+    before = score_festival(current, matrix, config)
+    budget_before = before.metrics.clash_budget_index
+    steps: list[PlanStep] = []
+    for number, step in enumerate(moves, start=1):
+        layout = Layout.from_festival(current)
+        rules = layout.rules
+        if step.act_id not in rules.act_ids or step.stage_id not in rules.stage_ids:
+            raise IllegalStep(number)
+        i = rules.act_ids.index(step.act_id)
+        if layout.frozen[i]:
+            raise IllegalStep(number)
+        place = (step.day, rules.stage_ids.index(step.stage_id), step.start)
+        move = next((m for m in grid_moves(layout, i, step=MOVE_GRID_MINUTES) if m.to[0] == place), None)
+        if move is None or not layout.is_feasible(move):
+            raise IllegalStep(number)
+        old = {s.act_id: s for s in current.timetable}[step.act_id]
+        known = {v.message for v in before.violations}
+        evaluated = _evaluate_place(current, matrix, config, old, place, rules.stage_ids, known)
+        if evaluated is None:
+            raise IllegalStep(number)
+        trial, moved, after = evaluated
+        name = current.act_by_id()[step.act_id].name
+        steps.append(
+            PlanStep(
+                act_id=step.act_id,
+                act=name,
+                move=f"{name}: {_slot_text(current, old)} -> {_slot_text(trial, moved)}",
+                stage_id=moved.stage_id,
+                stage=trial.stage_by_id()[moved.stage_id].name,
+                day=moved.day,
+                start=moved.start,
+                end=moved.end,
+                budget_after=after.metrics.clash_budget_index,
+            )
+        )
+        current, before = trial, after
+    return PlanResult(festival=current, budget_before=budget_before, steps=tuple(steps), report=before)
 
 
 def _find_moves(

@@ -3,8 +3,10 @@
 Features:
 - one shared ``httpx.AsyncClient`` per client instance
 - in-process TTL cache keyed on (path, params) so repeated requests don't spend quota
-- retries with exponential backoff on 429 and 5xx responses
+- retries with exponential backoff on 429 and 5xx responses (a caller can turn them off per request)
 - optional fixture record/replay so preloaded demo flows keep working if the API is slow or down
+- a fail-closed allowance guard: the requests left in Qloo's month, read from each answer, and a count of
+  requests sent since the last answer that said, so callers can pause live requests when either is unsafe
 """
 
 from __future__ import annotations
@@ -30,6 +32,8 @@ log = logging.getLogger(__name__)
 HACKATHON_BASE_URL = "https://hackathon.api.qloo.com"
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 DEFAULT_MAX_RPS = 4.5  # hackathon keys allow 5 requests per second
+# Requests sent without an answer that carried the month's allowance header, after which live requests pause
+BLIND_REQUEST_LIMIT = 6
 
 Params = Mapping[str, Any]
 
@@ -181,6 +185,9 @@ class QlooClient:
             base_url=base_url.rstrip("/"), headers=headers, timeout=timeout, transport=transport
         )
         self._inflight: dict[str, asyncio.Future[dict[str, Any]]] = {}
+        # Requests sent since the last answer that carried the allowance header: a response without it, a
+        # transport error, a timeout or a cancelled request adds one; an answer with it resets the count.
+        self.blind_requests = 0
 
     async def aclose(self) -> None:
         await self._http.aclose()
@@ -193,6 +200,19 @@ class QlooClient:
 
     # ------------------------------------------------------------------ core
 
+    def allowance_low(self, floor: int | None, needed: int = 0) -> bool:
+        """True when live requests should pause to protect the month's allowance.
+
+        That is when ``BLIND_REQUEST_LIMIT`` requests have gone out without an answer that carried the
+        allowance header (whatever an older answer said), or when the requests left are known and fewer than
+        ``floor`` plus the ``needed`` requests the caller is about to send. Never with no floor.
+        """
+        if floor is None:
+            return False
+        if self.blind_requests >= BLIND_REQUEST_LIMIT:
+            return True
+        return self.month_remaining is not None and self.month_remaining < floor + needed
+
     async def get(
         self,
         path: str,
@@ -200,44 +220,51 @@ class QlooClient:
         *,
         use_cache: bool = True,
         ttl: float | None = None,
+        max_retries: int | None = None,
     ) -> dict[str, Any]:
         """GET ``path`` and return the decoded JSON body.
 
         Identical concurrent requests share one HTTP call, so parallel agent tool calls don't
-        spend quota twice.
+        spend quota twice. ``use_cache=False`` makes a private live request instead: it reads no cache,
+        neither joins nor shares an identical request in flight, and caches nothing. ``max_retries``
+        overrides the client's retry count for this request (``None`` keeps it).
         """
         query = normalize_params(params)
         key = request_key(path, query)
         started = time.perf_counter()
 
-        if use_cache and (cached := self.cache.get(key)) is not None:
-            _record(path, query, started, status=200, cached=True)
-            return cached
-        if (pending := self._inflight.get(key)) is not None:
-            data = await asyncio.shield(pending)
-            _record(path, query, started, status=200, cached=True)
-            return data
-
-        future: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
-        self._inflight[key] = future
+        future: asyncio.Future[dict[str, Any]] | None = None
+        if use_cache:
+            if (cached := self.cache.get(key)) is not None:
+                _record(path, query, started, status=200, cached=True)
+                return cached
+            if (pending := self._inflight.get(key)) is not None:
+                data = await asyncio.shield(pending)
+                _record(path, query, started, status=200, cached=True)
+                return data
+            future = asyncio.get_running_loop().create_future()
+            self._inflight[key] = future
         try:
-            data, meta = await self._fetch(path, query, key)
+            data, meta = await self._fetch(path, query, key, max_retries)
         except BaseException as exc:
-            future.set_exception(exc)
-            future.exception()  # mark retrieved so a lone caller doesn't log "never retrieved"
+            if future is not None:
+                future.set_exception(exc)
+                future.exception()  # mark retrieved so a lone caller doesn't log "never retrieved"
             if isinstance(exc, QlooError):
                 _record(path, query, started, status=exc.status or 0, request_id=exc.request_id)
             raise
         else:
-            future.set_result(data)
-            self.cache.set(key, data, ttl)
+            if future is not None:
+                future.set_result(data)
+                self.cache.set(key, data, ttl)
             _record(path, query, started, **meta)
             return data
         finally:
-            del self._inflight[key]
+            if future is not None:  # only a call that registered may remove the in-flight entry
+                del self._inflight[key]
 
     async def _fetch(
-        self, path: str, query: dict[str, str], key: str
+        self, path: str, query: dict[str, str], key: str, max_retries: int | None = None
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         if self.fixtures_first and self.api_key and (saved := self._load_fixture(key)) is not None:
             return saved, {"status": 200, "cached": True}
@@ -248,7 +275,7 @@ class QlooClient:
             return data, {"status": 200, "recorded": True}
 
         try:
-            data, status, request_id = await self._request_with_retries(path, query)
+            data, status, request_id = await self._request_with_retries(path, query, max_retries)
         except QlooError as exc:
             fallback = self._load_fixture(key)
             if fallback is not None:
@@ -261,20 +288,28 @@ class QlooClient:
         return data, {"status": status, "request_id": request_id}
 
     async def _request_with_retries(
-        self, path: str, query: dict[str, str]
+        self, path: str, query: dict[str, str], max_retries: int | None = None
     ) -> tuple[dict[str, Any], int, str | None]:
+        retries = self.max_retries if max_retries is None else max_retries
         attempt = 0
         while True:
             retry_after: float | None = None
             await self._wait_for_slot()
             try:
                 response = await self._http.get(path, params=query)
-            except httpx.HTTPError as exc:
-                if attempt >= self.max_retries:
+            except httpx.HTTPError as exc:  # a transport error or a timeout: sent, never answered
+                self.blind_requests += 1
+                if attempt >= retries:
                     raise QlooError(f"Qloo request to {path} failed: {exc}") from exc
+            except asyncio.CancelledError:  # the caller gave up while the request was out
+                self.blind_requests += 1
+                raise
             else:
                 if (remaining := _month_remaining(response)) is not None:
                     self.month_remaining = remaining
+                    self.blind_requests = 0
+                else:
+                    self.blind_requests += 1
                 if response.status_code < 400:
                     return (
                         response.json(),
@@ -282,7 +317,7 @@ class QlooClient:
                         response.headers.get("x-qloo-request-id"),
                     )
                 request_id = response.headers.get("x-qloo-request-id")
-                if response.status_code not in RETRY_STATUSES or attempt >= self.max_retries:
+                if response.status_code not in RETRY_STATUSES or attempt >= retries:
                     log.warning("Qloo HTTP %s for %s (request id %s)", response.status_code, path, request_id)
                     raise QlooError(
                         f"Qloo returned HTTP {response.status_code} for {path}",

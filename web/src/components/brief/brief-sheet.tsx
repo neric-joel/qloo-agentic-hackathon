@@ -1,0 +1,477 @@
+"use client";
+
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { ArrowLeft, LoaderCircle, Lock, Printer } from "lucide-react";
+
+import { DiamondGlyph } from "@/components/clash/marks";
+import { Button } from "@/components/ui/button";
+import {
+  BRIEF_CLASHES,
+  HIDDEN_NOTE,
+  HOW_TO_READ,
+  NO_MOVES,
+  PLAN_CAVEAT,
+  bandSentence,
+  briefRows,
+  briefSteps,
+  briefTitle,
+  coverageSentence,
+  dayFigures,
+  hiddenNames,
+  hiddenSentence,
+  indexSentence,
+  planSummary,
+  savedDate,
+  sourceHosts,
+  type BriefRow,
+} from "@/lib/brief";
+import { daysWithSets } from "@/lib/clashes";
+import { numberWord } from "@/lib/method-figures";
+import { MOCK_PRESET_ID, mockPreset } from "@/lib/mock-preset";
+import { MOCK_STREAM_ENABLED } from "@/lib/mock-stream";
+import { parsePreset, type Preset } from "@/lib/preset";
+import { decodeMoves, encodeMoves, fetchPlan, isSafeId, type Plan, type StackMove } from "@/lib/stack";
+import { cn } from "@/lib/utils";
+
+// ------------------------------------------------------------------------------------ loading
+
+type Outcome = { status: "ready"; preset: Preset; plan: Plan | null } | { status: "missing" } | { status: "error" };
+
+class NotFound extends Error {}
+
+/**
+ * The festival day, from `GET /api/presets/{id}` only (no list request, so an unknown id is shown as
+ * unknown rather than swapped for another day). In mock mode the synthetic day is served locally.
+ */
+async function loadPreset(id: string, signal: AbortSignal): Promise<Preset> {
+  if (MOCK_STREAM_ENABLED) {
+    if (id !== MOCK_PRESET_ID) throw new NotFound();
+    return mockPreset();
+  }
+  const response = await fetch(`/api/presets/${encodeURIComponent(id)}`, {
+    signal,
+    headers: { Accept: "application/json" },
+  });
+  if (response.status === 404) throw new NotFound();
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return parsePreset(await response.json());
+}
+
+/** The preset and, only when the link carries kept moves, their plan, priced by the server. */
+async function loadBrief(id: string, moves: readonly StackMove[], signal: AbortSignal): Promise<Outcome> {
+  try {
+    const [preset, plan] = await Promise.all([
+      loadPreset(id, signal),
+      moves.length > 0 ? fetchPlan(id, moves, null, signal) : Promise.resolve(null),
+    ]);
+    if (moves.length > 0 && plan === null) return { status: "error" };
+    return { status: "ready", preset, plan };
+  } catch (error) {
+    return error instanceof NotFound ? { status: "missing" } : { status: "error" };
+  }
+}
+
+/** Loads the brief's data once per preset and plan; a malformed preset id never reaches the network. */
+function useBrief(presetId: string | null, moves: readonly StackMove[]): Outcome | { status: "loading" } {
+  const key = `${presetId ?? ""}|${encodeMoves(moves)}`;
+  const safe = isSafeId(presetId);
+  const [result, setResult] = useState<{ key: string; outcome: Outcome } | null>(null);
+
+  useEffect(() => {
+    if (!safe || presetId === null) return;
+    const controller = new AbortController();
+    loadBrief(presetId, moves, controller.signal).then((outcome) => {
+      if (!controller.signal.aborted) setResult({ key, outcome });
+    });
+    return () => controller.abort();
+  }, [safe, presetId, moves, key]);
+
+  if (!safe) return { status: "missing" };
+  return result && result.key === key ? result.outcome : { status: "loading" };
+}
+
+/** The day in the link, if it is one of the preset's days with sets; the first such day when absent. */
+function resolveDay(preset: Preset, text: string | null): number | null {
+  const days = daysWithSets(preset);
+  if (text === null || text === "") return days[0] ?? null;
+  if (!/^\d{1,2}$/.test(text)) return null;
+  const day = Number(text);
+  return days.includes(day) ? day : null;
+}
+
+// ------------------------------------------------------------------------------------ the page
+
+const BACK_LINK =
+  "inline-flex items-center gap-2 rounded-sm py-2 text-sm font-semibold underline-offset-4 hover:underline";
+
+function backHref(presetId: string | null): string {
+  return isSafeId(presetId) ? `/?preset=${encodeURIComponent(presetId)}` : "/";
+}
+
+function BackLink({ href }: { href: string }) {
+  return (
+    <Link href={href} className={BACK_LINK}>
+      <ArrowLeft aria-hidden="true" className="size-4" />
+      Back to the timetable
+    </Link>
+  );
+}
+
+/** Loading, error and unknown-link states: one short line and the way back. */
+function Notice({ children, href, busy = false }: { children: ReactNode; href: string; busy?: boolean }) {
+  return (
+    <div className="container-page max-w-3xl py-16 sm:py-24">
+      <p className="type-kicker text-muted-foreground">Clash brief</p>
+      <p
+        role={busy ? "status" : "alert"}
+        className="mt-3 flex items-center gap-2 text-lg leading-snug font-semibold sm:text-xl"
+      >
+        {busy ? <LoaderCircle aria-hidden="true" className="size-5 animate-spin motion-reduce:animate-none" /> : null}
+        {children}
+      </p>
+      {busy ? null : (
+        <div className="mt-4">
+          <BackLink href={href} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The brief page: reads `preset`, `day` and `moves` from the link, loads the festival day (and the
+ * plan when moves were kept), and shows the one-page sheet with a print button. Nothing here is a
+ * download, a share or an email: the sheet stays on this site.
+ */
+export function BriefSheet() {
+  const params = useSearchParams();
+  const presetId = params.get("preset");
+  const dayText = params.get("day");
+  const movesText = params.get("moves");
+  const moves = useMemo(() => decodeMoves(movesText), [movesText]);
+  const state = useBrief(presetId, moves);
+  const back = backHref(presetId);
+
+  if (state.status === "loading") {
+    return (
+      <Notice href={back} busy>
+        Loading the brief.
+      </Notice>
+    );
+  }
+  if (state.status === "error") return <Notice href={back}>Could not load this brief.</Notice>;
+  if (state.status === "missing") {
+    return <Notice href="/">This link does not name a festival day on this demo.</Notice>;
+  }
+
+  const day = resolveDay(state.preset, dayText);
+  if (day === null) {
+    return <Notice href={back}>This festival day has no timetable for the day in this link.</Notice>;
+  }
+
+  return (
+    <div className="container-page max-w-[60rem] pt-6 pb-16 sm:pt-8 print:max-w-none print:p-0">
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 print:hidden">
+        <BackLink href={back} />
+        <Button type="button" variant="ink" size="sm" onClick={() => window.print()}>
+          <Printer aria-hidden="true" />
+          Print this brief
+        </Button>
+      </div>
+      <BriefContent preset={state.preset} day={day} plan={state.plan} className="mt-4 print:mt-0" />
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------------------------ the sheet
+
+function Block({ title, children, className }: { title: string; children: ReactNode; className?: string }) {
+  const id = `brief-${title.toLowerCase().replace(/[^a-z]+/g, "-").replace(/^-|-$/g, "")}`;
+  return (
+    <section aria-labelledby={id} className={cn("mt-7 break-inside-avoid print:mt-[8pt]", className)}>
+      <h2 id={id} className="type-kicker border-b-2 border-foreground pb-1.5 print:pb-[2pt] print:text-[7.5pt]">
+        {title}
+      </h2>
+      <div className="mt-3 print:mt-[4pt]">{children}</div>
+    </section>
+  );
+}
+
+function HiddenMark() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-foreground px-1.5 py-0.5 text-[0.6875rem] leading-none font-semibold whitespace-nowrap print:px-[3pt] print:text-[7pt]">
+      <DiamondGlyph className="size-2" />
+      Hidden
+    </span>
+  );
+}
+
+function LockedMark() {
+  return (
+    <span className="inline-flex items-center gap-1 font-semibold whitespace-nowrap text-foreground">
+      <Lock aria-hidden="true" className="size-3 print:size-[7pt]" />
+      both locked
+    </span>
+  );
+}
+
+const TH = "px-2 py-2 font-semibold align-bottom print:px-[3pt] print:py-[3pt]";
+const TD = "px-2 py-2 align-top print:px-[3pt] print:py-[2.5pt]";
+
+/** The costliest clashes as a table (wide screens and print). */
+function ClashTable({ rows, captionId }: { rows: readonly BriefRow[]; captionId: string }) {
+  return (
+    <table
+      aria-labelledby={captionId}
+      className="hidden w-full border-collapse text-left text-sm sm:table print:table print:text-[8.5pt] print:leading-[1.25]"
+    >
+      <thead>
+        <tr className="border-b border-border-strong text-xs print:text-[7.5pt]">
+          <th scope="col" className={cn(TH, "w-8 text-right")}>
+            #
+          </th>
+          <th scope="col" className={TH}>
+            Clash
+          </th>
+          <th scope="col" className={TH}>
+            Overlap in time
+          </th>
+          <th scope="col" className={cn(TH, "text-right")}>
+            Taste overlap
+          </th>
+          <th scope="col" className={cn(TH, "text-right")}>
+            Combined draw
+          </th>
+          <th scope="col" className={cn(TH, "text-right")}>
+            Share of the day&rsquo;s cost
+          </th>
+          <th scope="col" className={TH}>
+            Hidden
+          </th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-border">
+        {rows.map((row) => (
+          <tr key={row.rank} className="break-inside-avoid">
+            <td className={cn(TD, "text-right font-mono tabular-nums")}>{row.rank}</td>
+            <td className={TD}>
+              <span className="font-semibold">
+                {row.a} and {row.b}
+              </span>
+              <span className="block text-xs text-muted-foreground print:text-[7.5pt]">
+                {row.stageA} + {row.stageB}
+                {row.bothLocked ? (
+                  <>
+                    {" · "}
+                    <LockedMark />
+                  </>
+                ) : null}
+              </span>
+            </td>
+            <td className={cn(TD, "font-mono text-xs whitespace-nowrap tabular-nums print:text-[7.5pt]")}>
+              {row.window ?? "Times not known"}
+              <span className="block text-muted-foreground">{row.minutes} min</span>
+            </td>
+            <td className={cn(TD, "text-right font-mono whitespace-nowrap tabular-nums")}>
+              {row.overlap}
+              <span className="text-muted-foreground"> / 100</span>
+            </td>
+            <td className={cn(TD, "text-right font-mono whitespace-nowrap tabular-nums")}>
+              {row.draw}
+              <span className="text-muted-foreground"> / 100</span>
+            </td>
+            <td className={cn(TD, "text-right font-mono tabular-nums")}>{row.share}</td>
+            <td className={TD}>{row.hidden ? <HiddenMark /> : <span className="sr-only">Not hidden</span>}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/** The same rows stacked, for narrow screens; never printed. */
+function ClashCards({ rows }: { rows: readonly BriefRow[] }) {
+  return (
+    <ol className="divide-y divide-border sm:hidden print:hidden">
+      {rows.map((row) => (
+        <li key={row.rank} className="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-2 py-3">
+          <span className="type-numeral text-right text-2xl leading-none tabular-nums">
+            <span className="sr-only">Clash </span>
+            {row.rank}
+          </span>
+          <div className="min-w-0">
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold leading-snug">
+              <span className="min-w-0 break-words">
+                {row.a} and {row.b}
+              </span>
+              {row.hidden ? <HiddenMark /> : null}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {row.stageA} + {row.stageB}
+              {row.window ? ` · ${row.window}` : ""} · {row.minutes} min
+              {row.bothLocked ? (
+                <>
+                  {" · "}
+                  <LockedMark />
+                </>
+              ) : null}
+            </p>
+            <dl className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 font-mono text-xs tabular-nums">
+              <div>
+                <dt className="inline text-muted-foreground">Taste overlap </dt>
+                <dd className="inline">{row.overlap} / 100</dd>
+              </div>
+              <div>
+                <dt className="inline text-muted-foreground">Combined draw </dt>
+                <dd className="inline">{row.draw} / 100</dd>
+              </div>
+              <div>
+                <dt className="inline text-muted-foreground">Share of the day&rsquo;s cost </dt>
+                <dd className="inline">{row.share}</dd>
+              </div>
+            </dl>
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** "The five costliest clashes", or fewer when the day has fewer. */
+function clashesTitle(count: number): string {
+  return count === 1 ? "The costliest clash" : `The ${numberWord(count)} costliest clashes`;
+}
+
+/**
+ * The one-page sheet itself: the day's Clash Budget Index against the random range, its costliest
+ * clashes, its hidden clashes, any kept moves (from the plan answer), how to read the figures, and
+ * where they come from. Every figure is the timetable page's own, through `lib/brief.ts`.
+ */
+export function BriefContent({
+  preset,
+  day,
+  plan,
+  className,
+}: {
+  preset: Preset;
+  day: number;
+  plan: Plan | null;
+  className?: string;
+}) {
+  const { festival, day: dayLabel } = briefTitle(preset, day);
+  const figures = dayFigures(preset);
+  const band = figures.index === null ? null : bandSentence(figures.index, figures.range);
+  const rows = briefRows(preset, day, BRIEF_CLASHES);
+  const hidden = hiddenSentence(hiddenNames(preset, day));
+  const steps = plan && plan.steps.length > 0 ? briefSteps(preset, plan) : [];
+  const saved = savedDate(preset);
+  const hosts = sourceHosts(preset);
+  const tableCaption = "brief-clashes-caption";
+
+  return (
+    <article
+      aria-labelledby="brief-heading"
+      className={cn(
+        "rounded-xl border border-border bg-card p-5 text-[0.9375rem] leading-relaxed sm:p-8 lg:p-10",
+        "print:rounded-none print:border-0 print:bg-transparent print:p-0 print:text-[10pt] print:leading-[1.28]",
+        className,
+      )}
+    >
+      <p className="type-kicker text-muted-foreground print:text-[7.5pt]">
+        Clash brief · {festival}, {dayLabel}
+      </p>
+      <h1
+        id="brief-heading"
+        className="type-title mt-2 text-[1.625rem] break-words sm:text-[2.125rem] print:mt-[2pt] print:text-[16pt]"
+      >
+        {festival} {dayLabel}: where the clash budget goes
+      </h1>
+      <p className="mt-2 text-muted-foreground print:mt-[3pt]">
+        Scored independently from the published timetable. {festival} does not use Clash Control.
+      </p>
+
+      <Block title="The day">
+        <p>
+          <strong className="font-semibold">{indexSentence(figures.index)}</strong>
+          {band ? ` ${band}` : ""}
+        </p>
+        <p className="mt-1 print:mt-[2pt]">{coverageSentence(figures)}</p>
+      </Block>
+
+      <Block title={clashesTitle(rows.length)}>
+        {rows.length === 0 ? (
+          <p className="text-muted-foreground">
+            No priced clashes on this day: no two acts with a Qloo signal play at the same time.
+          </p>
+        ) : (
+          <>
+            <p id={tableCaption} className="sr-only">
+              {clashesTitle(rows.length)} on this day, costliest first
+            </p>
+            <ClashTable rows={rows} captionId={tableCaption} />
+            <ClashCards rows={rows} />
+            <p className="mt-2 text-sm text-muted-foreground print:mt-[3pt] print:text-[8pt]">{HIDDEN_NOTE}</p>
+          </>
+        )}
+      </Block>
+
+      {hidden ? (
+        <Block title="Hidden clashes">
+          <p>{hidden}</p>
+        </Block>
+      ) : null}
+
+      <Block title="Tested moves">
+        {plan && steps.length > 0 ? (
+          <>
+            <p className="font-semibold">{planSummary(plan)}</p>
+            <ol
+              className={cn(
+                "mt-2 grid gap-x-6 gap-y-2 print:mt-[3pt] print:gap-y-[3pt]",
+                steps.length > 3 && "md:grid-cols-2 print:grid-cols-2",
+              )}
+            >
+              {steps.map((step) => (
+                <li key={step.n} className="min-w-0 break-inside-avoid">
+                  <span className="font-semibold break-words print:text-[9pt]">
+                    <span className="tabular-nums">{step.n}.</span> {step.act} · {step.place}
+                  </span>
+                  <span className="block text-sm text-muted-foreground print:text-[8pt]">
+                    {step.shift} ·{" "}
+                    <span className="font-mono tabular-nums">
+                      {step.before} → {step.after}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ol>
+            <p className="mt-2 text-sm text-muted-foreground print:mt-[4pt] print:text-[8pt]">{PLAN_CAVEAT}</p>
+          </>
+        ) : (
+          <p className="text-muted-foreground">{NO_MOVES}</p>
+        )}
+      </Block>
+
+      <Block title="How to read this">
+        <ul className="list-disc space-y-1 pl-5 marker:text-muted-foreground print:space-y-[1pt] print:pl-[12pt]">
+          {HOW_TO_READ.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      </Block>
+
+      <div className="mt-8 border-t border-border pt-3 text-xs leading-relaxed text-muted-foreground print:mt-[10pt] print:pt-[4pt] print:text-[7.5pt] print:leading-[1.3]">
+        <p>
+          {saved
+            ? `Figures are calculated by this app from Qloo audience data saved ${saved}.`
+            : "Figures are calculated by this app from saved Qloo audience data."}{" "}
+          This is an independent hackathon entry, not endorsed by Qloo or {festival}. Prepared for visitors
+          and judges of this demo; not for redistribution.
+        </p>
+        {hosts.length > 0 ? <p className="mt-1">Timetable sources: {hosts.join(", ")}.</p> : null}
+      </div>
+    </article>
+  );
+}

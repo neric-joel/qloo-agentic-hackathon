@@ -40,6 +40,15 @@ function stubHandler(broken = {}) {
     if (url === "/api/presets/one/lenses" && method === "GET") {
       return send(broken.lensesStatus ?? 200, { kind: broken.lensesKind ?? "lenses", day: 0 }, "application/json");
     }
+    if (url === "/api/presets/one/decision" && method === "GET") {
+      const body = { kind: broken.decisionKind ?? "decision", published_budget: 116.71, clash: { rank: 1, minutes: 45 } };
+      if (broken.decisionFloat) body.clash.draw = 0.8874;
+      if (broken.decisionMatrix) body.matrix = [];
+      return send(broken.decisionStatus ?? 200, body, "application/json");
+    }
+    if (url === "/api/presets/one/rule-fixes?a=x&b=x" && method === "GET") {
+      return send(broken.ruleFixesStatus ?? 422, { detail: "Pick two different sets." }, "application/json");
+    }
     if (url === "/api/presets/one/whatif" && method === "POST") {
       return send(broken.whatifStatus ?? 422, { detail: [] }, "application/json");
     }
@@ -81,7 +90,7 @@ describe("runSmoke against a stub deployment", () => {
     assert.deepEqual(failures(results), []);
     assert.equal(lines.length, results.length);
     assert.ok(lines.every((line) => line.startsWith("ok ")), lines.join("\n"));
-    assert.equal(results.length, 12);
+    assert.equal(results.length, 14);
   });
 
   it("skips the API checks when no API origin is given", async () => {
@@ -114,6 +123,12 @@ describe("runSmoke against a stub deployment", () => {
       [{ matrix: true }, "web first preset is over 50 KB and carries no matrix"],
       [{ lensesStatus: 404 }, "web first preset lenses answer 200 and say kind lenses"],
       [{ lensesKind: "other" }, "web first preset lenses answer 200 and say kind lenses"],
+      [{ decisionStatus: 404 }, "web first preset decision answers 200 with kind decision and no stray decimal"],
+      [{ decisionKind: "lenses" }, "web first preset decision answers 200 with kind decision and no stray decimal"],
+      [{ decisionFloat: true }, "web first preset decision answers 200 with kind decision and no stray decimal"],
+      [{ decisionMatrix: true }, "web first preset decision answers 200 with kind decision and no stray decimal"],
+      [{ ruleFixesStatus: 200 }, "web first preset rule-fixes with one set against itself is 422"],
+      [{ ruleFixesStatus: 404 }, "web first preset rule-fixes with one set against itself is 422"],
       [{ whatifStatus: 200 }, "web POST first preset what-if with a malformed plan is 422"],
       [{ whatifStatus: 404 }, "web POST first preset what-if with a malformed plan is 422"],
       [{ pairGet: 200 }, "web GET /api/pair is 405"],
@@ -192,7 +207,7 @@ describe("the command line", () => {
     const { code, out } = await run([good, "--api", good, "--pair-check", "off"]);
     assert.equal(code, 0, out);
     assert.match(out, /smoke: all checks passed/);
-    assert.equal(out.split("\n").filter((line) => line.startsWith("ok ")).length, 12);
+    assert.equal(out.split("\n").filter((line) => line.startsWith("ok ")).length, 14);
   });
 
   it("exits 1 and names the failing check", async () => {

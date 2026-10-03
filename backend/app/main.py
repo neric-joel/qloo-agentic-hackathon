@@ -10,6 +10,7 @@ from .agent.events import EventChannel
 from .agent.llm import LLMBackend, build_backend, llm_configured
 from .audit import router as audit_router
 from .config import Settings, get_settings
+from .decision import router as decision_router
 from .deps import get_qloo
 from .limits import RunLimiter, visitor_key
 from .pair import NoStoreOnPairRoute
@@ -41,6 +42,7 @@ app.include_router(recordings_router)
 app.include_router(pair_router)
 app.include_router(whatif_router)
 app.include_router(audit_router)
+app.include_router(decision_router)
 app.add_middleware(NoStoreOnPairRoute)
 install_probe(app, get_settings())
 

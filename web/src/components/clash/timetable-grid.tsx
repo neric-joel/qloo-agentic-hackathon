@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { clashKey, formatDraw, formatShare, LABEL_META, partnerOf, type SetView } from "@/lib/clashes";
 import type { PairClash, Stage } from "@/lib/preset";
+import type { RulePreview } from "@/lib/rule-fix";
 import type { GhostSlot, PlanPreview } from "@/lib/stack";
 import {
   blockDensity,
@@ -45,24 +46,31 @@ type TimetableGridProps = {
   onOpen: (clash: PairClash, trigger: HTMLElement) => void;
   /** A tested plan to preview: kept moves and the place being tried, drawn as ghosts. */
   plan?: PlanPreview | null;
+  /** A change from "Keep two sets apart", drawn as ghosts and never part of the plan. */
+  rulePreview?: RulePreview | null;
   className?: string;
 };
 
-type Ghost = { slot: GhostSlot; name: string; col: number; range: TimeRange; trying: boolean };
+type GhostKind = "kept" | "trying" | "rule";
+type Ghost = { slot: GhostSlot; name: string; col: number; range: TimeRange; kind: GhostKind };
+
+/** A published set whose start is this close to a ghost on its stage gives way to it. */
+const OVERPRINT_MINUTES = 20;
 
 /** Where a tested place is drawn: its stage column and its minutes, kept inside the drawn day. */
 function placeGhosts(
   plan: PlanPreview | null | undefined,
+  rulePreview: RulePreview | null | undefined,
   views: ReadonlyMap<string, SetView>,
   stages: readonly Stage[],
   domain: TimeRange,
 ): Ghost[] {
-  if (!plan) return [];
-  const slots = [
-    ...plan.kept.map((slot) => ({ slot, trying: false })),
-    ...(plan.trying ? [{ slot: plan.trying, trying: true }] : []),
+  const slots: { slot: GhostSlot; kind: GhostKind }[] = [
+    ...(plan?.kept ?? []).map((slot) => ({ slot, kind: "kept" as const })),
+    ...(plan?.trying ? [{ slot: plan.trying, kind: "trying" as const }] : []),
+    ...(rulePreview?.ghosts ?? []).map((slot) => ({ slot, kind: "rule" as const })),
   ];
-  return slots.flatMap(({ slot, trying }) => {
+  return slots.flatMap(({ slot, kind }) => {
     const view = views.get(slot.actId);
     const col = stages.findIndex((stage) => stage.id === slot.stageId);
     if (!view || view.slot.day !== slot.day || col < 0) return [];
@@ -71,7 +79,7 @@ function placeGhosts(
     const start = Math.max(domain.start, slot.start + shift);
     const end = Math.min(domain.end, slot.end + shift);
     if (end <= start) return [];
-    return [{ slot, name: view.act.name, col, range: { start, end }, trying }];
+    return [{ slot, name: view.act.name, col, range: { start, end }, kind }];
   });
 }
 
@@ -117,6 +125,7 @@ export function TimetableGrid({
   onHighlightClash,
   onOpen,
   plan = null,
+  rulePreview = null,
   className,
 }: TimetableGridProps) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -153,8 +162,48 @@ export function TimetableGrid({
   );
   const frames = useMemo(() => columnFrames(width, stages.length, gap), [width, stages.length, gap]);
   const byId = useMemo(() => new Map(views.map((view) => [view.id, view])), [views]);
-  const ghosts = useMemo(() => placeGhosts(plan, byId, stages, domain), [plan, byId, stages, domain]);
+  const ghosts = useMemo(
+    () => placeGhosts(plan, rulePreview, byId, stages, domain),
+    [plan, rulePreview, byId, stages, domain],
+  );
   const movedIds = useMemo(() => new Set((plan?.kept ?? []).map((slot) => slot.actId)), [plan]);
+  // A published set gives way to a ghost on its stage that starts within 20 minutes of it: it dims
+  // and its visible title hides (its accessible name stays) so the two never print on one another.
+  const overprintedIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const ghost of ghosts) {
+      for (const view of views) {
+        if (view.slot.stage_id === ghost.slot.stageId && Math.abs(ghost.range.start - view.slot.start) <= OVERPRINT_MINUTES) {
+          ids.add(view.id);
+        }
+      }
+    }
+    return ids;
+  }, [ghosts, views]);
+  // A previewed rule change ends the overlap of its pair: a small outlined zero sits between the two.
+  const zero = useMemo(() => {
+    if (!rulePreview || width === 0) return null;
+    const centre = (actId: string): { x: number; y: number } | null => {
+      const ghost = ghosts.find((item) => item.kind === "rule" && item.slot.actId === actId);
+      const view = byId.get(actId);
+      const col = ghost ? ghost.col : view?.col;
+      const range = ghost ? ghost.range : view?.slot;
+      const frame = col === undefined ? undefined : frames[col];
+      if (!frame || !range) return null;
+      return { x: frame.left + frame.width / 2, y: (scale.y(range.start) + scale.y(range.end)) / 2 };
+    };
+    const a = centre(rulePreview.pair.aId);
+    const b = centre(rulePreview.pair.bId);
+    if (!a || !b) return null;
+    const key = `${rulePreview.pair.aId}|${rulePreview.pair.bId}|${rulePreview.ghosts.map((g) => `${g.actId}@${g.start}`).join(",")}`;
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, key };
+  }, [rulePreview, width, ghosts, byId, frames, scale]);
+  // Motion starts after the board has settled, so a plan kept in this tab does not fly in on load.
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setArmed(true), 1200);
+    return () => window.clearTimeout(timer);
+  }, []);
   const navItems = useMemo(
     () => views.map((view) => ({ id: view.id, col: view.col, start: view.slot.start, end: view.slot.end })),
     [views],
@@ -302,6 +351,7 @@ export function TimetableGrid({
                     const costliest = view.clashes[0];
                     const none = view.coverage === "none";
                     const moved = movedIds.has(view.id);
+                    const overprinted = overprintedIds.has(view.id);
                     return (
                       <button
                         key={view.id}
@@ -323,8 +373,9 @@ export function TimetableGrid({
                           if (costliest) onOpen(costliest, event.currentTarget);
                         }}
                         data-set={view.id}
+                        data-overprinted={overprinted ? "true" : undefined}
                         className={cn(
-                          "absolute inset-x-0 flex flex-col overflow-hidden rounded-md border text-left transition-[opacity,background-color,border-color,box-shadow] duration-150",
+                          "group/set absolute inset-x-0 flex flex-col overflow-hidden rounded-md border text-left transition-[opacity,background-color,border-color,box-shadow] duration-150",
                           "focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
                           density === "tiny" ? "px-2 py-1" : "px-2.5 py-1.5",
                           none
@@ -334,10 +385,12 @@ export function TimetableGrid({
                               : "border-border-strong bg-card",
                           view.slot.locked && "border-2 border-foreground",
                           moved && "bg-hatch",
+                          moved && armed && "cc-lift",
                           costliest ? "cursor-pointer hover:bg-accent" : "cursor-default",
                           isFocus && "border-foreground bg-accent",
                           related && !isFocus && "shadow-[0_0_0_2px_var(--primary)]",
                           dimmed && !related && !isFocus && "opacity-40",
+                          "data-[overprinted=true]:opacity-30 data-[overprinted=true]:focus-visible:opacity-100",
                         )}
                         style={{ top: top + 1, height: Math.max(height - 2, 18) }}
                       >
@@ -347,6 +400,7 @@ export function TimetableGrid({
                               "min-w-0 flex-1 text-[0.8125rem] leading-tight font-bold [font-variation-settings:'wdth'_85]",
                               density === "full" ? "line-clamp-2" : "truncate",
                               none ? "text-foreground" : "",
+                              "transition-opacity duration-150 group-data-[overprinted=true]/set:opacity-0 group-data-[overprinted=true]/set:group-focus-visible/set:opacity-100",
                             )}
                           >
                             {view.act.name}
@@ -410,8 +464,10 @@ export function TimetableGrid({
             ))}
           </div>
 
-          {/* Tested places from "Try a move": a dashed ghost per kept move (the place being tried
-              is lighter). Decorative: the moved set's own block says it moved. */}
+          {/* Tested places: a dashed ghost per kept move (the place being tried is lighter) and per
+              set of a previewed rule change. Decorative: the moved set's own block says it moved.
+              A ghost that appears after the board has settled flies in from the set's published
+              place (`--dx`, `--dy`, in this area's own pixels); the published block never moves. */}
           {ghosts.length > 0 ? (
             <div aria-hidden="true" className="pointer-events-none absolute inset-0">
               {ghosts.map((ghost) => {
@@ -419,17 +475,34 @@ export function TimetableGrid({
                 if (!frame) return null;
                 const top = scale.y(ghost.range.start);
                 const height = scale.y(ghost.range.end) - top;
+                const home = byId.get(ghost.slot.actId);
+                const homeFrame = home ? frames[home.col] : undefined;
+                const flies = armed && ghost.kind !== "trying" && home !== undefined && homeFrame !== undefined;
+                const flight =
+                  flies && home && homeFrame
+                    ? ({
+                        "--dx": `${homeFrame.left - frame.left}px`,
+                        "--dy": `${scale.y(home.slot.start) - top}px`,
+                      } as CSSProperties)
+                    : undefined;
                 return (
                   <div
-                    key={`${ghost.trying ? "trying" : "kept"}-${ghost.slot.actId}`}
-                    data-ghost={ghost.trying ? "trying" : "kept"}
+                    key={`${ghost.kind}-${ghost.slot.actId}`}
+                    data-ghost={ghost.kind}
                     className={cn(
                       "absolute flex flex-col overflow-hidden rounded-md border-2 border-dashed px-2 py-1 text-left",
-                      ghost.trying
+                      ghost.kind === "trying"
                         ? "border-primary/55 bg-background/70 text-foreground/80"
                         : "border-primary bg-background/85 text-foreground",
+                      flies && "cc-slot-flight",
                     )}
-                    style={{ left: frame.left, width: frame.width, top: top + 1, height: Math.max(height - 2, 18) }}
+                    style={{
+                      left: frame.left,
+                      width: frame.width,
+                      top: top + 1,
+                      height: Math.max(height - 2, 18),
+                      ...flight,
+                    }}
                   >
                     <span className="truncate text-[0.75rem] leading-tight font-bold [font-variation-settings:'wdth'_85]">
                       {ghost.name} · tested
@@ -442,6 +515,19 @@ export function TimetableGrid({
                   </div>
                 );
               })}
+              {zero ? (
+                <span
+                  key={zero.key}
+                  data-ghost="zero"
+                  className={cn(
+                    "absolute grid size-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-foreground bg-card font-mono text-[0.6875rem] font-bold text-foreground",
+                    armed && "cc-zero",
+                  )}
+                  style={{ left: zero.x, top: zero.y }}
+                >
+                  0
+                </span>
+              ) : null}
             </div>
           ) : null}
 

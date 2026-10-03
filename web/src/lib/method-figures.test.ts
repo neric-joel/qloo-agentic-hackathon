@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -8,15 +11,19 @@ import {
   METHOD_FIGURES,
   formatAuc,
   formatCount,
+  exploratoryReading,
   formatInterval,
+  formatP,
   formatPct,
   formatWholePct,
   formatWithin,
   methodRow,
   numberWord,
 } from "./method-figures";
+import { PUBLIC_SOURCES } from "./public-sources";
 
-const { backtest, coverage, index, liveCheck, moves, scale, symmetry } = METHOD_FIGURES;
+const { backtest, complaints, coverage, exploratory, index, liveCheck, moves, scale, symmetry } =
+  METHOD_FIGURES;
 
 /** The page as a reader (or a crawler) gets it: the static HTML with its tags removed. */
 function pageText(): string {
@@ -30,6 +37,8 @@ function pageText(): string {
     .trim();
 }
 
+const COMPLAINTS = fileURLToPath(new URL("../../../_private/backtest/complaints.json", import.meta.url));
+
 /** A printed numeral: "18,762", "0.634", "3". */
 const NUMERAL = /\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?/g;
 
@@ -37,7 +46,10 @@ const NUMERAL = /\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?/g;
 function allowedNumerals(): Set<string> {
   const allowed = new Set<string>();
   const add = (value: number) => {
+    // A printed numeral carries no sign: "-0.098" is matched as "0.098"
+    value = Math.abs(value);
     allowed.add(String(value));
+    allowed.add(formatP(value));
     allowed.add(value.toFixed(1));
     allowed.add(formatAuc(value));
     allowed.add(formatCount(value));
@@ -64,6 +76,82 @@ describe("method figures", () => {
       auc95: [0.631, 0.801],
     });
     expect(methodRow("random")).toMatchObject({ topQuarterPct: 26.3, auc: 0.5, auc95: null });
+  });
+
+  it("pins the complaint set the figures come from", () => {
+    expect(complaints).toEqual({
+      festivals: 5,
+      clustersVerified: 45,
+      pairsVerified: 86,
+      medianMinutes: 50,
+      rangeMinutes: [10, 90],
+    });
+    // 45 clusters here, 42 of them with a scored pair in the backtest
+    expect(complaints.clustersVerified).toBeGreaterThan(backtest.clusters);
+    expect(complaints.pairsVerified).toBeGreaterThan(backtest.scoredPairs);
+    expect(complaints.festivals).toBe(backtest.festivals);
+    expect(complaints.rangeMinutes[0]).toBeLessThanOrEqual(complaints.medianMinutes);
+    expect(complaints.medianMinutes).toBeLessThanOrEqual(complaints.rangeMinutes[1]);
+  });
+
+  it("pins the public sources: ten unique https pages", () => {
+    expect(PUBLIC_SOURCES).toHaveLength(10);
+    expect(new Set(PUBLIC_SOURCES).size).toBe(PUBLIC_SOURCES.length);
+    for (const url of PUBLIC_SOURCES) {
+      expect(url).toMatch(/^https:\/\/[a-z0-9.-]+\/\S+$/);
+      expect(url).not.toMatch(/[?#]/);
+    }
+    expect(PUBLIC_SOURCES.filter((url) => url.includes("reddit.com"))).toHaveLength(4);
+  });
+
+  it.skipIf(!existsSync(COMPLAINTS))(
+    "matches the complaint set it was counted from, when that private file is present",
+    () => {
+      type Pair = { status: string; cluster: string; source: string; overlap_min: number; festival: string };
+      const pairs = JSON.parse(readFileSync(COMPLAINTS, "utf8")) as Pair[];
+      const verified = pairs.filter((pair) => pair.status === "verified");
+      const minutes = verified.map((pair) => pair.overlap_min).sort((a, b) => a - b);
+      const middle = minutes.length / 2;
+      const median =
+        minutes.length % 2 ? minutes[Math.floor(middle)] : (minutes[middle - 1] + minutes[middle]) / 2;
+      expect({
+        festivals: new Set(verified.map((pair) => pair.festival)).size,
+        clustersVerified: new Set(verified.map((pair) => pair.cluster)).size,
+        pairsVerified: verified.length,
+        medianMinutes: median,
+        rangeMinutes: [minutes[0], minutes[minutes.length - 1]],
+      }).toEqual(complaints);
+      expect([...new Set(verified.map((pair) => pair.source))]).toEqual([...PUBLIC_SOURCES]);
+    },
+  );
+
+  it("pins the exploratory figures, and the p and the gap agree with their own definitions", () => {
+    expect(exploratory).toEqual({
+      shuffles: 10000,
+      shufflesAtLeast: 1,
+      p: 0.0002,
+      pBar: 0.05,
+      gap: 0.088,
+      gapInterval: [-0.098, 0.254],
+    });
+    // p = (shuffles at or above the observed + 1) / (shuffles + 1), as the script prints it to 4 decimals
+    expect(((exploratory.shufflesAtLeast + 1) / (exploratory.shuffles + 1)).toFixed(4)).toBe(
+      formatP(exploratory.p),
+    );
+    // The gap is popularity's AUC minus taste overlap's, to three decimals
+    const gap = methodRow("popularity").auc - methodRow("taste").auc;
+    expect(Math.round(gap * 1000) / 1000).toBe(exploratory.gap);
+    const [low, high] = exploratory.gapInterval;
+    expect(low).toBeLessThan(exploratory.gap);
+    expect(exploratory.gap).toBeLessThan(high);
+  });
+
+  it("reads the exploratory figures: p under its bar, a gap interval that holds zero", () => {
+    expect(exploratoryReading()).toEqual({ pAboveBar: false, gapIncludesZero: true });
+    const figures = { ...exploratory, p: 0.2, gapInterval: [0.02, 0.2] as const };
+    expect(exploratoryReading(figures)).toEqual({ pAboveBar: true, gapIncludesZero: false });
+    expect(formatP(0.0002)).toBe("0.0002");
+    expect(formatP(0.1872)).toBe("0.1872");
   });
 
   it("pins the denominators", () => {
@@ -274,10 +362,10 @@ describe("/method page", () => {
     expect(section.match(/\d/g)).toBeNull();
   });
 
-  it("opens with four short-version bullets, the fourth saying what the measure is good for", () => {
+  it("opens with five short-version bullets, the fourth saying what the measure is good for", () => {
     const html = renderToStaticMarkup(createElement(MethodPage));
     const box = html.match(/<section aria-labelledby="short-heading"[\s\S]*?<\/section>/)?.[0] ?? "";
-    expect(box.match(/<li/g)).toHaveLength(4);
+    expect(box.match(/<li/g)).toHaveLength(5);
     const text = pageText();
     expect(text).toContain(
       "What it is good for. It ranks a day's clashes with a number you can inspect, and it tests moves against the timetable's rules. It tells apart two rivals of equal popularity when Qloo ranks one as much alike in audience to an act and the other as unlike (the twin card shows one such case). It says nothing about attendance, and on our own check it did not find complained-about clashes better than popularity does.",
@@ -323,5 +411,79 @@ describe("/method page", () => {
 
   it("uses the word that denies prediction exactly once", () => {
     expect(pageText().match(/predict/gi)).toHaveLength(1);
+  });
+});
+
+describe("/method exploratory result", () => {
+  /** The exploratory block as the page renders it. */
+  function block(): string {
+    const html = renderToStaticMarkup(createElement(MethodPage));
+    return html.match(/<aside aria-labelledby="exploratory-heading"[\s\S]*?<\/aside>/)?.[0] ?? "";
+  }
+  const textOf = (html: string) =>
+    html
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&#x27;|&#39;|&rsquo;|’/g, "'")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  it("says what held and what did not, with the shuffle and the gap, labelled exploratory", () => {
+    const text = textOf(block());
+    expect(text).toContain("Exploratory follow-up, run after the test failed");
+    expect(text).toContain(
+      "What held, on this press-skewed complaint set: taste overlap separated the complained-about clashes from the day's other pairs (AUC 0.634, interval 0.517 to 0.755).",
+    );
+    expect(text).toContain(
+      "we dealt the complaint labels out again at random among each festival day's pairs, keeping each day's number of complaints, 10,000 times. One of the 10,000 shuffles scored that high or higher (p = 0.0002).",
+    );
+    expect(text).toContain(
+      "The shuffle treats pairs as independent, but the 68 pairs come from 42 complaints, so the real uncertainty is wider than that p suggests.",
+    );
+    expect(text).toContain(
+      "What did not: popularity, also a Qloo field, scores higher (0.722). The gap between the two is 0.088 in AUC (interval -0.098 to 0.254); the interval includes zero, so these data do not say which of the two ranks complained-about clashes higher.",
+    );
+    // p is under its bar, so the page does not add the sentence about shuffles often doing as well
+    expect(text).not.toContain("does not separate the measure from chance");
+  });
+
+  it("puts the failed pre-set test in the same block as the exploratory result", () => {
+    const text = textOf(block());
+    expect(text).toContain(
+      "The test we set before building failed: taste overlap reached 46.8% against a bar of 60%.",
+    );
+    expect(text.indexOf("failed")).toBeLessThan(text.indexOf("What held"));
+    expect(text).toContain("so it is exploratory");
+  });
+
+  it("puts the fifth bullet in the short version, with the failed test above it", () => {
+    const html = renderToStaticMarkup(createElement(MethodPage));
+    const box = html.match(/<section aria-labelledby="short-heading"[\s\S]*?<\/section>/)?.[0] ?? "";
+    const text = textOf(box);
+    expect(text).toContain(
+      "What held, exploratory. On this press-skewed complaint set, taste overlap separated the complained-about clashes from the day's other pairs: AUC (0.5 means no better than chance; 1 means every listed clash ranks above every unlisted pair) 0.634, interval 0.517 to 0.755. One of 10,000 shuffles of the complaint labels scored that high (p = 0.0002). We ran that after the 46.8% against 60% test above failed. Popularity separated them more (0.722), and the gap between the two has an interval that includes zero.",
+    );
+    expect(text.indexOf("The test we set before building failed.")).toBeLessThan(
+      text.indexOf("What held, exploratory."),
+    );
+  });
+
+  it("uses none of the words the page must not use about this result", () => {
+    const text = pageText();
+    expect(text).not.toMatch(/significan|validat|bprovenb|outperform|beats popularity|optimi[sz]|improve|recommend/i);
+    expect(text.match(/predict/gi)).toHaveLength(1);
+    expect(textOf(block())).not.toMatch(/confirm|demonstrat|proves|works/i);
+  });
+
+  it("lists the sources collapsed, under the 45 clashes, with one safe link per page", () => {
+    const html = renderToStaticMarkup(createElement(MethodPage));
+    const details = html.match(/<details[\s\S]*?<\/details>/)?.[0] ?? "";
+    expect(details).not.toMatch(/<details[^>]*\sopen/);
+    expect(textOf(details)).toContain("Sources for the 45 clashes");
+    expect(textOf(details)).toContain(
+      "45 clashes that fans or the press complained about at five festivals had a verified overlap in time: 86 pairs of acts, overlapping for a median of 50 minutes (from 10 to 90). They come from ten public pages; one page can name several clashes.",
+    );
+    const links = [...details.matchAll(/<a [^>]*href="([^"]+)"[^>]*>/g)];
+    expect(links.map((match) => match[1])).toEqual([...PUBLIC_SOURCES]);
+    for (const [tag] of links) expect(tag).toContain('rel="noopener noreferrer"');
   });
 });

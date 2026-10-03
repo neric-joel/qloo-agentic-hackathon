@@ -15,6 +15,7 @@ import {
   formatShare,
   topClashes,
 } from "./clashes";
+import { buildDecisionCopy, decisionPath, parseDecision, type Decision, type DecisionCopy } from "./decision";
 import { pluralize } from "./format";
 import { parsePreset, parsePresetList, type Preset } from "./preset";
 
@@ -48,6 +49,13 @@ export type ServerSummary = {
   evidence: string;
   /** The page's meta and Open Graph description. */
   description: string;
+  /**
+   * The worked decision for the day (`GET /decision`), worded from the route and this preset, or null
+   * when the route did not answer: the page then has no decision card and no button to it.
+   */
+  decision: DecisionCopy | null;
+  /** The route's answer behind it, so the interactive page can show the same card without asking again. */
+  decisionData: Decision | null;
 };
 
 /**
@@ -88,7 +96,7 @@ function describeDay(preset: Preset, day: number, index: number | null, clashes:
 }
 
 /** The first page's figures for a preset, on the first day that has sets (the day the page opens on). */
-export function summarize(preset: Preset): ServerSummary {
+export function summarize(preset: Preset, decision: Decision | null = null): ServerSummary {
   const day = daysWithSets(preset)[0] ?? 0;
   const raw = preset.report.metrics.clash_budget_index;
   const index = raw === null || !Number.isFinite(raw) ? null : Math.round(raw);
@@ -109,6 +117,8 @@ export function summarize(preset: Preset): ServerSummary {
     clashes,
     evidence: evidenceSentence(preset),
     description: describeDay(preset, day, index, clashes),
+    decision: buildDecisionCopy(preset, decision),
+    decisionData: decision,
   };
 }
 
@@ -174,6 +184,17 @@ export function choosePresetId(list: readonly { id: string }[], requestedId: str
   return (list.find((item) => item.id === requestedId) ?? list[0]).id;
 }
 
+/** The day's decision, or null on any failure: a missing decision never costs the page its summary. */
+async function loadDecision(fetcher: FetchLike, backend: string, id: string, timeoutMs: number): Promise<Decision | null> {
+  const path = decisionPath(id);
+  if (!path) return null;
+  try {
+    return parseDecision(await getJson(fetcher, `${backend}${path}`, timeoutMs));
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The summary of the preset the page opens on (`?preset=` when the list has it, else the first),
  * or null on any failure (no backend, a timeout, an error status or a shape the page does not
@@ -190,8 +211,11 @@ export async function loadServerSummary(
     const list = parsePresetList(await getJson(fetcher, `${backend}/api/presets`, timeoutMs));
     const id = choosePresetId(list, requestedId);
     if (id === null) return null;
-    const preset = parsePreset(await getJson(fetcher, `${backend}/api/presets/${encodeURIComponent(id)}`, timeoutMs));
-    return summarize(preset);
+    const [preset, decision] = await Promise.all([
+      getJson(fetcher, `${backend}/api/presets/${encodeURIComponent(id)}`, timeoutMs).then(parsePreset),
+      loadDecision(fetcher, backend, id, timeoutMs),
+    ]);
+    return summarize(preset, decision);
   } catch {
     return null;
   }

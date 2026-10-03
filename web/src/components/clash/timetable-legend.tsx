@@ -23,7 +23,8 @@ function Block({ className, children }: { className?: string; children?: ReactNo
 
 /**
  * Key to the timetable. Every mark differs by shape or pattern as well as colour. While a tested
- * plan shows on the grid, it says the links still describe the published timetable.
+ * plan or a rule preview shows on the grid, it names the dashed slot and says the links still
+ * describe the published timetable.
  */
 export function TimetableLegend({
   showLinks = true,
@@ -90,9 +91,14 @@ export function TimetableLegend({
         </>
       ) : null}
       {planShown ? (
-        <li className="basis-full font-semibold text-foreground">
-          Lines and rank badges show the published timetable.
-        </li>
+        <>
+          <Item swatch={<Block className="border-2 border-dashed border-primary" />}>
+            Dashed slot: a tested place, not published
+          </Item>
+          <li className="basis-full font-semibold text-foreground">
+            Lines and rank badges show the published timetable.
+          </li>
+        </>
       ) : null}
     </ul>
   );

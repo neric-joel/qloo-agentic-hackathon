@@ -108,6 +108,41 @@ export const METHOD_FIGURES = {
       basePct: 5.0,
     },
   },
+  /**
+   * The complained-about clashes the backtest draws on, re-derived from the saved complaint set: clusters (one
+   * per press or forum item; a clash of three acts counts once) with a verified overlap in time, the pairs of
+   * acts inside them, and how long those pairs overlapped. 48 clusters were collected; one was a false clash and
+   * two had no overlap in time as published. The sources are listed in `public-sources.ts`.
+   */
+  complaints: {
+    festivals: 5,
+    clustersVerified: 45,
+    pairsVerified: 86,
+    medianMinutes: 50,
+    rangeMinutes: [10, 90],
+  },
+  /**
+   * The exploratory follow-up to the failed pre-set test, from `_private/backtest/permutation.py` (printed in
+   * `_private/backtest/permutation-results.md`; saved data only, no request sent). Run after the gate failed.
+   *
+   * Label shuffle: within each festival day the complaint labels are dealt out again at random among that
+   * day's scored pairs (each day keeps its number of complained-about pairs) and taste overlap's pooled AUC is
+   * recomputed, `shuffles` times. `shufflesAtLeast` of them scored at least the observed AUC; the one-sided p is
+   * (that count + 1) / (shuffles + 1). The shuffle treats pairs as independent although the 68 scored pairs
+   * come from 42 complaints, so it understates the uncertainty; the page says so.
+   *
+   * Gap: popularity's AUC minus taste overlap's (0.722 - 0.634, from the unrounded 0.722163 and 0.633974), with
+   * a 95% interval from resampling whole festival days, the same resample for both measures.
+   */
+  exploratory: {
+    shuffles: 10000,
+    shufflesAtLeast: 1,
+    p: 0.0002,
+    /** A p above this means shuffled labels often score as high: the page then says so. */
+    pBar: 0.05,
+    gap: 0.088,
+    gapInterval: [-0.098, 0.254],
+  },
   coverage: {
     /** Acts across the five festivals tested with a usable Qloo signal (strong or weak). */
     usableActs: 449,
@@ -186,6 +221,28 @@ export function formatAuc(value: number): string {
 /** "0.517 to 0.755". */
 export function formatInterval([low, high]: readonly [number, number]): string {
   return `${formatAuc(low)} to ${formatAuc(high)}`;
+}
+
+/** "0.0002": a one-sided p-value with four decimals, as the script printed it. */
+export function formatP(value: number): string {
+  return value.toFixed(4);
+}
+
+/** What the exploratory figures say, read from the figures so the page can never contradict them. */
+export function exploratoryReading(
+  figures: {
+    readonly p: number;
+    readonly pBar: number;
+    readonly gapInterval: readonly [number, number];
+  } = METHOD_FIGURES.exploratory,
+) {
+  const [low, high] = figures.gapInterval;
+  return {
+    /** A shuffle of the complaint labels scores this high often enough that p is above the stated bar. */
+    pAboveBar: figures.p > figures.pBar,
+    /** The interval of popularity's AUC minus taste overlap's holds zero. */
+    gapIncludesZero: low <= 0 && 0 <= high,
+  };
 }
 
 /** "18,762": a count with thousands separators. */

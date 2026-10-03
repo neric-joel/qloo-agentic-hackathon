@@ -3,18 +3,18 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { ArrowDown, ChevronDown } from "lucide-react";
+import Link from "next/link";
 
 import { AbstainState, ErrorState, TraceDrawer } from "@/components/kernel";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import type { AgentStatus } from "@/lib/agent-status";
+import { CHECK_LIVE } from "@/lib/check-flag";
 import { describeReach, samplingReach } from "@/lib/clash-budget";
 import {
   buildSetViews,
   clashKey,
-  dayName,
   daysWithSets,
-  festivalName,
   heroClash,
   involves,
   isFixedByLocks,
@@ -23,11 +23,13 @@ import {
   traceToolCalls,
   type HeroClash,
 } from "@/lib/clashes";
+import { buildDecisionCopy, type Decision } from "@/lib/decision";
 import { pluralize } from "@/lib/format";
 import { drawerRank, drawerRankOf } from "@/lib/lenses";
 import type { PairClash, Preset, PresetSummary } from "@/lib/preset";
-import { figureLine, type ServerSummary } from "@/lib/server-summary";
-import type { PlanPreview } from "@/lib/stack";
+import type { RulePreview } from "@/lib/rule-fix";
+import type { ServerSummary } from "@/lib/server-summary";
+import type { PlanPreview, StackMove } from "@/lib/stack";
 import { cn } from "@/lib/utils";
 
 import { AgentPanel } from "./agent-panel";
@@ -35,6 +37,7 @@ import { BudgetDial, Scorecard } from "./budget-dial";
 import { ClashDrawer } from "./clash-drawer";
 import { ClashList } from "./clash-list";
 import { CoverageMeter } from "./coverage-meter";
+import { DECISION_HEADING_ID, DecisionCard, DecisionCardSkeleton } from "./decision-card";
 import { HiddenWall } from "./hidden-wall";
 import { PresetSources } from "./preset-sources";
 import { RECORDED_RUNS_ID } from "./recorded-runs";
@@ -46,7 +49,9 @@ import { TimetableLegend } from "./timetable-legend";
 import { TimetableList } from "./timetable-list";
 import { TRY_A_MOVE_ID, TryAMove } from "./try-a-move";
 import { TwinCards } from "./twin-cards";
+import { WhyThisMatters } from "./why-this-matters";
 import { useAgentStatus } from "./use-agent-status";
+import { useDecision } from "./use-decision";
 import { useLenses } from "./use-lenses";
 import { usePresets } from "./use-presets";
 import { useRecordings } from "./use-recordings";
@@ -59,27 +64,68 @@ const SOURCES_ID = "sources";
 const HERO_LINK =
   "inline-flex items-center gap-1.5 py-1 text-sm font-semibold underline underline-offset-4 hover:text-primary";
 
-/** The hero button says what the first click opens, and only rank 1 is called the costliest. */
+/** The card's footer link says what it opens, and only rank 1 is called the costliest. */
 const HERO_BUTTON: Record<HeroClash["kind"], string> = {
   hidden: "Open a hidden clash",
   evidence: "Open a clash and its evidence",
   costliest: "Open the costliest clash",
 };
 
-/** The hero row: the static pitch on the left, the day's score on the right. Kept short so the
- * priced timetable starts in the first screenful. */
-function HeroLayout({ intro, aside, children }: { intro: ReactNode; aside: ReactNode; children?: ReactNode }) {
+const PROOF_LINE =
+  "Shown on two published days from festivals that do not use it: Glastonbury 2025 and Riot Fest 2026. A reading, not a verdict on either festival.";
+
+/** The proof line sits under the actions on a wide screen and after the card on a phone. */
+function ProofLine({ className }: { className: string }) {
+  return <p className={cn("max-w-2xl text-xs leading-relaxed text-muted-foreground", className)}>{PROOF_LINE}</p>;
+}
+
+/**
+ * The hero's actions. The primary one scrolls to the decision card and moves focus to its heading
+ * (a plain link to the heading, so it works before the page has loaded); it is there only when the
+ * card is. "Try a move yourself" is there once the section it points at is on the page.
+ */
+function HeroActions({ seeDecision, tryMove }: { seeDecision: boolean; tryMove: boolean }) {
+  if (!seeDecision && !tryMove && !CHECK_LIVE) return null;
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 sm:mt-6 max-[390px]:flex-col max-[390px]:items-stretch">
+      {seeDecision ? (
+        <Button asChild variant="ink">
+          <a href={`#${DECISION_HEADING_ID}`}>See one decision</a>
+        </Button>
+      ) : null}
+      {tryMove ? (
+        <a href={`#${TRY_A_MOVE_ID}`} className={HERO_LINK}>
+          Try a move yourself
+          <ArrowDown aria-hidden="true" className="size-4" />
+        </a>
+      ) : null}
+      {CHECK_LIVE ? (
+        <Link href="/check" className={HERO_LINK}>
+          Check your own grid
+        </Link>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The hero: the static pitch and its actions on the left, the decision card and then the day's
+ * score on the right. On a phone the pitch comes first, then the card (its first line is on the first
+ * screen), the proof line, and the dial.
+ */
+function HeroLayout({ intro, actions, aside }: { intro: ReactNode; actions?: ReactNode; aside: ReactNode }) {
   return (
     <section aria-labelledby="pitch-heading" className="relative isolate overflow-hidden">
       <div
         aria-hidden="true"
         className="bg-timegrid absolute inset-0 -z-10 [mask-image:linear-gradient(to_bottom,black_20%,transparent)]"
       />
-      <div className="container-page pt-8 pb-8 sm:pt-10 lg:pt-10 lg:pb-10">
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:items-start lg:gap-12">
+      <div className="container-page pt-6 pb-8 sm:pt-8 lg:pt-10 lg:pb-10">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:items-start lg:gap-8">
           <div className="min-w-0">
             {intro}
-            {children}
+            {actions}
+            <ProofLine className="mt-4 hidden lg:block" />
           </div>
           <div className="min-w-0">{aside}</div>
         </div>
@@ -178,12 +224,6 @@ function JumpNav({ agent, wall }: { agent: JumpLink; wall: boolean }) {
   );
 }
 
-/** The hero's figure line, below `lg` only: there the dial sits under the pitch, past the first screen. */
-function FigureLine({ text }: { text: string | null }) {
-  if (!text) return null;
-  return <p className="mt-4 max-w-2xl text-base leading-snug font-semibold lg:hidden">{text}</p>;
-}
-
 /**
  * The first screen before the interactive page has a festival day: the server's summary of the day
  * when there is one (the server HTML carries it), skeletons otherwise.
@@ -201,10 +241,18 @@ function LoadingView({
 }) {
   return (
     <>
-      <HeroLayout intro={intro} aside={summary ? <SummaryScore summary={summary} /> : <ScoreSkeleton />}>
-        <FigureLine text={summary?.figure ?? null} />
-        {status}
-      </HeroLayout>
+      <HeroLayout
+        intro={intro}
+        actions={<HeroActions seeDecision={summary?.decision != null} tryMove={false} />}
+        aside={
+          <div className="space-y-4">
+            {summary?.decision ? <DecisionCard copy={summary.decision} /> : null}
+            <ProofLine className="lg:hidden" />
+            {summary ? <SummaryScore summary={summary} /> : <ScoreSkeleton />}
+            {status}
+          </div>
+        }
+      />
       <BoardFrame label="Timetable">
         {picker}
         {summary ? <SummaryBoard summary={summary} /> : <BoardSkeleton />}
@@ -309,6 +357,7 @@ export function ClashControl({ intro, summary = null }: { intro: ReactNode; summ
       intro={intro}
       preset={preset.value}
       agentStatus={agentStatus}
+      serverDecision={summary && summary.id === preset.value.id ? summary.decisionData : null}
       picker={<PresetPicker presets={list.value} selectedId={selectedId} onChange={choosePreset} />}
     />
   );
@@ -350,11 +399,14 @@ function PresetView({
   intro,
   preset,
   agentStatus,
+  serverDecision,
   picker,
 }: {
   intro: ReactNode;
   preset: Preset;
   agentStatus: AgentStatus;
+  /** The decision the server already holds for this preset's first day, so the card needs no request. */
+  serverDecision: Decision | null;
   picker: ReactNode;
 }) {
   const days = useMemo(() => daysWithSets(preset), [preset]);
@@ -363,9 +415,13 @@ function PresetView({
   const [drawer, setDrawer] = useState<DrawerState>({ clash: null, open: false, trigger: null });
   // The tested plan from "Try a move", previewed on the grid as ghosts. Never changes the dial.
   const [planPreview, setPlanPreview] = useState<PlanPreview | null>(null);
+  // A change from "Keep two sets apart", previewed as two ghosts. Separate from the plan above.
+  const [rulePreview, setRulePreview] = useState<RulePreview | null>(null);
+  // The decision card's two buttons hand "Try a move" a seed; a new nonce replays it, the same one never does.
+  const [seedMove, setSeedMove] = useState<{ nonce: number; move: StackMove } | null>(null);
+  const [seedRule, setSeedRule] = useState<{ nonce: number; aId: string; bId: string } | null>(null);
 
   const { festival, report } = preset;
-  const name = festivalName(festival);
   const dayLabel = festival.days[day] ?? `Day ${day + 1}`;
   const views = useMemo(() => buildSetViews(preset, day), [preset, day]);
   const ranked = useMemo(() => topClashes(report.clashes, day, Number.POSITIVE_INFINITY), [report, day]);
@@ -389,6 +445,11 @@ function PresetView({
   // The wall's hero link and jump entry only when the day has examples to show.
   const hasWall = (preset.evidence?.hidden_wall?.length ?? 0) > 0;
   const index = report.metrics.clash_budget_index;
+  const decisionState = useDecision(preset.id, day, serverDecision);
+  const decisionCopy = useMemo(
+    () => (decisionState.status === "ready" ? buildDecisionCopy(preset, decisionState.decision) : null),
+    [preset, decisionState],
+  );
   const lenses = useLenses(preset.id, day);
   const lensRank = useMemo(() => drawerRank(lenses), [lenses]);
   const agentJump: JumpLink =
@@ -425,37 +486,45 @@ function PresetView({
     <>
       <HeroLayout
         intro={intro}
+        actions={<HeroActions seeDecision={decisionCopy !== null} tryMove />}
         aside={
-          <Scorecard>
-            <BudgetDial index={index} baseline={report.baseline} reach={reach} />
-          </Scorecard>
+          <div className="space-y-4">
+            {decisionCopy ? (
+              <DecisionCard
+                copy={decisionCopy}
+                onOpenMove={
+                  decisionCopy.seedMove
+                    ? () => {
+                        const move = decisionCopy.seedMove;
+                        if (move) setSeedMove((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, move }));
+                      }
+                    : undefined
+                }
+                onTryRule={
+                  decisionCopy.seedRule
+                    ? () => {
+                        const rule = decisionCopy.seedRule;
+                        if (rule) setSeedRule((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, ...rule }));
+                      }
+                    : undefined
+                }
+                onOpenHidden={hero ? (trigger) => openClash(hero.clash, trigger) : undefined}
+                hiddenLabel={hero ? HERO_BUTTON[hero.kind] : undefined}
+              />
+            ) : decisionState.status === "loading" ? (
+              <DecisionCardSkeleton />
+            ) : null}
+            <ProofLine className="lg:hidden" />
+            <Scorecard>
+              <BudgetDial index={index} baseline={report.baseline} reach={reach} compact />
+            </Scorecard>
+          </div>
         }
-      >
-        <FigureLine text={index === null ? null : figureLine(index)} />
-        <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">
-          {hero ? (
-            <Button type="button" variant="ink" onClick={(event) => openClash(hero.clash, event.currentTarget)}>
-              {HERO_BUTTON[hero.kind]}
-            </Button>
-          ) : null}
-          <a href={`#${TRY_A_MOVE_ID}`} className={HERO_LINK}>
-            Try a move yourself
-            <ArrowDown aria-hidden="true" className="size-4" />
-          </a>
-          {hasWall ? (
-            <a href="#hidden-wall" className={HERO_LINK}>
-              See the hidden clashes
-              <ArrowDown aria-hidden="true" className="size-4" />
-            </a>
-          ) : null}
-        </div>
-        <p className="mt-4 max-w-2xl text-sm text-muted-foreground">
-          {name} does not use Clash Control: this is its published {dayName(dayLabel)} timetable, scored
-          independently.
-        </p>
-      </HeroLayout>
+      />
 
       <JumpNav agent={agentJump} wall={hasWall} />
+
+      <WhyThisMatters />
 
       <BoardFrame labelledBy="board-heading">
         <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4 border-b border-border pb-4">
@@ -483,7 +552,7 @@ function PresetView({
         <div className="mt-4 grid gap-x-10 gap-y-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
           <CoverageMeter coverage={report.coverage} metrics={report.metrics} />
           <div className="max-md:hidden">
-            <TimetableLegend planShown={planPreview !== null} />
+            <TimetableLegend planShown={planPreview !== null || rulePreview !== null} />
             <p className="mt-2.5 text-xs text-muted-foreground">
               Lines join the {links.length} costliest clashes; draw on each set is its Qloo
               popularity. Hover or focus a set to see its clashes, and open any clash for the figures
@@ -524,7 +593,7 @@ function PresetView({
           <div className="min-w-0">
             {/* Below 768 px: the clash list above, then the board itself in a sideways scroller
                 that snaps to the stage columns, then the start-order list behind a summary. */}
-            <TimetableLegend planShown={planPreview !== null} className="mb-3 md:hidden" />
+            <TimetableLegend planShown={planPreview !== null || rulePreview !== null} className="mb-3 md:hidden" />
             <p className="mb-3 text-xs text-muted-foreground md:hidden">Scroll sideways to see every stage.</p>
             <div className="max-md:snap-x max-md:snap-mandatory max-md:scroll-pl-[72px] max-md:overflow-x-auto max-md:overscroll-x-contain max-md:pb-3">
               <TimetableGrid
@@ -541,6 +610,7 @@ function PresetView({
                 onHighlightClash={(key) => setHighlight(key ? { kind: "clash", key } : null)}
                 onOpen={openClash}
                 plan={planPreview}
+                rulePreview={rulePreview}
               />
             </div>
             <details className="group mt-8 md:hidden">
@@ -559,7 +629,16 @@ function PresetView({
 
       {lenses ? <TasteLens lenses={lenses} ranked={ranked} onOpen={openClash} /> : null}
 
-      <TryAMove preset={preset} day={day} ranked={ranked} isLocked={isLocked} onPlanChange={setPlanPreview} />
+      <TryAMove
+        preset={preset}
+        day={day}
+        ranked={ranked}
+        isLocked={isLocked}
+        onPlanChange={setPlanPreview}
+        onRulePreview={setRulePreview}
+        seedMove={seedMove}
+        seedRule={seedRule}
+      />
 
       <AgentPanel preset={preset} day={day} agentStatus={agentStatus} />
 

@@ -9,13 +9,16 @@ import {
   METHOD_FIGURES,
   formatAuc,
   formatCount,
+  exploratoryReading,
   formatInterval,
+  formatP,
   formatPct,
   formatWholePct,
   formatWithin,
   methodRow,
   numberWord,
 } from "@/lib/method-figures";
+import { PUBLIC_SOURCES } from "@/lib/public-sources";
 
 export const metadata = {
   title: "How we know",
@@ -23,11 +26,14 @@ export const metadata = {
     "What Clash Control's taste overlap is, what we tested it against, and where it fell short.",
 } satisfies Metadata;
 
-const { backtest, coverage, index, liveCheck, moves, scale, symmetry } = METHOD_FIGURES;
+const { backtest, complaints, coverage, exploratory, index, liveCheck, moves, scale, symmetry } =
+  METHOD_FIGURES;
+const reading = exploratoryReading();
 const taste = methodRow("taste");
 const genre = methodRow("genre");
 const popularity = methodRow("popularity");
 const random = methodRow("random");
+const [tasteLow, tasteHigh] = taste.auc95 ?? [taste.auc, taste.auc];
 
 /** A section of the page: its heading on the left on wide screens, its text on the right. */
 function Section({
@@ -93,6 +99,22 @@ function ShortVersion() {
           rules. It tells apart two rivals of equal popularity when Qloo ranks one as much alike in
           audience to an act and the other as unlike (the twin card shows one such case). It says nothing about attendance, and on our own check it did not
           find complained-about clashes better than popularity does.
+        </li>
+        <li>
+          <strong className="font-semibold">What held, exploratory.</strong> On this press-skewed
+          complaint set, taste overlap separated the complained-about clashes from the day&rsquo;s other
+          pairs: AUC ({scale.auc.chance} means no better than chance; {scale.auc.perfect} means every
+          listed clash ranks above every unlisted pair) {formatAuc(taste.auc)}, interval{" "}
+          {formatInterval([tasteLow, tasteHigh])}.{" "}
+          {numberWord(exploratory.shufflesAtLeast, { capitalize: true })} of{" "}
+          {formatCount(exploratory.shuffles)} shuffles of the complaint labels scored that high
+          (p&nbsp;=&nbsp;{formatP(exploratory.p)}). We ran that after the {formatPct(taste.topQuarterPct)}{" "}
+          against {backtest.bar.topQuarterPct}% test above failed. Popularity separated them more (
+          {formatAuc(popularity.auc)}), and the gap between the two{" "}
+          {reading.gapIncludesZero
+            ? "has an interval that includes zero"
+            : "has an interval that excludes zero"}
+          .
         </li>
       </ul>
     </section>
@@ -167,6 +189,89 @@ function BacktestTable() {
         days.
       </p>
     </figure>
+  );
+}
+
+/** The failed pre-set test and the exploratory result that followed it, in one block so neither is read alone. */
+function Exploratory() {
+  return (
+    <aside
+      aria-labelledby="exploratory-heading"
+      className="space-y-3 rounded-lg border-2 border-foreground bg-card p-4 sm:p-5"
+    >
+      <h3 id="exploratory-heading" className="type-kicker">
+        Exploratory follow-up, run after the test failed
+      </h3>
+      <p>
+        <strong className="font-semibold">The test we set before building failed:</strong> taste overlap
+        reached {formatPct(taste.topQuarterPct)} against a bar of {backtest.bar.topQuarterPct}%. What
+        follows was run afterwards, on the same saved pairs, so it is exploratory.
+      </p>
+      <p>
+        <strong className="font-semibold">What held,</strong> on this press-skewed complaint set: taste
+        overlap separated the complained-about clashes from the day&rsquo;s other pairs (AUC{" "}
+        {formatAuc(taste.auc)}, interval {formatInterval([tasteLow, tasteHigh])}). Press lists lean
+        toward headliners, so the set is not a fair sample of every clash. To see how easily a score
+        like that could arise by chance, we dealt the complaint labels out again at random among each
+        festival day&rsquo;s pairs, keeping each day&rsquo;s number of complaints, {formatCount(exploratory.shuffles)}{" "}
+        times. {numberWord(exploratory.shufflesAtLeast, { capitalize: true })} of the{" "}
+        {formatCount(exploratory.shuffles)} shuffles scored that high or higher (p&nbsp;=&nbsp;
+        {formatP(exploratory.p)}).
+        {reading.pAboveBar
+          ? ` That p is above ${exploratory.pBar}: shuffled labels often score this high, so this check does not separate the measure from chance.`
+          : ""}{" "}
+        The shuffle treats pairs as independent, but the {backtest.scoredPairs} pairs come from{" "}
+        {backtest.clusters} complaints, so the real uncertainty is wider than that p suggests.
+      </p>
+      <p>
+        <strong className="font-semibold">What did not:</strong> popularity, also a Qloo field, scores
+        higher ({formatAuc(popularity.auc)}). The gap between the two is {formatAuc(exploratory.gap)} in AUC
+        (interval {formatInterval(exploratory.gapInterval)}); the interval{" "}
+        {reading.gapIncludesZero
+          ? "includes zero, so these data do not say which of the two ranks complained-about clashes higher"
+          : "excludes zero"}
+        .
+      </p>
+    </aside>
+  );
+}
+
+/** A readable name for a public page: its host, without "www.". */
+function sourceLabel(url: string): string {
+  const host = new URL(url).hostname.replace(/^www\./, "");
+  return host === "reddit.com" ? "reddit.com forum thread" : host;
+}
+
+/** The public pages behind the complained-about clashes, collapsed until opened. */
+function Sources() {
+  return (
+    <details className="rounded-lg border border-border-strong p-4">
+      <summary className="cursor-pointer font-semibold">
+        Sources for the {complaints.clustersVerified} clashes
+      </summary>
+      <p className="mt-3 text-sm text-muted-foreground">
+        {complaints.clustersVerified} clashes that fans or the press complained about at{" "}
+        {numberWord(complaints.festivals)} festivals had a verified overlap in time: {complaints.pairsVerified}{" "}
+        pairs of acts, overlapping for a median of {complaints.medianMinutes} minutes (from{" "}
+        {complaints.rangeMinutes[0]} to {complaints.rangeMinutes[1]}). They come from{" "}
+        {numberWord(PUBLIC_SOURCES.length)} public pages; one page can name several clashes.
+      </p>
+      <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm">
+        {PUBLIC_SOURCES.map((url) => (
+          <li key={url} className="min-w-0 break-words">
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-4 hover:no-underline"
+            >
+              {sourceLabel(url)}
+              <span className="sr-only"> (opens in a new tab)</span>
+            </a>
+          </li>
+        ))}
+      </ol>
+    </details>
   );
 }
 
@@ -253,6 +358,8 @@ export default function MethodPage() {
           festivals). Across the {numberWord(backtest.usFestivals)} US festivals together the AUC was{" "}
           {backtest.usFestivalsAuc}.
         </p>
+        <Exploratory />
+        <Sources />
       </Section>
 
       <Section id="limits" kicker="The limits" title="What taste overlap cannot tell you">

@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
+import { parseDecision } from "@/lib/decision";
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
 import { parsePreset } from "@/lib/preset";
 import { summarize } from "@/lib/server-summary";
@@ -56,8 +57,51 @@ describe("ClashControlFallback", () => {
   it("renders the server summary of the selected preset instead of skeletons", () => {
     const html = text(renderToStaticMarkup(createElement(ClashControlFallback, { intro: null, summary: otherSummary() })));
     expect(html).toContain("Other Fest, Sunday: the costliest clash");
-    expect(html).toContain("86 on the Clash Budget Index:");
+    expect(html).toContain("86 14% less taste-overlap cost than the average random valid timetable.");
     expect(html).not.toContain("Tiny Fest, Saturday");
+  });
+
+  it("puts the decision card first, with its receipt, and a button to it, in the server HTML", () => {
+    const decision = parseDecision({
+      kind: "decision",
+      day: 0,
+      skipped_locked: 0,
+      skipped_no_place: 0,
+      clash: { a_id: "ann", b_id: "bo", rank: 1, minutes: 60 },
+      published_budget: 104.2,
+      move: {
+        act_id: "bo",
+        act: "Bo Diddly Squat",
+        from: "Side 20:30-22:00",
+        stage_id: "side",
+        stage: "Side",
+        day: 0,
+        start: "21:30",
+        end: "23:00",
+        minutes_moved: 60,
+        legal_places: 4,
+        stage_changed: false,
+        budget_after: 98.4,
+        minutes_shared_after: 0,
+        same_index_alternative: null,
+      },
+      rule: null,
+    });
+    const summary = summarize(parsePreset(rawTinyPreset()), decision);
+    const html = renderToStaticMarkup(createElement(ClashControlFallback, { intro: null, summary }));
+    const plain = text(html);
+    expect(plain).toContain("Bo Diddly Squat 60 minutes later: 60 → to 0 minutes shared");
+    expect(plain.indexOf("Bo Diddly Squat 60 minutes later")).toBeLessThan(plain.indexOf("Clash Budget Index"));
+    expect(plain).toContain("Selected and scored by this app’s index");
+    expect(html).toContain('href="#decision-heading"');
+    // The server cannot act yet: no buttons that do nothing.
+    expect(plain).not.toContain("Open this move");
+  });
+
+  it("has no card and no button to it without a decision", () => {
+    const html = renderToStaticMarkup(createElement(ClashControlFallback, { intro: null, summary: otherSummary() }));
+    expect(html).not.toContain("decision-heading");
+    expect(text(html)).not.toContain("See one decision");
   });
 
   it("falls back to skeletons without a summary", () => {

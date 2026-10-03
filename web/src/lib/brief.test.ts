@@ -11,6 +11,7 @@ import {
   HIDDEN_NOTE,
   NO_MOVES,
   READING_NOTE,
+  TO_DECIDE,
   bandSentence,
   briefRows,
   briefSteps,
@@ -407,17 +408,47 @@ describe("the brief sheet", () => {
     expect(text).not.toContain(NO_MOVES);
   });
 
-  it("labels the unmoved table and prints the plan's own costliest clashes after the moves", () => {
+  it("leads with the plan, then the plan's own clashes and the line to decide, then the unmoved day", () => {
     const text = sheetText(makePreset(), PLAN);
+    const plan = text.indexOf("Your plan");
+    const verdict = text.indexOf("This plan scores");
+    const steps = text.indexOf("1. Act One");
+    const own = text.indexOf("The costliest clash with these moves");
+    const decide = text.indexOf(TO_DECIDE);
+    const day = text.indexOf("The day Clash Budget Index 116.7");
     const before = text.indexOf("The five costliest clashes on the published day, before these moves");
-    const moves = text.indexOf("Tested moves");
-    const after = text.indexOf("The costliest clash with these moves");
-    expect(before).toBeGreaterThan(-1);
-    expect(moves).toBeGreaterThan(before);
-    expect(after).toBeGreaterThan(moves);
+    expect(plan).toBeGreaterThan(-1);
+    for (const [earlier, later] of [
+      [plan, verdict],
+      [verdict, steps],
+      [steps, own],
+      [own, decide],
+      [decide, day],
+      [day, before],
+    ]) {
+      expect(earlier).toBeGreaterThan(-1);
+      expect(later).toBeGreaterThan(earlier);
+    }
     expect(text).toContain("1. Act Two and Act Three · 9.5 index points");
+    expect(text).not.toContain("Tested moves");
     // Not a bare "The five costliest clashes" heading over the unmoved table.
     expect(text).not.toMatch(/The five costliest clashes (?!on the published day)/);
+  });
+
+  it("says what the page cannot weigh, and only with moves", () => {
+    expect(TO_DECIDE).toBe(
+      "To decide: keep the published times, or make the moves above. This page shows what each does to the day’s clashes by this app’s measure; it does not weigh contracts, riders or stage fit.",
+    );
+    expect(sheetText(makePreset(), PLAN)).toContain(TO_DECIDE);
+    expect(sheetText(makePreset(), null)).not.toContain("To decide");
+  });
+
+  it("prints no type under 9 pt and one column of steps up to three moves", () => {
+    const html = renderToStaticMarkup(createElement(BriefContent, { preset: makePreset(), day: 0, plan: PLAN }));
+    const sizes = [...html.matchAll(/print:text-\[([\d.]+)pt\]/g)].map((match) => Number(match[1]));
+    expect(sizes.length).toBeGreaterThan(5);
+    expect(Math.min(...sizes)).toBeGreaterThanOrEqual(9);
+    expect(html).not.toMatch(/print:size-\[[1-8]pt\]/);
   });
 
   it("marks a kept step that raises the index", () => {

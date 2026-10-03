@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Check, Equal, LoaderCircle, Minus, Plus, RotateCcw } from "lucide-react";
 
 import { ProvenanceChip } from "@/components/kernel";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { budgetDelta, changeLabel } from "@/lib/agent-session";
 import { dayName } from "@/lib/clashes";
 import { pluralize } from "@/lib/format";
+import type { RulePreview } from "@/lib/rule-fix";
 import {
   clashChanges,
   concurrentActs,
@@ -38,6 +39,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import { BudgetMove, scaleRange, signedDelta, type ScaleRange } from "./budget-move";
+import { KeepApart } from "./keep-apart";
 import { ScratchPlan } from "./scratch-plan";
 import { usePlan } from "./use-moves";
 
@@ -386,12 +388,21 @@ export function TryAMove({
   ranked,
   isLocked,
   onPlanChange,
+  onRulePreview,
+  seedMove = null,
+  seedRule = null,
 }: {
   preset: Preset;
   day: number;
   ranked: readonly PairClash[];
   isLocked: (actId: string) => boolean;
   onPlanChange?: (preview: PlanPreview | null) => void;
+  /** A change previewed from "Keep two sets apart": two ghost slots, never part of the kept plan. */
+  onRulePreview?: (preview: RulePreview | null) => void;
+  /** The decision card's move: a new `nonce` makes it the kept plan; the same one does nothing. */
+  seedMove?: { nonce: number; move: StackMove } | null;
+  /** The decision card's rule: a new `nonce` runs the search for the pair in "Keep two sets apart". */
+  seedRule?: { nonce: number; aId: string; bId: string } | null;
 }) {
   const selectId = useId();
   const startLabelId = useId();
@@ -460,6 +471,49 @@ export function TryAMove({
     setMoves(next);
     storeMoves(preset.id, next);
   }
+
+  // The rule panel previews through a stable callback, so its cleanup never fires on a re-render.
+  const rulePreviewRef = useRef(onRulePreview);
+  useEffect(() => {
+    rulePreviewRef.current = onRulePreview;
+  }, [onRulePreview]);
+  const emitRulePreview = useCallback((next: RulePreview | null) => rulePreviewRef.current?.(next), []);
+
+  // A move seeded by the decision card becomes the kept plan: state adjusted while rendering, as
+  // React advises for a prop that changes. The plan is priced as any kept move is (this section's own
+  // `/whatif` request); focus reaches the plan card once the card's own motion (the band and the
+  // figure, 900 ms) has played, at once with reduced motion.
+  const seedNonce = seedMove?.nonce ?? 0;
+  const seedMoveValue = seedMove?.move ?? null;
+  const [handledSeed, setHandledSeed] = useState(0);
+  const [focusNonce, setFocusNonce] = useState(0);
+  if (
+    seedMoveValue &&
+    seedNonce !== 0 &&
+    seedNonce !== handledSeed &&
+    sets.some((set) => set.actId === seedMoveValue.actId && !set.locked)
+  ) {
+    const next = [seedMoveValue];
+    setHandledSeed(seedNonce);
+    setMoves(next);
+    setPicked(null);
+    setPlanNews({ moves: encodeMoves(next), picked: null });
+    setFocusNonce(seedNonce);
+  }
+  // Keep the tab's plan in step with the moves, whichever way they changed.
+  useEffect(() => {
+    storeMoves(preset.id, moves);
+  }, [preset.id, moves]);
+  useEffect(() => {
+    if (focusNonce === 0) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const show = () => {
+      planRef.current?.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+      planRef.current?.focus({ preventScroll: true });
+    };
+    const timer = window.setTimeout(show, reduce ? 0 : 900);
+    return () => window.clearTimeout(timer);
+  }, [focusNonce]);
 
   function keep(option: PlacedOption) {
     if (!actId || moves.length >= MAX_STACK || moved.has(actId)) return;
@@ -660,6 +714,8 @@ export function TryAMove({
             ) : null}
           </div>
         ) : null}
+
+        <KeepApart key={day} preset={preset} day={day} seed={seedRule} onPreview={emitRulePreview} />
 
         <p role="status" aria-live="polite" className="sr-only">
           {announcement}

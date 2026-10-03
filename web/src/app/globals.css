@@ -428,6 +428,151 @@
   }
 }
 
+/*
+ * Motion for the decision card, a tested move and a rule preview. Each sequence explains a change
+ * the text already states, so the reduced-motion rule below shows the final state at once and
+ * keeps every figure and label.
+ */
+@keyframes cc-card-in {
+  from {
+    opacity: 0.98;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cc-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes cc-slot-flight {
+  0% {
+    opacity: 0.72;
+    transform: translate(var(--dx), var(--dy)) scale(0.985);
+  }
+  18% {
+    opacity: 1;
+    transform: translate(calc(var(--dx) * 0.82), calc(var(--dy) * 0.82)) scale(1.025);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+/* The band is drawn at its final width and starts as wide as it was (`--band-from` = old / new). */
+@keyframes cc-band-shrink {
+  from {
+    transform: scaleX(var(--band-from));
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes cc-band-away {
+  from {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  to {
+    transform: scaleX(0);
+    opacity: 0;
+  }
+}
+
+@keyframes cc-result-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* The source slot lifts 4px and shows a dashed edge while its tested place appears. */
+@keyframes cc-lift {
+  0%,
+  100% {
+    transform: translateY(0);
+    outline: 2px dashed transparent;
+  }
+  20%,
+  70% {
+    transform: translateY(-4px);
+    outline: 2px dashed var(--primary);
+  }
+}
+
+/* A vermilion bar for a moment, then a small outlined zero: nothing is shared. */
+@keyframes cc-zero-in {
+  0% {
+    opacity: 0;
+    background-color: var(--primary);
+    color: transparent;
+  }
+  30% {
+    opacity: 1;
+    background-color: var(--primary);
+    color: transparent;
+  }
+  100% {
+    opacity: 1;
+    background-color: var(--card);
+    color: var(--foreground);
+  }
+}
+
+.cc-card-enter {
+  animation: cc-card-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.cc-card-enter .cc-card-body {
+  animation: cc-fade-in 180ms ease-out 80ms both;
+}
+
+.cc-slot-flight {
+  animation: cc-slot-flight 500ms cubic-bezier(0.22, 1, 0.36, 1) 120ms both;
+}
+
+.cc-lift {
+  animation: cc-lift 620ms ease-out backwards;
+}
+
+.cc-overlap-band {
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: cc-band-shrink 300ms cubic-bezier(0.22, 1, 0.36, 1) 420ms both;
+}
+
+.cc-rule-band {
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: cc-band-away 300ms ease-out 400ms both;
+}
+
+.cc-zero {
+  animation: cc-zero-in 650ms ease-out 400ms both;
+}
+
+.cc-check-rules {
+  animation: cc-result-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.cc-check-shared {
+  animation: cc-result-in 180ms cubic-bezier(0.22, 1, 0.36, 1) 120ms both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -440,5 +585,20 @@
 
   .stream-caret::after {
     animation: none;
+  }
+
+  .cc-card-enter,
+  .cc-card-enter .cc-card-body,
+  .cc-slot-flight,
+  .cc-lift,
+  .cc-overlap-band,
+  .cc-rule-band,
+  .cc-zero,
+  .cc-check-rules,
+  .cc-check-shared {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+    outline: none !important;
   }
 }

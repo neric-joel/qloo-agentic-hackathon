@@ -23,7 +23,7 @@ import {
 import { pluralize } from "./format";
 import { numberWord } from "./method-figures";
 import { currentPlacement } from "./moves";
-import { publishedVerdict, raisesIndex } from "./plan-copy";
+import { planVerdict, publishedVerdict, raisesIndex } from "./plan-copy";
 import type { BaselineStats, Preset } from "./preset";
 import { shiftText, type Plan, type ScaleRange } from "./stack";
 import { formatRange, overlapWindow } from "./timetable";
@@ -41,6 +41,10 @@ export const READING_NOTE = "A reading, not a verdict on the festival.";
 /** Shown when the link carries no kept moves (or moves this page cannot read). */
 export const NO_MOVES =
   "No moves kept. Use “Try a move” on the timetable page, keep a move, and open the brief from there.";
+
+/** The line under the plan: what the page can and cannot help the reader decide. */
+export const TO_DECIDE =
+  "To decide: keep the published times, or make the moves above. This page shows what each does to the day’s clashes by this app’s measure; it does not weigh contracts, riders or stage fit.";
 
 /** The "How to read this" block, in order. */
 export const HOW_TO_READ: readonly string[] = [
@@ -249,6 +253,17 @@ export function briefSteps(preset: Pick<Preset, "festival">, plan: Pick<Plan, "p
       raises: raisesIndex(before, step.budgetAfter),
     };
   });
+}
+
+/**
+ * Where the plan's index sits against the middle 80% of random valid timetables: "This plan scores
+ * 5.3 index points above that range. The published timetable is 7.7 above it." Null without a band.
+ */
+export function planVerdictSentence(
+  plan: Pick<Plan, "publishedBudget" | "budget">,
+  range: ScaleRange,
+): string | null {
+  return planVerdict(plan.budget, plan.publishedBudget, range);
 }
 
 /**

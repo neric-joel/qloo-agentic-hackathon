@@ -4,29 +4,31 @@ import { Suspense } from "react";
 import { ClashControl, ClashControlFallback } from "@/components/clash/clash-control";
 import { loadServerSummary } from "@/lib/server-summary";
 
-/** The pitch. Static, so it paints before any festival data arrives. */
+/**
+ * The pitch. Static, so it paints before any festival data arrives. The actions and the proof line
+ * that follow it are drawn by the interactive page, which knows whether a decision card exists.
+ */
 function Intro() {
   return (
     <>
-      <p className="type-kicker text-muted-foreground">Timetable audit for festival programmers</p>
-      <h1 id="pitch-heading" tabIndex={-1} className="type-poster mt-4 outline-none">
-        Every clash
-        <br />
-        has a price.
+      <p className="type-kicker text-muted-foreground">For heads of programming, before set times go out</p>
+      <h1
+        id="pitch-heading"
+        tabIndex={-1}
+        className="mt-3 text-[clamp(2.55rem,10vw,3.25rem)] leading-[0.9] font-extrabold tracking-[-0.01em] uppercase outline-none [font-variation-settings:'wdth'_62] lg:type-poster"
+      >
+        Which clash is worth moving?
       </h1>
-      <p className="mt-5 max-w-2xl text-lg leading-snug font-medium sm:text-xl">
-        For heads of programming, in the weeks between a lineup announcement and the published set
-        times, when a clash can still be moved. Clash Control prices the clashes on a timetable with
-        Qloo: how popular the two acts are, times{" "}
+      <p className="mt-4 max-w-2xl text-sm leading-[1.42] sm:mt-5 sm:text-[0.9375rem] sm:leading-[1.5]">
+        Clash Control checks a timetable against hard rules (changeovers, curfew, locked sets, pairs that must never
+        overlap), then ranks the set-time clashes by time shared, how big the acts are and{" "}
         <mark className="-mx-0.5 bg-highlight px-0.5 text-highlight-foreground [box-decoration-break:clone]">
           how much their audiences overlap in taste
         </mark>
-        . It shows which clashes cost most, which ones genre labels hide, and what a move does to the
-        rest of the day. Here it is run on two published days from festivals that do not use it.
+        , from Qloo. Move one set, see what it does to the rest of the day, print the one-page brief.
       </p>
-      <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
-        Taste overlap is derived from Qloo data and ranked within each day&rsquo;s lineup. It is not
-        attendance.
+      <p className="mt-3 max-w-2xl text-xs leading-[1.4] text-muted-foreground sm:text-sm">
+        Taste overlap is derived from Qloo data and ranked within each day&rsquo;s lineup. It is not attendance.
       </p>
     </>
   );

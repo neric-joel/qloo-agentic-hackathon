@@ -7,8 +7,9 @@
  *
  * Zero dependencies (Node 18 or newer). One line per check; exits 1 when any check fails, 2 on a usage error.
  * Nothing here can reach Qloo or a language model: it reads pages and saved presets, asks for a method that is
- * not allowed, asks the first preset for its lenses (saved data, no Qloo request), and sends an empty body to the
- * pair check and to the what-if route, which fail validation before anything is spent (no limiter slot, no Qloo).
+ * not allowed, asks the first preset for its lenses and its decision (saved data, no Qloo request, no limiter
+ * slot), asks its rule search for one set against itself (refused before any search or slot), and sends an empty
+ * body to the pair check and to the what-if route, which fail validation before anything is spent.
  */
 
 import { pathToFileURL } from "node:url";
@@ -17,10 +18,33 @@ const TIMEOUT_MS = 15_000;
 const PRESET_MIN_BYTES = 50 * 1024;
 const PAIR_CHECK_MODES = ["on", "off", "any"];
 
+const BUDGET_KEYS = ["budget_after", "published_budget"];
+const BANNED_KEYS = ["matrix", "affinity", "values"];
+
 class CheckFailed extends Error {}
 
 function expect(condition, message) {
   if (!condition) throw new CheckFailed(message);
+}
+
+/** The first problem in a decision body: a number with decimals that is not a budget, or a key that holds taste data. */
+function decisionProblem(value, key = null) {
+  if (typeof value === "number") {
+    return Number.isInteger(value) || BUDGET_KEYS.includes(key) ? null : `a decimal number under ${JSON.stringify(key)}`;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = decisionProblem(item, key);
+      if (found) return found;
+    }
+  } else if (value && typeof value === "object") {
+    for (const [name, item] of Object.entries(value)) {
+      if (BANNED_KEYS.includes(name)) return `a ${JSON.stringify(name)} key`;
+      const found = decisionProblem(item, name);
+      if (found) return found;
+    }
+  }
+  return null;
 }
 
 function trimOrigin(origin) {
@@ -131,6 +155,22 @@ export async function runSmoke({
     expect(page.status === 200, `status ${page.status}`);
     const body = json(page);
     expect(body.kind === "lenses", `kind is ${JSON.stringify(body.kind)}`);
+  });
+
+  await check("web first preset decision answers 200 with kind decision and no stray decimal", async () => {
+    expect(presetId, "no preset id to read");
+    const page = await request(webOrigin, `/api/presets/${encodeURIComponent(presetId)}/decision`);
+    expect(page.status === 200, `status ${page.status}`);
+    const body = json(page);
+    expect(body.kind === "decision", `kind is ${JSON.stringify(body.kind)}`);
+    const problem = decisionProblem(body);
+    expect(!problem, `the decision holds ${problem}`);
+  });
+
+  await check("web first preset rule-fixes with one set against itself is 422", async () => {
+    expect(presetId, "no preset id to read");
+    const page = await request(webOrigin, `/api/presets/${encodeURIComponent(presetId)}/rule-fixes?a=x&b=x`);
+    expect(page.status === 422, `status ${page.status}`);
   });
 
   await check("web POST first preset what-if with a malformed plan is 422", async () => {

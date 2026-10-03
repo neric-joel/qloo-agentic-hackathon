@@ -9,7 +9,9 @@ import { firstHop, SIGNATURE_HEADER, stamp, VISITOR_HEADER } from "@/lib/visitor
  * key the caps count them under. When `VISITOR_STAMP_SECRET` is set and the request carries an address, the
  * proxy adds a fresh stamp. With no secret it only removes: the stamp stays inert until the owner sets it.
  *
- * Not matched: the move list (`/moves`, cached at the edge for everyone) and the preset reads.
+ * The rule search (`/rule-fixes`) takes a what-if limiter slot when it computes, so it is signed like the plan
+ * route. Not matched: the move list (`/moves`, cached at the edge for everyone), the day's `/decision` (cached
+ * on the server, no slot) and the preset reads.
  */
 export async function proxy(request: NextRequest) {
   const headers = new Headers(request.headers);
@@ -27,5 +29,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/api/pair", "/api/runs", "/api/presets/:id/whatif", "/api/health"],
+  matcher: ["/api/pair", "/api/runs", "/api/presets/:id/whatif", "/api/presets/:id/rule-fixes", "/api/health"],
 };

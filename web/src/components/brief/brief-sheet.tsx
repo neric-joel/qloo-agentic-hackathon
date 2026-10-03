@@ -13,6 +13,7 @@ import {
   HOW_TO_READ,
   NO_MOVES,
   READING_NOTE,
+  TO_DECIDE,
   bandSentence,
   briefRows,
   briefSteps,
@@ -26,6 +27,7 @@ import {
   planClashLines,
   planClashesTitle,
   planSummary,
+  planVerdictSentence,
   savedDate,
   sourceHosts,
   type BriefRow,
@@ -190,21 +192,38 @@ export function BriefSheet() {
 
 // ------------------------------------------------------------------------------------ the sheet
 
-function Block({ title, children, className }: { title: string; children: ReactNode; className?: string }) {
+function Block({
+  title,
+  children,
+  className,
+  quietInPrint = false,
+}: {
+  title: string;
+  children: ReactNode;
+  className?: string;
+  /** The heading is left off the printed page (the block's first sentence says what it is). */
+  quietInPrint?: boolean;
+}) {
   const id = `brief-${title.toLowerCase().replace(/[^a-z]+/g, "-").replace(/^-|-$/g, "")}`;
   return (
-    <section aria-labelledby={id} className={cn("mt-7 break-inside-avoid print:mt-[5pt]", className)}>
-      <h2 id={id} className="type-kicker border-b-2 border-foreground pb-1.5 print:pb-[2pt] print:text-[8pt]">
+    <section aria-labelledby={id} className={cn("mt-7 break-inside-avoid print:mt-[3pt]", className)}>
+      <h2
+        id={id}
+        className={cn(
+          "type-kicker border-b-2 border-foreground pb-1.5 print:pb-[1pt] print:text-[10pt]",
+          quietInPrint && "print:sr-only",
+        )}
+      >
         {title}
       </h2>
-      <div className="mt-3 print:mt-[4pt]">{children}</div>
+      <div className="mt-3 print:mt-[3pt]">{children}</div>
     </section>
   );
 }
 
 function HiddenMark() {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-foreground px-1.5 py-0.5 text-[0.6875rem] leading-none font-semibold whitespace-nowrap print:px-[3pt] print:text-[8pt]">
+    <span className="inline-flex items-center gap-1 rounded-full border border-foreground px-1.5 py-0.5 text-[0.6875rem] leading-none font-semibold whitespace-nowrap print:px-[3pt] print:text-[9pt]">
       <DiamondGlyph className="size-2" />
       Hidden
     </span>
@@ -214,24 +233,24 @@ function HiddenMark() {
 function LockedMark() {
   return (
     <span className="inline-flex items-center gap-1 font-semibold whitespace-nowrap text-foreground">
-      <Lock aria-hidden="true" className="size-3 print:size-[7pt]" />
+      <Lock aria-hidden="true" className="size-3 print:size-[9pt]" />
       both locked
     </span>
   );
 }
 
-const TH = "px-2 py-2 font-semibold align-bottom print:px-[3pt] print:py-[3pt]";
-const TD = "px-2 py-2 align-top print:px-[3pt] print:py-[1pt]";
+const TH = "px-2 py-2 font-semibold align-bottom print:px-[2pt] print:py-[2pt]";
+const TD = "px-2 py-2 align-top print:px-[2pt] print:py-[1pt]";
 
 /** The costliest clashes as a table (wide screens and print). */
 function ClashTable({ rows, captionId }: { rows: readonly BriefRow[]; captionId: string }) {
   return (
     <table
       aria-labelledby={captionId}
-      className="hidden w-full border-collapse text-left text-sm sm:table print:table print:text-[8.5pt] print:leading-[1.25]"
+      className="hidden w-full border-collapse text-left text-sm sm:table print:table print:text-[9pt] print:leading-[1.25]"
     >
       <thead>
-        <tr className="border-b border-border-strong text-xs print:text-[8pt]">
+        <tr className="border-b border-border-strong text-xs print:text-[9pt]">
           <th scope="col" className={cn(TH, "w-8 text-right")}>
             #
           </th>
@@ -242,10 +261,10 @@ function ClashTable({ rows, captionId }: { rows: readonly BriefRow[]; captionId:
             Time shared
           </th>
           <th scope="col" className={cn(TH, "text-right")}>
-            Taste overlap
+            Taste overlap<span className="hidden print:inline"> (of 100)</span>
           </th>
           <th scope="col" className={cn(TH, "text-right")}>
-            Combined draw
+            Combined draw<span className="hidden print:inline"> (of 100)</span>
           </th>
           <th scope="col" className={cn(TH, "text-right")}>
             Share of the day&rsquo;s cost
@@ -263,7 +282,7 @@ function ClashTable({ rows, captionId }: { rows: readonly BriefRow[]; captionId:
               <span className="font-semibold">
                 {row.a} and {row.b}
               </span>
-              <span className="block text-xs text-muted-foreground print:text-[8pt]">
+              <span className="block text-xs text-muted-foreground print:text-[9pt]">
                 {row.stageA} + {row.stageB}
                 {row.bothLocked ? (
                   <>
@@ -273,17 +292,17 @@ function ClashTable({ rows, captionId }: { rows: readonly BriefRow[]; captionId:
                 ) : null}
               </span>
             </td>
-            <td className={cn(TD, "font-mono text-xs whitespace-nowrap tabular-nums print:text-[8pt]")}>
+            <td className={cn(TD, "font-mono text-xs whitespace-nowrap tabular-nums print:text-[9pt]")}>
               {row.window ?? "Times not known"}
               <span className="block text-muted-foreground">{row.minutes} min</span>
             </td>
             <td className={cn(TD, "text-right font-mono whitespace-nowrap tabular-nums")}>
               {row.overlap}
-              <span className="text-muted-foreground"> / 100</span>
+              <span className="text-muted-foreground print:hidden"> / 100</span>
             </td>
             <td className={cn(TD, "text-right font-mono whitespace-nowrap tabular-nums")}>
               {row.draw}
-              <span className="text-muted-foreground"> / 100</span>
+              <span className="text-muted-foreground print:hidden"> / 100</span>
             </td>
             <td className={cn(TD, "text-right font-mono tabular-nums")}>{row.share}</td>
             <td className={TD}>{row.hidden ? <HiddenMark /> : <span className="sr-only">Not hidden</span>}</td>
@@ -375,98 +394,91 @@ export function BriefContent({
   const withMoves = steps.length > 0;
   const tableTitle = clashesTitle(rows.length, withMoves);
   const planLines = plan && withMoves ? planClashLines(plan) : [];
+  const verdict = plan && withMoves ? planVerdictSentence(plan, figures.range) : null;
   const saved = savedDate(preset);
   const hosts = sourceHosts(preset);
   const tableCaption = "brief-clashes-caption";
 
-  return (
-    <article
-      aria-labelledby="brief-heading"
-      className={cn(
-        "rounded-xl border border-border bg-card p-5 text-[0.9375rem] leading-relaxed sm:p-8 lg:p-10",
-        "print:rounded-none print:border-0 print:bg-transparent print:p-0 print:text-[10pt] print:leading-[1.28]",
-        className,
-      )}
-    >
-      <p className="type-kicker text-muted-foreground print:text-[8pt]">
-        Clash brief · {festival}, {dayLabel}
+  const dayBlock = (
+    <Block title="The day">
+      <p>
+        <strong className="font-semibold">{indexSentence(figures.index)}</strong>
+        {band ? ` ${band}` : ""}
       </p>
-      <h1
-        id="brief-heading"
-        className="type-title mt-2 text-[1.625rem] break-words sm:text-[2.125rem] print:mt-[2pt] print:text-[16pt]"
-      >
-        {festival} {dayLabel}: where the clash budget goes
-      </h1>
-      <p className="mt-2 text-muted-foreground print:mt-[3pt]">
-        Scored by this app from the published timetable. {festival} does not use Clash Control.
-      </p>
+      <p className="mt-1 print:mt-[2pt]">{coverageSentence(figures)}</p>
+    </Block>
+  );
 
-      <Block title="The day">
-        <p>
-          <strong className="font-semibold">{indexSentence(figures.index)}</strong>
-          {band ? ` ${band}` : ""}
+  const tableBlock = (
+    <Block title={tableTitle}>
+      {rows.length === 0 ? (
+        <p className="text-muted-foreground">
+          No priced clashes on this day: no two acts with a Qloo signal play at the same time.
         </p>
-        <p className="mt-1 print:mt-[2pt]">{coverageSentence(figures)}</p>
-      </Block>
-
-      <Block title={tableTitle}>
-        {rows.length === 0 ? (
-          <p className="text-muted-foreground">
-            No priced clashes on this day: no two acts with a Qloo signal play at the same time.
+      ) : (
+        <>
+          <p id={tableCaption} className="sr-only">
+            {withMoves ? `${tableTitle}, costliest first` : `${tableTitle} on this day, costliest first`}
           </p>
-        ) : (
-          <>
-            <p id={tableCaption} className="sr-only">
-              {withMoves ? `${tableTitle}, costliest first` : `${tableTitle} on this day, costliest first`}
-            </p>
-            <ClashTable rows={rows} captionId={tableCaption} />
-            <ClashCards rows={rows} />
-            <p className="mt-2 text-sm text-muted-foreground print:mt-[3pt] print:text-[8pt]">
-              {HIDDEN_NOTE} {READING_NOTE}
-            </p>
-          </>
-        )}
-      </Block>
+          <ClashTable rows={rows} captionId={tableCaption} />
+          <ClashCards rows={rows} />
+          <p className="mt-2 text-sm text-muted-foreground print:mt-[3pt] print:text-[9pt]">
+            {HIDDEN_NOTE} {READING_NOTE}
+          </p>
+        </>
+      )}
+    </Block>
+  );
 
-      {hidden ? (
-        <Block title="Hidden clashes">
-          <p className="print:text-[9pt]">{hidden}</p>
+  const hiddenBlock = hidden ? (
+    <Block title="Hidden clashes" quietInPrint>
+      <p className="print:text-[9pt]">{hidden}</p>
+    </Block>
+  ) : null;
+
+  const howBlock = (
+    <Block title="How to read this">
+      <ul className="list-disc space-y-1 pl-5 marker:text-muted-foreground print:space-y-[1pt] print:pl-[12pt] print:text-[9pt]">
+        {HOW_TO_READ.map((line) => (
+          <li key={line}>{line}</li>
+        ))}
+      </ul>
+    </Block>
+  );
+
+  // With kept moves the sheet leads with the plan: what it does, then what the day looks like with it,
+  // then the line that says what the page cannot weigh, and only then the published day it is read
+  // against. Without moves it is the published day, and says that no moves were kept.
+  const planBlock =
+    plan && withMoves ? (
+      <>
+        <Block title="Your plan">
+          <p className="font-semibold">{planSummary(plan)}</p>
+          {verdict ? <p className="mt-1 print:mt-[2pt]">{verdict}</p> : null}
+          <ol
+            className={cn(
+              "mt-2 grid gap-x-6 gap-y-2 print:mt-[2pt] print:gap-y-[2pt]",
+              steps.length > 3 && "md:grid-cols-2 print:grid-cols-2",
+            )}
+          >
+            {steps.map((step) => (
+              <li key={step.n} className="min-w-0 break-inside-avoid">
+                <span className="font-semibold break-words print:text-[9pt]">
+                  <span className="tabular-nums">{step.n}.</span> {step.act} · {step.place}
+                </span>
+                <span className="block text-sm text-muted-foreground print:text-[9pt]">
+                  {step.shift} ·{" "}
+                  <span className="font-mono tabular-nums">
+                    {step.before} → {step.after}
+                  </span>
+                  {step.raises ? RAISES_MARK : null}
+                </span>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-2 text-sm text-muted-foreground print:mt-[4pt] print:text-[9pt]">{PLAN_CAVEAT}</p>
         </Block>
-      ) : null}
 
-      <Block title="Tested moves">
-        {plan && steps.length > 0 ? (
-          <>
-            <p className="font-semibold">{planSummary(plan)}</p>
-            <ol
-              className={cn(
-                "mt-2 grid gap-x-6 gap-y-2 print:mt-[3pt] print:gap-y-[3pt]",
-                steps.length > 3 && "md:grid-cols-2 print:grid-cols-2",
-              )}
-            >
-              {steps.map((step) => (
-                <li key={step.n} className="min-w-0 break-inside-avoid">
-                  <span className="font-semibold break-words print:text-[9pt]">
-                    <span className="tabular-nums">{step.n}.</span> {step.act} · {step.place}
-                  </span>
-                  <span className="block text-sm text-muted-foreground print:text-[8pt]">
-                    {step.shift} ·{" "}
-                    <span className="font-mono tabular-nums">
-                      {step.before} → {step.after}
-                    </span>
-                    {step.raises ? RAISES_MARK : null}
-                  </span>
-                </li>
-              ))}
-            </ol>
-            <p className="mt-2 text-sm text-muted-foreground print:mt-[4pt] print:text-[8pt]">{PLAN_CAVEAT}</p>
-          </>
-        ) : (
-          <p className="text-muted-foreground">{NO_MOVES}</p>
-        )}
-      </Block>
-
-      {plan && withMoves ? (
         <Block title={planClashesTitle(planLines.length)}>
           {planLines.length === 0 ? (
             <p className="text-muted-foreground">None priced.</p>
@@ -485,17 +497,55 @@ export function BriefContent({
             </ol>
           )}
         </Block>
-      ) : null}
 
-      <Block title="How to read this">
-        <ul className="list-disc space-y-1 pl-5 marker:text-muted-foreground print:space-y-[1pt] print:pl-[12pt] print:text-[9pt]">
-          {HOW_TO_READ.map((line) => (
-            <li key={line}>{line}</li>
-          ))}
-        </ul>
+        <p className="mt-5 font-semibold print:mt-[4pt]">{TO_DECIDE}</p>
+      </>
+    ) : (
+      <Block title="Tested moves">
+        <p className="text-muted-foreground">{NO_MOVES}</p>
       </Block>
+    );
 
-      <div className="mt-8 border-t border-border pt-3 text-xs leading-relaxed text-muted-foreground print:mt-[6pt] print:pt-[3pt] print:text-[8pt] print:leading-[1.25]">
+  return (
+    <article
+      aria-labelledby="brief-heading"
+      className={cn(
+        "rounded-xl border border-border bg-card p-5 text-[0.9375rem] leading-relaxed sm:p-8 lg:p-10",
+        "print:rounded-none print:border-0 print:bg-transparent print:p-0 print:text-[9pt] print:leading-[1.2]",
+        className,
+      )}
+    >
+      <p className="type-kicker text-muted-foreground print:text-[9pt]">
+        Clash brief · {festival}, {dayLabel}
+      </p>
+      <h1
+        id="brief-heading"
+        className="type-title mt-2 text-[1.625rem] break-words sm:text-[2.125rem] print:mt-[2pt] print:text-[16pt]"
+      >
+        {festival} {dayLabel}: where the clash budget goes
+      </h1>
+      <p className="mt-2 text-muted-foreground print:mt-[3pt]">
+        Scored by this app from the published timetable. {festival} does not use Clash Control.
+      </p>
+
+      {withMoves ? (
+        <>
+          {planBlock}
+          {dayBlock}
+          {tableBlock}
+          {hiddenBlock}
+        </>
+      ) : (
+        <>
+          {dayBlock}
+          {tableBlock}
+          {hiddenBlock}
+          {planBlock}
+        </>
+      )}
+      {howBlock}
+
+      <div className="mt-8 border-t border-border pt-3 text-xs leading-relaxed text-muted-foreground print:mt-[6pt] print:pt-[3pt] print:text-[9pt] print:leading-[1.25]">
         <p>
           {saved
             ? `Figures are calculated by this app from Qloo audience data saved ${saved}.`

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { parseDecision } from "./decision";
 import { rawTinyPreset } from "./fixtures/tiny-preset";
 import { parsePreset } from "./preset";
 import {
@@ -115,6 +116,68 @@ describe("summarize", () => {
     }
     expect(all).not.toContain("Q-ANN");
     expect(all).not.toContain("0.9722");
+  });
+});
+
+const RAW_DECISION: Raw = {
+  kind: "decision",
+  day: 0,
+  skipped_locked: 0,
+  skipped_no_place: 0,
+  clash: { a_id: "ann", b_id: "bo", rank: 1, minutes: 60 },
+  published_budget: 104.2,
+  move: {
+    act_id: "bo",
+    act: "Bo Diddly Squat",
+    from: "Side 20:30-22:00",
+    stage_id: "side",
+    stage: "Side",
+    day: 0,
+    start: "21:30",
+    end: "23:00",
+    minutes_moved: 60,
+    legal_places: 4,
+    stage_changed: false,
+    budget_after: 98.4,
+    minutes_shared_after: 0,
+    same_index_alternative: null,
+  },
+  rule: null,
+};
+
+describe("the decision card in the summary", () => {
+  it("has none until the route answers", () => {
+    const summary = summarize(parsePreset(rawTinyPreset()));
+    expect(summary.decision).toBeNull();
+    expect(summary.decisionData).toBeNull();
+  });
+
+  it("is worded from the route and the preset", () => {
+    const summary = summarize(parsePreset(rawTinyPreset()), parseDecision(RAW_DECISION));
+    expect(summary.decision?.receipt).toBe("Bo Diddly Squat 60 minutes later: 60 → 0 minutes shared");
+    expect(summary.decision?.presetId).toBe("tiny-fest-sat");
+    expect(summary.decisionData?.clash?.rank).toBe(1);
+  });
+
+  it("is fetched with the preset, and a failed fetch leaves the rest of the summary", async () => {
+    const make = (decision: Response | "down") =>
+      vi.fn(async (url: string) => {
+        if (url.endsWith("/decision")) {
+          if (decision === "down") throw new TypeError("fetch failed");
+          return decision;
+        }
+        if (url === "http://api.test/api/presets") {
+          return new Response(JSON.stringify([{ id: "tiny-fest-sat", title: "Tiny Fest, Saturday", city: null, sets: 3, stages: 2, scored_share: 0.67 }]), { status: 200 });
+        }
+        return new Response(JSON.stringify(rawTinyPreset()), { status: 200 });
+      });
+    const ok = await loadServerSummary(null, { backend: "http://api.test", fetcher: make(new Response(JSON.stringify(RAW_DECISION), { status: 200 })) });
+    expect(ok?.decision?.title).toBe("One decision on Tiny Fest Saturday, published timetable");
+    for (const failing of ["down", new Response("{}", { status: 500 }), new Response("not json", { status: 200 }), new Response("{}", { status: 200 })] as const) {
+      const summary = await loadServerSummary(null, { backend: "http://api.test", fetcher: make(failing) });
+      expect(summary?.index).toBe(104);
+      expect(summary?.decision).toBeNull();
+    }
   });
 });
 

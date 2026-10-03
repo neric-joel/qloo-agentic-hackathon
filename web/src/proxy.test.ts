@@ -83,8 +83,15 @@ describe("proxy without the secret", () => {
 });
 
 describe("proxy matcher", () => {
-  it("covers the pair check, the agent route, what-if and health, and not the cached reads", () => {
-    expect(config.matcher).toEqual(["/api/pair", "/api/runs", "/api/presets/:id/whatif", "/api/health"]);
+  it("covers the pair check, the agent route, what-if, the rule search and health, and not the cached reads", () => {
+    expect(config.matcher).toEqual([
+      "/api/pair",
+      "/api/runs",
+      "/api/presets/:id/whatif",
+      "/api/presets/:id/rule-fixes",
+      "/api/health",
+    ]);
     expect(config.matcher.some((path) => path.includes("moves"))).toBe(false);
+    expect(config.matcher.some((path) => path.includes("decision"))).toBe(false);
   });
 });

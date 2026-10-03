@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     ai_gateway_api_key: str | None = None
     agent_model: str | None = None
     agent_effort: Literal["low", "medium", "high"] = "medium"
+    agent_max_tokens: int = 8000  # per-turn output ceiling (thinking included); bounds runaway cost
+    # Live agent run caps (per server instance; the provider's spend limit is the hard stop)
+    runs_per_visitor_hour: int = 8
+    runs_per_visitor_day: int = 20
+    runs_per_day: int = 150
 
 
 @lru_cache

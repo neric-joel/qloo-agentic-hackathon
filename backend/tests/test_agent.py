@@ -231,3 +231,19 @@ def test_health_reports_configuration():
         body = client.get("/api/health").json()
     assert body["status"] == "ok"
     assert set(body) == {"status", "qloo_key_configured", "llm_configured"}
+
+
+def test_backend_omits_effort_for_haiku_and_enables_fallback_for_sonnet():
+    from app.agent.llm import AnthropicBackend, build_backend, supports_effort
+    from app.config import Settings
+
+    assert supports_effort("claude-sonnet-5-5") and not supports_effort("claude-haiku-4-5")
+    sonnet = build_backend(Settings(_env_file=None, llm_provider="anthropic", anthropic_api_key="x"))
+    haiku = build_backend(
+        Settings(
+            _env_file=None, llm_provider="anthropic", anthropic_api_key="x", agent_model="claude-haiku-4-5"
+        )
+    )
+    assert isinstance(sonnet, AnthropicBackend) and isinstance(haiku, AnthropicBackend)
+    assert (sonnet.model, sonnet.fallbacks, sonnet.max_tokens) == ("claude-sonnet-5-5", True, 8000)
+    assert (haiku.model, haiku.fallbacks) == ("claude-haiku-4-5", False)

@@ -39,13 +39,36 @@ class LLMBackend(Protocol):
     ) -> Message: ...
 
 
-class AnthropicBackend:
-    """One streamed Messages API call per agent turn."""
+# Server-side refusal fallback: if the model declines, the API re-runs the turn on a fallback model.
+FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
-    def __init__(self, client: AsyncAnthropic, model: str, *, effort: str = "medium") -> None:
+
+def supports_effort(model: str) -> bool:
+    """Haiku 4.5 rejects ``output_config.effort``; current Sonnet and Opus models accept it."""
+    return "haiku" not in model
+
+
+class AnthropicBackend:
+    """One streamed Messages API call per agent turn.
+
+    ``max_tokens`` caps one turn's output (thinking included), which bounds the cost of a runaway turn.
+    ``fallbacks`` turns on the server-side refusal fallback (direct API only).
+    """
+
+    def __init__(
+        self,
+        client: AsyncAnthropic,
+        model: str,
+        *,
+        effort: str = "medium",
+        max_tokens: int = 8000,
+        fallbacks: bool = False,
+    ) -> None:
         self.client = client
         self.model = model
         self.effort = effort
+        self.max_tokens = max_tokens
+        self.fallbacks = fallbacks
         self.name = model
 
     async def turn(
@@ -56,15 +79,23 @@ class AnthropicBackend:
         tools: Sequence[dict[str, Any]],
         on_text: OnText,
     ) -> Message:
-        async with self.client.messages.stream(
-            model=self.model,
-            max_tokens=16000,
-            system=list(system),
-            messages=messages,
-            tools=list(tools),
-            output_config={"effort": self.effort},
-            cache_control={"type": "ephemeral"},
-        ) as stream:
+        params: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "system": list(system),
+            "messages": messages,
+            "tools": list(tools),
+            "cache_control": {"type": "ephemeral"},
+        }
+        if supports_effort(self.model):
+            params["output_config"] = {"effort": self.effort}
+        if self.fallbacks:
+            stream_ctx = self.client.beta.messages.stream(
+                **params, betas=[FALLBACK_BETA], fallbacks="default"
+            )
+        else:
+            stream_ctx = self.client.messages.stream(**params)
+        async with stream_ctx as stream:
             async for event in stream:
                 if event.type == "text":
                     await on_text(event.text)
@@ -127,12 +158,20 @@ def build_backend(settings: Settings, request_headers: dict[str, str] | None = N
     provider = settings.llm_provider
     if provider == "anthropic" and settings.anthropic_api_key:
         client = AsyncAnthropic(api_key=settings.anthropic_api_key, max_retries=2, timeout=60.0)
+        model = settings.agent_model or DEFAULT_MODELS["anthropic"]
         return AnthropicBackend(
-            client, settings.agent_model or DEFAULT_MODELS["anthropic"], effort=settings.agent_effort
+            client,
+            model,
+            effort=settings.agent_effort,
+            max_tokens=settings.agent_max_tokens,
+            fallbacks="sonnet-5-5" in model,
         )
     if provider == "gateway" and (token := gateway_token(settings, request_headers)):
         client = AsyncAnthropic(api_key=token, base_url=GATEWAY_BASE_URL, max_retries=2, timeout=60.0)
         return AnthropicBackend(
-            client, settings.agent_model or DEFAULT_MODELS["gateway"], effort=settings.agent_effort
+            client,
+            settings.agent_model or DEFAULT_MODELS["gateway"],
+            effort=settings.agent_effort,
+            max_tokens=settings.agent_max_tokens,
         )
     return None

@@ -8,6 +8,8 @@ from fastapi.responses import StreamingResponse
 from .agent.events import EventChannel
 from .agent.llm import LLMBackend, build_backend
 from .config import get_settings
+from .limits import RunLimiter, visitor_key
+from .presets import Presets
 from .presets import router as presets_router
 from .qloo.client import QlooClient
 from .runs import RunRequest, execute_run
@@ -18,6 +20,7 @@ app.include_router(schedule_router)
 app.include_router(presets_router)
 
 _qloo: QlooClient | None = None
+_limiter: RunLimiter | None = None
 
 
 def get_qloo() -> QlooClient:
@@ -32,6 +35,16 @@ def get_qloo() -> QlooClient:
             record_fixtures=settings.qloo_record_fixtures,
         )
     return _qloo
+
+
+def get_limiter() -> RunLimiter:
+    global _limiter
+    if _limiter is None:
+        settings = get_settings()
+        _limiter = RunLimiter(
+            settings.runs_per_visitor_hour, settings.runs_per_visitor_day, settings.runs_per_day
+        )
+    return _limiter
 
 
 def get_backend(request: Request) -> LLMBackend | None:
@@ -54,12 +67,18 @@ async def create_run(
     request: Request,
     backend: Annotated[LLMBackend | None, Depends(get_backend)],
     qloo: Annotated[QlooClient, Depends(get_qloo)],
+    presets: Presets,
+    limiter: Annotated[RunLimiter, Depends(get_limiter)],
 ) -> StreamingResponse:
     if backend is None:
         raise HTTPException(status_code=503, detail="The agent is not configured on this server yet.")
+    host = request.client.host if request.client else None
+    refusal = limiter.try_acquire(visitor_key(dict(request.headers), host))
+    if refusal:
+        raise HTTPException(status_code=429, detail=refusal)
 
     channel = EventChannel()
-    task = asyncio.create_task(execute_run(channel, backend, qloo, body))
+    task = asyncio.create_task(execute_run(channel, backend, qloo, body, presets))
 
     async def frames() -> AsyncIterator[str]:
         try:

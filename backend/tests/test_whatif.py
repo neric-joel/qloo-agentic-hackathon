@@ -550,6 +550,16 @@ def test_bad_bodies_are_422_echo_nothing_and_take_no_slot(preset):
         assert len(response.text) < 4_000
 
 
+def test_a_bad_single_move_reports_its_kind_in_the_error_path_and_nothing_else_changed(preset):
+    move = {"act": "x", "stage_id": "main", "day": 0, "start": "12:00"}
+    with TestClient(app) as client:
+        response = client.post("/api/presets/day/whatif", json={"moves": [{**move, "start": "noon"}]})
+    assert response.status_code == 422
+    (error,) = response.json()["detail"]
+    assert error["loc"] == ["body", "moves", 0, "move", "start"] and set(error) == {"loc", "msg", "type"}
+    assert "noon" not in response.text
+
+
 def test_plans_are_cached_and_the_cache_stays_bounded(preset, monkeypatch):
     app.dependency_overrides[whatif.get_whatif_limiter] = lambda: RunLimiter(
         10_000, 10_000, 10_000, messages=whatif.WHATIF_MESSAGES

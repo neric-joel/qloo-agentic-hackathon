@@ -12,6 +12,7 @@ from app.agent.clash_tools import (
     RESLOT,
     TRY_MOVE,
     IllegalStep,
+    PlanGroup,
     PlanMove,
     all_pairs,
     apply_plan,
@@ -544,6 +545,41 @@ def test_an_illegal_step_names_its_number():
         PlanMove(other.act_id, other.stage_id, 0, other.start),  # where it already is
         PlanMove(other.act_id, taken.stage_id, 0, taken.start),  # a taken slot
         PlanMove(other.act_id, other.stage_id, 1, other.start),  # another day
+    ):
+        with pytest.raises(IllegalStep) as refused:
+            apply_plan(festival, matrix, config, [step_one, bad])
+        assert refused.value.step == 2
+
+
+def test_a_rule_step_of_one_move_prices_a_listed_place_as_the_plain_step_does():
+    festival, matrix, config = wide_day()
+    movable = [s.act_id for s in festival.timetable if not s.locked]
+    for act_id in movable[:4]:
+        for option in compute_move_options(festival, matrix, config, act_id, 3, partners=True)["options"]:
+            move = PlanMove(act_id, option["stage_id"], option["day"], parse_minutes(option["start"]))
+            plain = apply_plan(festival, matrix, config, [move])
+            rule = apply_plan(festival, matrix, config, [PlanGroup((move,), (act_id, movable[-1]))])
+            (step,) = rule.steps
+            assert step.budget_after == plain.steps[0].budget_after == option["clash_budget_after"]
+            assert step.moves[0].move == plain.steps[0].move == option["move"]
+            assert rule.festival.timetable == plain.festival.timetable
+            assert rule.report.metrics == plain.report.metrics and rule.new_breaks == 0
+    assert plain.new_breaks == 0  # a plan of plain moves never reads the published day's issues
+
+
+def test_a_rule_step_names_its_own_number_when_it_is_illegal():
+    festival, matrix, config = wide_day()
+    movable = [s for s in festival.timetable if not s.locked]
+    locked = next(s for s in festival.timetable if s.locked)
+    first = compute_move_options(festival, matrix, config, movable[0].act_id, 1, partners=True)["options"][0]
+    step_one = PlanMove(movable[0].act_id, first["stage_id"], 0, parse_minutes(first["start"]))
+    other = movable[1]
+    taken = next(s for s in movable[2:] if s.stage_id != other.stage_id)
+    for bad in (
+        PlanGroup((PlanMove(locked.act_id, locked.stage_id, 0, locked.start + 60),), ("a", "b")),
+        PlanGroup((PlanMove(other.act_id, other.stage_id, 0, other.start),), ("a", "b")),  # where it is
+        PlanGroup((PlanMove(other.act_id, taken.stage_id, 0, taken.start),), ("a", "b")),  # a taken slot
+        PlanGroup((PlanMove(other.act_id, other.stage_id, 9, other.start + 5),), ("a", "b")),  # no day 9
     ):
         with pytest.raises(IllegalStep) as refused:
             apply_plan(festival, matrix, config, [step_one, bad])

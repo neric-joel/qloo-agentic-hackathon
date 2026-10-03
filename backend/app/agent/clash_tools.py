@@ -20,8 +20,8 @@ from typing import Any
 from pydantic import ValidationError
 
 from ..qloo.overlap import shared_taste
-from ..schedule.constraints import describe_issue
-from ..schedule.layout import Layout, Placement
+from ..schedule.constraints import Issue, describe_issue
+from ..schedule.layout import Layout, Move, Placement
 from ..schedule.metrics import score_festival
 from ..schedule.models import Festival, OverlapMatrix, ScoringConfig, SetSlot, format_minutes, parse_minutes
 from ..schedule.moves import grid_moves
@@ -549,42 +549,89 @@ class PlanStep:
 
 
 @dataclass(frozen=True, slots=True)
+class PlanGroup:
+    """One rule change kept as a single step: one or two sets moved together, serving the pair ``rule``."""
+
+    moves: tuple[PlanMove, ...]
+    rule: tuple[str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class PlacedSet:
+    """One set of a rule step, where the step put it."""
+
+    act_id: str
+    act: str
+    move: str
+    stage_id: str
+    stage: str
+    day: int
+    start: int
+    end: int
+
+
+@dataclass(frozen=True, slots=True)
+class GroupStep:
+    """A rule step as it was priced: the sets it moved together and the index after the whole step."""
+
+    rule: tuple[str, str]
+    moves: tuple[PlacedSet, ...]
+    budget_after: float | None
+
+
+@dataclass(frozen=True, slots=True)
 class PlanResult:
     festival: Festival
     budget_before: float | None
-    steps: tuple[PlanStep, ...]
+    steps: tuple[PlanStep | GroupStep, ...]
     report: ScoreReport
+    new_breaks: int = 0  # rule breaks the final timetable has that the published day did not (0 if legal)
 
 
 class IllegalStep(Exception):
-    """A kept move is not a legal place for its set on the timetable the earlier moves left (1-based)."""
+    """A kept step is not a legal place for its set(s) on the timetable the earlier steps left (1-based)."""
 
     def __init__(self, step: int) -> None:
         super().__init__(f"step {step} is not a legal place")
         self.step = step
 
 
+MAX_GROUP_MOVES = 2
+
+
 def apply_plan(
     festival: Festival,
     matrix: OverlapMatrix,
     config: ScoringConfig,
-    moves: Sequence[PlanMove],
+    moves: Sequence[PlanMove | PlanGroup],
     *,
     thaw: bool = False,
 ) -> PlanResult:
-    """The timetable with the moves taken in order, each priced, and the final score. Nothing is stored.
+    """The timetable with the steps taken in order, each priced, and the final score. Nothing is stored.
 
-    Each move must be a place ``compute_move_options`` would list for that set on the timetable as the earlier
-    moves left it: a stage and start the set may use, on its grid, breaking no rule that timetable did not
-    already break; locked and tied-up sets cannot move. Only the requested place is scored, never every
-    candidate. Raises ``IllegalStep`` with the move's 1-based number otherwise. ``thaw`` is passed as
+    A ``PlanMove`` must be a place ``compute_move_options`` would list for that set on the timetable as the
+    earlier steps left it: a stage and start the set may use, on its grid, breaking no rule that timetable did
+    not already break; locked and tied-up sets cannot move. Only the requested place is scored, never every
+    candidate. Raises ``IllegalStep`` with the step's 1-based number otherwise. ``thaw`` is passed as
     ``compute_move_options`` takes it (agent sessions only).
+
+    A ``PlanGroup`` (a rule change of one or two sets, kept as one step) is judged after the whole step, as
+    ``rule_fixes`` judges its changes: both sets move together on a thawed ``Layout``, ``is_feasible`` holds
+    for the whole step, and the timetable after it holds no issue the published day (``festival``) did not.
+    The rule is not added to the layout, so a legal step that leaves the pair overlapping is accepted.
     """
     current = festival
     before = score_festival(current, matrix, config)
     budget_before = before.metrics.clash_budget_index
-    steps: list[PlanStep] = []
+    steps: list[PlanStep | GroupStep] = []
+    tolerated: set[Issue] | None = None  # the published day's issues, read once and only for a rule step
     for number, step in enumerate(moves, start=1):
+        if isinstance(step, PlanGroup):
+            if tolerated is None:
+                tolerated = set(Layout.from_festival(festival).issues())
+            current, before, grouped = _apply_group(current, matrix, config, step, number, tolerated)
+            steps.append(grouped)
+            continue
         layout = Layout.from_festival(current, thaw=thaw)
         rules = layout.rules
         if step.act_id not in rules.act_ids or step.stage_id not in rules.stage_ids:
@@ -617,7 +664,91 @@ def apply_plan(
             )
         )
         current, before = trial, after
-    return PlanResult(festival=current, budget_before=budget_before, steps=tuple(steps), report=before)
+    new_breaks = 0
+    if tolerated is not None:
+        new_breaks = len(set(Layout.from_festival(current).issues()) - tolerated)
+    return PlanResult(
+        festival=current,
+        budget_before=budget_before,
+        steps=tuple(steps),
+        report=before,
+        new_breaks=new_breaks,
+    )
+
+
+def _apply_group(
+    current: Festival,
+    matrix: OverlapMatrix,
+    config: ScoringConfig,
+    group: PlanGroup,
+    number: int,
+    tolerated: set[Issue],
+) -> tuple[Festival, ScoreReport, GroupStep]:
+    """The timetable with one rule step taken, the score after it and the step as it was priced."""
+    if not 1 <= len(group.moves) <= MAX_GROUP_MOVES or len({m.act_id for m in group.moves}) != len(
+        group.moves
+    ):
+        raise IllegalStep(number)
+    layout = Layout.from_festival(current, thaw=True)
+    rules = layout.rules
+    sets: list[int] = []
+    to: list[Placement] = []
+    for step in group.moves:
+        if step.act_id not in rules.act_ids or step.stage_id not in rules.stage_ids:
+            raise IllegalStep(number)
+        if not 0 <= step.day < rules.n_days or step.start < 0:
+            raise IllegalStep(number)
+        i = rules.act_ids.index(step.act_id)
+        place = (step.day, rules.stage_ids.index(step.stage_id), step.start)
+        if place == layout.placement(i):  # a set left where it is is not a move
+            raise IllegalStep(number)
+        sets.append(i)
+        to.append(place)
+    whole = Move(tuple(sets), tuple(to))
+    if not layout.is_feasible(whole):
+        raise IllegalStep(number)
+    layout.apply(whole)
+    if not set(layout.issues()) <= tolerated:
+        raise IllegalStep(number)
+    slots = {s.act_id: s for s in current.timetable}
+    moved = {
+        step.act_id: slots[step.act_id].model_copy(
+            update={
+                "day": step.day,
+                "stage_id": step.stage_id,
+                "start": step.start,
+                "end": step.start + slots[step.act_id].duration,
+            }
+        )
+        for step in group.moves
+    }
+    try:
+        trial = _rebuild(current, timetable=[moved.get(s.act_id, s) for s in current.timetable])
+    except ToolInputError:  # a slot on a stage taken twice
+        raise IllegalStep(number) from None
+    after = score_festival(trial, matrix, config)
+    names = current.act_by_id()
+    placed = tuple(
+        PlacedSet(
+            act_id=step.act_id,
+            act=names[step.act_id].name,
+            move=(
+                f"{names[step.act_id].name}: {_slot_text(current, slots[step.act_id])}"
+                f" -> {_slot_text(trial, moved[step.act_id])}"
+            ),
+            stage_id=step.stage_id,
+            stage=trial.stage_by_id()[step.stage_id].name,
+            day=step.day,
+            start=step.start,
+            end=moved[step.act_id].end,
+        )
+        for step in group.moves
+    )
+    return (
+        trial,
+        after,
+        GroupStep(rule=group.rule, moves=placed, budget_after=after.metrics.clash_budget_index),
+    )
 
 
 def _find_moves(

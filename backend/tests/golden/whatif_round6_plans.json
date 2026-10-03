@@ -1,0 +1,133 @@
+{
+ "all": {
+  "body": {
+   "act": "act-06",
+   "moves": [
+    {
+     "act": "act-05",
+     "day": 0,
+     "stage_id": "main",
+     "start": "16:30"
+    },
+    {
+     "act": "act-02",
+     "day": 0,
+     "stage_id": "main",
+     "start": "17:45"
+    },
+    {
+     "act": "act-09",
+     "day": 0,
+     "stage_id": "grove",
+     "start": "16:30"
+    },
+    {
+     "act": "act-07",
+     "day": 0,
+     "stage_id": "main",
+     "start": "19:30"
+    },
+    {
+     "act": "act-06",
+     "day": 0,
+     "stage_id": "river",
+     "start": "22:05"
+    }
+   ]
+  },
+  "raw": "{\"kind\":\"whatif\",\"published_budget\":150.09,\"plan\":{\"budget\":48.85,\"steps\":[{\"act\":\"Echo Sparrows\",\"act_id\":\"act-05\",\"move\":\"Echo Sparrows: Main Stage 17:45-18:45 -> Main Stage 16:30-17:30\",\"stage\":\"Main Stage\",\"stage_id\":\"main\",\"day\":0,\"start\":\"16:30\",\"end\":\"17:30\",\"budget_after\":119.57},{\"act\":\"Amber Choir\",\"act_id\":\"act-02\",\"move\":\"Amber Choir: Main Stage 19:25-20:45 -> Main Stage 17:45-19:05\",\"stage\":\"Main Stage\",\"stage_id\":\"main\",\"day\":0,\"start\":\"17:45\",\"end\":\"19:05\",\"budget_after\":102.92},{\"act\":\"Marble Bloom\",\"act_id\":\"act-09\",\"move\":\"Marble Bloom: Riverside Stage 19:00-19:40 -> Grove Stage 16:30-17:10\",\"stage\":\"Grove Stage\",\"stage_id\":\"grove\",\"day\":0,\"start\":\"16:30\",\"end\":\"17:10\",\"budget_after\":86.97},{\"act\":\"Glass Signal\",\"act_id\":\"act-07\",\"move\":\"Glass Signal: Riverside Stage 20:15-21:10 -> Main Stage 19:30-20:25\",\"stage\":\"Main Stage\",\"stage_id\":\"main\",\"day\":0,\"start\":\"19:30\",\"end\":\"20:25\",\"budget_after\":74.31},{\"act\":\"Cobalt Anthem\",\"act_id\":\"act-06\",\"move\":\"Cobalt Anthem: Riverside Stage 21:35-22:30 -> Riverside Stage 22:05-23:00\",\"stage\":\"Riverside Stage\",\"stage_id\":\"river\",\"day\":0,\"start\":\"22:05\",\"end\":\"23:00\",\"budget_after\":48.85}],\"clashes\":[{\"a\":\"Saffron Syndicate\",\"b\":\"Glass Signal\",\"points\":19.7},{\"a\":\"Solar Circuit\",\"b\":\"Juniper Harvest\",\"points\":7.7},{\"a\":\"Harbor Circuit\",\"b\":\"Amber Choir\",\"points\":7.0},{\"a\":\"Ivory Tides\",\"b\":\"Solar Circuit\",\"points\":4.2},{\"a\":\"Echo Sparrows\",\"b\":\"Marble Bloom\",\"points\":4.0}]},\"options\":{\"kind\":\"move_options\",\"act\":\"Cobalt Anthem\",\"act_id\":\"act-06\",\"priced\":true,\"from\":\"Riverside Stage 22:05-23:00\",\"movable\":true,\"why\":null,\"clash_budget_before\":48.85,\"legal_places\":53,\"searched\":\"every start on a 5-minute grid in the free time it may use\",\"clashes_now\":[{\"with\":\"Solar Circuit\",\"points\":2.3},{\"with\":\"Juniper Harvest\",\"points\":1.0}],\"options\":[{\"move\":\"Cobalt Anthem: Riverside Stage 22:05-23:00 -> Riverside Stage 22:00-22:55\",\"stage\":\"Riverside Stage\",\"stage_id\":\"river\",\"start\":\"22:00\",\"end\":\"22:55\",\"day\":0,\"clash_budget_after\":49.32,\"clashes_after\":[{\"with\":\"Solar Circuit\",\"points\":2.3},{\"with\":\"Juniper Harvest\",\"points\":1.4}]},{\"move\":\"Cobalt Anthem: Riverside Stage 22:05-23:00 -> Riverside Stage 18:10-19:05\",\"stage\":\"Riverside Stage\",\"stage_id\":\"river\",\"start\":\"18:10\",\"end\":\"19:05\",\"day\":0,\"clash_budget_after\":52.4,\"clashes_after\":[{\"with\":\"Amber Choir\",\"points\":4.8},{\"with\":\"Harbor Circuit\",\"points\":2.0}]},{\"move\":\"Cobalt Anthem: Riverside Stage 22:05-23:00 -> Riverside Stage 18:15-19:10\",\"stage\":\"Riverside Stage\",\"stage_id\":\"river\",\"start\":\"18:15\",\"end\":\"19:10\",\"day\":0,\"clash_budget_after\":52.72,\"clashes_after\":[{\"with\":\"Amber Choir\",\"points\":4.4},{\"with\":\"Harbor Circuit\",\"points\":1.5},{\"with\":\"Saffron Syndicate\",\"points\":1.2}]},{\"move\":\"Cobalt Anthem: Riverside Stage 22:05-23:00 -> Riverside Stage 18:05-19:00\",\"stage\":\"Riverside Stage\",\"stage_id\":\"river\",\"start\":\"18:05\",\"end\":\"19:00\",\"day\":0,\"clash_budget_after\":52.9,\"clashes_after\":[{\"with\":\"Amber Choir\",\"points\":4.8},{\"with\":\"Harbor Circuit\",\"points\":2.5}]},{\"move\":\"Cobalt Anthem: Riverside Stage 22:05-23:00 -> Riverside Stage 18:20-19:15\",\"stage\":\"Riverside Stage\",\"stage_id\":\"river\",\"start\":\"18:20\",\"end\":\"19:15\",\"day\":0,\"clash_budget_after\":53.03,\"clashes_after\":[{\"with\":\"Amber Choir\",\"points\":3.9},{\"with\":\"Saffron Syndicate\",\"points\":2.5},{\"with\":\"Harbor Circuit\",\"points\":1.0}]},{\"move\":\"Cobalt Anthem: Riverside Stage 22:05-23:00 -> Riverside Stage 18:25-19:20\",\"stage\":\"Riverside Stage\",\"stage_id\":\"river\",\"start\":\"18:25\",\"end\":\"19:20\",\"day\":0,\"clash_budget_after\":53.35,\"clashes_after\":[{\"with\":\"Saffron Syndicate\",\"points\":3.7},{\"with\":\"Amber Choir\",\"points\":3.5},{\"with\":\"Harbor Circuit\",\"points\":0.5}]},{\"move\":\"Cobalt Anthem: Riverside Stage 22:05-23:00 -> Riverside Stage 18:00-18:55\",\"stage\":\"Riverside Stage\",\"stage_id\":\"river\",\"start\":\"18:00\",\"end\":\"18:55\",\"day\":0,\"clash_budget_after\":53.39,\"clashes_after\":[{\"with\":\"Amber Choir\",\"points\":4.8},{\"with\":\"Harbor Circuit\",\"points\":3.0}]},{\"move\":\"Cobalt Anthem: Riverside Stage 22:05-23:00 -> Riverside Stage 18:30-19:25\",\"stage\":\"Riverside Stage\",\"stage_id\":\"river\",\"start\":\"18:30\",\"end\":\"19:25\",\"day\":0,\"clash_budget_after\":53.66,\"clashes_after\":[{\"with\":\"Saffron Syndicate\",\"points\":5.0},{\"with\":\"Amber Choir\",\"points\":3.0}]}]}}"
+ },
+ "empty": {
+  "body": {
+   "moves": []
+  },
+  "raw": "{\"kind\":\"whatif\",\"published_budget\":150.09,\"plan\":{\"budget\":150.09,\"steps\":[],\"clashes\":[{\"a\":\"Glass Signal\",\"b\":\"Violet Mirror\",\"points\":30.8},{\"a\":\"Harbor Circuit\",\"b\":\"Echo Sparrows\",\"points\":30.5},{\"a\":\"Ivory Tides\",\"b\":\"Cobalt Anthem\",\"points\":22.6},{\"a\":\"Marble Bloom\",\"b\":\"Saffron Syndicate\",\"points\":19.2},{\"a\":\"Amber Choir\",\"b\":\"Glass Signal\",\"points\":10.2}]},\"options\":null}"
+ },
+ "empty_act": {
+  "body": {
+   "act": "act-02",
+   "limit": 4,
+   "moves": []
+  },
+  "raw": "{\"kind\":\"whatif\",\"published_budget\":150.09,\"plan\":{\"budget\":150.09,\"steps\":[],\"clashes\":[{\"a\":\"Glass Signal\",\"b\":\"Violet Mirror\",\"points\":30.8},{\"a\":\"Harbor Circuit\",\"b\":\"Echo Sparrows\",\"points\":30.5},{\"a\":\"Ivory Tides\",\"b\":\"Cobalt Anthem\",\"points\":22.6},{\"a\":\"Marble Bloom\",\"b\":\"Saffron Syndicate\",\"points\":19.2},{\"a\":\"Amber Choir\",\"b\":\"Glass Signal\",\"points\":10.2}]},\"options\":{\"kind\":\"move_options\",\"act\":\"Amber Choir\",\"act_id\":\"act-02\",\"priced\":true,\"from\":\"Main Stage 19:25-20:45\",\"movable\":true,\"why\":null,\"clash_budget_before\":150.09,\"legal_places\":9,\"searched\":\"every start on a 5-minute grid in the free time it may use\",\"clashes_now\":[{\"with\":\"Glass Signal\",\"points\":10.2},{\"with\":\"Violet Mirror\",\"points\":6.5},{\"with\":\"Saffron Syndicate\",\"points\":5.5}],\"options\":[{\"move\":\"Amber Choir: Main Stage 19:25-20:45 -> Main Stage 19:00-20:20\",\"stage\":\"Main Stage\",\"stage_id\":\"main\",\"start\":\"19:00\",\"end\":\"20:20\",\"day\":0,\"clash_budget_after\":140.9,\"clashes_after\":[{\"with\":\"Saffron Syndicate\",\"points\":7.7},{\"with\":\"Marble Bloom\",\"points\":5.8},{\"with\":\"Glass Signal\",\"points\":1.7}]},{\"move\":\"Amber Choir: Main Stage 19:25-20:45 -> Main Stage 19:05-20:25\",\"stage\":\"Main Stage\",\"stage_id\":\"main\",\"start\":\"19:05\",\"end\":\"20:25\",\"day\":0,\"clash_budget_after\":141.86,\"clashes_after\":[{\"with\":\"Saffron Syndicate\",\"points\":7.7},{\"with\":\"Marble Bloom\",\"points\":5.1},{\"with\":\"Glass Signal\",\"points\":3.4}]},{\"move\":\"Amber Choir: Main Stage 19:25-20:45 -> Main Stage 19:10-20:30\",\"stage\":\"Main Stage\",\"stage_id\":\"main\",\"start\":\"19:10\",\"end\":\"20:30\",\"day\":0,\"clash_budget_after\":143.92,\"clashes_after\":[{\"with\":\"Saffron Syndicate\",\"points\":7.1},{\"with\":\"Glass Signal\",\"points\":5.1},{\"with\":\"Marble Bloom\",\"points\":4.4}]},{\"move\":\"Amber Choir: Main Stage 19:25-20:45 -> Main Stage 19:15-20:35\",\"stage\":\"Main Stage\",\"stage_id\":\"main\",\"start\":\"19:15\",\"end\":\"20:35\",\"day\":0,\"clash_budget_after\":145.98,\"clashes_after\":[{\"with\":\"Glass Signal\",\"points\":6.8},{\"with\":\"Saffron Syndicate\",\"points\":6.6},{\"with\":\"Marble Bloom\",\"points\":3.6}]}]}}"
+ },
+ "four": {
+  "body": {
+   "moves": [
+    {
+     "act": "act-05",
+     "day": 0,
+     "stage_id": "main",
+     "start": "16:30"
+    },
+    {
+     "act": "act-02",
+     "day": 0,
+     "stage_id": "main",
+     "start": "17:45"
+    },
+    {
+     "act": "act-09",
+     "day": 0,
+     "stage_id": "grove",
+     "start": "16:30"
+    },
+    {
+     "act": "act-07",
+     "day": 0,
+     "stage_id": "main",
+     "start": "19:30"
+    }
+   ]
+  },
+  "raw": "{\"kind\":\"whatif\",\"published_budget\":150.09,\"plan\":{\"budget\":74.31,\"steps\":[{\"act\":\"Echo Sparrows\",\"act_id\":\"act-05\",\"move\":\"Echo Sparrows: Main Stage 17:45-18:45 -> Main Stage 16:30-17:30\",\"stage\":\"Main Stage\",\"stage_id\":\"main\",\"day\":0,\"start\":\"16:30\",\"end\":\"17:30\",\"budget_after\":119.57},{\"act\":\"Amber Choir\",\"act_id\":\"act-02\",\"move\":\"Amber Choir: Main Stage 19:25-20:45 -> Main Stage 17:45-19:05\",\"stage\":\"Main Stage\",\"stage_id\":\"main\",\"day\":0,\"start\":\"17:45\",\"end\":\"19:05\",\"budget_after\":102.92},{\"act\":\"Marble Bloom\",\"act_id\":\"act-09\",\"move\":\"Marble Bloom: Riverside Stage 19:00-19:40 -> Grove Stage 16:30-17:10\",\"stage\":\"Grove Stage\",\"stage_id\":\"grove\",\"day\":0,\"start\":\"16:30\",\"end\":\"17:10\",\"budget_after\":86.97},{\"act\":\"Glass Signal\",\"act_id\":\"act-07\",\"move\":\"Glass Signal: Riverside Stage 20:15-21:10 -> Main Stage 19:30-20:25\",\"stage\":\"Main Stage\",\"stage_id\":\"main\",\"day\":0,\"start\":\"19:30\",\"end\":\"20:25\",\"budget_after\":74.31}],\"clashes\":[{\"a\":\"Ivory Tides\",\"b\":\"Cobalt Anthem\",\"points\":22.6},{\"a\":\"Saffron Syndicate\",\"b\":\"Glass Signal\",\"points\":19.7},{\"a\":\"Solar Circuit\",\"b\":\"Juniper Harvest\",\"points\":7.7},{\"a\":\"Harbor Circuit\",\"b\":\"Amber Choir\",\"points\":7.0},{\"a\":\"Ivory Tides\",\"b\":\"Solar Circuit\",\"points\":4.2}]},\"options\":null}"
+ },
+ "illegal": {
+  "body": {
+   "moves": [
+    {
+     "act": "act-05",
+     "day": 0,
+     "stage_id": "nowhere",
+     "start": "12:00"
+    }
+   ]
+  },
+  "raw": "{\"detail\":\"Step 1 is not a legal place for that set after the steps before it.\"}",
+  "status": 422
+ },
+ "one": {
+  "body": {
+   "moves": [
+    {
+     "act": "act-05",
+     "day": 0,
+     "stage_id": "main",
+     "start": "16:30"
+    }
+   ]
+  },
+  "raw": "{\"kind\":\"whatif\",\"published_budget\":150.09,\"plan\":{\"budget\":119.57,\"steps\":[{\"act\":\"Echo Sparrows\",\"act_id\":\"act-05\",\"move\":\"Echo Sparrows: Main Stage 17:45-18:45 -> Main Stage 16:30-17:30\",\"stage\":\"Main Stage\",\"stage_id\":\"main\",\"day\":0,\"start\":\"16:30\",\"end\":\"17:30\",\"budget_after\":119.57}],\"clashes\":[{\"a\":\"Glass Signal\",\"b\":\"Violet Mirror\",\"points\":30.8},{\"a\":\"Ivory Tides\",\"b\":\"Cobalt Anthem\",\"points\":22.6},{\"a\":\"Marble Bloom\",\"b\":\"Saffron Syndicate\",\"points\":19.2},{\"a\":\"Amber Choir\",\"b\":\"Glass Signal\",\"points\":10.2},{\"a\":\"Solar Circuit\",\"b\":\"Juniper Harvest\",\"points\":7.7}]},\"options\":null}"
+ },
+ "two_act": {
+  "body": {
+   "act": "act-05",
+   "limit": 3,
+   "moves": [
+    {
+     "act": "act-05",
+     "day": 0,
+     "stage_id": "main",
+     "start": "16:30"
+    },
+    {
+     "act": "act-02",
+     "day": 0,
+     "stage_id": "main",
+     "start": "17:45"
+    }
+   ]
+  },
+  "raw": "{\"kind\":\"whatif\",\"published_budget\":150.09,\"plan\":{\"budget\":102.92,\"steps\":[{\"act\":\"Echo Sparrows\",\"act_id\":\"act-05\",\"move\":\"Echo Sparrows: Main Stage 17:45-18:45 -> Main Stage 16:30-17:30\",\"stage\":\"Main Stage\",\"stage_id\":\"main\",\"day\":0,\"start\":\"16:30\",\"end\":\"17:30\",\"budget_after\":119.57},{\"act\":\"Amber Choir\",\"act_id\":\"act-02\",\"move\":\"Amber Choir: Main Stage 19:25-20:45 -> Main Stage 17:45-19:05\",\"stage\":\"Main Stage\",\"stage_id\":\"main\",\"day\":0,\"start\":\"17:45\",\"end\":\"19:05\",\"budget_after\":102.92}],\"clashes\":[{\"a\":\"Glass Signal\",\"b\":\"Violet Mirror\",\"points\":30.8},{\"a\":\"Ivory Tides\",\"b\":\"Cobalt Anthem\",\"points\":22.6},{\"a\":\"Marble Bloom\",\"b\":\"Saffron Syndicate\",\"points\":19.2},{\"a\":\"Solar Circuit\",\"b\":\"Juniper Harvest\",\"points\":7.7},{\"a\":\"Harbor Circuit\",\"b\":\"Amber Choir\",\"points\":7.0}]},\"options\":{\"kind\":\"move_options\",\"act\":\"Echo Sparrows\",\"act_id\":\"act-05\",\"priced\":true,\"from\":\"Main Stage 16:30-17:30\",\"movable\":true,\"why\":null,\"clash_budget_before\":102.92,\"legal_places\":12,\"searched\":\"every start on a 5-minute grid in the free time it may use\",\"clashes_now\":[],\"options\":[{\"move\":\"Echo Sparrows: Main Stage 16:30-17:30 -> Main Stage 20:05-21:05\",\"stage\":\"Main Stage\",\"stage_id\":\"main\",\"start\":\"20:05\",\"end\":\"21:05\",\"day\":0,\"clash_budget_after\":131.2,\"clashes_after\":[{\"with\":\"Glass Signal\",\"points\":12.0},{\"with\":\"Saffron Syndicate\",\"points\":8.3},{\"with\":\"Violet Mirror\",\"points\":7.4}]},{\"move\":\"Echo Sparrows: Main Stage 16:30-17:30 -> Main Stage 20:00-21:00\",\"stage\":\"Main Stage\",\"stage_id\":\"main\",\"start\":\"20:00\",\"end\":\"21:00\",\"day\":0,\"clash_budget_after\":133.04,\"clashes_after\":[{\"with\":\"Saffron Syndicate\",\"points\":12.5},{\"with\":\"Glass Signal\",\"points\":10.8},{\"with\":\"Violet Mirror\",\"points\":6.5}]},{\"move\":\"Echo Sparrows: Main Stage 16:30-17:30 -> Main Stage 19:55-20:55\",\"stage\":\"Main Stage\",\"stage_id\":\"main\",\"start\":\"19:55\",\"end\":\"20:55\",\"day\":0,\"clash_budget_after\":134.88,\"clashes_after\":[{\"with\":\"Saffron Syndicate\",\"points\":16.6},{\"with\":\"Glass Signal\",\"points\":9.6},{\"with\":\"Violet Mirror\",\"points\":5.5}]}]}}"
+ }
+}

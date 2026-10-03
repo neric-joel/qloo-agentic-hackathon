@@ -9,6 +9,11 @@ priced, and the set's clashes now and after the move among all the day's pairs, 
 lists for its set on the timetable the earlier moves left. It answers the Clash Budget Index after each move,
 the moved timetable's 5 costliest clashes and, for one set, its places on the moved timetable.
 
+A step may also be a rule step: one change of ``/rule-fixes`` (one or two sets moved together) with the pair
+it serves, ``{"rule": {"a", "b"}, "moves": [...]}``. It is judged after the whole step, as ``rule_fixes``
+judges its changes, and the answer adds ``rule_holds_after`` (the pair shares 0 minutes after the whole plan)
+and ``new_breaks`` (rule breaks the plan adds to the published day). Facts only; the wording is the web's.
+
 Answers are kept in small in-process caches, since a preset only changes on redeploy. These two routes are the
 public compute, so computed answers (not cache hits, not refusals) are capped per visitor and per day, per
 server instance. A plan takes its slot before it is priced, so an illegal plan costs one too; the step it
@@ -22,19 +27,29 @@ from collections import OrderedDict
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag, model_validator
 
-from .agent.clash_tools import IllegalStep, PlanMove, PlanResult, apply_plan, compute_move_options
+from .agent.clash_tools import (
+    GroupStep,
+    IllegalStep,
+    PlanGroup,
+    PlanMove,
+    PlanResult,
+    apply_plan,
+    compute_move_options,
+)
 from .config import Settings, get_settings
 from .limits import LimitMessages, RunLimiter, visitor_key
 from .presets import CACHE_CONTROL, Preset, Presets
 from .runs import published_state
 from .schedule.models import format_minutes, parse_minutes
+from .schedule.rulefix import published_shared
 
 router = APIRouter(prefix="/api/presets", tags=["presets"])
 
 MAX_LIMIT = 12
 MAX_PLAN_MOVES = 8
+MAX_RULE_MOVES = 2
 MAX_DAY = 13
 PLAN_CLASHES = 5
 CACHE_SIZE = 512
@@ -57,7 +72,7 @@ WHATIF_MESSAGES = LimitMessages(
 ID_PATTERN = r"^[A-Za-z0-9_.-]{1,80}$"
 CLOCK_PATTERN = r"^\d{1,2}:[0-5]\d$"
 
-PlanKey = tuple[str, tuple[PlanMove, ...], str | None, int | None]
+PlanKey = tuple[str, tuple[PlanMove | PlanGroup, ...], str | None, int | None]
 
 _cache: OrderedDict[tuple[str, str, int], tuple[Preset, dict[str, Any]]] = OrderedDict()
 _plans: OrderedDict[PlanKey, tuple[Preset, dict[str, Any]]] = OrderedDict()
@@ -165,10 +180,46 @@ class KeptMove(_Body):
     start: str = Field(max_length=5, pattern=CLOCK_PATTERN, description="'HH:MM' from the start of the day.")
 
 
+class RulePair(_Body):
+    a: str = Field(max_length=80, pattern=ID_PATTERN)
+    b: str = Field(max_length=80, pattern=ID_PATTERN)
+
+    @model_validator(mode="after")
+    def _two_sets(self) -> RulePair:
+        if self.a == self.b:
+            raise ValueError("A rule is between two different sets.")
+        return self
+
+
+class RuleStep(_Body):
+    """One change of ``/rule-fixes`` kept as a single step: one or two sets moved together, for the pair."""
+
+    rule: RulePair
+    moves: list[KeptMove] = Field(min_length=1, max_length=MAX_RULE_MOVES)
+
+
+def _step_kind(value: Any) -> str:
+    """A step with a ``rule`` is a rule step; every other value is read as a single kept move."""
+    has_rule = "rule" in value if isinstance(value, dict) else isinstance(value, RuleStep)
+    return "rule" if has_rule else "move"
+
+
+Step = Annotated[
+    Annotated[KeptMove, Tag("move")] | Annotated[RuleStep, Tag("rule")],
+    Discriminator(_step_kind),
+]
+
+
 class WhatIfRequest(_Body):
-    moves: list[KeptMove] = Field(default_factory=list, max_length=MAX_PLAN_MOVES)
+    moves: list[Step] = Field(default_factory=list, max_length=MAX_PLAN_MOVES)
     act: str | None = Field(default=None, max_length=80, pattern=ID_PATTERN)
     limit: int = Field(default=8, ge=1, le=MAX_LIMIT, strict=True)
+
+    @model_validator(mode="after")
+    def _moves_counted(self) -> WhatIfRequest:
+        if sum(len(step.moves) if isinstance(step, RuleStep) else 1 for step in self.moves) > MAX_PLAN_MOVES:
+            raise ValueError(f"A plan holds at most {MAX_PLAN_MOVES} moves.")
+        return self
 
 
 def _cached_plan(preset: Preset, key: PlanKey) -> dict[str, Any] | None:
@@ -200,6 +251,48 @@ def _store_illegal(preset: Preset, key: PlanKey, step: int) -> None:
             _illegal.popitem(last=False)
 
 
+def _step_answer(plan: PlanResult, step: Any) -> dict[str, Any]:
+    """One step of the 200 body: a kept move as it always was, or a rule step with its receipt."""
+    if not isinstance(step, GroupStep):
+        return {
+            "act": step.act,
+            "act_id": step.act_id,
+            "move": step.move,
+            "stage": step.stage,
+            "stage_id": step.stage_id,
+            "day": step.day,
+            "start": format_minutes(step.start),
+            "end": format_minutes(step.end),
+            "budget_after": step.budget_after,
+        }
+    names = plan.festival.act_by_id()
+    a_id, b_id = step.rule
+    return {
+        "rule": {
+            "a": {"act_id": a_id, "act": names[a_id].name},
+            "b": {"act_id": b_id, "act": names[b_id].name},
+        },
+        "moves": [
+            {
+                "act": moved.act,
+                "act_id": moved.act_id,
+                "move": moved.move,
+                "stage": moved.stage,
+                "stage_id": moved.stage_id,
+                "day": moved.day,
+                "start": format_minutes(moved.start),
+                "end": format_minutes(moved.end),
+            }
+            for moved in step.moves
+        ],
+        "budget_after": step.budget_after,
+        # After the WHOLE plan, later steps included: the pair shares no minute, and the rule breaks the plan
+        # added to the published day (0 for every legal plan)
+        "rule_holds_after": published_shared(plan.festival, a_id, b_id) == 0,
+        "new_breaks": plan.new_breaks,
+    }
+
+
 def plan_answer(
     preset: Preset, state: dict[str, Any], plan: PlanResult, act: str | None, limit: int
 ) -> dict[str, Any]:
@@ -220,20 +313,7 @@ def plan_answer(
         "published_budget": plan.budget_before,
         "plan": {
             "budget": index,
-            "steps": [
-                {
-                    "act": step.act,
-                    "act_id": step.act_id,
-                    "move": step.move,
-                    "stage": step.stage,
-                    "stage_id": step.stage_id,
-                    "day": step.day,
-                    "start": format_minutes(step.start),
-                    "end": format_minutes(step.end),
-                    "budget_after": step.budget_after,
-                }
-                for step in plan.steps
-            ],
+            "steps": [_step_answer(plan, step) for step in plan.steps],
             "clashes": [
                 {"a": c.a.name, "b": c.b.name, "points": round(c.regret_share * (index or 0.0), 1)}
                 for c in report.clashes[:PLAN_CLASHES]
@@ -241,6 +321,18 @@ def plan_answer(
         },
         "options": options,
     }
+
+
+def _plan_move(move: KeptMove) -> PlanMove:
+    return PlanMove(
+        act_id=move.act, stage_id=move.stage_id, day=move.day, start=cast(int, parse_minutes(move.start))
+    )
+
+
+def _plan_step(step: KeptMove | RuleStep) -> PlanMove | PlanGroup:
+    if isinstance(step, RuleStep):
+        return PlanGroup(moves=tuple(_plan_move(m) for m in step.moves), rule=(step.rule.a, step.rule.b))
+    return _plan_move(step)
 
 
 @router.post("/{preset_id}/whatif")
@@ -253,21 +345,25 @@ def post_whatif(
     limiter: Limiter,
     settings: AppSettings,
 ) -> dict[str, Any]:
-    """Price a plan of kept moves stacked on the published timetable, in order, and optionally the places for
-    one set on the moved timetable. Tested only: nothing changes."""
+    """Price a plan of kept steps (single moves, or a rule change of one or two sets) stacked on the published
+    timetable, in order, and optionally the places for one set on the moved timetable. Tested only: nothing
+    changes."""
     preset = presets.get(preset_id)
     if preset is None:
         raise _refuse(404, f"No preset {preset_id!r}.")
     on_day = {slot.act_id for slot in preset.festival.timetable}
-    named = [move.act for move in body.moves]
-    if any(act not in on_day for act in [*named, *([body.act] if body.act is not None else [])]):
+    rule_steps = [step for step in body.moves if isinstance(step, RuleStep)]
+    plain = [step.act for step in body.moves if not isinstance(step, RuleStep)]
+    inside = [[m.act for m in step.moves] for step in rule_steps]
+    pairs = [act for step in rule_steps for act in (step.rule.a, step.rule.b)]
+    named = [*plain, *(act for acts in inside for act in acts)]
+    if any(act not in on_day for act in [*named, *pairs, *([body.act] if body.act is not None else [])]):
         raise _refuse(404, NOT_ON_THIS_DAY)
-    if len(set(named)) != len(named):
+    # A set is kept once as a single move, as before; a rule step may move a set an earlier step moved (it is
+    # priced on the timetable that step left), but never one set twice inside one step
+    if len(set(plain)) != len(plain) or any(len(set(acts)) != len(acts) for acts in inside):
         raise _refuse(422, PICK_ONCE)
-    moves = tuple(
-        PlanMove(act_id=m.act, stage_id=m.stage_id, day=m.day, start=cast(int, parse_minutes(m.start)))
-        for m in body.moves
-    )
+    moves = tuple(_plan_step(step) for step in body.moves)
     key: PlanKey = (preset.id, moves, body.act, body.limit if body.act is not None else None)
     answer = _cached_plan(preset, key)
     if answer is None:

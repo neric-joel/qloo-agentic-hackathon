@@ -50,7 +50,13 @@ function stubHandler(broken = {}) {
       return send(broken.ruleFixesStatus ?? 422, { detail: "Pick two different sets." }, "application/json");
     }
     if (url === "/api/presets/one/whatif" && method === "POST") {
-      return send(broken.whatifStatus ?? 422, { detail: [] }, "application/json");
+      let text = "";
+      req.on("data", (chunk) => (text += chunk));
+      req.on("end", () => {
+        const status = text.includes('"rule"') ? (broken.ruleStepStatus ?? 422) : (broken.whatifStatus ?? 422);
+        send(status, { detail: [] }, "application/json");
+      });
+      return;
     }
     if (url === "/api/pair") {
       if (method === "GET") return send(broken.pairGet ?? 405, { detail: "Method Not Allowed" }, "application/json");
@@ -90,7 +96,7 @@ describe("runSmoke against a stub deployment", () => {
     assert.deepEqual(failures(results), []);
     assert.equal(lines.length, results.length);
     assert.ok(lines.every((line) => line.startsWith("ok ")), lines.join("\n"));
-    assert.equal(results.length, 14);
+    assert.equal(results.length, 15);
   });
 
   it("skips the API checks when no API origin is given", async () => {
@@ -131,6 +137,8 @@ describe("runSmoke against a stub deployment", () => {
       [{ ruleFixesStatus: 404 }, "web first preset rule-fixes with one set against itself is 422"],
       [{ whatifStatus: 200 }, "web POST first preset what-if with a malformed plan is 422"],
       [{ whatifStatus: 404 }, "web POST first preset what-if with a malformed plan is 422"],
+      [{ ruleStepStatus: 200 }, "web POST first preset what-if with a malformed rule step is 422"],
+      [{ ruleStepStatus: 404 }, "web POST first preset what-if with a malformed rule step is 422"],
       [{ pairGet: 200 }, "web GET /api/pair is 405"],
       [{ pairPost: 200 }, "web POST /api/pair with an empty body is 422"],
       [{ docsOn: true }, "api /docs is off (404)"],
@@ -207,7 +215,7 @@ describe("the command line", () => {
     const { code, out } = await run([good, "--api", good, "--pair-check", "off"]);
     assert.equal(code, 0, out);
     assert.match(out, /smoke: all checks passed/);
-    assert.equal(out.split("\n").filter((line) => line.startsWith("ok ")).length, 14);
+    assert.equal(out.split("\n").filter((line) => line.startsWith("ok ")).length, 15);
   });
 
   it("exits 1 and names the failing check", async () => {

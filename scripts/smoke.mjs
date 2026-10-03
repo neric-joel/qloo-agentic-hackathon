@@ -183,6 +183,16 @@ export async function runSmoke({
     expect(page.status === 422, `status ${page.status}`);
   });
 
+  await check("web POST first preset what-if with a malformed rule step is 422", async () => {
+    expect(presetId, "no preset id to read");
+    const page = await request(webOrigin, `/api/presets/${encodeURIComponent(presetId)}/whatif`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ moves: [{ rule: { a: "x", b: "x" }, moves: [] }] }),
+    });
+    expect(page.status === 422, `status ${page.status}`);
+  });
+
   await check("web GET /api/pair is 405", async () => {
     const page = await request(webOrigin, "/api/pair");
     expect(page.status === 405, `status ${page.status}`);

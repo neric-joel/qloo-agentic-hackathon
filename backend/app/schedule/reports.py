@@ -22,7 +22,7 @@ class ScheduleMetrics(BaseModel):
         description="Split quality relative to the random baseline (100 = average)."
     )
     objective: float | None = Field(
-        default=None, description="Optimizer objective at the requested weight (lower is better)."
+        default=None, description="Re-slotting objective at the requested weight (lower is better)."
     )
     scored_concurrent_pairs: int
     unscored_concurrent_pairs: int = Field(
@@ -92,11 +92,11 @@ class Movability(BaseModel):
     total_sets: int
     locked: int
     frozen_by_existing_violations: int
-    unscored: int = Field(description="Sets the optimizer will not move because they have no overlap signal.")
+    unscored: int = Field(description="Sets re-slotting will not move because they have no overlap signal.")
     movable: int
     movable_share: float
     with_feasible_move: int | None = Field(
-        default=None, description="Sets that have at least one feasible move (filled in by the optimizer)."
+        default=None, description="Sets that have at least one feasible move (filled in when re-slotting)."
     )
 
 
@@ -117,9 +117,7 @@ class ScoreReport(BaseModel):
     metrics: ScheduleMetrics
     baseline: BaselineStats | None
     clashes: list[PairClash] = Field(description="Concurrent pairs ranked by regret.")
-    false_clashes: list[PairClash] = Field(
-        description="Concurrent same-genre pairs with little shared audience."
-    )
+    false_clashes: list[PairClash] = Field(description="Concurrent same-genre pairs with low taste overlap.")
     splits: list[PairClash] = Field(description="Concurrent top-draw pairs ranked by split quality.")
     hidden_clash_count: int
     false_clash_count: int

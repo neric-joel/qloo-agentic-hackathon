@@ -126,7 +126,7 @@ def _reason(scorer: Scorer, names: Sequence[str], i: int, changes: _PairChanges,
     if changes.splits_gained:
         k = changes.splits_gained[0][0]
         parts.append(
-            f"puts it head to head with {names[k]} so two big crowds split ({_audience(scorer, i, k)})"
+            f"puts it against {names[k]}, a popular act with an unlike audience ({_audience(scorer, i, k)})"
         )
     if changes.added:
         k, regret = changes.added[0]
@@ -140,7 +140,7 @@ def _reason(scorer: Scorer, names: Sequence[str], i: int, changes: _PairChanges,
 
 
 def _audience(scorer: Scorer, i: int, k: int) -> str:
-    return f"{round(100 * scorer.overlap[i][k])}% shared audience"
+    return f"taste overlap {round(100 * scorer.overlap[i][k])}/100"
 
 
 def _hidden(scorer: Scorer, i: int, k: int) -> str:

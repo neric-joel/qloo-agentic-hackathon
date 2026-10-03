@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Awaitable, Callable, Sequence
+from functools import lru_cache
 from typing import Any, Protocol
 
 from anthropic import AsyncAnthropic
@@ -153,11 +154,26 @@ def gateway_token(settings: Settings, request_headers: dict[str, str] | None = N
     return os.environ.get("VERCEL_OIDC_TOKEN")
 
 
+def llm_configured(settings: Settings, request_headers: dict[str, str] | None = None) -> bool:
+    """Whether ``build_backend`` would return a backend, without building one (or any client)."""
+    if settings.llm_provider == "anthropic":
+        return bool(settings.anthropic_api_key)
+    if settings.llm_provider == "gateway":
+        return bool(gateway_token(settings, request_headers))
+    return False
+
+
+@lru_cache(maxsize=4)  # a few entries: gateway OIDC tokens rotate
+def anthropic_client(api_key: str, base_url: str | None = None) -> AsyncAnthropic:
+    """One client (and connection pool) per credential and endpoint, shared across requests."""
+    return AsyncAnthropic(api_key=api_key, base_url=base_url, max_retries=2, timeout=60.0)
+
+
 def build_backend(settings: Settings, request_headers: dict[str, str] | None = None) -> LLMBackend | None:
     """Return the configured backend, or ``None`` when no LLM is configured."""
     provider = settings.llm_provider
     if provider == "anthropic" and settings.anthropic_api_key:
-        client = AsyncAnthropic(api_key=settings.anthropic_api_key, max_retries=2, timeout=60.0)
+        client = anthropic_client(settings.anthropic_api_key)
         model = settings.agent_model or DEFAULT_MODELS["anthropic"]
         return AnthropicBackend(
             client,
@@ -167,7 +183,7 @@ def build_backend(settings: Settings, request_headers: dict[str, str] | None = N
             fallbacks="sonnet-5-5" in model,
         )
     if provider == "gateway" and (token := gateway_token(settings, request_headers)):
-        client = AsyncAnthropic(api_key=token, base_url=GATEWAY_BASE_URL, max_retries=2, timeout=60.0)
+        client = anthropic_client(token, GATEWAY_BASE_URL)
         return AnthropicBackend(
             client,
             settings.agent_model or DEFAULT_MODELS["gateway"],

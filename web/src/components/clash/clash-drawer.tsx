@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, ExternalLink, ShieldCheck, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -8,19 +8,23 @@ import { ProvenanceChip, TraceDrawer } from "@/components/kernel";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
+  BROAD_TAGS_NOTE,
+  clashKey,
   formatDraw,
+  formatOverlap,
   formatPercent,
   formatShare,
   hostOf,
   isWebUrl,
   LABEL_META,
+  leadingTags,
   receiptFor,
   requestsForActs,
   tagLabel,
   traceToolCalls,
 } from "@/lib/clashes";
 import { pluralize } from "@/lib/format";
-import type { Act, PairClash, Preset, SetSlot, Stage } from "@/lib/preset";
+import type { Act, PairClash, Preset, Receipt, SetSlot, Stage } from "@/lib/preset";
 import { formatRange, overlapWindow } from "@/lib/timetable";
 
 import { LabelBadge, Meter } from "./marks";
@@ -93,7 +97,7 @@ function ActPanel({ act, slot, stage }: { act: Act | undefined; slot: SetSlot | 
               <span className="font-mono font-semibold tabular-nums">{formatDraw(act.popularity)}</span>
               <span className="text-muted-foreground"> / 100</span>
             </span>
-            <ProvenanceChip provenance="qloo" size="sm" />
+            <ProvenanceChip provenance="recorded" size="sm" />
           </div>
           <Meter value={act.popularity} label={`Draw ${formatDraw(act.popularity)} of 100`} className="mt-2" />
         </div>
@@ -103,8 +107,51 @@ function ActPanel({ act, slot, stage }: { act: Act | undefined; slot: SetSlot | 
 }
 
 /**
+ * The tags Qloo returned for this pair, in the order they are stored (Qloo's score, highest first),
+ * the first few and a count of the rest.
+ */
+function PairTags({ receipt, hasEvidence }: { receipt: Receipt | null; hasEvidence: boolean }) {
+  if (!hasEvidence) {
+    return <p className="text-sm text-muted-foreground">No audience comparison was run for this festival day.</p>;
+  }
+  if (!receipt) {
+    return <p className="text-sm text-muted-foreground">No audience comparison was run for this pair.</p>;
+  }
+  if (receipt.shared_tags.length === 0) {
+    // Only genre, subgenre and theme tags are saved, so an empty list does not mean Qloo returned none.
+    return (
+      <p className="text-sm text-muted-foreground">
+        No genre or theme tags are saved for this pair, so its price rests on the taste-overlap
+        ranking alone.
+      </p>
+    );
+  }
+  const { shown, more } = leadingTags(receipt.shared_tags);
+  return (
+    <>
+      <ul className="flex flex-wrap gap-1.5">
+        {shown.map((tag) => (
+          <li
+            key={tag.name}
+            className="rounded-full border border-prov-qloo-border bg-prov-qloo-bg px-2.5 py-1 text-xs font-semibold text-prov-qloo"
+          >
+            {tagLabel(tag.name)}
+          </li>
+        ))}
+        {more > 0 ? <li className="px-1 py-1 text-xs text-muted-foreground">+{more} more</li> : null}
+      </ul>
+      <p className="mt-2 text-xs text-muted-foreground">{BROAD_TAGS_NOTE}</p>
+      <p className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <ProvenanceChip provenance="recorded" size="sm" />
+        Tags Qloo returned when it compared the two acts&rsquo; audiences.
+      </p>
+    </>
+  );
+}
+
+/**
  * Details of one clash: both acts, the figures behind its price, its label and confidence, the
- * tags both audiences lean toward, a press link when there is one, and the Qloo requests behind it.
+ * tags Qloo returned for the pair, a press link when there is one, and the Qloo requests behind it.
  */
 export function ClashDrawer({
   preset,
@@ -132,6 +179,12 @@ export function ClashDrawer({
     () => traceToolCalls(requests, shown ? `${shown.a.act_id}-${shown.b.act_id}` : "clash"),
     [requests, shown],
   );
+  // Previous and next swap the clash inside an open drawer; start each one at the top.
+  const detailsRef = useRef<HTMLDivElement | null>(null);
+  const shownKey = shown ? `${shown.day}:${clashKey(shown)}` : null;
+  useEffect(() => {
+    if (shownKey) detailsRef.current?.scrollTo({ top: 0 });
+  }, [shownKey]);
 
   if (!shown) return null;
 
@@ -192,6 +245,7 @@ export function ClashDrawer({
         </SheetHeader>
 
         <div
+          ref={detailsRef}
           tabIndex={0}
           role="region"
           aria-label="Clash details"
@@ -199,8 +253,10 @@ export function ClashDrawer({
         >
           <SheetDescription className="max-w-prose text-[0.9375rem] leading-relaxed text-foreground">
             {shown.a.name} and {shown.b.name} play at the same time for {shown.overlap_minutes} minutes.
-            Their shared audience is {formatPercent(shown.audience_overlap)} by Qloo&rsquo;s measure, so
-            this clash takes {formatShare(shown.regret_share)} of the day&rsquo;s clash cost.
+            Their taste overlap is {formatOverlap(shown.audience_overlap)} out of 100 (rank among the
+            other acts on this bill, by Qloo&rsquo;s measure), so this clash takes{" "}
+            {formatShare(shown.regret_share)} of the day&rsquo;s clash cost. Taste overlap is not
+            attendance.
           </SheetDescription>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-2">
@@ -211,10 +267,11 @@ export function ClashDrawer({
           <Section title="The price">
             <dl className="grid grid-cols-2 gap-x-5 gap-y-5">
               <Figure
-                label="Shared audience"
-                value={formatPercent(shown.audience_overlap)}
-                note="By Qloo's measure."
-                chip={<ProvenanceChip provenance="qloo" size="sm" />}
+                label="Taste overlap"
+                value={formatOverlap(shown.audience_overlap)}
+                unit="/ 100"
+                note="Rank among the other acts on this bill. Not a share of fans."
+                chip={<ProvenanceChip provenance="derived" size="sm" />}
               />
               <Figure
                 label="Time shared"
@@ -224,7 +281,7 @@ export function ClashDrawer({
                 chip={<ProvenanceChip provenance="derived" size="sm" />}
               />
               <Figure
-                label="Fans at stake"
+                label="Combined draw"
                 value={formatDraw(shown.draw)}
                 unit="/ 100"
                 note="Both acts' draw (Qloo popularity), combined as a geometric mean."
@@ -238,8 +295,8 @@ export function ClashDrawer({
               />
             </dl>
             <p className="mt-5 rounded-md bg-muted px-3 py-2.5 font-mono text-xs leading-relaxed">
-              price = shared audience {shown.audience_overlap.toFixed(2)} &times; time shared{" "}
-              {shown.concurrency.toFixed(2)} &times; fans at stake {shown.draw.toFixed(2)}
+              price = taste overlap {shown.audience_overlap.toFixed(2)} &times; time shared{" "}
+              {shown.concurrency.toFixed(2)} &times; combined draw {shown.draw.toFixed(2)}
               {weighted ? " × rarity weight" : ""} = {shown.regret.toFixed(3)}
             </p>
           </Section>
@@ -251,16 +308,16 @@ export function ClashDrawer({
                 {LABEL_META[shown.label].explain}{" "}
                 {shown.label === "hidden" ? (
                   <>
-                    Genre tags: {shown.a.genre ?? "none"} and {shown.b.genre ?? "none"}. Shared audience{" "}
-                    {formatPercent(shown.audience_overlap)}
-                    {hiddenLine !== null ? ` is above this day's hidden-clash line of ${formatPercent(hiddenLine)}` : ""}.
+                    Genre tags: {shown.a.genre ?? "none"} and {shown.b.genre ?? "none"}. Taste overlap{" "}
+                    {formatOverlap(shown.audience_overlap)} / 100
+                    {hiddenLine !== null ? ` is above this day's hidden-clash line of ${formatOverlap(hiddenLine)}` : ""}.
                   </>
                 ) : null}
               </p>
             ) : (
               <p className="text-[0.9375rem] leading-relaxed">
                 <strong className="font-semibold">No label.</strong> Neither a hidden clash (different
-                genres, large shared audience) nor a false one (same genre, little shared audience).
+                main genres, high taste overlap) nor a false one (same main genre, low taste overlap).
               </p>
             )}
             <p className="mt-3 text-sm text-muted-foreground">
@@ -270,31 +327,8 @@ export function ClashDrawer({
             </p>
           </Section>
 
-          <Section title="Fans of both also lean toward">
-            {receipt && receipt.shared_tags.length > 0 ? (
-              <>
-                <ul className="flex flex-wrap gap-1.5" aria-label="Tags both audiences lean toward">
-                  {receipt.shared_tags.slice(0, 10).map((tag) => (
-                    <li
-                      key={tag.name}
-                      className="rounded-full border border-prov-qloo-border bg-prov-qloo-bg px-2.5 py-1 text-xs font-semibold text-prov-qloo"
-                    >
-                      {tagLabel(tag.name)}
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <ProvenanceChip provenance="qloo" size="sm" />
-                  Tags Qloo returned when it compared the two acts&rsquo; audiences.
-                </p>
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                {preset.evidence
-                  ? "Qloo returned no shared tags for this pair."
-                  : "No audience comparison was run for this festival day."}
-              </p>
-            )}
+          <Section title="Tags Qloo returned for this pair">
+            <PairTags receipt={receipt} hasEvidence={preset.evidence !== null} />
             {receipt?.press && isWebUrl(receipt.press) ? (
               <p className="mt-4 text-sm">
                 Named in press coverage of this festival&rsquo;s clashes:{" "}

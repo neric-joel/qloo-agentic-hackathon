@@ -10,7 +10,7 @@ export const PROVENANCE_META: Record<
 > = {
   qloo: {
     label: "Qloo",
-    description: "Returned by Qloo's API during this run.",
+    description: "A value Qloo returned in a live request.",
     Icon: Waypoints,
   },
   derived: {

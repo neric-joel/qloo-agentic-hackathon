@@ -8,7 +8,7 @@ export function SiteFooter() {
         <p className="max-w-prose">
           {MOCK_STREAM_ENABLED
             ? "Figures on this preview are simulated, and no requests reach Qloo."
-            : "Shared audience and draw (Qloo popularity) come from Qloo’s API. The festivals shown do not use Clash Control; their published timetables are scored independently."}
+            : "Popularity and audience comparisons are saved Qloo responses; taste overlap and prices are calculated by this app from them. The festivals shown do not use Clash Control; their published timetables are scored independently."}
         </p>
       </div>
     </footer>

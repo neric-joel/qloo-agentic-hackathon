@@ -7,6 +7,7 @@ tools change the working festival; ``try_move`` never does.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import asdict
 from typing import Any
@@ -14,8 +15,10 @@ from typing import Any
 from pydantic import ValidationError
 
 from ..qloo.overlap import shared_taste
+from ..schedule.layout import Layout
 from ..schedule.metrics import score_festival
 from ..schedule.models import Festival, OverlapMatrix, ScoringConfig, SetSlot, format_minutes, parse_minutes
+from ..schedule.moves import grid_moves
 from ..schedule.optimizer import optimize
 from ..schedule.reports import ScoreReport
 from .tools import Tool, ToolContext, ToolInputError, ToolOutput
@@ -83,7 +86,7 @@ def _clash_rows(report: ScoreReport, limit: int) -> list[dict[str, Any]]:
         {
             "a": c.a.name,
             "b": c.b.name,
-            "shared_audience": round(c.audience_overlap, 2),
+            "taste_overlap": round(c.audience_overlap, 2),
             "draw": round(c.draw, 2),
             "minutes_overlapping": c.overlap_minutes,
             "share_of_total_cost": round(c.regret_share, 3),
@@ -143,7 +146,10 @@ async def clash_report(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
     report = score_festival(festival, matrix, config)
     data = {
         "clash_budget_index": report.metrics.clash_budget_index,
-        "index_meaning": "100 = average of random legal timetables for this lineup; lower is better",
+        "index_meaning": (
+            "100 = average of random re-orderings of this lineup that keep each set near its "
+            "published slot; lower is better"
+        ),
         "top_clashes": _clash_rows(report, min(int(limit), 20)),
         "acts_without_qloo_signal": [u.name for u in report.coverage.unscored],
         "problems": [v.message for v in report.violations],
@@ -159,8 +165,8 @@ CLASH_REPORT = Tool(
     name="clash_report",
     description=(
         "Score the working timetable: the Clash Budget Index (100 = average random legal timetable, lower is "
-        "better) and the costliest clashes. Cost of a clash = shared audience (Qloo) x draw x minutes "
-        "overlapping."
+        "better) and the costliest clashes. Cost of a clash = taste overlap (derived from Qloo, a rank among "
+        "this day's acts) x combined draw x minutes overlapping."
     ),
     input_schema={
         "type": "object",
@@ -189,17 +195,17 @@ async def explain_clash(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
         "minutes_overlapping": minutes,
     }
     if matrix.coverage_of(a_id) == "none" or matrix.coverage_of(b_id) == "none":
-        data["shared_audience"] = None
+        data["taste_overlap"] = None
         data["note"] = "Qloo has no usable audience signal for one of these acts, so the clash is not priced."
         return ToolOutput(content=_compact(data), summary="No Qloo signal for one act")
-    data["shared_audience"] = round(matrix.value(a_id, b_id), 2)
+    data["taste_overlap"] = round(matrix.value(a_id, b_id), 2)
     if a.qloo_id and b.qloo_id:
         tags = await shared_taste(ctx.qloo, a.qloo_id, b.qloo_id, take=6)
-        data["fans_of_both_lean_toward"] = [t.name for t in tags]
+        data["qloo_tags_for_pair"] = [t.name for t in tags]
         data["tags"] = [asdict(t) for t in tags]
     return ToolOutput(
         content=_compact(data),
-        summary=f"{a.name} / {b.name}: shared audience {data['shared_audience']}",
+        summary=f"{a.name} / {b.name}: taste overlap {round(100 * data['taste_overlap'])}/100",
         data={"kind": "clash", **data},
     )
 
@@ -207,9 +213,9 @@ async def explain_clash(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
 EXPLAIN_CLASH = Tool(
     name="explain_clash",
     description=(
-        "Explain one pair of acts: their slots, minutes overlapping, shared audience by Qloo's measure (0-1, "
-        "relative to this lineup), each act's draw, and the taste Qloo finds both audiences share (genres, "
-        "themes). Accepts act ids or names."
+        "Explain one pair of acts: their slots, minutes overlapping, taste overlap (0-1, a rank among this "
+        "day's acts derived from Qloo), each act's draw, and the tags Qloo returns when it compares the two "
+        "audiences (genres, themes). Accepts act ids or names."
     ),
     input_schema={
         "type": "object",
@@ -250,7 +256,11 @@ async def try_move(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
             "allowed": False,
             "problems": [str(exc)],
         }
-        return ToolOutput(content=_compact(data), summary=f"What if {name} moves: slot taken")
+        return ToolOutput(
+            content=_compact(data),
+            summary=f"What if {name} moves: slot taken",
+            data={"kind": "what_if", **data},
+        )
     after = score_festival(trial, matrix, config)
     new_problems = sorted({v.message for v in after.violations} - {v.message for v in before.violations})
 
@@ -301,6 +311,111 @@ TRY_MOVE = Tool(
         "required": ["act", "stage", "start"],
     },
     handler=try_move,
+    provenance="derived",
+)
+
+
+MAX_MOVE_OPTIONS = 8
+MOVE_GRID_MINUTES = 5
+
+
+async def find_moves(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
+    festival, matrix, config = _state(ctx)
+    act_id = _act_id(festival, args.get("act"))
+    limit = args.get("limit", 5)
+    if not isinstance(limit, int) or not 1 <= limit <= MAX_MOVE_OPTIONS:
+        raise ToolInputError(f"limit must be 1-{MAX_MOVE_OPTIONS}.")
+    # Scoring every candidate is CPU work: keep it off the event loop so other requests are served.
+    return await asyncio.to_thread(_find_moves, festival, matrix, config, act_id, limit)
+
+
+def _find_moves(
+    festival: Festival, matrix: OverlapMatrix, config: ScoringConfig, act_id: str, limit: int
+) -> ToolOutput:
+    name = festival.act_by_id()[act_id].name
+    layout = Layout.from_festival(festival)
+    i = layout.rules.act_ids.index(act_id)
+    old = {s.act_id: s for s in festival.timetable}[act_id]
+    if layout.frozen[i]:
+        why = "locked in place" if old.locked else "tied up in a rule the published timetable already breaks"
+        data = {"act": name, "from": _slot_text(festival, old), "movable": False, "why": why, "options": []}
+        return ToolOutput(
+            content=_compact(data),
+            summary=f"{name} cannot move: {why}",
+            data={"kind": "move_options", **data},
+        )
+
+    before = score_festival(festival, matrix, config)
+    seen: set[tuple[int, int, int]] = set()
+    options: list[dict[str, Any]] = []
+    for move in grid_moves(layout, i, step=MOVE_GRID_MINUTES):
+        place = move.to[0]
+        if place in seen or not layout.is_feasible(move):
+            continue
+        seen.add(place)
+        day, stage, start = place
+        moved = old.model_copy(
+            update={
+                "day": day,
+                "stage_id": layout.rules.stage_ids[stage],
+                "start": start,
+                "end": start + old.duration,
+            }
+        )
+        try:
+            trial = _rebuild(
+                festival, timetable=[moved if s.act_id == act_id else s for s in festival.timetable]
+            )
+        except ToolInputError:
+            continue
+        after = score_festival(trial, matrix, config)
+        if {v.message for v in after.violations} - {v.message for v in before.violations}:
+            continue
+        options.append(
+            {
+                "move": f"{name}: {_slot_text(festival, old)} -> {_slot_text(trial, moved)}",
+                "stage": festival.stage_by_id()[moved.stage_id].name,
+                "start": format_minutes(start),
+                "clash_budget_after": after.metrics.clash_budget_index,
+            }
+        )
+    options.sort(key=lambda o: o["clash_budget_after"])
+    data = {
+        "act": name,
+        "from": _slot_text(festival, old),
+        "movable": True,
+        "clash_budget_before": before.metrics.clash_budget_index,
+        "legal_places": len(options),
+        "searched": f"every start on a {MOVE_GRID_MINUTES}-minute grid in the free time it may use",
+        "options": options[:limit],
+    }
+    best = options[0]["clash_budget_after"] if options else None
+    summary = (
+        f"{name}: {len(options)} legal places, best {before.metrics.clash_budget_index} -> {best}"
+        if options
+        else f"{name}: no legal place to move"
+    )
+    return ToolOutput(content=_compact(data), summary=summary, data={"kind": "move_options", **data})
+
+
+FIND_MOVES = Tool(
+    name="find_moves",
+    description=(
+        "Where could one set go? Checks every start on a 5-minute grid in the free time it may use (a "
+        "stage it may play, inside its start window; it keeps its length) and lists the places that break "
+        "no rule, each priced with the Clash Budget after the move, best first. Use it before try_move "
+        "instead of guessing times. Does not change the timetable."
+    ),
+    input_schema={
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "act": {"type": "string", "description": "Act id or name."},
+            "limit": {"type": "integer", "description": "Most places to return, 1-8 (default 5)."},
+        },
+        "required": ["act"],
+    },
+    handler=find_moves,
     provenance="derived",
 )
 
@@ -392,11 +507,12 @@ async def reslot(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
     budget = args.get("move_budget")
     if not isinstance(weight, (int, float)) or not 0 <= weight <= 1:
         raise ToolInputError(
-            "objective must be between 0 (split big crowds on purpose) and 1 (least fan regret)."
+            "objective must be between 0 (set popular acts with unlike audiences against each other on "
+            "purpose) and 1 (lowest clash cost)."
         )
     if not isinstance(budget, int) or not 1 <= budget <= MAX_MOVE_BUDGET:
         raise ToolInputError(f"move_budget must be 1-{MAX_MOVE_BUDGET}.")
-    report = optimize(festival, matrix, float(weight), budget, config)
+    report = await asyncio.to_thread(optimize, festival, matrix, float(weight), budget, config)
     option = next((o for o in report.options if o.kind == "balanced"), None)
     data: dict[str, Any] = {"status": report.status, "message": report.message}
     if option is not None and option.improved:
@@ -409,14 +525,14 @@ async def reslot(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
             ],
         }
     if args.get("compare_without_qloo") and option is not None:
-        plain = optimize(festival, _flat(matrix), float(weight), budget, config)
+        plain = await asyncio.to_thread(optimize, festival, _flat(matrix), float(weight), budget, config)
         plain_option = next((o for o in plain.options if o.kind == "balanced"), None)
         if plain_option is not None:
             graded = score_festival(_rebuild(festival, timetable=plain_option.timetable), matrix, config)
             mine = {(m.act_id, m.to_slot.stage_id, m.to_slot.start) for m in option.moves}
             theirs = {(m.act_id, m.to_slot.stage_id, m.to_slot.start) for m in plain_option.moves}
             data["without_qloo"] = {
-                "how": "same rules, every pair treated as equally shared audience (draw only)",
+                "how": "same rules, every pair given the same taste overlap (draw only)",
                 "clash_budget_by_qloo_measure": graded.metrics.clash_budget_index,
                 "moves": [f"{m.name}: {m.from_slot.label} -> {m.to_slot.label}" for m in plain_option.moves],
                 "moves_that_differ": len(mine - theirs),
@@ -433,13 +549,11 @@ async def reslot(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
 RESLOT = Tool(
     name="reslot",
     description=(
-        "Re-slot the movable sets under every rule. objective: 1 = least fan regret, 0 = split the biggest "
-        "crowds "
-        "on purpose, in between = balance. move_budget = most sets that may move (a swap counts two). "
-        "Returns the "
-        "moves with reasons and the Clash Budget before and after. compare_without_qloo also runs the same "
-        "re-slot "
-        "with no audience data (draw only) and reports how its moves differ."
+        "Re-slot the movable sets under every rule. objective: 1 = lowest clash cost, 0 = set popular acts "
+        "with unlike audiences against each other on purpose, in between = balance. move_budget = most sets "
+        "that may move (a swap counts two). Returns the moves with reasons and the Clash Budget before and "
+        "after. compare_without_qloo also runs the same re-slot with no audience data (draw only) and "
+        "reports how its moves differ."
     ),
     input_schema={
         "type": "object",
@@ -455,4 +569,4 @@ RESLOT = Tool(
     provenance="derived",
 )
 
-CLASH_TOOLS = [LIST_TIMETABLE, CLASH_REPORT, EXPLAIN_CLASH, TRY_MOVE, ADD_CONSTRAINT, RESLOT]
+CLASH_TOOLS = [LIST_TIMETABLE, CLASH_REPORT, EXPLAIN_CLASH, FIND_MOVES, TRY_MOVE, ADD_CONSTRAINT, RESLOT]

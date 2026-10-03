@@ -2,7 +2,7 @@ import { useId, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 import { ProvenanceChip } from "@/components/kernel";
-import { describeVsRandom, dialArc, dialDomain, dialFraction, dialPoint } from "@/lib/clash-budget";
+import { describeReach, describeVsRandom, dialArc, dialDomain, dialFraction, dialPoint } from "@/lib/clash-budget";
 import type { BaselineStats } from "@/lib/preset";
 
 const W = 240;
@@ -14,15 +14,20 @@ const TRACK = 14;
 type BudgetDialProps = {
   index: number | null;
   baseline: BaselineStats | null;
+  /** The rules every random re-ordering keeps, as a clause (see `describeReach`). */
+  reach?: string;
   className?: string;
 };
 
+const ANY_REACH = describeReach({ windowMinutes: null, neighbourStages: false, locked: 0 });
+
 /**
- * The Clash Budget Index on a half dial: the band of random valid timetables, the random average
- * at 100, and a needle at this timetable. The gap to 100 is filled in, and every reading is also
- * printed, so nothing depends on the colours.
+ * The Clash Budget Index on a half dial: the band of random re-orderings, their average at 100, and
+ * a needle at this timetable. The gap to 100 is filled in one neutral tone whichever side it falls
+ * on, because the dial is a reading, not a grade of a real festival. Every reading is also printed,
+ * so nothing depends on the colours.
  */
-export function BudgetDial({ index, baseline, className }: BudgetDialProps) {
+export function BudgetDial({ index, baseline, reach = ANY_REACH, className }: BudgetDialProps) {
   const titleId = useId();
   const descId = useId();
 
@@ -63,9 +68,9 @@ export function BudgetDial({ index, baseline, className }: BudgetDialProps) {
           aria-labelledby={`${titleId} ${descId}`}
           className="block w-full overflow-visible"
         >
-          <title id={titleId}>{`Clash Budget Index ${rounded}, by Qloo's measure`}</title>
+          <title id={titleId}>{`Clash Budget Index ${rounded}`}</title>
           <desc id={descId}>
-            {`Dial from ${domain.min} to ${domain.max}. 100 is the average of random valid timetables for this lineup` +
+            {`Taste-overlap cost by Qloo's measure. Dial from ${domain.min} to ${domain.max}. 100 is the average of random re-orderings of this lineup` +
               (p10 !== null && p90 !== null
                 ? `; the middle 80% of them score ${Math.round(p10)} to ${Math.round(p90)}.`
                 : ".") +
@@ -84,7 +89,7 @@ export function BudgetDial({ index, baseline, className }: BudgetDialProps) {
           <path
             d={dialArc(at(Math.min(index, 100)), at(Math.max(index, 100)), CX, CY, R)}
             fill="none"
-            stroke={index > 100 ? "var(--primary)" : "var(--success)"}
+            stroke="color-mix(in oklab, var(--foreground) 35%, transparent)"
             strokeWidth={TRACK}
           />
           <line
@@ -123,25 +128,23 @@ export function BudgetDial({ index, baseline, className }: BudgetDialProps) {
         </svg>
 
         <div className="min-w-0 pb-1">
-          <p className="type-numeral text-6xl leading-none sm:text-7xl">
-            {rounded}
-            <span className="sr-only">, by Qloo&rsquo;s measure</span>
-          </p>
-          <p className="mt-2 text-sm leading-snug font-semibold">{describeVsRandom(index)}</p>
+          <p className="type-numeral text-6xl leading-none sm:text-7xl">{rounded}</p>
+          <p className="mt-2 text-sm leading-snug font-semibold">{describeVsRandom(index)}.</p>
           <p className="text-sm leading-snug text-muted-foreground">Lower is better.</p>
         </div>
       </div>
 
       <figcaption className="mt-4 text-sm leading-relaxed">
         <p className="font-medium">
-          100 = average of random valid timetables for this lineup · counts shared-audience cost
-          only · by Qloo&rsquo;s measure
+          100 = the average of random re-orderings of this lineup in which {reach}. It counts
+          taste-overlap cost only, by Qloo&rsquo;s measure.
         </p>
         <p className="mt-1.5 text-muted-foreground">
           {p10 !== null && p90 !== null
-            ? `Shaded: the middle 80% of those random timetables (${Math.round(p10)} to ${Math.round(p90)}). `
+            ? `Shaded: the middle 80% of those re-orderings (${Math.round(p10)} to ${Math.round(p90)}). `
             : ""}
-          Not a verdict on the festival: real programming weighs much more than shared audiences.
+          A reading, not a grade. Not a verdict on the festival: real programming weighs much more
+          than taste overlap.
         </p>
       </figcaption>
     </figure>

@@ -12,6 +12,7 @@ import type {
   Preset,
   Receipt,
   SetSlot,
+  SharedTag,
   Stage,
 } from "./preset";
 import type { ToolCallState } from "./run-state";
@@ -34,6 +35,58 @@ export function formatShare(value: number): string {
 /** Draw (Qloo popularity, 0..1) on a 0..100 scale: 0.9722 -> "97". */
 export function formatDraw(value: number): string {
   return String(Math.round(Math.min(1, Math.max(0, value)) * 100));
+}
+
+/**
+ * Taste overlap (a rank among the other acts on the bill, 0..1) as a number out of 100: 0.9865 ->
+ * "99". Never printed with a percent sign: it is a rank, not a share of fans.
+ */
+export function formatOverlap(value: number): string {
+  return String(Math.round(Math.min(1, Math.max(0, value)) * 100));
+}
+
+const ORDINAL_SUFFIX: Record<number, string> = { 1: "st", 2: "nd", 3: "rd" };
+
+/** 1 -> "1st", 12 -> "12th", 22 -> "22nd", 111 -> "111th". */
+export function ordinal(n: number): string {
+  const lastTwo = n % 100;
+  if (lastTwo >= 11 && lastTwo <= 13) return `${n}th`;
+  return `${n}${ORDINAL_SUFFIX[n % 10] ?? "th"}`;
+}
+
+/** A 0..1 rank among one festival day's clashes, in words: 0.941 -> "94th percentile of that day's clashes". */
+export function describeDayRank(value: number): string {
+  if (value >= 0.995) return "highest of that day's clashes";
+  return `${ordinal(Math.round(Math.min(1, Math.max(0, value)) * 100))} percentile of that day's clashes`;
+}
+
+/** Fan forums are not press: links to reddit.com read "Forum", everything else "Press". */
+export function sourceLabel(url: string): "Forum" | "Press" {
+  const host = hostOf(url).toLowerCase();
+  return host === "reddit.com" || host.endsWith(".reddit.com") ? "Forum" : "Press";
+}
+
+/** How many of a pair's tags a screen shows before "+N more". */
+export const TAG_LIMIT = 5;
+
+/** Shown under a pair's tags, because some tags come back for most pairs and say little about one. */
+export const BROAD_TAGS_NOTE = "Broad tags such as Jazz, Blues or Electronic come back for many pairs.";
+
+/**
+ * The first `limit` of a pair's tags, in the order they are stored (Qloo's score for the pair,
+ * highest first), and how many more there are. The order is never changed here.
+ */
+export function leadingTags(tags: readonly SharedTag[], limit = TAG_LIMIT): { shown: SharedTag[]; more: number } {
+  return { shown: tags.slice(0, limit), more: Math.max(0, tags.length - limit) };
+}
+
+/** How many acts with a Qloo signal have a draw of at least `cutoff`, out of all such acts. */
+export function popularitySpread(acts: readonly Act[], cutoff = 0.9): { atLeast: number; total: number } {
+  const scored = acts.filter((act) => act.popularity !== null);
+  return {
+    atLeast: scored.filter((act) => (act.popularity ?? 0) >= cutoff).length,
+    total: scored.length,
+  };
 }
 
 /** "urn:tag:genre:music:dream_pop" or "dream_pop" -> "Dream Pop". Plain names pass through. */
@@ -110,12 +163,12 @@ export const LABEL_META: Record<ClashLabel, { name: string; short: string; expla
   hidden: {
     name: "Hidden clash",
     short: "Hidden",
-    explain: "The acts' genre tags differ, but by Qloo's measure they share a large audience.",
+    explain: "The acts' main genre tags differ, but their taste overlap is among the day's highest.",
   },
   false: {
     name: "False clash",
     short: "False",
-    explain: "The acts share a genre tag, but by Qloo's measure they share little audience.",
+    explain: "The acts share a main genre tag, but their taste overlap is low.",
   },
 };
 

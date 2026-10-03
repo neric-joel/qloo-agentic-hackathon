@@ -15,8 +15,22 @@ from .events import Emit, Provenance
 log = logging.getLogger(__name__)
 
 
+TOO_MANY_CALLS = "Too many tool calls in one turn; the rest were skipped."
+QLOO_BUDGET_USED = "Error: this run's Qloo budget is used up."
+QLOO_CALLS = "qloo_calls"  # ToolContext.state key: Qloo requests made so far in this run
+
+
 class ToolInputError(Exception):
     """The model called a tool with arguments the tool can't use; the message goes back to the model."""
+
+
+class ToolRefused(Exception):
+    """A run cap stopped this call before it ran; ``content`` goes back to the model as an error."""
+
+    def __init__(self, content: str, summary: str) -> None:
+        super().__init__(summary)
+        self.content = content
+        self.summary = summary
 
 
 @dataclass(frozen=True)
@@ -30,6 +44,18 @@ class ToolOutput:
 class ToolContext:
     qloo: QlooClient
     state: dict[str, Any] = field(default_factory=dict)
+    qloo_budget: int | None = None  # most Qloo requests one run may make; None means no cap
+
+    def take_qloo_slot(self) -> None:
+        """Reserve one Qloo request before a Qloo-backed tool runs, or refuse it once the budget is used.
+
+        Reserving up front keeps concurrent calls in one turn from all passing the check. A tool that
+        starts under the cap finishes; the cap stops the next one.
+        """
+        used = self.state.get(QLOO_CALLS, 0)
+        if self.qloo_budget is not None and used >= self.qloo_budget:
+            raise ToolRefused(QLOO_BUDGET_USED, "Qloo budget for this run is used up")
+        self.state[QLOO_CALLS] = used + 1
 
 
 Handler = Callable[[dict[str, Any], ToolContext], Awaitable[ToolOutput]]
@@ -53,15 +79,20 @@ class Tool:
 
 
 async def run_tool_calls(
-    tool_uses: Sequence[Any], registry: Mapping[str, Tool], ctx: ToolContext, emit: Emit
+    tool_uses: Sequence[Any],
+    registry: Mapping[str, Tool],
+    ctx: ToolContext,
+    emit: Emit,
+    max_calls: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Run every tool call from one assistant turn concurrently.
+    """Run the tool calls from one model turn concurrently.
 
-    Returns the ``tool_result`` blocks in the original order so they can be sent back to the
-    model in a single user message.
+    Calls past ``max_calls`` are not run: each gets an error result, so the model can carry on. Returns
+    the ``tool_result`` blocks in the original order so they can be sent back to the model in a single
+    user message.
     """
 
-    async def run_one(block: Any) -> dict[str, Any]:
+    async def run_one(block: Any, skip: bool) -> dict[str, Any]:
         tool = registry.get(block.name)
         provenance: Provenance = tool.provenance if tool else "llm"
         await emit(
@@ -74,14 +105,22 @@ async def run_tool_calls(
             }
         )
         started = time.perf_counter()
+        reserved = 0
         with record_requests() as records:
             try:
+                if skip:
+                    raise ToolRefused(TOO_MANY_CALLS, "Skipped: too many tool calls in one turn")
                 if tool is None:
                     raise ToolInputError(f"Unknown tool '{block.name}'.")
+                if tool.provenance == "qloo":
+                    ctx.take_qloo_slot()
+                    reserved = 1
                 output = await tool.handler(dict(block.input), ctx)
                 ok, content, summary = True, output.content, output.summary
                 if output.data is not None:
                     ctx.state.setdefault("tool_data", {})[block.id] = output.data
+            except ToolRefused as exc:
+                ok, content, summary = False, exc.content, exc.summary
             except ToolInputError as exc:
                 ok, content, summary = False, f"Error: {exc}", str(exc)
             except QlooError as exc:
@@ -95,6 +134,8 @@ async def run_tool_calls(
                 log.exception("Tool %s failed", block.name)
                 ok, content, summary = False, "Error: the tool failed unexpectedly.", "Tool failed"
 
+        # Swap the reserved slot for the requests the tool actually made (failed ones count too).
+        ctx.state[QLOO_CALLS] = ctx.state.get(QLOO_CALLS, 0) + len(records) - reserved
         if records and all(r.recorded for r in records):
             provenance = "recorded"
         await emit(
@@ -114,4 +155,5 @@ async def run_tool_calls(
             result["is_error"] = True
         return result
 
-    return list(await asyncio.gather(*(run_one(block) for block in tool_uses)))
+    limit = len(tool_uses) if max_calls is None else max_calls
+    return list(await asyncio.gather(*(run_one(block, i >= limit) for i, block in enumerate(tool_uses))))

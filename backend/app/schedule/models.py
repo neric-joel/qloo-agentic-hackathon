@@ -73,7 +73,8 @@ MatrixSource = Literal["qloo", "derived", "synthetic"]
 
 
 class _Model(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    # NaN and infinity are input errors (JSON parsers accept them; no score can use them)
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
 
 class StageHours(_Model):
@@ -186,7 +187,7 @@ class Constraints(_Model):
     )
     billing_rules: list[BillingRule] = Field(default_factory=list)
     allow_day_moves: bool = Field(
-        default=False, description="Allow the optimizer to move sets to a different festival day."
+        default=False, description="Allow re-slotting to move sets to a different festival day."
     )
 
 
@@ -303,7 +304,7 @@ class Festival(_Model):
 
 
 class OverlapMatrix(_Model):
-    """Pairwise audience overlap between acts: 0 = no shared audience, 1 = identical audience."""
+    """Pairwise taste overlap between acts, 0 to 1: higher means their audiences lean toward each other."""
 
     act_ids: list[str] = Field(max_length=MAX_ACTS)
     values: list[list[float]]
@@ -375,7 +376,7 @@ class ScoringConfig(_Model):
     baseline_samples: int = Field(
         default=300, ge=0, le=2000, description="Random timetables in the baseline."
     )
-    seed: int = Field(default=7, description="Seed for the baseline sampler and the optimizer.")
+    seed: int = Field(default=7, description="Seed for the baseline sampler and for re-slotting.")
     top_draw_share: float = Field(
         default=0.3, gt=0, le=1, description="Share of the lineup (by draw) that counts as the top draw tier."
     )

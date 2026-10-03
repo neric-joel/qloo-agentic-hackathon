@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   describeStatus,
+  formatCaptured,
   formatInteger,
   formatLatency,
   humanizeIdentifier,
@@ -61,6 +62,21 @@ describe("pluralize and formatInteger", () => {
 
   it("groups thousands the same way on server and client", () => {
     expect(formatInteger(1840)).toBe("1,840");
+  });
+});
+
+describe("formatCaptured", () => {
+  it("prints the UTC date, whatever the local time zone", () => {
+    expect(formatCaptured("2026-10-03T00:13:52+00:00")).toBe("2026-10-03 UTC");
+    // Still 2 October in New York, already 3 October in UTC.
+    expect(formatCaptured("2026-10-02T22:30:00-04:00")).toBe("2026-10-03 UTC");
+    expect(formatCaptured(new Date(Date.UTC(2026, 0, 5, 12)))).toBe("2026-01-05 UTC");
+  });
+
+  it("returns null for a missing or invalid value", () => {
+    expect(formatCaptured(undefined)).toBeNull();
+    expect(formatCaptured("")).toBeNull();
+    expect(formatCaptured("not a date")).toBeNull();
   });
 });
 

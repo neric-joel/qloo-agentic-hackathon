@@ -54,7 +54,7 @@ export function TimetableLegend({ showLinks = true, className }: { showLinks?: b
               </svg>
             }
           >
-            Clash link: thicker = costlier, by Qloo&rsquo;s measure
+            Clash link: thicker = costlier
           </Item>
           <Item
             swatch={
@@ -74,7 +74,7 @@ export function TimetableLegend({ showLinks = true, className }: { showLinks?: b
               </svg>
             }
           >
-            Hidden clash: genres differ, audience shared
+            Hidden clash: genres differ, taste overlap is high
           </Item>
         </>
       ) : null}

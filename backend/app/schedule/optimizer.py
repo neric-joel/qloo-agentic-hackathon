@@ -4,7 +4,8 @@ The objective minimized is
 
     J = weight * regret / baseline regret  -  (1 - weight) * split quality / split normaliser
 
-so ``weight = 1`` is pure fan regret and ``weight = 0`` rewards clashes that split big crowds cleanly.
+so ``weight = 1`` is pure clash cost and ``weight = 0`` rewards clashes between popular acts with unlike
+audiences.
 Both terms are pair-weighted concurrency sums, so one weight matrix drives the search and each candidate
 move is priced from the few sets it overlaps instead of re-scoring the whole timetable.
 
@@ -407,9 +408,9 @@ def _summary(options: Sequence[OptionReport], mov: Movability) -> str:
     improving = [option for option in options if option.improved]
     best = min(improving, key=lambda option: option.metrics.regret)
     cut = -(best.regret_change_pct or 0.0)
-    text = f"{len(improving)} of {len(options)} options improve on the current timetable"
+    text = f"{len(improving)} of {len(options)} options lower this day's Clash Budget, by the same measure"
     if cut > 0:
-        text += f"; the largest regret cut is {cut:.0f}% with {best.move_count} sets re-slotted"
+        text += f"; the largest clash-cost drop is {cut:.0f}% with {best.move_count} sets re-slotted"
     return f"{text} ({mov.movable} of {mov.total_sets} sets are movable)."
 
 

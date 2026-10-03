@@ -17,7 +17,7 @@ function joinNames(names: readonly string[]): string {
 
 /**
  * How much of the lineup Qloo could speak for, as one compact strip. Acts without a signal are
- * named and left out of every price; they are never counted as zero shared audience.
+ * named and left out of every price; they are never counted as zero taste overlap.
  */
 export function CoverageMeter({ coverage, metrics, className }: CoverageMeterProps) {
   const total = coverage.strong + coverage.weak + coverage.none;

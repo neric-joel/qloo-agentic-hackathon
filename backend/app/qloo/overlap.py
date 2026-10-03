@@ -262,7 +262,7 @@ async def build_overlap(
     )
 
 
-# Tag kinds that explain a shared audience; instruments, regions and vague descriptors do not.
+# Tag kinds that explain an overlap in taste; instruments, regions and vague descriptors do not.
 TASTE_TAG_KINDS = ("urn:tag:genre", "urn:tag:subgenre", "urn:tag:theme")
 
 
@@ -278,7 +278,7 @@ async def shared_taste(client: QlooClient, a_id: str, b_id: str, *, take: int = 
     """What two acts' audiences have in common, by Qloo's comparison of their taste profiles.
 
     Only genre, subgenre and theme tags are kept: instruments, regions and descriptors such as
-    "Energetic" say little about why the same people would want to see both sets.
+    "Energetic" say little about why two audiences lean toward each other.
     """
     response = await client.compare(
         {"a.signal.interests.entities": [a_id], "b.signal.interests.entities": [b_id], "take": 50}

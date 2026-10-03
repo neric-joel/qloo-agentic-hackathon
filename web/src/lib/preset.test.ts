@@ -15,11 +15,26 @@ describe("parsePreset", () => {
       start: 1200,
       end: 1290,
       locked: true,
+      not_before: null,
+      not_after: null,
+      stages: null,
     });
     expect(preset.report.metrics.clash_budget_index).toBe(104.2);
     expect(preset.report.clashes[0].label).toBe("hidden");
     expect(preset.report.coverage.unscored[0].name).toBe("Cy Twombly");
     expect(preset.overlap_notes).toHaveLength(1);
+  });
+
+  it("reads each set's start window and allowed stages when the preset gives them", () => {
+    const raw = rawPreset();
+    const festival = raw.festival as { timetable: Record<string, unknown>[] };
+    Object.assign(festival.timetable[0], { not_before: 1080, not_after: "22:00", stages: ["main", "side"] });
+    Object.assign(festival.timetable[1], { not_before: "soon", not_after: Number.NaN, stages: "main" });
+    Object.assign(festival.timetable[2], { stages: [] });
+    const [first, second, third] = parsePreset(raw).festival.timetable;
+    expect(first).toMatchObject({ not_before: 1080, not_after: 1320, stages: ["main", "side"] });
+    expect(second).toMatchObject({ not_before: null, not_after: null, stages: null });
+    expect(third).toMatchObject({ not_before: null, not_after: null, stages: null });
   });
 
   it("keeps only web links among the sources", () => {

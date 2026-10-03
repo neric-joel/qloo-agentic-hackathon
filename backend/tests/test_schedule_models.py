@@ -173,7 +173,8 @@ def test_matrix_diagonal_must_be_zero():
 
 @pytest.mark.parametrize("value", [1.5, -0.1, float("nan"), float("inf")])
 def test_matrix_values_must_be_between_zero_and_one(value):
-    with pytest.raises(ValidationError, match="between 0 and 1"):
+    # Non-finite values are refused by the field itself, before the range check.
+    with pytest.raises(ValidationError, match="between 0 and 1|finite number"):
         OverlapMatrix(act_ids=["a", "b"], values=[[0, value], [value, 0]], source="derived")
 
 

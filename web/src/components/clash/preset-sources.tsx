@@ -1,7 +1,8 @@
 import { ExternalLink } from "lucide-react";
 
 import { RecordedBadge } from "@/components/kernel";
-import { festivalName, hostOf } from "@/lib/clashes";
+import { describeReach, samplingReach } from "@/lib/clash-budget";
+import { festivalName, hostOf, popularitySpread } from "@/lib/clashes";
 import type { Preset } from "@/lib/preset";
 
 /** "/news/lineups/some-long-slug..." trimmed to fit one line. */
@@ -18,6 +19,8 @@ function shortPath(url: string): string {
 /** Where the timetable and the numbers come from, and what the tool is not. */
 export function PresetSources({ preset }: { preset: Preset }) {
   const samples = preset.report.baseline?.samples;
+  const spread = popularitySpread(preset.festival.acts);
+  const reach = describeReach(samplingReach(preset.festival.timetable));
   return (
     <section aria-labelledby="sources-heading" className="border-t border-border">
       <div className="container-page grid gap-10 py-14 sm:py-16 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-16">
@@ -31,7 +34,7 @@ export function PresetSources({ preset }: { preset: Preset }) {
             This page scores the festival&rsquo;s published timetable from public sources. Nothing
             here is the festival&rsquo;s own data or view.
           </p>
-          {preset.built_at ? <RecordedBadge capturedAt={preset.built_at} className="mt-5" /> : null}
+          {preset.built_at ? <RecordedBadge builtAt={preset.built_at} className="mt-5" /> : null}
         </div>
 
         <div className="space-y-8">
@@ -39,31 +42,34 @@ export function PresetSources({ preset }: { preset: Preset }) {
             <div>
               <dt className="font-semibold">Draw (Qloo popularity)</dt>
               <dd className="text-muted-foreground">
-                Each act&rsquo;s popularity on Qloo, 0 to 100. A clash&rsquo;s fans at stake combine
-                both acts&rsquo; draw.
+                Each act&rsquo;s popularity on Qloo, 0 to 100. It is a percentile among Qloo artists,
+                so most headline acts sit near the top: {spread.atLeast} of {spread.total} acts on
+                this day score 90 or more.
               </dd>
             </div>
             <div>
-              <dt className="font-semibold">Shared audience (by Qloo&rsquo;s measure)</dt>
+              <dt className="font-semibold">Taste overlap (rank on this bill)</dt>
               <dd className="text-muted-foreground">
-                For each act, Qloo ranks every other act on the day for that act&rsquo;s fans. Both
-                directions are rank-normalized and averaged. Always by Qloo&rsquo;s measure.
+                For each act, Qloo ranks every other act on this day&rsquo;s bill by how strongly that
+                act&rsquo;s audience leans toward them. Both directions are turned into ranks and
+                averaged, then scaled 0 to 100. It says how alike two audiences are in taste,
+                relative to this bill. It is not a share of fans and not attendance.
               </dd>
             </div>
             <div>
               <dt className="font-semibold">Clash price</dt>
               <dd className="text-muted-foreground">
-                Shared audience &times; the share of the shorter set the two sets play at once
-                &times; fans at stake. Acts without a Qloo signal are left out, never scored as zero.
+                Taste overlap &times; the share of the shorter set the two sets play at once &times;
+                combined draw. Acts without a Qloo signal are left out, never scored as zero.
               </dd>
             </div>
             <div>
               <dt className="font-semibold">Clash Budget Index</dt>
               <dd className="text-muted-foreground">
-                100 &times; the day&rsquo;s total clash price divided by the average of{" "}
-                {samples ? `${samples} ` : ""}random valid timetables for this lineup. It counts
-                shared-audience cost only, by Qloo&rsquo;s measure, and lower is better. It is not a
-                verdict on the festival: real programming weighs much more than shared audiences.
+                100 &times; the day&rsquo;s total clash price &divide; the average of{" "}
+                {samples ? `${samples} ` : ""}random valid re-orderings of this lineup ({reach}). It
+                counts taste-overlap cost only, and lower is better. It is not a verdict on the festival: real programming
+                weighs much more than taste overlap.
               </dd>
             </div>
           </dl>

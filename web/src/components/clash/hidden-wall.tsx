@@ -1,8 +1,17 @@
 import { ExternalLink } from "lucide-react";
 
 import { ProvenanceChip } from "@/components/kernel";
-import { festivalLabel, formatDraw, formatPercent, hostOf, isWebUrl, tagLabel } from "@/lib/clashes";
-import type { Evidence, HiddenWallItem } from "@/lib/preset";
+import {
+  BROAD_TAGS_NOTE,
+  describeDayRank,
+  festivalLabel,
+  hostOf,
+  isWebUrl,
+  leadingTags,
+  sourceLabel,
+  tagLabel,
+} from "@/lib/clashes";
+import type { Evidence, HiddenWallItem, SharedTag } from "@/lib/preset";
 
 import { DiamondGlyph, Meter } from "./marks";
 
@@ -14,6 +23,35 @@ function GenreLine({ act, genres }: { act: string; genres: readonly string[] }) 
         {genres.length > 0 ? genres.slice(0, 4).map(tagLabel).join(", ") : "no genre tags"}
       </span>
     </p>
+  );
+}
+
+/** A rank among the day's clashes: the ordinal (or "Highest") set large, the words after it small. */
+function DayRank({ value }: { value: number }) {
+  const [lead, ...rest] = describeDayRank(value).split(" ");
+  return (
+    <>
+      <span className="type-numeral block text-3xl leading-none">{lead.charAt(0).toUpperCase() + lead.slice(1)}</span>{" "}
+      <span className="mt-1 block text-xs leading-snug text-muted-foreground">{rest.join(" ")}</span>
+    </>
+  );
+}
+
+/** The pair's tags in the order they are stored (Qloo's score, highest first): the first few, then a count. */
+function TagChips({ tags }: { tags: readonly SharedTag[] }) {
+  const { shown, more } = leadingTags(tags);
+  return (
+    <ul className="mt-1.5 flex flex-wrap gap-1">
+      {shown.map((tag) => (
+        <li
+          key={tag.name}
+          className="rounded-full border border-prov-qloo-border bg-prov-qloo-bg px-2 py-0.5 text-[0.6875rem] font-semibold text-prov-qloo"
+        >
+          {tagLabel(tag.name)}
+        </li>
+      ))}
+      {more > 0 ? <li className="px-1 py-0.5 text-[0.6875rem] text-muted-foreground">+{more} more</li> : null}
+    </ul>
   );
 }
 
@@ -45,52 +83,46 @@ function WallCard({ item }: { item: HiddenWallItem }) {
       <div className="flex flex-1 flex-col p-4 pt-5">
         <dl className="grid grid-cols-2 gap-3">
           <div>
-            <dt className="type-kicker flex min-h-8 items-end text-muted-foreground">Shared audience</dt>
+            <dt className="type-kicker flex min-h-8 items-end text-muted-foreground">Taste overlap rank</dt>
             <dd className="mt-1">
-              <span className="type-numeral block text-3xl leading-none">{formatPercent(item.overlap_pct)}</span>
+              <DayRank value={item.overlap_pct} />
               <Meter
                 value={item.overlap_pct}
                 tone="qloo"
-                label={`Shared audience ${formatPercent(item.overlap_pct)}, by Qloo's measure`}
+                label={`Taste overlap rank, ${describeDayRank(item.overlap_pct)}`}
                 className="mt-2 h-1.5"
               />
             </dd>
           </div>
           <div>
-            <dt className="type-kicker flex min-h-8 items-end text-muted-foreground">Draw</dt>
+            <dt className="type-kicker flex min-h-8 items-end text-muted-foreground">Draw rank</dt>
             <dd className="mt-1">
-              <span className="type-numeral block text-3xl leading-none">
-                {item.draw_pct !== null ? formatDraw(item.draw_pct) : "n/a"}
-              </span>
               {item.draw_pct !== null ? (
-                <Meter value={item.draw_pct} label={`Draw ${formatDraw(item.draw_pct)} of 100`} className="mt-2 h-1.5" />
-              ) : null}
+                <>
+                  <DayRank value={item.draw_pct} />
+                  <Meter
+                    value={item.draw_pct}
+                    label={`Draw rank, ${describeDayRank(item.draw_pct)}`}
+                    className="mt-2 h-1.5"
+                  />
+                </>
+              ) : (
+                <span className="type-numeral block text-3xl leading-none">n/a</span>
+              )}
             </dd>
           </div>
         </dl>
         <p className="mt-2 text-xs text-muted-foreground">
-          Shared audience by Qloo&rsquo;s measure; draw is Qloo popularity.
+          Both figures here rank this pair among that day&rsquo;s clashes, 0 to 100, so they are not on
+          the same scale as the timetable above, where draw is Qloo popularity.
           {item.overlap_min ? ` ${item.overlap_min} min at the same time.` : ""}
         </p>
 
         {item.shared_tags.length > 0 ? (
           <div className="mt-4">
-            <p className="text-xs font-semibold">Fans of both also lean toward</p>
-            <ul className="mt-1.5 flex flex-wrap gap-1">
-              {item.shared_tags.slice(0, 5).map((tag) => (
-                <li
-                  key={tag.name}
-                  className="rounded-full border border-prov-qloo-border bg-prov-qloo-bg px-2 py-0.5 text-[0.6875rem] font-semibold text-prov-qloo"
-                >
-                  {tagLabel(tag.name)}
-                </li>
-              ))}
-              {item.shared_tags.length > 5 ? (
-                <li className="px-1 py-0.5 text-[0.6875rem] text-muted-foreground">
-                  +{item.shared_tags.length - 5} more
-                </li>
-              ) : null}
-            </ul>
+            <p className="text-xs font-semibold">Tags Qloo returned for this pair</p>
+            <TagChips tags={item.shared_tags} />
+            <p className="mt-1.5 text-[0.6875rem] text-muted-foreground">{BROAD_TAGS_NOTE}</p>
           </div>
         ) : null}
 
@@ -102,7 +134,7 @@ function WallCard({ item }: { item: HiddenWallItem }) {
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 font-semibold text-primary underline underline-offset-4 hover:text-primary-hover"
             >
-              Press: {hostOf(source)}
+              {sourceLabel(source)}: {hostOf(source)}
               <ExternalLink aria-hidden="true" className="size-3" />
               <span className="sr-only">(opens in a new tab)</span>
             </a>
@@ -116,14 +148,15 @@ function WallCard({ item }: { item: HiddenWallItem }) {
 }
 
 /**
- * Sourced examples of hidden clashes: pairs the press called out where the two acts share no genre
- * tag but, by Qloo's measure, share an audience. Shown as examples with their sources, not as
- * proof that the measure detects such clashes.
+ * Sourced examples of hidden clashes: pairs the press or fans called out where the two acts share
+ * no genre tag but their taste overlap is among the highest of that day. Shown as examples with
+ * their sources, not as proof that the measure detects such clashes.
  */
 export function HiddenWall({ evidence }: { evidence: Evidence | null }) {
   const items = evidence?.hidden_wall ?? [];
   return (
     <section
+      id="hidden-wall"
       aria-labelledby="hidden-wall-heading"
       className="border-y border-border bg-card [--ticket-bg:var(--card)]"
     >
@@ -134,13 +167,13 @@ export function HiddenWall({ evidence }: { evidence: Evidence | null }) {
               <DiamondGlyph className="size-3" /> Hidden clashes
             </p>
             <h2 id="hidden-wall-heading" className="type-headline mt-2">
-              Different genres, same crowd
+              Different genres, overlapping tastes
             </h2>
           </div>
           <div className="space-y-2 text-[0.9375rem] leading-relaxed">
             <p>
-              Sourced examples: clashes the press called out where the acts share no genre tag but,
-              by Qloo&rsquo;s measure, share an audience.
+              Sourced examples: clashes the press or fans called out where the acts share no genre
+              tag but their taste overlap is among the highest of that day.
             </p>
             <p className="text-sm text-muted-foreground">
               These are examples with their sources, not a test of how well the measure spots such

@@ -1,11 +1,11 @@
 /**
  * The Clash Budget Index: 100 x a timetable's total clash regret / the mean regret of random valid
- * timetables of the same lineup. 100 means "as costly as a random valid arrangement"; lower is
- * better. It counts shared-audience cost only. Helpers here place it on the dial and put it into
+ * re-orderings of the same lineup. 100 means "as costly as a random valid arrangement"; lower is
+ * better. It counts taste-overlap cost only. Helpers here place it on the dial and put it into
  * words.
  */
 
-import type { BaselineStats } from "./preset";
+import type { BaselineStats, SetSlot } from "./preset";
 
 export type DialDomain = { min: number; max: number };
 
@@ -47,9 +47,64 @@ export function dialArc(from: number, to: number, cx: number, cy: number, r: num
   return `M ${round(start.x)} ${round(start.y)} A ${r} ${r} 0 0 1 ${round(end.x)} ${round(end.y)}`;
 }
 
-/** "16% above the random average", "18% below the random average", "level with the random average". */
+/**
+ * "17% more taste-overlap cost than the average random re-ordering", "14% less ...", or "level
+ * with the average random re-ordering".
+ */
 export function describeVsRandom(index: number): string {
   const delta = Math.round(index - 100);
-  if (delta === 0) return "level with the random average";
-  return `${Math.abs(delta)}% ${delta > 0 ? "above" : "below"} the random average`;
+  if (delta === 0) return "level with the average random re-ordering";
+  return `${Math.abs(delta)}% ${delta > 0 ? "more" : "less"} taste-overlap cost than the average random re-ordering`;
+}
+
+/** How far the random re-orderings behind the index may move each set. */
+export type SamplingReach = {
+  /** How far a set may start from its published start, either way, when every set shares one window. */
+  windowMinutes: number | null;
+  /** Some set may change stage. */
+  neighbourStages: boolean;
+  /** Sets that never move. */
+  locked: number;
+};
+
+/** The shared start window, the stage freedom and the locked sets behind a timetable's index. */
+export function samplingReach(
+  timetable: readonly Pick<SetSlot, "start" | "locked" | "not_before" | "not_after" | "stages">[],
+): SamplingReach {
+  // Each set's window as a distance either side of its published start; null when it has no
+  // window or an uneven one.
+  const windows = timetable.map((slot) => {
+    if (slot.not_before == null || slot.not_after == null) return null;
+    const before = slot.start - slot.not_before;
+    return before === slot.not_after - slot.start ? before : null;
+  });
+  const first = windows[0] ?? null;
+  return {
+    windowMinutes: first !== null && windows.every((value) => value === first) ? first : null,
+    neighbourStages: timetable.some((slot) => (slot.stages?.length ?? 0) > 1),
+    locked: timetable.filter((slot) => slot.locked).length,
+  };
+}
+
+/** "2 hours", "1 hour", "90 minutes". */
+function spanText(minutes: number): string {
+  if (minutes > 0 && minutes % 60 === 0) {
+    const hours = minutes / 60;
+    return `${hours} ${hours === 1 ? "hour" : "hours"}`;
+  }
+  return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
+}
+
+/**
+ * The rules every random re-ordering keeps, as a clause: "each set stays within 2 hours of its
+ * published start, on its own stage or a neighbouring one, with the 5 locked sets fixed".
+ */
+export function describeReach(reach: SamplingReach): string {
+  if (reach.windowMinutes === null) return "each set stays inside its allowed window and stages";
+  let text = `each set stays within ${spanText(reach.windowMinutes)} of its published start`;
+  if (reach.neighbourStages) text += ", on its own stage or a neighbouring one";
+  if (reach.locked > 0) {
+    text += reach.locked === 1 ? ", with the 1 locked set fixed" : `, with the ${reach.locked} locked sets fixed`;
+  }
+  return text;
 }

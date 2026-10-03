@@ -1,7 +1,7 @@
 """Caps on agent runs, so a public demo can't run up the model bill.
 
 Counts live in memory per server instance: a soft guard in front of the provider's own spend limit, which is
-the hard stop. When a cap is hit the web app offers recorded runs instead of an error.
+the hard stop. When a cap is hit the run is refused with a short reason.
 """
 
 from __future__ import annotations
@@ -37,11 +37,11 @@ class RunLimiter:
             while queue and now - queue[0] >= DAY:
                 queue.popleft()
         if len(self._all) >= self.global_per_day:
-            return "The live agent has reached today's limit. Recorded runs are still available."
+            return "The live agent has reached today's limit. Please try again tomorrow."
         if len(stamps) >= self.per_day:
-            return "You have reached today's limit of live agent runs. Recorded runs are still available."
+            return "You have reached today's limit of live agent runs. Please try again tomorrow."
         if sum(1 for t in stamps if now - t < HOUR) >= self.per_hour:
-            return "Too many live agent runs this hour. Try again later, or watch a recorded run."
+            return "Too many live agent runs this hour. Please try again later."
         stamps.append(now)
         self._all.append(now)
         return None

@@ -23,14 +23,20 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
+const DESCRIPTION =
+  "Clash Control prices the set-time clashes on a festival timetable with Qloo: how popular the two acts are, times how much their audiences overlap in taste. Taste, not attendance.";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://clash-control.vercel.app"),
   title: {
     default: "Clash Control",
     template: "%s | Clash Control",
   },
-  description:
-    "Clash Control prices every set-time clash on a festival timetable with Qloo: fans at stake times how many of them are the same people.",
+  description: DESCRIPTION,
   applicationName: "Clash Control",
+  // Shared links and crawlers see the pitch and its caveat without running the page.
+  openGraph: { title: "Clash Control", description: DESCRIPTION, type: "website", siteName: "Clash Control" },
+  twitter: { card: "summary", title: "Clash Control", description: DESCRIPTION },
 };
 
 export const viewport: Viewport = {

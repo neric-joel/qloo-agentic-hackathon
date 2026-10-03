@@ -2,9 +2,13 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
+import { ArrowDown } from "lucide-react";
 
 import { AbstainState, ErrorState, TraceDrawer } from "@/components/kernel";
+import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import type { AgentStatus } from "@/lib/agent-status";
+import { describeReach, samplingReach } from "@/lib/clash-budget";
 import {
   buildSetViews,
   clashKey,
@@ -18,6 +22,7 @@ import {
 } from "@/lib/clashes";
 import type { PairClash, Preset, PresetSummary } from "@/lib/preset";
 
+import { AgentPanel } from "./agent-panel";
 import { BudgetDial, Scorecard } from "./budget-dial";
 import { ClashDrawer } from "./clash-drawer";
 import { ClashList } from "./clash-list";
@@ -29,9 +34,13 @@ import { TimetableGrid } from "./timetable-grid";
 import { TimetableLegend } from "./timetable-legend";
 import { TimetableList } from "./timetable-list";
 import { TwinCards } from "./twin-cards";
+import { useAgentStatus } from "./use-agent-status";
 import { usePresets } from "./use-presets";
 
 const TOP_LINKS = 10;
+
+const HERO_LINK =
+  "inline-flex items-center gap-1.5 text-sm font-semibold underline underline-offset-4 hover:text-primary";
 
 /** The hero row: the static pitch on the left, the day's score on the right. Kept short so the
  * priced timetable starts in the first screenful. */
@@ -92,6 +101,9 @@ export function ClashControl({ intro }: { intro: ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { list, preset, selectedId, retry } = usePresets(searchParams.get("preset"));
+  // Asked once per page, alongside the presets, so the hero and the agent panel already know
+  // whether the live agent is on when the festival day first renders.
+  const agentStatus = useAgentStatus();
 
   // The native history API keeps `useSearchParams` in sync without a server round trip, so
   // switching festival days needs nothing but the preset data itself.
@@ -160,6 +172,7 @@ export function ClashControl({ intro }: { intro: ReactNode }) {
       key={preset.value.id}
       intro={intro}
       preset={preset.value}
+      agentStatus={agentStatus}
       picker={<PresetPicker presets={list.value} selectedId={selectedId} onChange={choosePreset} />}
     />
   );
@@ -197,7 +210,17 @@ type Highlight = { kind: "set"; id: string } | { kind: "clash"; key: string } | 
 
 type DrawerState = { clash: PairClash | null; open: boolean; trigger: HTMLElement | null };
 
-function PresetView({ intro, preset, picker }: { intro: ReactNode; preset: Preset; picker: ReactNode }) {
+function PresetView({
+  intro,
+  preset,
+  agentStatus,
+  picker,
+}: {
+  intro: ReactNode;
+  preset: Preset;
+  agentStatus: AgentStatus;
+  picker: ReactNode;
+}) {
   const days = useMemo(() => daysWithSets(preset), [preset]);
   const [day, setDay] = useState(days[0] ?? 0);
   const [highlight, setHighlight] = useState<Highlight>(null);
@@ -212,6 +235,7 @@ function PresetView({ intro, preset, picker }: { intro: ReactNode; preset: Prese
   const slots = useMemo(() => new Map(festival.timetable.map((slot) => [slot.act_id, slot])), [festival]);
   const stages = useMemo(() => new Map(festival.stages.map((stage) => [stage.id, stage])), [festival]);
   const allCalls = useMemo(() => traceToolCalls(preset.requests, preset.id), [preset]);
+  const reach = useMemo(() => describeReach(samplingReach(festival.timetable)), [festival]);
 
   const { activeSetIds, activeClashKeys } = useMemo(() => {
     const setIds = new Set<string>();
@@ -244,13 +268,30 @@ function PresetView({ intro, preset, picker }: { intro: ReactNode; preset: Prese
         intro={intro}
         aside={
           <Scorecard>
-            <BudgetDial index={report.metrics.clash_budget_index} baseline={report.baseline} />
+            <BudgetDial index={report.metrics.clash_budget_index} baseline={report.baseline} reach={reach} />
           </Scorecard>
         }
       >
-        <p className="mt-6 max-w-2xl border-l-4 border-foreground py-1 pl-4 text-[0.9375rem] leading-relaxed">
-          <strong className="font-semibold">{name} does not use Clash Control.</strong> Below is its
-          published {dayName(dayLabel)} timetable, scored independently from public sources.
+        <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">
+          {ranked.length > 0 ? (
+            <Button type="button" variant="ink" onClick={(event) => openClash(ranked[0], event.currentTarget)}>
+              Open the costliest clash
+            </Button>
+          ) : null}
+          <a href="#hidden-wall" className={HERO_LINK}>
+            See the hidden clashes
+            <ArrowDown aria-hidden="true" className="size-4" />
+          </a>
+          {agentStatus !== "off" ? (
+            <a href="#agent" className={HERO_LINK}>
+              Ask the agent what happens if a set moves
+              <ArrowDown aria-hidden="true" className="size-4" />
+            </a>
+          ) : null}
+        </div>
+        <p className="mt-4 max-w-2xl text-sm text-muted-foreground">
+          {name} does not use Clash Control: this is its published {dayName(dayLabel)} timetable, scored
+          independently.
         </p>
       </HeroLayout>
 
@@ -338,12 +379,9 @@ function PresetView({ intro, preset, picker }: { intro: ReactNode; preset: Prese
       </BoardFrame>
 
       <HiddenWall evidence={preset.evidence} />
-      <TwinCards twins={preset.evidence?.twins ?? []} />
+      <TwinCards twins={preset.evidence?.twins ?? []} acts={festival.acts} />
 
-      {/*
-        Agent panel slot ("Ask the agent: what if..."). It goes here, below the twin card, and is
-        not built yet. Nothing renders in its place.
-      */}
+      <AgentPanel preset={preset} day={day} agentStatus={agentStatus} />
 
       <PresetSources preset={preset} />
 

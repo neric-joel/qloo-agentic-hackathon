@@ -240,6 +240,8 @@
   html {
     @apply font-sans;
     -webkit-text-size-adjust: 100%;
+    /* The one offset for anchors and keyboard focus: lands them just under the 4rem sticky
+       header. Do not add scroll-mt-* on top, or the two offsets add up. */
     scroll-padding-top: 5rem;
   }
 

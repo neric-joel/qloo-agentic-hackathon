@@ -158,14 +158,15 @@ function overlapRequests(recorded: boolean, fromCache = false): QlooRequestRecor
 }
 
 const SUMMARY_TEXT =
-  "Neon Meridian and The Salt Lines share the largest part of their audience, so that clash " +
-  "costs the most fans. Aurora Vale and Kite & Compass overlap less but still split a sizeable " +
-  "crowd. Moving Aurora Vale 45 minutes earlier would clear the second clash without " +
+  "Neon Meridian and The Salt Lines have the highest taste overlap, so that clash has the " +
+  "highest price. Aurora Vale and Kite & Compass overlap less in taste but still carry a " +
+  "sizeable price. Moving Aurora Vale 45 minutes earlier would clear the second clash without " +
   "creating a new one.";
 
 const BASELINE_TEXT =
-  "Without audience data, the safest guess is that the two headline acts compete for the same " +
-  "crowd and the smaller acts do not. This answer uses no Qloo data, so treat it as a guess.";
+  "Without audience data, the safest guess is that the two headline acts' audiences overlap " +
+  "most in taste and the smaller acts' audiences do not. This answer uses no Qloo data, so " +
+  "treat it as a guess.";
 
 // ---------------------------------------------------------------------------
 // Scenario scripts
@@ -265,9 +266,9 @@ function summaryResult(recorded: boolean): AgentEvent {
   const data: MockSummaryData = {
     title: "Clash exposure",
     headline: {
-      label: "of fans face a clash",
+      label: "of the clash cost is in the costliest pair",
       value: "31%",
-      note: "Share of the combined audience that wants both acts in an overlapping pair.",
+      note: "The costliest pair's price over the sum of every priced clash.",
       provenance: "derived",
     },
     rows: [
@@ -320,7 +321,7 @@ function liveScript(recorded: boolean, answered: boolean): Beat[] {
       id: "call-score",
       tool: "exposure_score",
       ok: true,
-      summary: "31% of the combined audience faces a clash",
+      summary: "The costliest pair carries 31% of the clash cost",
       latency_ms: 12,
       provenance: "derived",
     }),
@@ -410,7 +411,7 @@ function abstainScript(): Beat[] {
       data: {
         reason: "Qloo has too little audience data on these acts to compare them reliably.",
         details: [
-          "No shared audience signal for Aurora Vale and Kite & Compass.",
+          "No taste-overlap signal for Aurora Vale and Kite & Compass.",
           "Fewer than three matched entities on the second stage.",
         ],
       },

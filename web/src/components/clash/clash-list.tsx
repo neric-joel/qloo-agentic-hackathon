@@ -3,7 +3,7 @@
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-import { clashKey, formatDraw, formatPercent, formatShare, LABEL_META } from "@/lib/clashes";
+import { clashKey, formatDraw, formatOverlap, formatPercent, formatShare, LABEL_META } from "@/lib/clashes";
 import type { PairClash, SetSlot, Stage } from "@/lib/preset";
 import { formatRange, overlapWindow } from "@/lib/timetable";
 
@@ -44,9 +44,9 @@ export function ClashList({
           The {clashes.length} costliest clashes
         </h3>
         <p className="mt-1.5 text-sm text-muted-foreground">
-          Together {formatPercent(combined)} of the day&rsquo;s clash cost, by Qloo&rsquo;s measure
+          Together {formatPercent(combined)} of the day&rsquo;s clash cost
           {totalRanked > clashes.length ? ` (${totalRanked} ranked in all)` : ""}. Draw is Qloo
-          popularity.
+          popularity; overlap is a rank on this bill.
         </p>
       </div>
 
@@ -120,10 +120,10 @@ export function ClashList({
                       {window ? ` · ${formatRange(window)}` : ""} · {clash.overlap_minutes} min
                     </span>
                     <span className="mt-2 grid grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-x-3 font-mono text-xs tabular-nums">
-                      <span title="Shared audience, by Qloo's measure">
-                        <span className="text-muted-foreground">Shared </span>
-                        {formatPercent(clash.audience_overlap)}
-                        <span className="sr-only"> audience, by Qloo&rsquo;s measure</span>
+                      <span title="Taste overlap, rank among the other acts on this bill">
+                        <span className="text-muted-foreground">Overlap </span>
+                        {formatOverlap(clash.audience_overlap)}
+                        <span className="sr-only"> taste overlap, rank on this bill</span>
                       </span>
                       <span title="Draw (Qloo popularity) of the two acts combined">
                         <span className="text-muted-foreground">Draw </span>

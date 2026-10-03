@@ -84,9 +84,12 @@ def list_presets(presets: Presets, response: Response) -> list[PresetSummary]:
     return [summarize(p) for p in presets.values()]
 
 
-@router.get("/{preset_id}", response_model=Preset)
+@router.get("/{preset_id}", response_model=Preset, response_model_exclude={"matrix"})
 def get_preset(preset_id: str, presets: Presets, response: Response) -> Preset:
-    """A preset festival day with its overlap matrix, score report and the Qloo requests behind it."""
+    """A preset festival day with its score report and the Qloo requests behind it.
+
+    The full overlap matrix stays on the server (the agent's tools read it); the page needs only the scores.
+    """
     preset = presets.get(preset_id)
     if preset is None:
         raise HTTPException(status_code=404, detail=f"No preset {preset_id!r}.")

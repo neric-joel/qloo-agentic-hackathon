@@ -41,6 +41,12 @@ export type SetSlot = {
   end: number;
   /** The set may not move at all. */
   locked: boolean;
+  /** Earliest start the set may move to, in the same minutes. Null when the preset gives none. */
+  not_before?: number | null;
+  /** Latest start the set may move to. Null when the preset gives none. */
+  not_after?: number | null;
+  /** Ids of the stages the set may play on, its own included. Null means any stage. */
+  stages?: string[] | null;
 };
 
 export type Festival = {
@@ -64,7 +70,7 @@ export type PairClash = {
   overlap_minutes: number;
   /** Shared minutes over the shorter set's minutes, 0 to 1. */
   concurrency: number;
-  /** Shared audience by Qloo's measure, 0 to 1. */
+  /** Taste overlap: a rank among the other acts on this bill, derived from Qloo, 0 to 1. */
   audience_overlap: number;
   /** Geometric mean of the two acts' draw, 0 to 1. */
   draw: number;
@@ -287,6 +293,24 @@ function minutes(source: Obj, key: string, at: string): number {
   return num(source, key, at);
 }
 
+/** A start-window bound, read leniently: anything that is not a time counts as no bound. */
+function optMinutes(source: Obj, key: string): number | null {
+  const value = source[key];
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string") {
+    const match = CLOCK.exec(value.trim());
+    if (match) return Number(match[1]) * 60 + Number(match[2]);
+  }
+  return null;
+}
+
+/** Allowed stages, read leniently: anything but a non-empty list of ids counts as any stage. */
+function optStageIds(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const ids = value.filter((item): item is string => typeof item === "string" && item.length > 0);
+  return ids.length > 0 ? ids : null;
+}
+
 function parseSlot(raw: unknown, at: string): SetSlot {
   const o = obj(raw, at);
   const slot: SetSlot = {
@@ -296,6 +320,9 @@ function parseSlot(raw: unknown, at: string): SetSlot {
     start: minutes(o, "start", at),
     end: minutes(o, "end", at),
     locked: bool(o, "locked"),
+    not_before: optMinutes(o, "not_before"),
+    not_after: optMinutes(o, "not_after"),
+    stages: optStageIds(o.stages),
   };
   if (slot.end <= slot.start) throw new PresetFormatError(`${at} must end after it starts`);
   return slot;

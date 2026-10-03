@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { describeVsRandom, dialArc, dialDomain, dialFraction, dialPoint } from "./clash-budget";
+import {
+  describeReach,
+  describeVsRandom,
+  dialArc,
+  dialDomain,
+  dialFraction,
+  dialPoint,
+  samplingReach,
+} from "./clash-budget";
+import type { SetSlot } from "./preset";
 
 const baseline = { p10_index: 92.6, p90_index: 108.1 };
 
@@ -48,9 +57,94 @@ describe("dialFraction and dialPoint", () => {
 });
 
 describe("describeVsRandom", () => {
-  it("states the gap to the random average", () => {
-    expect(describeVsRandom(116.07)).toBe("16% above the random average");
-    expect(describeVsRandom(82.08)).toBe("18% below the random average");
-    expect(describeVsRandom(100.3)).toBe("level with the random average");
+  it("states the gap to the average random re-ordering as taste-overlap cost", () => {
+    expect(describeVsRandom(117)).toBe("17% more taste-overlap cost than the average random re-ordering");
+    expect(describeVsRandom(116.71)).toBe("17% more taste-overlap cost than the average random re-ordering");
+    expect(describeVsRandom(86.48)).toBe("14% less taste-overlap cost than the average random re-ordering");
+    expect(describeVsRandom(100)).toBe("level with the average random re-ordering");
+    expect(describeVsRandom(100.3)).toBe("level with the average random re-ordering");
+  });
+});
+
+/** A day shaped like the real presets: 39 sets, each free to start 2 hours either side of its
+ * published start, on 2 or 3 stages, 5 of them locked. */
+function realShapedDay(): SetSlot[] {
+  return Array.from({ length: 39 }, (_, i) => {
+    const start = 600 + i * 15;
+    return {
+      act_id: `act-${i}`,
+      day: 0,
+      stage_id: "a",
+      start,
+      end: start + 60,
+      locked: i < 5,
+      not_before: start - 120,
+      not_after: start + 120,
+      stages: i % 2 === 0 ? ["a", "b"] : ["a", "b", "c"],
+    };
+  });
+}
+
+describe("samplingReach", () => {
+  it("reads the shared window, the stage freedom and the locks of a real-shaped day", () => {
+    expect(samplingReach(realShapedDay())).toEqual({ windowMinutes: 120, neighbourStages: true, locked: 5 });
+  });
+
+  it("has no shared window when one set lacks a bound, is uneven, or differs from the rest", () => {
+    const missing = realShapedDay();
+    missing[7] = { ...missing[7], not_after: null };
+    expect(samplingReach(missing).windowMinutes).toBeNull();
+
+    const uneven = realShapedDay();
+    uneven[3] = { ...uneven[3], not_before: uneven[3].start - 60 };
+    expect(samplingReach(uneven).windowMinutes).toBeNull();
+
+    const different = realShapedDay();
+    different[12] = { ...different[12], not_before: different[12].start - 90, not_after: different[12].start + 90 };
+    expect(samplingReach(different).windowMinutes).toBeNull();
+
+    const absent = realShapedDay().map((slot) => ({ ...slot, not_before: undefined, not_after: undefined }));
+    expect(samplingReach(absent).windowMinutes).toBeNull();
+    expect(samplingReach([]).windowMinutes).toBeNull();
+  });
+
+  it("sees no stage freedom when every set lists one stage or none", () => {
+    const fixed = realShapedDay().map((slot, i) => ({ ...slot, stages: i % 2 === 0 ? ["a"] : null }));
+    expect(samplingReach(fixed)).toMatchObject({ neighbourStages: false, locked: 5 });
+  });
+});
+
+describe("describeReach", () => {
+  it("names the window, the neighbouring stages and the locked sets", () => {
+    expect(describeReach({ windowMinutes: 120, neighbourStages: true, locked: 5 })).toBe(
+      "each set stays within 2 hours of its published start, on its own stage or a neighbouring one, with the 5 locked sets fixed",
+    );
+  });
+
+  it("drops the stage clause and the locks clause when they do not apply", () => {
+    expect(describeReach({ windowMinutes: 120, neighbourStages: false, locked: 5 })).toBe(
+      "each set stays within 2 hours of its published start, with the 5 locked sets fixed",
+    );
+    expect(describeReach({ windowMinutes: 120, neighbourStages: true, locked: 0 })).toBe(
+      "each set stays within 2 hours of its published start, on its own stage or a neighbouring one",
+    );
+    expect(describeReach({ windowMinutes: 60, neighbourStages: false, locked: 1 })).toBe(
+      "each set stays within 1 hour of its published start, with the 1 locked set fixed",
+    );
+    expect(describeReach({ windowMinutes: 90, neighbourStages: false, locked: 0 })).toBe(
+      "each set stays within 90 minutes of its published start",
+    );
+  });
+
+  it("falls back to the general rule without a shared window", () => {
+    expect(describeReach({ windowMinutes: null, neighbourStages: true, locked: 5 })).toBe(
+      "each set stays inside its allowed window and stages",
+    );
+  });
+
+  it("describes the real-shaped day", () => {
+    expect(describeReach(samplingReach(realShapedDay()))).toBe(
+      "each set stays within 2 hours of its published start, on its own stage or a neighbouring one, with the 5 locked sets fixed",
+    );
   });
 });

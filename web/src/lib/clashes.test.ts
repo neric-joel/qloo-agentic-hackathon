@@ -5,23 +5,30 @@ import {
   clashKey,
   dayName,
   daysWithSets,
+  describeDayRank,
   festivalLabel,
   festivalName,
   formatDraw,
+  formatOverlap,
   formatPercent,
   formatShare,
   hostOf,
   isWebUrl,
+  leadingTags,
+  ordinal,
   partnerOf,
+  popularitySpread,
   receiptFor,
   requestsForActs,
+  sourceLabel,
+  TAG_LIMIT,
   tagLabel,
   topClashes,
   traceToolCalls,
 } from "./clashes";
 import type { QlooRequestRecord } from "./events";
 import { rawTinyPreset } from "./fixtures/tiny-preset";
-import { parsePreset, type PairClash } from "./preset";
+import { parsePreset, type Act, type PairClash } from "./preset";
 
 const preset = parsePreset(rawTinyPreset());
 
@@ -66,6 +73,90 @@ describe("formatting", () => {
     expect(isWebUrl("https://example.com")).toBe(true);
     expect(isWebUrl("javascript:alert(1)")).toBe(false);
     expect(isWebUrl(null)).toBe(false);
+  });
+
+  it("prints taste overlap out of 100, never as a percent", () => {
+    expect(formatOverlap(0.9865)).toBe("99");
+    expect(formatOverlap(0.2703)).toBe("27");
+    expect(formatOverlap(1.2)).toBe("100");
+    expect(formatOverlap(-1)).toBe("0");
+  });
+
+  it("writes ordinals, including the teens", () => {
+    expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 101, 111].map(ordinal)).toEqual([
+      "1st",
+      "2nd",
+      "3rd",
+      "4th",
+      "11th",
+      "12th",
+      "13th",
+      "21st",
+      "22nd",
+      "101st",
+      "111th",
+    ]);
+    expect(ordinal(0)).toBe("0th");
+    expect(ordinal(112)).toBe("112th");
+  });
+
+  it("describes a rank among a day's clashes in words", () => {
+    expect(describeDayRank(0.941)).toBe("94th percentile of that day's clashes");
+    expect(describeDayRank(0.862)).toBe("86th percentile of that day's clashes");
+    expect(describeDayRank(0.412)).toBe("41st percentile of that day's clashes");
+    expect(describeDayRank(0.994)).toBe("99th percentile of that day's clashes");
+    expect(describeDayRank(0.995)).toBe("highest of that day's clashes");
+    expect(describeDayRank(1)).toBe("highest of that day's clashes");
+  });
+
+  it("labels fan forums apart from the press", () => {
+    expect(sourceLabel("https://www.reddit.com/comments/1vevkfi/")).toBe("Forum");
+    expect(sourceLabel("https://old.reddit.com/r/festivals/")).toBe("Forum");
+    expect(sourceLabel("https://reddit.com/r/x")).toBe("Forum");
+    expect(sourceLabel("https://www.nme.com/features/x")).toBe("Press");
+    expect(sourceLabel("https://notreddit.com/x")).toBe("Press");
+  });
+});
+
+describe("popularitySpread", () => {
+  const act = (id: string, popularity: number | null): Act => ({
+    id,
+    name: id,
+    qloo_id: null,
+    popularity,
+    genre: null,
+    billing_tier: 3,
+  });
+
+  it("counts acts at or above the cutoff among acts with a Qloo signal", () => {
+    const acts = [act("a", 0.99), act("b", 0.9), act("c", 0.89), act("d", null)];
+    expect(popularitySpread(acts)).toEqual({ atLeast: 2, total: 3 });
+    expect(popularitySpread(acts, 0.95)).toEqual({ atLeast: 1, total: 3 });
+    expect(popularitySpread([])).toEqual({ atLeast: 0, total: 0 });
+  });
+});
+
+describe("leadingTags", () => {
+  // Stored as Qloo scored them, highest first; the names are deliberately not alphabetical.
+  const tags = ["Folk", "Blues", "Jazz", "Soul", "Spirituals", "Ragtime", "Country", "Funk"].map(
+    (name, i) => ({ name, kind: "urn:tag:genre:music", score: 0.98 - i * 0.05 }),
+  );
+
+  it("keeps the stored order and shows at most five", () => {
+    const { shown, more } = leadingTags(tags);
+    expect(TAG_LIMIT).toBe(5);
+    expect(shown.map((tag) => tag.name)).toEqual(["Folk", "Blues", "Jazz", "Soul", "Spirituals"]);
+    expect(more).toBe(3);
+  });
+
+  it("shows every tag when there are five or fewer", () => {
+    expect(leadingTags(tags.slice(0, 5))).toEqual({ shown: tags.slice(0, 5), more: 0 });
+    expect(leadingTags(tags.slice(0, 2))).toEqual({ shown: tags.slice(0, 2), more: 0 });
+    expect(leadingTags([])).toEqual({ shown: [], more: 0 });
+  });
+
+  it("takes another limit", () => {
+    expect(leadingTags(tags, 3).more).toBe(5);
   });
 });
 

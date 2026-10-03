@@ -29,6 +29,19 @@ export function humanizeIdentifier(name: string): string {
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : name;
 }
 
+/**
+ * When saved data was captured or a preset built, as "2026-10-03 UTC". UTC date parts, so the
+ * server and every browser print the same day. Null when the value is missing or not a date.
+ */
+export function formatCaptured(value: string | Date | undefined): string | null {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${date.getUTCFullYear()}-${month}-${day} UTC`;
+}
+
 export function pluralize(count: number, singular: string, plural = `${singular}s`): string {
   return `${formatInteger(count)} ${count === 1 ? singular : plural}`;
 }

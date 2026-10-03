@@ -100,6 +100,21 @@ def gap_moves(layout: Layout, i: int, rewarded: Sequence[int] = ()) -> Iterator[
                     yield Move((i,), ((day, stage, start),))
 
 
+def grid_moves(layout: Layout, i: int, step: int = 5) -> Iterator[Move]:
+    """Moves of set ``i`` to every start on a ``step``-minute grid inside the free windows it may use, plus
+    each window's flush ends. Used to list a set's legal places exhaustively; feasibility is left to
+    :meth:`Layout.is_feasible`."""
+    rules = layout.rules
+    here = layout.placement(i)
+    for day, stage in _allowed_places(layout, i):
+        for earliest, latest in free_windows(layout, i, day, stage):
+            last = latest - rules.dur[i]
+            first_on_grid = -(-earliest // step) * step
+            for start in sorted({earliest, last, *range(first_on_grid, last + 1, step)}):
+                if (day, stage, start) != here:
+                    yield Move((i,), ((day, stage, start),))
+
+
 def _fit(layout: Layout, i: int, window: Window, preferred_start: int) -> int | None:
     """Start closest to ``preferred_start`` that keeps set ``i`` inside ``window`` and its start window."""
     rules = layout.rules

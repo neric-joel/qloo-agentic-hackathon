@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 from .agent.clash_tools import CLASH_TOOLS
 from .agent.events import Event, EventChannel, new_id
 from .agent.llm import LLMBackend
-from .agent.loop import run_agent
+from .agent.loop import MAX_TURNS, run_agent
 from .agent.qloo_tools import GENERAL_TOOLS
 from .agent.tools import ToolContext
 from .presets import Preset
@@ -29,50 +29,72 @@ words) that names the top picks and the favorites that drove them."""
 
 
 CLASH_SYSTEM = """You are Clash Control, a programming assistant for one day of a festival timetable.
-A clash is two sets on different stages at the same time. Its cost = how many fans are at stake (draw,
-Qloo popularity) x how many of them are the same people (shared audience: Qloo's measure of taste overlap
-between the two acts' audiences, 0-1, relative to this lineup) x minutes overlapping. Shared audience is
-taste, not attendance.
+A clash is two sets on different stages at the same time. Its cost = how popular the two acts are (combined
+draw, Qloo popularity) x how much their audiences overlap in taste (taste overlap: Qloo's affinity between
+the two acts' audiences, turned into a rank among this day's acts, 0-1; tool results call it
+taste_overlap) x minutes overlapping. Taste overlap measures taste, not attendance.
+Never describe taste overlap as a percentage of fans or a headcount.
 
 How to work:
 - Every number you state must come from a tool result in this run. Never estimate.
 - When the user states a programming rule ("keep X on the Pyramid", "nothing before 2pm", "X and Y must
   not overlap"), record it with add_constraint first.
 - To answer "why", call explain_clash and use the shared taste it returns, not general knowledge.
-- Before recommending any move, test it with try_move. If it breaks a rule, say which rule.
-- Call reslot only when the user asks for suggestions. Present the result as suggestions, graded by the
-  same measure (by Qloo's measure); do not call them optimal.
+- To find where a set could go, call find_moves once; it checks every start on a 5-minute grid and lists
+  the legal places, priced. Do not guess times
+  with try_move. Use try_move for a specific move the user names. If a move breaks a rule, say which rule.
+- Call reslot only when the user asks for suggestions. Present its results by Qloo's measure, and
+  describe them as suggestions graded by the same measure used to find them.
 - If Qloo has no signal for an act, say its clashes cannot be priced.
 - Answer in plain language, under 150 words, naming acts, stages and times. Do not judge the real
   festival's programming; it does not use this tool."""
 
 MAX_HISTORY = 8
+# Bounds on what a client may send back as its session (every string reaches the prompt or the engine)
+MAX_SESSION_SETS = 80
+MAX_NO_CLASH_PAIRS = 50
+MAX_BILLING_RULES = 10
 
 
-class ExploreInput(BaseModel):
-    favorites: list[str] = Field(min_length=1, max_length=6)
-    target: str = "urn:entity:place"
-    location: str = ""
+class _Input(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
 
 
-class ChatTurn(BaseModel):
+class ExploreInput(_Input):
+    favorites: list[Annotated[str, StringConstraints(max_length=80)]] = Field(min_length=1, max_length=6)
+    target: str = Field(default="urn:entity:place", max_length=60)
+    location: str = Field(default="", max_length=80)
+
+
+class ChatTurn(_Input):
     role: Literal["user", "assistant"]
     text: str = Field(max_length=4000)
 
 
-class ClashInput(BaseModel):
+class ClashInput(_Input):
     """One message to the clash agent. The client keeps the session: it sends back the working timetable,
     constraints and rules that the previous run returned."""
 
     preset_id: str = Field(max_length=80)
     message: str = Field(min_length=1, max_length=600)
     history: list[ChatTurn] = Field(default_factory=list, max_length=MAX_HISTORY)
-    timetable: list[SetSlot] | None = None
+    timetable: list[SetSlot] | None = Field(default=None, max_length=MAX_SESSION_SETS)
     constraints: Constraints | None = None
-    rules: list[str] = Field(default_factory=list, max_length=30)
+    rules: list[Annotated[str, StringConstraints(max_length=200)]] = Field(
+        default_factory=list, max_length=30
+    )
+
+    @field_validator("constraints")
+    @classmethod
+    def _bounded_constraints(cls, value: Constraints | None) -> Constraints | None:
+        if value is not None and len(value.no_clash_with) > MAX_NO_CLASH_PAIRS:
+            raise ValueError(f"at most {MAX_NO_CLASH_PAIRS} no_clash_with pairs are supported")
+        if value is not None and len(value.billing_rules) > MAX_BILLING_RULES:
+            raise ValueError(f"at most {MAX_BILLING_RULES} billing rules are supported")
+        return value
 
 
-class RunRequest(BaseModel):
+class RunRequest(_Input):
     scenario: Literal["explore", "clash"] = "explore"
     input: ExploreInput | ClashInput
 
@@ -120,7 +142,13 @@ async def execute_run(
     qloo: QlooClient,
     request: RunRequest,
     presets: dict[str, Preset] | None = None,
+    *,
+    max_turns: int = MAX_TURNS,
+    max_tool_calls: int | None = None,
+    max_qloo_calls: int | None = None,
 ) -> None:
+    """Run one agent request. The caps (model turns, tool calls per turn, Qloo requests) come from the
+    caller's settings; ``None`` leaves that cap off."""
     run_id = new_id("run")
     started = time.perf_counter()
     qloo_calls = 0
@@ -147,10 +175,10 @@ async def execute_run(
             except SessionError as exc:
                 await emit({"type": "error", "message": str(exc), "retryable": False})
                 return
-            ctx = ToolContext(qloo=qloo, state=state)
+            ctx = ToolContext(qloo=qloo, state=state, qloo_budget=max_qloo_calls)
             system, prompt, tools = CLASH_SYSTEM, clash_prompt(state["festival"], data), CLASH_TOOLS
         else:
-            ctx = ToolContext(qloo=qloo)
+            ctx = ToolContext(qloo=qloo, qloo_budget=max_qloo_calls)
             system, tools = EXPLORE_SYSTEM, GENERAL_TOOLS
             prompt = f"My favorites: {', '.join(data.favorites)}. Recommend: {data.target}." + (
                 f" Location: {data.location}." if data.location else ""
@@ -162,6 +190,8 @@ async def execute_run(
             tools=tools,
             ctx=ctx,
             emit=emit,
+            max_turns=max_turns,
+            max_tool_calls=max_tool_calls,
         )
         usage = outcome.usage
         if outcome.stop == "done":

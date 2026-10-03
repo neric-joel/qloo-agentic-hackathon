@@ -2,10 +2,13 @@ import json
 
 from fastapi.testclient import TestClient
 
+from app.agent.events import EventChannel
 from app.agent.llm import ScriptedBackend
 from app.config import Settings, get_settings
 from app.limits import RunLimiter, visitor_key
 from app.main import app, get_backend, get_limiter, get_qloo
+from app.presets import get_presets
+from app.runs import ClashInput, RunRequest, execute_run
 from app.schedule.metrics import score_festival
 from app.schedule.synthetic import synthetic_festival
 from tests.test_agent import parse_sse, qloo_client
@@ -86,17 +89,43 @@ def test_constraints_from_the_agent_come_back_in_the_session(tmp_path):
         app.dependency_overrides.clear()
 
 
-def test_bad_sessions_and_unknown_presets_are_reported(tmp_path):
+def test_bad_sessions_and_unknown_presets_are_refused_before_the_run(tmp_path):
     preset = setup(tmp_path, [[{"text": "x"}]])
     try:
         with TestClient(app) as client:
-            missing = run(client, {"preset_id": "nope", "message": "hi"})
-            assert missing[1]["type"] == "error" and "not available" in missing[1]["message"]
+            missing = client.post(
+                "/api/runs", json={"scenario": "clash", "input": {"preset_id": "nope", "message": "hi"}}
+            )
+            assert missing.status_code == 404
+            assert missing.json()["detail"] == "That festival day is not available."
             short = preset["festival"]["timetable"][:-1]
-            bad = run(client, {"preset_id": "day", "message": "hi", "timetable": short})
-            assert bad[1]["type"] == "error" and "does not match" in bad[1]["message"]
+            bad = client.post(
+                "/api/runs",
+                json={
+                    "scenario": "clash",
+                    "input": {"preset_id": "day", "message": "hi", "timetable": short},
+                },
+            )
+            assert bad.status_code == 422 and "does not match" in bad.json()["detail"]
     finally:
         app.dependency_overrides.clear()
+
+
+async def test_run_guards_still_report_bad_sessions_as_events(tmp_path):
+    preset = write_preset(tmp_path)
+    presets = get_presets(Settings(presets_dir=tmp_path, _env_file=None))
+    short = preset["festival"]["timetable"][:-1]
+    qloo = qloo_client()
+    for data, expected in (
+        ({"preset_id": "nope", "message": "hi"}, "not available"),
+        ({"preset_id": "day", "message": "hi", "timetable": short}, "does not match"),
+    ):
+        channel = EventChannel()
+        request = RunRequest(scenario="clash", input=ClashInput.model_validate(data))
+        await execute_run(channel, ScriptedBackend([]), qloo, request, presets)
+        events = [json.loads(f[6:]) async for f in channel.frames() if f.startswith("data: ")]
+        assert events[1]["type"] == "error" and expected in events[1]["message"]
+    await qloo.aclose()
 
 
 def test_run_limits_return_429(tmp_path):

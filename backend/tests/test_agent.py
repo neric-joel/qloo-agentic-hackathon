@@ -7,6 +7,7 @@ from app.agent.llm import ScriptedBackend
 from app.agent.loop import run_agent
 from app.agent.qloo_tools import GENERAL_TOOLS
 from app.agent.tools import ToolContext
+from app.config import Settings, get_settings
 from app.main import app, get_backend, get_qloo
 from app.qloo.client import QlooClient
 
@@ -192,18 +193,16 @@ def parse_sse(body: str) -> list[dict]:
     return [json.loads(line[6:]) for line in body.splitlines() if line.startswith("data: ")]
 
 
+EXPLORE_BODY = {"scenario": "explore", "input": {"favorites": ["Phoebe Bridgers"], "location": "Austin"}}
+
+
 def test_runs_endpoint_streams_the_whole_run():
+    app.dependency_overrides[get_settings] = lambda: Settings(_env_file=None, allow_explore=True)
     app.dependency_overrides[get_backend] = lambda: ScriptedBackend(HAPPY_SCRIPT)
     app.dependency_overrides[get_qloo] = qloo_client
     try:
         with TestClient(app) as client:
-            response = client.post(
-                "/api/runs",
-                json={
-                    "scenario": "explore",
-                    "input": {"favorites": ["Phoebe Bridgers"], "location": "Austin"},
-                },
-            )
+            response = client.post("/api/runs", json=EXPLORE_BODY)
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("text/event-stream")
         assert response.headers["cache-control"] == "no-cache, no-transform"
@@ -212,6 +211,21 @@ def test_runs_endpoint_streams_the_whole_run():
         assert types[0] == "run_started" and types[-1] == "run_finished"
         assert "result" in types and "error" not in types
         assert events[-1]["qloo_calls"] == 2
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_explore_scenario_is_off_by_default():
+    app.dependency_overrides[get_settings] = lambda: Settings(_env_file=None)
+    app.dependency_overrides[get_backend] = lambda: ScriptedBackend(HAPPY_SCRIPT)
+    app.dependency_overrides[get_qloo] = qloo_client
+    try:
+        with TestClient(app) as client:
+            refused = client.post("/api/runs", json=EXPLORE_BODY)
+            # An explore input under the clash label runs explore, so it is refused too.
+            relabelled = client.post("/api/runs", json={**EXPLORE_BODY, "scenario": "clash"})
+        assert refused.status_code == 404 and refused.json()["detail"] == "That scenario is not available."
+        assert relabelled.status_code == 404
     finally:
         app.dependency_overrides.clear()
 
@@ -235,7 +249,6 @@ def test_health_reports_configuration():
 
 def test_backend_omits_effort_for_haiku_and_enables_fallback_for_sonnet():
     from app.agent.llm import AnthropicBackend, build_backend, supports_effort
-    from app.config import Settings
 
     assert supports_effort("claude-sonnet-5-5") and not supports_effort("claude-haiku-4-5")
     sonnet = build_backend(Settings(_env_file=None, llm_provider="anthropic", anthropic_api_key="x"))
@@ -245,5 +258,5 @@ def test_backend_omits_effort_for_haiku_and_enables_fallback_for_sonnet():
         )
     )
     assert isinstance(sonnet, AnthropicBackend) and isinstance(haiku, AnthropicBackend)
-    assert (sonnet.model, sonnet.fallbacks, sonnet.max_tokens) == ("claude-sonnet-5-5", True, 8000)
+    assert (sonnet.model, sonnet.fallbacks, sonnet.max_tokens) == ("claude-sonnet-5-5", True, 2500)
     assert (haiku.model, haiku.fallbacks) == ("claude-haiku-4-5", False)

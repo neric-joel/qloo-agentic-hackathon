@@ -30,6 +30,7 @@ async def run_agent(
     ctx: ToolContext,
     emit: Emit,
     max_turns: int = MAX_TURNS,
+    max_tool_calls: int | None = None,
 ) -> RunOutcome:
     registry = {tool.name: tool for tool in tools}
     api_tools = [tool.to_api() for tool in tools]
@@ -56,7 +57,7 @@ async def run_agent(
             return RunOutcome("".join(final_text), turn, "max_tokens", usage)
 
         messages.append({"role": "assistant", "content": response.content})
-        results = await run_tool_calls(tool_uses, registry, ctx, emit)
+        results = await run_tool_calls(tool_uses, registry, ctx, emit, max_tool_calls)
         messages.append({"role": "user", "content": results})
 
     return RunOutcome("".join(final_text), max_turns, "max_turns", usage)

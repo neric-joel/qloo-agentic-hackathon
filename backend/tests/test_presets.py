@@ -40,7 +40,8 @@ def test_lists_and_serves_presets(tmp_path):
             assert 0 < listed[0]["scored_share"] <= 1
 
             one = client.get("/api/presets/b-day").json()
-            assert one["festival"]["id"] and len(one["matrix"]["act_ids"]) == 12
+            assert one["festival"]["id"] and len(one["festival"]["acts"]) == 12
+            assert "matrix" not in one  # the overlap matrix stays on the server
             assert one["requests"][0]["path"] == "/v2/insights"
             assert client.get("/api/presets/missing").status_code == 404
     finally:

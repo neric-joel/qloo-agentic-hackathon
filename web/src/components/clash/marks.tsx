@@ -42,7 +42,7 @@ export function Meter({
   className,
 }: {
   value: number;
-  /** Accessible name, e.g. "Shared audience 99%". */
+  /** Accessible name, e.g. "Draw 97 of 100". */
   label: string;
   tone?: "ink" | "primary" | "qloo";
   className?: string;

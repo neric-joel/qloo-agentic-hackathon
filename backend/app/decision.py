@@ -9,13 +9,16 @@ break. Both read only the preset: no Qloo request, no model, nothing on the pres
 
 The search is the public compute of these routes, so it is bounded:
 
-* a computed rule search takes one slot of the what-if limiter; a cache hit and a ``holds`` answer (the two
-  sets already share no minute, nothing is searched) take none;
+* a computed rule search takes exactly one slot of the what-if limiter, inside the pair's lock after the
+  cache is checked again; a cache hit, a follower that waited and found the answer cached, a ``holds`` answer
+  (the two sets already share no minute) and a pair of two locked sets take none;
 * it runs once per preset object and unordered pair. The first ``KEPT`` changes are kept, ``limit`` slices
-  them, and ``fixes_found`` always counts the full list;
-* ``/decision`` never runs the search in the request path more than once per preset object and day: the
-  hero result, its embedded rule answer included, is computed on the first request under a lock and served
-  from the cache afterwards (at most presets x days entries). A reloaded preset object replaces its entries.
+  them, and ``fixes_found`` always counts the full list. Only searched answers enter the 256-entry cache;
+  the answers that cost nothing are never stored;
+* ``/decision`` is computed per preset object and day by ``warm`` when the presets are loaded (application
+  startup), under that day's own lock; a request that comes first computes it the same way and waits on that
+  day's lock only. The hero result, its embedded rule answer included, is served from the cache afterwards
+  (at most presets x days entries). A reloaded preset object replaces its entries. There is no global lock.
 
 Selection skips a clash whose sets cannot move (both locked, counted in ``skipped_locked``) and a clash for
 which no unlocked set has a legal place that lowers the index (counted in ``skipped_no_place``), looking at
@@ -25,7 +28,9 @@ the day's first ``RANKED`` clashes at most.
 from __future__ import annotations
 
 import threading
+import time
 from collections import OrderedDict
+from collections.abc import Callable, Mapping
 from typing import Annotated, Any, NamedTuple
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request, Response
@@ -53,12 +58,19 @@ PairKey = tuple[str, str]
 
 _rules: OrderedDict[tuple[str, PairKey], tuple[Preset, dict[str, Any]]] = OrderedDict()
 _decisions: dict[tuple[str, int], tuple[Preset, dict[str, Any]]] = {}
-_lock = threading.Lock()  # guards the two caches only
-_compute = threading.RLock()  # one search at a time; the decision's computation calls the rule search too
+_lock = threading.Lock()  # guards the two caches and the lock table only; nothing is computed under it
+_key_locks: dict[tuple[Any, ...], threading.Lock] = {}  # one per answer: a search or a day
 
 
 def _pair_key(a_id: str, b_id: str) -> PairKey:
     return (a_id, b_id) if a_id <= b_id else (b_id, a_id)
+
+
+def _lock_for(key: tuple[Any, ...]) -> threading.Lock:
+    """The lock of one computed answer. Two answers never share a lock, so a cold request for one never
+    waits for the computation of another. There is at most one per pair that can be searched and per day."""
+    with _lock:
+        return _key_locks.setdefault(key, threading.Lock())
 
 
 # -------------------------------------------------------------------------------------- rule search
@@ -71,8 +83,17 @@ def cached_rule_search(preset: Preset, a_id: str, b_id: str) -> dict[str, Any] |
     return hit[1] if hit is not None and hit[0] is preset else None
 
 
-def rule_search(preset: Preset, a_id: str, b_id: str) -> dict[str, Any]:
+def rule_search(
+    preset: Preset, a_id: str, b_id: str, *, before_compute: Callable[[], None] | None = None
+) -> dict[str, Any]:
     """The search answer for an unordered pair: computed once per preset object, then served from the cache.
+
+    The search is single-flight. The caller that finds no answer takes the pair's lock, looks again, and only
+    then (the answer still missing, a search about to run) calls ``before_compute``: the route takes its
+    limiter slot there, so a computation costs one slot however many requests arrive together, and a request
+    that waited and then found the answer cached takes none. If ``before_compute`` raises, nothing is
+    computed or stored. A pair that holds and a pair of two locked sets are read off the published day: they
+    take no lock, no slot and no cache entry, so free requests cannot push a computed answer out.
 
     The stored answer keeps the sides in the order of the first caller; ``in_order`` puts them in the order
     of any later one.
@@ -80,13 +101,18 @@ def rule_search(preset: Preset, a_id: str, b_id: str) -> dict[str, Any]:
     hit = cached_rule_search(preset, a_id, b_id)
     if hit is not None:
         return hit
-    with _compute:
+    state = published_state(preset)
+    festival, matrix, config = state["festival"], state["matrix"], state["config"]
+    if not rulefix.searches(festival, a_id, b_id):
+        return rulefix.rule_fixes(festival, matrix, config, a_id, b_id)
+    key = (preset.id, _pair_key(a_id, b_id))
+    with _lock_for(("rule", *key)):
         hit = cached_rule_search(preset, a_id, b_id)
         if hit is not None:
             return hit
-        state = published_state(preset)
-        answer = rulefix.rule_fixes(state["festival"], state["matrix"], state["config"], a_id, b_id)
-        key = (preset.id, _pair_key(a_id, b_id))
+        if before_compute is not None:
+            before_compute()
+        answer = rulefix.rule_fixes(festival, matrix, config, a_id, b_id)
         with _lock:
             _rules[key] = (preset, answer)
             _rules.move_to_end(key)
@@ -134,11 +160,8 @@ def get_rule_fixes(
     on_day = {slot.act_id for slot in preset.festival.timetable}
     if a not in on_day or b not in on_day:
         raise _refuse(404, NOT_ON_THIS_DAY)
-    search = cached_rule_search(preset, a, b)
-    if search is None:
-        if rulefix.published_shared(preset.festival, a, b) > 0:
-            _take_slot(request, limiter, settings)  # a computed answer; a hit or a pair that holds takes none
-        search = rule_search(preset, a, b)
+    # One slot per computation, taken inside the pair's lock once the cache is known to be empty
+    search = rule_search(preset, a, b, before_compute=lambda: _take_slot(request, limiter, settings))
     response.headers["Cache-Control"] = CACHE_CONTROL
     return in_order(search, a, limit)
 
@@ -271,13 +294,14 @@ def compute_decision(preset: Preset, day: int) -> dict[str, Any]:
 
 def decision(preset: Preset, day: int) -> dict[str, Any]:
     """The decision, from the cache when this preset object already answered it for the day; otherwise it is
-    computed once, under a lock, whatever the number of requests that arrive together."""
+    computed once, under the lock of that preset day alone, whatever the number of requests that arrive
+    together. A request for another day, or for a rule search, never waits for it."""
     key = (preset.id, day)
     with _lock:
         hit = _decisions.get(key)
     if hit is not None and hit[0] is preset:
         return hit[1]
-    with _compute:
+    with _lock_for(("decision", *key)):
         with _lock:
             hit = _decisions.get(key)
         if hit is not None and hit[0] is preset:
@@ -286,6 +310,20 @@ def decision(preset: Preset, day: int) -> dict[str, Any]:
         with _lock:
             _decisions[key] = (preset, answer)  # a reloaded preset replaces its own entries
         return answer
+
+
+def warm(presets: Mapping[str, Preset]) -> dict[str, float]:
+    """Compute the decision of every day with sets, for each preset, so that no visitor's first request pays
+    for it. Bounded by presets x days, the size of the decision cache. Called when the presets are loaded
+    (the application's startup). It takes the same per-day locks as a request, so a request that arrives
+    before it finishes waits only on its own day. Returns the seconds each preset took."""
+    took: dict[str, float] = {}
+    for preset_id, preset in presets.items():
+        started = time.perf_counter()
+        for day in sorted({slot.day for slot in preset.festival.timetable}):
+            decision(preset, day)
+        took[preset_id] = time.perf_counter() - started
+    return took
 
 
 @router.get("/{preset_id}/decision")

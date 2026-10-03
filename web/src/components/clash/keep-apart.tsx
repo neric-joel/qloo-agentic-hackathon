@@ -11,6 +11,8 @@ import {
   BOTH_LOCKED,
   INDEX_NOTE,
   NO_RESULT,
+  SEARCH_COVERS,
+  SEARCH_RULE,
   SMALLEST_FIRST,
   fixGhosts,
   fixIndexLine,
@@ -19,6 +21,7 @@ import {
   moveLine,
   previewAnnouncement,
   requestRuleFixes,
+  searchedSentence,
   type RuleAnswer,
   stageFitNote,
   type RuleFix,
@@ -27,6 +30,8 @@ import {
 } from "@/lib/rule-fix";
 import { overlapWindow } from "@/lib/timetable";
 import { pluralize } from "@/lib/format";
+
+import { useAnnouncement } from "./use-announcement";
 
 /** Where the section sits, for links and the seed's scroll. */
 export const KEEP_APART_ID = "keep-apart";
@@ -78,6 +83,7 @@ function ChangeCard({
   dayLabel,
   pressed,
   onPreview,
+  buttonRef,
 }: {
   fix: RuleFix;
   n: number;
@@ -85,6 +91,7 @@ function ChangeCard({
   dayLabel: (day: number) => string | null;
   pressed: boolean;
   onPreview: () => void;
+  buttonRef: (element: HTMLButtonElement | null) => void;
 }) {
   const index = fixIndexLine(fix, before);
   const flags = stageFitNote(fix);
@@ -104,7 +111,14 @@ function ChangeCard({
         {flags ? ` · ${flags}` : ""}
       </p>
       <p className="mt-0.5 text-sm">Adds no rule break; ends this overlap.</p>
-      <Button type="button" variant={pressed ? "ink" : "outline"} className="mt-3" aria-pressed={pressed} onClick={onPreview}>
+      <Button
+        ref={buttonRef}
+        type="button"
+        variant={pressed ? "ink" : "outline"}
+        className="mt-3"
+        aria-pressed={pressed}
+        onClick={onPreview}
+      >
         Preview on the timetable
       </Button>
     </li>
@@ -112,11 +126,13 @@ function ChangeCard({
 }
 
 /**
- * "Keep two sets apart": the visitor picks two sets that share time and the route searches every
- * place for either set and every swap of one with another set, keeping only changes after which the
- * two share no minute and the day has no new rule break. A change can be previewed on the timetable
- * as two ghost slots; that preview is separate from the kept plan and never enters the brief. The
- * index shown is the route's, for information: it does not order the list.
+ * "Keep two sets apart": the visitor picks two sets that share time and the route searches the
+ * places it covers (single places on the 5-minute grid for either set and the two-set changes it
+ * generates; the route's own `searched` sentence is printed with an answer), keeping only changes
+ * after which the two share no minute and the day has no new rule break. A change can be previewed
+ * on the timetable as ghost slots that replace the kept plan's ghosts while they show; that preview
+ * is separate from the kept plan and never enters the brief. The index shown is the route's, for
+ * information: it does not order the list.
  */
 export function KeepApart({
   preset,
@@ -135,6 +151,9 @@ export function KeepApart({
   const resultHeadingId = useId();
   const sectionRef = useRef<HTMLElement | null>(null);
   const resultRef = useRef<HTMLHeadingElement | null>(null);
+  const retryRef = useRef<HTMLButtonElement | null>(null);
+  const refusedRef = useRef<HTMLParagraphElement | null>(null);
+  const previewButtons = useRef(new Map<number, HTMLButtonElement>());
   const wantsFocus = useRef(false);
   const { festival } = preset;
 
@@ -148,7 +167,7 @@ export function KeepApart({
   const [outcome, setOutcome] = useState<{ key: string; attempt: number; answer: RuleAnswer } | null>(null);
   // The change being previewed, tied to the pair it belongs to.
   const [previewing, setPreviewing] = useState<{ key: string; index: number } | null>(null);
-  const [announcement, setAnnouncement] = useState("");
+  const [announcement, setAnnouncement] = useAnnouncement(5000);
   const [handledSeed, setHandledSeed] = useState(0);
   const multiDay = festival.days.length > 1;
   const dayLabel = useCallback(
@@ -241,13 +260,17 @@ export function KeepApart({
     sectionRef.current?.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
   }, [seedNonce]);
 
-  // Focus lands on the result heading once it is on the page.
-  const settled = search.status !== "idle" && search.status !== "loading";
+  // Focus lands on the result heading once it is on the page; when the search failed or was
+  // refused, on the retry button or the refusal, so a keyboard visitor is never left on the page.
+  const status = search.status;
+  const settled = status !== "idle" && status !== "loading";
   useEffect(() => {
     if (!settled || !wantsFocus.current) return;
     wantsFocus.current = false;
-    resultRef.current?.focus({ preventScroll: true });
-  }, [settled, wantedKey, attempt]);
+    const target =
+      status === "ready" ? resultRef.current : status === "error" ? retryRef.current : refusedRef.current;
+    target?.focus({ preventScroll: true });
+  }, [settled, status, wantedKey, attempt]);
 
   function changePick(setter: (id: string) => void, id: string) {
     setter(id);
@@ -265,6 +288,10 @@ export function KeepApart({
   }
 
   function clearPreview() {
+    // The Clear button disables as the preview goes, so focus returns first to the row's own
+    // Preview button, which is where the visitor was before the board took their eye.
+    const row = previewing && previewing.key === wantedKey ? previewing.index : null;
+    if (row !== null) previewButtons.current.get(row)?.focus();
     setPreviewing(null);
     onPreview?.(null);
     setAnnouncement("Preview cleared.");
@@ -287,8 +314,7 @@ export function KeepApart({
         Keep two sets apart
       </h3>
       <p className="mt-2 max-w-3xl text-sm leading-relaxed">
-        Pick two sets that share time. The search checks every place for either set and every swap of two sets
-        that keeps all rules.
+        Pick two sets that share time. The search covers {SEARCH_COVERS}. {SEARCH_RULE}
       </p>
 
       <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
@@ -351,19 +377,30 @@ export function KeepApart({
         {search.status === "loading" ? (
           <div className="flex min-h-20 items-center gap-2 rounded-lg border border-dashed border-border-strong p-4 text-sm text-muted-foreground">
             <LoaderCircle aria-hidden="true" className="size-4 motion-safe:animate-spin" />
-            Searching every place and swap for {byId.get(first)?.name ?? "the first set"} and{" "}
+            Searching {SEARCH_COVERS} for {byId.get(first)?.name ?? "the first set"} and{" "}
             {byId.get(second)?.name ?? "the second set"}
           </div>
         ) : search.status === "error" ? (
           <div role="alert" className="rounded-lg border border-destructive/50 bg-danger-bg p-4">
             <p className="text-[0.9375rem] font-semibold">Could not run this search.</p>
-            <Button type="button" variant="outline" className="mt-3" onClick={() => run(first, second)}>
+            <Button
+              ref={retryRef}
+              type="button"
+              variant="outline"
+              className="mt-3"
+              onClick={() => run(first, second)}
+            >
               <RotateCcw aria-hidden="true" />
               Try again
             </Button>
           </div>
         ) : search.status === "refused" ? (
-          <p role="alert" className="rounded-lg border border-border-strong p-4 text-[0.9375rem] font-semibold">
+          <p
+            ref={refusedRef}
+            role="alert"
+            tabIndex={-1}
+            className="rounded-lg border border-border-strong p-4 text-[0.9375rem] font-semibold outline-none"
+          >
             {search.message}
           </p>
         ) : result ? (
@@ -390,7 +427,7 @@ export function KeepApart({
                 ) : (
                   <>
                     <p className="mt-2 text-sm text-muted-foreground">
-                      {SMALLEST_FIRST}{" "}
+                      {searchedSentence(result)} {SEARCH_RULE} {SMALLEST_FIRST}{" "}
                       {result.singleSetPlaces === 0
                         ? "This search found no single-set place that ends it."
                         : `${pluralize(result.singleSetPlaces, "single-set place")} end${result.singleSetPlaces === 1 ? "s" : ""} it.`}
@@ -408,6 +445,10 @@ export function KeepApart({
                           dayLabel={dayLabel}
                           pressed={activePreview === i}
                           onPreview={() => previewFix(fix, i, result)}
+                          buttonRef={(element) => {
+                            if (element) previewButtons.current.set(i, element);
+                            else previewButtons.current.delete(i);
+                          }}
                         />
                       ))}
                     </ol>
@@ -421,8 +462,9 @@ export function KeepApart({
                     </div>
                     {activePreview !== null ? (
                       <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                        This is a tested timetable, not a kept move. The links and rank badges on the timetable still
-                        describe the published day.
+                        This is a tested timetable, not a kept move. While it shows, it replaces any kept plan’s ghosts
+                        on the timetable; Clear preview brings them back. The links and rank badges still describe the
+                        published day.
                       </p>
                     ) : null}
                   </>

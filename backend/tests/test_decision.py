@@ -116,6 +116,7 @@ def clear_caches():
     with decision._lock:
         decision._rules.clear()
         decision._decisions.clear()
+        decision._key_locks.clear()
 
 
 def build_app(directory):
@@ -141,6 +142,7 @@ def client(tmp_path, limiter, monkeypatch):
         whatif._cache.clear()
     clear_caches()
     with TestClient(app) as test_client:
+        clear_caches()  # the application's startup already warmed the day; most tests start cold
         test_client.preset = get_presets(Settings(presets_dir=tmp_path, _env_file=None))["day"]
         yield test_client
     clear_caches()
@@ -402,9 +404,11 @@ def test_a_computed_answer_takes_one_slot_and_a_hit_or_a_holding_pair_takes_none
         and body["fixes_found"] == 0
     )
     assert body["shared_minutes"] == 0 and visits(limiter) == 1  # nothing was searched: no slot
-    assert (
-        client.get(rules_url("x", "y")).status_code == 200 and visits(limiter) == 2
-    )  # both locked: computed
+    both_locked = client.get(rules_url("x", "y"))
+    assert both_locked.status_code == 200 and both_locked.json()["fixes"] == []
+    assert visits(limiter) == 1  # two locked sets: nothing is searched, no slot
+    one_free = client.get(rules_url("p", "q"))  # q can move in principle, so this is searched: one slot
+    assert one_free.status_code == 200 and visits(limiter) == 2
     for refused in (
         client.get(rules_url("r", "r")),
         client.get(rules_url("r", "nobody")),
@@ -439,12 +443,13 @@ def test_the_cap_refuses_the_next_computed_answer_and_still_serves_hits(client, 
     tight = RunLimiter(1, 100, 100, messages=whatif.WHATIF_MESSAGES)
     client.app.dependency_overrides[whatif.get_whatif_limiter] = lambda: tight
     assert client.get(rules_url("r", "s")).status_code == 200
-    refused = client.get(rules_url("x", "y"))
+    refused = client.get(rules_url("p", "q"))
     assert refused.status_code == 429 and refused.headers["cache-control"] == NO_STORE
     assert refused.json() == {"detail": "Too many what-if requests this hour. Please try again later."}
     assert client.get(rules_url("s", "r")).status_code == 200  # a hit
     assert client.get(rules_url("r", "q")).status_code == 200  # a pair that holds
     assert len(tight._visitors["testclient"]) == 1  # the refusal stored nothing
+    assert decision.cached_rule_search(client.preset, "p", "q") is None  # and computed nothing
 
 
 def test_unknown_things_and_hostile_values_are_refused_and_never_echoed(client):
@@ -478,10 +483,10 @@ def test_the_rule_cache_is_bounded_and_keyed_on_the_unordered_pair(client, monke
     assert decision.rule_search(preset, "r", "s") is first
     assert list(decision._rules) == [("day", ("r", "s"))]
     monkeypatch.setattr(decision, "CACHE_SIZE", 2)
-    for pair in (("x", "y"), ("p", "q"), ("r", "z1")):
+    for pair in (("x", "y"), ("r", "z1"), ("p", "q"), ("x", "z1")):  # the first two are never stored
         decision.rule_search(preset, *pair)
     assert len(decision._rules) == 2
-    assert [key[1] for key in decision._rules] == [("p", "q"), ("r", "z1")]  # the oldest went first
+    assert [key[1] for key in decision._rules] == [("p", "q"), ("x", "z1")]  # the oldest went first
 
 
 def test_no_qloo_request_is_made_by_either_route(client):
@@ -503,3 +508,133 @@ def test_the_search_leaves_the_preset_as_it_was(client):
 def test_the_config_baseline_is_the_published_one(client):
     state = published_state(client.preset)
     assert isinstance(state["config"], ScoringConfig) and state["config"].baseline is not None
+
+
+# ------------------------------------------------------------------ single flight, metering, the cache
+
+
+def test_racing_first_requests_for_one_pair_take_one_slot_and_run_one_search(client, limiter, monkeypatch):
+    calls = []
+    real = rulefix.rule_fixes
+
+    def slow_search(*args, **kwargs):
+        calls.append(1)
+        threading.Event().wait(0.15)  # a forced delay: every racer has arrived before the first finishes
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(rulefix, "rule_fixes", slow_search)
+    tight = RunLimiter(1, 100, 100, messages=whatif.WHATIF_MESSAGES)  # one slot: a second one would be a 429
+    client.app.dependency_overrides[whatif.get_whatif_limiter] = lambda: tight
+    start = threading.Barrier(8)
+    results: list = []
+
+    def ask(a: str, b: str):
+        start.wait()
+        response = client.get(rules_url(a, b))
+        results.append((response.status_code, response.json()))
+
+    threads = [threading.Thread(target=ask, args=("r", "s") if n % 2 else ("s", "r")) for n in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert len(calls) == 1
+    assert len(tight._visitors["testclient"]) == 1
+    assert [status for status, _ in results] == [200] * 8
+    assert {json.dumps(body["fixes"]) for _, body in results} == {json.dumps(results[0][1]["fixes"])}
+
+
+def test_answers_that_cost_nothing_never_enter_the_cache_and_cannot_evict_a_computed_one(tmp_path):
+    """700 distinct pairs that share no minute leave the computed answers where they were."""
+    locked = {"locked": True}  # the fillers cannot move: the two searches stay small
+    sets = [(f"s{k:02d}", 0, "main", 60 + 30 * k, 90 + 30 * k, locked if k > 1 else {}) for k in range(40)]
+    sets += [("u", 0, "side", 60, 90), ("v", 0, "side", 90, 120)]  # each overlaps one of the sets above
+    ids = [row[0] for row in sets]
+    festival = make_festival(sets, hours={"main": [(0, 0, 1440)], "side": [(0, 0, 1440)]})
+    matrix = make_matrix(ids, {("s00", "u"): 0.5, ("s01", "v"): 0.5}, default=0.05)
+    data = {
+        "id": "big",
+        "title": "Big",
+        "festival": festival.model_dump(mode="json"),
+        "matrix": matrix.model_dump(mode="json"),
+        "report": score_festival(festival, matrix).model_dump(mode="json"),
+    }
+    (tmp_path / "big.json").write_text(json.dumps(data), encoding="utf-8")
+    preset = get_presets(Settings(presets_dir=tmp_path, _env_file=None))["big"]
+    clear_caches()
+    try:
+        computed = [decision.rule_search(preset, "s00", "u"), decision.rule_search(preset, "s01", "v")]
+        assert all(not answer["holds"] for answer in computed) and len(decision._rules) == 2
+        distinct = [
+            (a, b)
+            for i, a in enumerate(ids)
+            for b in ids[i + 1 :]
+            if rulefix.published_shared(festival, a, b) == 0
+        ]
+        assert len(distinct) >= 700
+        for a, b in distinct[:700]:
+            answer = decision.rule_search(preset, a, b)
+            assert answer["holds"] is True and answer["fixes"] == []
+        assert len(decision._rules) == 2  # nothing free was stored
+        assert decision.rule_search(preset, "u", "s00") is computed[0]  # still a hit: no engine call
+        assert decision.cached_rule_search(preset, "s01", "v") is computed[1]
+        assert len(decision._key_locks) == 2  # and none of them took a lock
+    finally:
+        clear_caches()
+
+
+# ----------------------------------------------------------------------------------------- warm step
+
+
+def test_warm_computes_every_day_with_sets_and_the_request_is_then_a_hit(client, monkeypatch):
+    clear_caches()
+    took = decision.warm({"day": client.preset})
+    assert set(took) == {"day"} and took["day"] >= 0
+    assert set(decision._decisions) == {("day", 0)}
+    calls = []
+    monkeypatch.setattr(decision, "compute_decision", lambda *a, **k: calls.append(1))
+    assert client.get("/api/presets/day/decision").status_code == 200 and calls == []
+
+
+def test_application_startup_warms_the_presets_it_serves(tmp_path):
+    write_day(tmp_path)
+    build_app(tmp_path)
+    clear_caches()
+    try:
+        with TestClient(app):
+            assert set(decision._decisions) == {("day", 0)}
+    finally:
+        clear_caches()
+        app.dependency_overrides.clear()
+
+
+def test_a_cold_request_for_one_day_never_waits_for_another_or_for_a_rule_search(client, monkeypatch):
+    preset = client.preset
+    release, entered = threading.Event(), threading.Event()
+    real = decision.compute_decision
+
+    def slow_day_zero(p, day):
+        if day == 0:
+            entered.set()
+            assert release.wait(10)
+        return real(p, 0) if day == 0 else {"kind": "decision", "day": day}
+
+    monkeypatch.setattr(decision, "compute_decision", slow_day_zero)
+    clear_caches()
+    first = threading.Thread(target=decision.decision, args=(preset, 0))
+    first.start()
+    assert entered.wait(10)
+    try:
+        # day 1 is another key: it returns while day 0 is still computing
+        assert decision.decision(preset, 1) == {"kind": "decision", "day": 1}
+        # a rule search for a pair is another key too
+        assert decision.rule_search(preset, "p", "q")["a"]["act_id"] == "p"
+        waiting = threading.Thread(target=decision.decision, args=(preset, 0))
+        waiting.start()
+        waiting.join(0.2)
+        assert waiting.is_alive()  # the same day waits on its own lock
+    finally:
+        release.set()
+        first.join(10)
+    waiting.join(10)
+    assert not waiting.is_alive() and decision.decision(preset, 0)["kind"] == "decision"

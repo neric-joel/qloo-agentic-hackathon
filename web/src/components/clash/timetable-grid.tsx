@@ -54,8 +54,17 @@ type TimetableGridProps = {
 type GhostKind = "kept" | "trying" | "rule";
 type Ghost = { slot: GhostSlot; name: string; col: number; range: TimeRange; kind: GhostKind };
 
-/** A published set whose start is this close to a ghost on its stage gives way to it. */
-const OVERPRINT_MINUTES = 20;
+/** The pixels a block of this time range is drawn over, as the sets and the ghosts size themselves. */
+function drawnSpan(range: TimeRange, y: (minute: number) => number): { top: number; bottom: number } {
+  const top = y(range.start);
+  const height = y(range.end) - top;
+  return { top: top + 1, bottom: top + 1 + Math.max(height - 2, 18) };
+}
+
+/** What a ghost is called, so its flight plays once and never again for the same place. */
+function ghostSignature(ghost: Ghost): string {
+  return `${ghost.kind}:${ghost.slot.actId}:${ghost.slot.stageId}:${ghost.slot.day}:${ghost.slot.start}`;
+}
 
 /** Where a tested place is drawn: its stage column and its minutes, kept inside the drawn day. */
 function placeGhosts(
@@ -162,24 +171,29 @@ export function TimetableGrid({
   );
   const frames = useMemo(() => columnFrames(width, stages.length, gap), [width, stages.length, gap]);
   const byId = useMemo(() => new Map(views.map((view) => [view.id, view])), [views]);
+  // A rule preview is a tested timetable of its own: while it shows, the kept plan's ghosts step
+  // aside (the preview was checked against the published day, not the plan) and return on Clear.
+  const shownPlan = rulePreview ? null : plan;
   const ghosts = useMemo(
-    () => placeGhosts(plan, rulePreview, byId, stages, domain),
-    [plan, rulePreview, byId, stages, domain],
+    () => placeGhosts(shownPlan, rulePreview, byId, stages, domain),
+    [shownPlan, rulePreview, byId, stages, domain],
   );
-  const movedIds = useMemo(() => new Set((plan?.kept ?? []).map((slot) => slot.actId)), [plan]);
-  // A published set gives way to a ghost on its stage that starts within 20 minutes of it: it dims
-  // and its visible title hides (its accessible name stays) so the two never print on one another.
+  const movedIds = useMemo(() => new Set((shownPlan?.kept ?? []).map((slot) => slot.actId)), [shownPlan]);
+  // A published set gives way to a ghost on its stage when the two blocks, as drawn, overlap: it
+  // dims and its visible title hides (its accessible name stays) so the two never print on one
+  // another. A ghost that only starts near a set, without covering it, leaves the set as it is.
   const overprintedIds = useMemo(() => {
     const ids = new Set<string>();
     for (const ghost of ghosts) {
+      const drawn = drawnSpan(ghost.range, scale.y);
       for (const view of views) {
-        if (view.slot.stage_id === ghost.slot.stageId && Math.abs(ghost.range.start - view.slot.start) <= OVERPRINT_MINUTES) {
-          ids.add(view.id);
-        }
+        if (view.slot.stage_id !== ghost.slot.stageId) continue;
+        const set = drawnSpan(view.slot, scale.y);
+        if (set.top < drawn.bottom && drawn.top < set.bottom) ids.add(view.id);
       }
     }
     return ids;
-  }, [ghosts, views]);
+  }, [ghosts, views, scale]);
   // A previewed rule change ends the overlap of its pair: a small outlined zero sits between the two.
   const zero = useMemo(() => {
     if (!rulePreview || width === 0) return null;
@@ -198,12 +212,55 @@ export function TimetableGrid({
     const key = `${rulePreview.pair.aId}|${rulePreview.pair.bId}|${rulePreview.ghosts.map((g) => `${g.actId}@${g.start}`).join(",")}`;
     return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, key };
   }, [rulePreview, width, ghosts, byId, frames, scale]);
-  // Motion starts after the board has settled, so a plan kept in this tab does not fly in on load.
+  // Motion starts after the board has settled, and only for what appears after that: whatever is
+  // already on the board then (a plan kept in this tab) never flies in, and each flight, lift or
+  // zero plays once and is marked done when it ends, so scrolling the board back into view never
+  // replays it. A thing that leaves the board (Start over, Clear on a preview) is forgotten, so
+  // the next time it appears it plays once again; a kept plan hidden behind a preview is not.
+  const names = useMemo(
+    () => [
+      ...ghosts.map(ghostSignature),
+      ...[...movedIds].map((id) => `lift:${id}`),
+      ...(zero ? [`zero:${zero.key}`] : []),
+    ],
+    [ghosts, movedIds, zero],
+  );
   const [armed, setArmed] = useState(false);
+  const [spent, setSpent] = useState<ReadonlySet<string>>(() => new Set());
+  const [seen, setSeen] = useState(names);
+  if (seen !== names) {
+    setSeen(names);
+    if (rulePreview === null) {
+      const stay = [...spent].filter((name) => names.includes(name));
+      if (stay.length !== spent.size) setSpent(new Set(stay));
+    }
+  }
+  const onBoard = useRef(names);
   useEffect(() => {
-    const timer = window.setTimeout(() => setArmed(true), 1200);
+    onBoard.current = names;
+  }, [names]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSpent((previous) => new Set([...previous, ...onBoard.current]));
+      setArmed(true);
+    }, 1200);
     return () => window.clearTimeout(timer);
   }, []);
+  const mayPlay = (name: string) => armed && !spent.has(name);
+  const markPlayed = (name: string) => setSpent((previous) => (previous.has(name) ? previous : new Set(previous).add(name)));
+
+  // "Preview on the timetable" brings the first tested slot into view (at once with reduced motion),
+  // and its flight starts after the scroll, so it is seen.
+  const [ruleShown, setRuleShown] = useState<RulePreview | null>(null);
+  useEffect(() => {
+    if (!rulePreview) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const first = rootRef.current?.querySelector<HTMLElement>('[data-ghost="rule"]');
+    first?.scrollIntoView({ block: "center", inline: "center", behavior: reduce ? "auto" : "smooth" });
+    const timer = window.setTimeout(() => setRuleShown(rulePreview), reduce || !first ? 0 : 500);
+    return () => window.clearTimeout(timer);
+  }, [rulePreview]);
+  const ruleSeen = rulePreview !== null && ruleShown === rulePreview;
   const navItems = useMemo(
     () => views.map((view) => ({ id: view.id, col: view.col, start: view.slot.start, end: view.slot.end })),
     [views],
@@ -374,6 +431,7 @@ export function TimetableGrid({
                         }}
                         data-set={view.id}
                         data-overprinted={overprinted ? "true" : undefined}
+                        onAnimationEnd={moved ? () => markPlayed(`lift:${view.id}`) : undefined}
                         className={cn(
                           "group/set absolute inset-x-0 flex flex-col overflow-hidden rounded-md border text-left transition-[opacity,background-color,border-color,box-shadow] duration-150",
                           "focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
@@ -385,7 +443,7 @@ export function TimetableGrid({
                               : "border-border-strong bg-card",
                           view.slot.locked && "border-2 border-foreground",
                           moved && "bg-hatch",
-                          moved && armed && "cc-lift",
+                          moved && mayPlay(`lift:${view.id}`) && "cc-lift",
                           costliest ? "cursor-pointer hover:bg-accent" : "cursor-default",
                           isFocus && "border-foreground bg-accent",
                           related && !isFocus && "shadow-[0_0_0_2px_var(--primary)]",
@@ -477,7 +535,13 @@ export function TimetableGrid({
                 const height = scale.y(ghost.range.end) - top;
                 const home = byId.get(ghost.slot.actId);
                 const homeFrame = home ? frames[home.col] : undefined;
-                const flies = armed && ghost.kind !== "trying" && home !== undefined && homeFrame !== undefined;
+                const name = ghostSignature(ghost);
+                const flies =
+                  mayPlay(name) &&
+                  ghost.kind !== "trying" &&
+                  (ghost.kind !== "rule" || ruleSeen) &&
+                  home !== undefined &&
+                  homeFrame !== undefined;
                 const flight =
                   flies && home && homeFrame
                     ? ({
@@ -489,11 +553,12 @@ export function TimetableGrid({
                   <div
                     key={`${ghost.kind}-${ghost.slot.actId}`}
                     data-ghost={ghost.kind}
+                    onAnimationEnd={flies ? () => markPlayed(name) : undefined}
                     className={cn(
                       "absolute flex flex-col overflow-hidden rounded-md border-2 border-dashed px-2 py-1 text-left",
                       ghost.kind === "trying"
                         ? "border-primary/55 bg-background/70 text-foreground/80"
-                        : "border-primary bg-background/85 text-foreground",
+                        : "border-primary bg-background text-foreground",
                       flies && "cc-slot-flight",
                     )}
                     style={{
@@ -519,9 +584,10 @@ export function TimetableGrid({
                 <span
                   key={zero.key}
                   data-ghost="zero"
+                  onAnimationEnd={() => markPlayed(`zero:${zero.key}`)}
                   className={cn(
                     "absolute grid size-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-foreground bg-card font-mono text-[0.6875rem] font-bold text-foreground",
-                    armed && "cc-zero",
+                    mayPlay(`zero:${zero.key}`) && ruleSeen && "cc-zero",
                   )}
                   style={{ left: zero.x, top: zero.y }}
                 >

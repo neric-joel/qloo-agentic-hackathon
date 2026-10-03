@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { ArrowDown, ChevronDown } from "lucide-react";
 import Link from "next/link";
@@ -271,6 +271,15 @@ export function ClashControlFallback({
   return <LoadingView intro={intro} summary={summary} />;
 }
 
+/** False in the server HTML and true once the page is in the browser, with no state to set in an effect. */
+function useInBrowser(): boolean {
+  return useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
+}
+
 /**
  * The landing screen: loads the preset festival days, lets the visitor pick one, and shows its
  * Clash Budget Index and coverage, the priced timetable with the costliest clashes, "Try a move"
@@ -278,6 +287,9 @@ export function ClashControlFallback({
  * the hidden-clash examples and the twin card.
  */
 export function ClashControl({ intro, summary = null }: { intro: ReactNode; summary?: ServerSummary | null }) {
+  // The loading line is for a visitor waiting in the browser. Left out of the server HTML, it cannot
+  // linger in the hidden streaming fallback and read as stale once the day has loaded.
+  const inBrowser = useInBrowser();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const requestedId = searchParams.get("preset");
@@ -338,9 +350,11 @@ export function ClashControl({ intro, summary = null }: { intro: ReactNode; summ
         intro={intro}
         summary={summary && summary.id === loadingId ? summary : null}
         status={
-          <p role="status" className="sr-only">
-            Loading the festival day.
-          </p>
+          inBrowser ? (
+            <p role="status" className="sr-only">
+              Loading the festival day.
+            </p>
+          ) : null
         }
         picker={
           list.status === "ready" ? (

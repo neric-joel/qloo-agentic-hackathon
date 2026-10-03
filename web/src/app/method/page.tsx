@@ -11,6 +11,8 @@ import {
   formatCount,
   exploratoryReading,
   formatInterval,
+  clusterClause,
+  countsNote,
   formatP,
   formatPct,
   formatWholePct,
@@ -108,8 +110,8 @@ function ShortVersion() {
           {formatInterval([tasteLow, tasteHigh])}.{" "}
           {numberWord(exploratory.shufflesAtLeast, { capitalize: true })} of{" "}
           {formatCount(exploratory.shuffles)} shuffles of the complaint labels scored that high
-          (p&nbsp;=&nbsp;{formatP(exploratory.p)}). We ran that after the {formatPct(taste.topQuarterPct)}{" "}
-          against {backtest.bar.topQuarterPct}% test above failed. Popularity separated them more (
+          (p&nbsp;=&nbsp;{formatP(exploratory.p)}; {clusterClause()}). We ran that after the{" "}
+          {formatPct(taste.topQuarterPct)} against {backtest.bar.topQuarterPct}% test above failed. Popularity separated them more (
           {formatAuc(popularity.auc)}), and the gap between the two{" "}
           {reading.gapIncludesZero
             ? "has an interval that includes zero"
@@ -221,7 +223,7 @@ function Exploratory() {
           ? ` That p is above ${exploratory.pBar}: shuffled labels often score this high, so this check does not separate the measure from chance.`
           : ""}{" "}
         The shuffle treats pairs as independent, but the {backtest.scoredPairs} pairs come from{" "}
-        {backtest.clusters} complaints, so the real uncertainty is wider than that p suggests.
+        {backtest.clusters} complaints, so the real uncertainty is wider than that p suggests. {countsNote()}
       </p>
       <p>
         <strong className="font-semibold">What did not:</strong> popularity, also a Qloo field, scores

@@ -1,5 +1,7 @@
 import asyncio
+import logging
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -11,11 +13,12 @@ from .agent.llm import LLMBackend, build_backend, llm_configured
 from .audit import router as audit_router
 from .config import Settings, get_settings
 from .decision import router as decision_router
+from .decision import warm as warm_decisions
 from .deps import get_qloo
 from .limits import RunLimiter, visitor_key
 from .pair import NoStoreOnPairRoute
 from .pair import router as pair_router
-from .presets import Presets
+from .presets import Presets, get_presets
 from .presets import router as presets_router
 from .probe import install_probe
 from .qloo.client import QlooClient
@@ -35,7 +38,27 @@ def _docs_urls(settings: Settings) -> dict[str, Any]:
     return {"docs_url": None, "redoc_url": None, "openapi_url": None}
 
 
-app = FastAPI(title="Clash Control API", version="0.1.0", **_docs_urls(get_settings()))
+log = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+    """Compute each preset's worked decision before the first request (see ``decision.warm``). A failure is
+    logged and never stops the server: the first request then computes what is missing, as it always could."""
+
+    def warm_presets() -> None:
+        settings = application.dependency_overrides.get(get_settings, get_settings)()
+        for preset_id, seconds in warm_decisions(get_presets(settings)).items():
+            log.info("decision warm: %s in %.0f ms", preset_id, seconds * 1000)
+
+    try:
+        await asyncio.to_thread(warm_presets)
+    except Exception:
+        log.exception("decision warm failed; the first request computes it")
+    yield
+
+
+app = FastAPI(title="Clash Control API", version="0.1.0", lifespan=lifespan, **_docs_urls(get_settings()))
 app.include_router(schedule_router)
 app.include_router(presets_router)
 app.include_router(recordings_router)

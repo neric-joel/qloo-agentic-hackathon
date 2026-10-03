@@ -9,6 +9,8 @@ import MethodPage, { metadata } from "@/app/method/page";
 
 import {
   METHOD_FIGURES,
+  clusterClause,
+  countsNote,
   formatAuc,
   formatCount,
   exploratoryReading,
@@ -152,6 +154,16 @@ describe("method figures", () => {
     expect(exploratoryReading(figures)).toEqual({ pAboveBar: true, gapIncludesZero: false });
     expect(formatP(0.0002)).toBe("0.0002");
     expect(formatP(0.1872)).toBe("0.1872");
+  });
+
+  it("words the cluster clause and the two sets of counts from the pinned figures", () => {
+    expect(clusterClause()).toBe("the 68 pairs come from 42 complaints, so this p understates the uncertainty");
+    expect(countsNote()).toBe(
+      "The 45 complaints and 86 pairs counted elsewhere on this site are the verified overlaps in the public set; the AUC scores 68 pairs from 42 complaints, the ones with a Qloo signal for both acts, so the counts differ.",
+    );
+    const html = renderToStaticMarkup(createElement(MethodPage)).replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ");
+    expect(html).toContain("p = 0.0002; the 68 pairs come from 42 complaints, so this p understates the uncertainty)");
+    expect(html).toContain(countsNote());
   });
 
   it("pins the denominators", () => {
@@ -460,7 +472,7 @@ describe("/method exploratory result", () => {
     const box = html.match(/<section aria-labelledby="short-heading"[\s\S]*?<\/section>/)?.[0] ?? "";
     const text = textOf(box);
     expect(text).toContain(
-      "What held, exploratory. On this press-skewed complaint set, taste overlap separated the complained-about clashes from the day's other pairs: AUC (0.5 means no better than chance; 1 means every listed clash ranks above every unlisted pair) 0.634, interval 0.517 to 0.755. One of 10,000 shuffles of the complaint labels scored that high (p = 0.0002). We ran that after the 46.8% against 60% test above failed. Popularity separated them more (0.722), and the gap between the two has an interval that includes zero.",
+      "What held, exploratory. On this press-skewed complaint set, taste overlap separated the complained-about clashes from the day's other pairs: AUC (0.5 means no better than chance; 1 means every listed clash ranks above every unlisted pair) 0.634, interval 0.517 to 0.755. One of 10,000 shuffles of the complaint labels scored that high (p = 0.0002; the 68 pairs come from 42 complaints, so this p understates the uncertainty). We ran that after the 46.8% against 60% test above failed. Popularity separated them more (0.722), and the gap between the two has an interval that includes zero.",
     );
     expect(text.indexOf("The test we set before building failed.")).toBeLessThan(
       text.indexOf("What held, exploratory."),

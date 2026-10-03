@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { CHECK_LIVE } from "@/lib/check-flag";
 import { MOCK_STREAM_ENABLED } from "@/lib/mock-stream";
 
 export function SiteFooter() {
@@ -14,6 +15,14 @@ export function SiteFooter() {
           >
             How we know
           </Link>
+          {CHECK_LIVE ? (
+            <Link
+              href="/check"
+              className="rounded-sm py-2 text-sm font-semibold text-foreground underline-offset-4 hover:underline"
+            >
+              Check a draft grid
+            </Link>
+          ) : null}
         </div>
         <p className="max-w-prose">
           {MOCK_STREAM_ENABLED

@@ -68,18 +68,20 @@ function copy(overrides: Record<string, unknown> = {}) {
 }
 
 describe("DecisionCard", () => {
-  it("leads with the receipt, then the heading, the four lines and the attribution beside the index", () => {
+  it("leads with the receipt, then the heading, the index with its attribution, the timeline, and only then the four lines", () => {
     const html = renderToStaticMarkup(createElement(DecisionCard, { copy: copy() }));
     const plain = text(html);
     const order = [
       "Bo Diddly Squat 60 minutes later:",
       "One decision on Tiny Fest Saturday, published timetable",
-      "The costliest clash with a set that can move",
-      "Move one set: of the 4 legal places",
       "104.2 → 98.4",
       "Selected and scored by this app’s index",
+      "Solid: where the sets play now.",
+      "How this was chosen",
+      "The costliest clash with a set that has a legal place that lowers the index",
+      "Move one set: of the 4 legal places on the 5-minute grid",
       "If a rule says Ann Arbor and Bo Diddly Squat must never overlap:",
-      "Lines 1 and 2 are selected and scored by this app’s index. Line 3 is checked against the timetable’s rules. A reading, not a verdict.",
+      "Lines 1 and 2 are selected and scored by this app’s index. Line 3 is checked against the timetable’s rules; the index in it is shown for information, not as a verdict. A reading, not a verdict.",
     ].map((part) => plain.indexOf(part));
     order.forEach((at, i) => {
       expect(at, `part ${i}`).toBeGreaterThan(-1);
@@ -88,6 +90,24 @@ describe("DecisionCard", () => {
     expect(html).toContain('id="decision-heading"');
     expect(html).toContain('tabindex="-1"');
     expect(html).toContain('aria-hidden="true"');
+  });
+
+  it("keeps the four lines in the server HTML behind a phone disclosure that is open from sm up", () => {
+    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: copy() }));
+    // The button is for phones only and starts closed; the lines hide on a phone, never from sm up.
+    expect(html).toMatch(/<button[^>]*aria-expanded="false"[^>]*class="[^"]*sm:hidden[^"]*"[^>]*>How this was chosen/);
+    expect(html).toMatch(/class="[^"]*max-sm:hidden[^"]*"/);
+    expect(html).toMatch(/class="[^"]*sm:block[^"]*"/);
+    const plain = text(html);
+    for (const n of [1, 2, 3, 4]) expect(plain).toContain(`Line ${n}`);
+    expect(plain).toContain("Bar: time shared with Ann Arbor.");
+  });
+
+  it("labels the timeline rows and keeps its type at 13 units", () => {
+    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: copy() }));
+    expect(html).toContain(">Now<");
+    expect(html).toContain(">Tested<");
+    expect(html).not.toMatch(/text-\[(8|9)px\]/);
   });
 
   it("has no buttons the page cannot act on, and shows each only with its handler and its seed", () => {
@@ -108,6 +128,7 @@ describe("DecisionCard", () => {
     expect(noRule).toContain("Open this move");
     expect(noRule).not.toContain("Try this rule yourself");
     expect(noRule).not.toContain("Line 3");
+    expect(noRule).toContain("Line 4");
   });
 
   it("says so, with no receipt, figure, timeline or move to open, when no place lowers the index", () => {
@@ -118,7 +139,7 @@ describe("DecisionCard", () => {
     expect(plain).toContain("No legal place for either set lowers the index.");
     expect(plain).not.toContain("Open this move");
     expect(plain).not.toContain("Selected and scored by this app’s index. ");
-    expect(html).not.toContain("<svg");
+    expect(html).not.toContain("viewBox=\"0 0 288");
   });
 
   it("uses none of the words the round forbids", () => {
@@ -147,8 +168,10 @@ describe("WhyThisMatters", () => {
   it("links four public voices to their pages and names no one without a source", () => {
     const html = renderToStaticMarkup(createElement(WhyThisMatters));
     expect((html.match(/rel="noopener noreferrer"/g) ?? []).length).toBe(5);
-    for (const host of ["bbc.co.uk", "nme.com", "alpsinc.kr", "abc.net.au", "hadnews.com"]) expect(html).toContain(host);
+    for (const host of ["bbc.co.uk", "nme.com", "alpsinc.kr", "abc.net.au", "www.billboard.com"]) expect(html).toContain(host);
+    expect(html).not.toContain("hadnews");
     expect(html).not.toContain("&quot;");
+    expect(text(html)).toContain("The team had expected different audiences, and the clash drew criticism.");
   });
 
   it("prints a counted result or a reply only when the owner's data says so", () => {
@@ -169,7 +192,10 @@ describe("KeepApart", () => {
     const html = renderToStaticMarkup(createElement(KeepApart, { preset: parsePreset(rawTinyPreset()), day: 0 }));
     const plain = text(html);
     expect(plain).toContain("Keep two sets apart");
-    expect(plain).toContain("Pick two sets that share time. The search checks every place for either set and every swap of two sets that keeps all rules.");
+    expect(plain).toContain(
+      "Pick two sets that share time. The search covers single places on the 5-minute grid for either set, and the two-set changes this search generates. Listed changes end this overlap and add no rule break.",
+    );
+    expect(plain).not.toMatch(/every (place|swap)|keeps all rules/);
     expect(plain).toContain("First set");
     expect(plain).toContain("Second set");
     expect(plain).toContain("(locked)");

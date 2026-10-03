@@ -52,6 +52,8 @@ export type RuleFixes = {
   holds: boolean;
   singleSetPlaces: number;
   fixesFound: number;
+  /** What the route says it searched, in its own words; null when it sent none. */
+  searched: string | null;
   fixes: RuleFix[];
 };
 
@@ -134,6 +136,7 @@ export function parseRuleFixes(json: unknown): RuleFixes | null {
       holds: json.holds,
       singleSetPlaces: json.single_set_places,
       fixesFound: json.fixes_found,
+      searched: text(json.searched) ? json.searched.slice(0, 400) : null,
       fixes,
     };
   } catch {
@@ -220,9 +223,14 @@ export function shiftBrief(move: Shifted): string {
   return `to ${move.stage} ${move.start}`;
 }
 
+/** "Moves to X" inside a parenthesis reads "moves to X": only the first letter changes. */
+export function lowerFirst(value: string): string {
+  return value.charAt(0).toLowerCase() + value.slice(1);
+}
+
 /** "Sprints → The Park 15:00–16:00 (60 minutes later, same stage)". */
 export function moveLine(move: RuleMove, dayLabel: string | null = null): string {
-  return `${move.act} → ${move.stage} ${move.start}–${move.end}${dayLabel ? `, ${dayLabel}` : ""} (${shiftWords(move)})`;
+  return `${move.act} → ${move.stage} ${move.start}–${move.end}${dayLabel ? `, ${dayLabel}` : ""} (${lowerFirst(shiftWords(move))})`;
 }
 
 /** "2 sets · 120 minutes start-time shift". */
@@ -243,10 +251,25 @@ export function stageFitNote(fix: RuleFix): string | null {
 }
 
 export const SMALLEST_FIRST = "Smallest changes first: fewest sets, then fewest minutes moved.";
-export const SMALLEST_NOTE = "smallest change this search found (fewest sets, then start-time minutes moved)";
-export const ENDS_NOTE = "adds no rule break and ends this overlap";
-export const NO_RESULT = "This search found no single move or swap that ends it. It did not look for longer chains.";
+export const SMALLEST_NOTE = "smallest change this search found that ends it";
+export const NO_BREAK = "adds no rule break";
+export const ENDS_NOTE = `${NO_BREAK} and ends this overlap`;
+export const NO_RESULT = "This search found no change that ends it. It did not look for longer chains.";
 export const BOTH_LOCKED = "Both sets are locked.";
+/**
+ * What the search covers, in the words the panel helper and the loading line use. The route sends
+ * its own `searched` string; the panel prints that once an answer is in, and this before.
+ */
+export const SEARCH_COVERS =
+  "single places on the 5-minute grid for either set, and the two-set changes this search generates";
+export const SEARCH_RULE = "Listed changes end this overlap and add no rule break.";
+
+/** The route's own sentence about what it searched, capitalised and ended with a full stop. */
+export function searchedSentence(rule: Pick<RuleFixes, "searched">): string {
+  const raw = (rule.searched ?? SEARCH_COVERS).trim();
+  const body = raw.charAt(0).toUpperCase() + raw.slice(1);
+  return /[.!?]$/.test(body) ? body : `${body}.`;
+}
 export const INDEX_NOTE =
   "The index is shown for information: it is this app’s own measure, not a verdict, and it does not rank this list.";
 
@@ -269,10 +292,12 @@ function placesText(fix: RuleFix): string {
 
 /**
  * The decision card's rule line: the lead, then what this search found. The single-place count is
- * said first, then the first change as "the smallest change this search found". Null when the two
- * sets already share no minute (nothing was searched, so nothing is claimed).
+ * said first, then the first change as "the smallest change this search found that ends it", with
+ * the sets and start-time minutes it moves and its index beside the published one (the index may go
+ * up; it is printed as the route gave it). Null when the two sets already share no minute (nothing
+ * was searched, so nothing is claimed). `before` is the published day's index.
  */
-export function ruleSentence(rule: RuleFixes): string | null {
+export function ruleSentence(rule: RuleFixes, before: number | null = null): string | null {
   if (rule.holds) return null;
   const lead = ruleLead(rule);
   if (rule.a.locked && rule.b.locked) return `${lead} ${BOTH_LOCKED}`;
@@ -286,14 +311,16 @@ export function ruleSentence(rule: RuleFixes): string | null {
   }
   parts.push(
     rule.singleSetPlaces === 0
-      ? "this search found no single-set place that ends it."
+      ? "This search found no single-set place that ends it."
       : `${pluralize(rule.singleSetPlaces, "single-set place")} end${rule.singleSetPlaces === 1 ? "s" : ""} it.`,
   );
-  const one = first.setsMoved === 1;
-  parts.push(`The ${SMALLEST_NOTE} is ${one ? "a single move" : "a swap"}: ${placesText(first)}.`);
+  const index =
+    first.budgetAfter !== null && before !== null ? `; index ${before.toFixed(1)} → ${first.budgetAfter.toFixed(1)}` : "";
   parts.push(
-    `${pluralize(first.setsMoved, "set")} ${one ? "moves" : "move"}, ${pluralize(first.minutesMoved, "minute")} of start-time shift in all; the ${one ? "move" : "swap"} ${ENDS_NOTE}.`,
+    `The ${SMALLEST_NOTE} moves ${pluralize(first.setsMoved, "set")}, ${pluralize(first.minutesMoved, "start-time minute")} in all${index}.`,
   );
+  const kind = first.setsMoved === 1 ? "a single move" : `a ${first.setsMoved}-set change`;
+  parts.push(`It is ${kind}: ${placesText(first)}. It ${NO_BREAK}.`);
   return parts.join(" ");
 }
 
@@ -315,7 +342,7 @@ export function fixGhosts(fix: RuleFix): GhostSlot[] {
 /** What the status region says when a change is previewed. */
 export function previewAnnouncement(fix: RuleFix): string {
   const where = fix.moves.map((move) => `${move.act} at ${move.stage} ${move.start}`).join(" and ");
-  return `Previewing ${where}. 0 minutes shared; the change ${ENDS_NOTE}.`;
+  return `Previewing ${where}. 0 minutes shared; the change ${ENDS_NOTE}. The timetable has scrolled to the first tested slot.`;
 }
 
 /** A change being previewed on the grid, and the pair of sets it keeps apart. */

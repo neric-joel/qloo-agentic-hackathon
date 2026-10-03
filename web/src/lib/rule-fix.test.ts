@@ -11,6 +11,8 @@ import {
   parsePlace,
   parseRuleFixes,
   previewAnnouncement,
+  searchedSentence,
+  SEARCH_COVERS,
   ruleFixesPath,
   ruleSentence,
   shiftBrief,
@@ -85,6 +87,8 @@ describe("parseRuleFixes", () => {
     expect(rule?.fixes[0].moves).toHaveLength(2);
     expect(rule?.fixes[0].budgetAfter).toBe(98.44);
     expect(rule?.singleSetPlaces).toBe(0);
+    expect(rule?.searched).toBe("x");
+    expect(parseRuleFixes(rawRule({ searched: undefined }))?.searched).toBeNull();
   });
 
   it("never throws and returns null for anything else", () => {
@@ -133,7 +137,7 @@ describe("wording", () => {
   it("prints a change's lines", () => {
     const rule = parseRuleFixes(rawRule())!;
     const [first] = rule.fixes;
-    expect(moveLine(first.moves[0])).toBe("Ann Arbor → Side 21:30–23:00 (Moves to Side, 90 minutes later)");
+    expect(moveLine(first.moves[0])).toBe("Ann Arbor → Side 21:30–23:00 (moves to Side, 90 minutes later)");
     expect(moveLine(first.moves[1], "Sunday")).toContain(", Sunday (");
     expect(fixSummary(first)).toBe("2 sets · 120 minutes start-time shift");
     expect(fixIndexLine(first, 104.2)).toBe("Index 104.2 → 98.4");
@@ -144,13 +148,33 @@ describe("wording", () => {
 });
 
 describe("ruleSentence", () => {
-  it("says what the search found, with the amended wording", () => {
-    const sentence = ruleSentence(parseRuleFixes(rawRule())!);
+  it("says what the search found, with the first change's index beside the published one", () => {
+    const sentence = ruleSentence(parseRuleFixes(rawRule())!, 104.2);
     expect(sentence).toBe(
-      "If a rule says Ann Arbor and Bo Diddly Squat must never overlap: this search found no single-set place that ends it. " +
-        "The smallest change this search found (fewest sets, then start-time minutes moved) is a swap: Ann Arbor to Side 21:30–23:00 and Bo Diddly Squat to Main 20:00–21:30. " +
-        "2 sets move, 120 minutes of start-time shift in all; the swap adds no rule break and ends this overlap.",
+      "If a rule says Ann Arbor and Bo Diddly Squat must never overlap: This search found no single-set place that ends it. " +
+        "The smallest change this search found that ends it moves 2 sets, 120 start-time minutes in all; index 104.2 → 98.4. " +
+        "It is a 2-set change: Ann Arbor to Side 21:30–23:00 and Bo Diddly Squat to Main 20:00–21:30. It adds no rule break.",
     );
+  });
+
+  it("prints an index that goes up as it is, and none without a published index", () => {
+    const up = rawRule({ fixes: [rawFix({ budget_after: 108.04 })] });
+    expect(ruleSentence(parseRuleFixes(up)!, 104.2)).toContain("in all; index 104.2 → 108.0.");
+    expect(ruleSentence(parseRuleFixes(rawRule())!, null)).toContain("120 start-time minutes in all. It is");
+  });
+
+  it("starts the sentence after the locked note with a capital", () => {
+    const locked = rawRule({ a: { act_id: "ann", act: "Ann Arbor", locked: true, place: "Main 20:00-21:30" } });
+    expect(ruleSentence(parseRuleFixes(locked)!)).toContain("can move. This search found no single-set place");
+  });
+
+  it("says what the route searched, in its own words or ours", () => {
+    expect(searchedSentence({ searched: "single places on a grid; longer chains were not searched" })).toBe(
+      "Single places on a grid; longer chains were not searched.",
+    );
+    expect(searchedSentence({ searched: "Done." })).toBe("Done.");
+    expect(searchedSentence({ searched: null })).toBe(`${SEARCH_COVERS.charAt(0).toUpperCase()}${SEARCH_COVERS.slice(1)}.`);
+    expect(SEARCH_COVERS).not.toMatch(/every/i);
   });
 
   it("counts single-set places and words a single move", () => {
@@ -161,7 +185,8 @@ describe("ruleSentence", () => {
     const sentence = ruleSentence(parseRuleFixes(one)!)!;
     expect(sentence).toContain("1 single-set place ends it.");
     expect(sentence).toContain("is a single move: Ann Arbor to Side");
-    expect(sentence).toContain("1 set moves, 30 minutes of start-time shift in all; the move adds no rule break");
+    expect(sentence).toContain("moves 1 set, 30 start-time minutes in all");
+    expect(sentence).toContain("It adds no rule break.");
   });
 
   it("handles no result, locked sets and a pair that already holds", () => {
@@ -182,8 +207,8 @@ describe("ruleSentence", () => {
 
   it("uses none of the words the round forbids", () => {
     const rule = parseRuleFixes(rawRule())!;
-    const all = [ruleSentence(rule), previewAnnouncement(rule.fixes[0])].join(" ");
-    for (const pattern of [/optimi[sz]/i, /improve/i, /recommend/i, /validated/i, /\bfix/i, /riders/i]) {
+    const all = [ruleSentence(rule, 104.2), previewAnnouncement(rule.fixes[0]), SEARCH_COVERS].join(" ");
+    for (const pattern of [/optimi[sz]/i, /improve/i, /recommend/i, /validated/i, /\bfix/i, /riders/i, /\bevery (place|swap)\b/i, /keeps all rules/i]) {
       expect(all).not.toMatch(pattern);
     }
   });

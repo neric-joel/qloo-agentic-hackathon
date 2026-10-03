@@ -297,3 +297,31 @@ export function numberWord(value: number, { capitalize = false } = {}): string {
   if (word === undefined) return String(value);
   return capitalize ? word[0].toUpperCase() + word.slice(1) : word;
 }
+
+/**
+ * The cluster clause that goes next to the shuffle p: the shuffle treats pairs as independent, but
+ * the scored pairs come from fewer complaints, so p understates the uncertainty.
+ * "the 68 pairs come from 42 complaints, so this p understates the uncertainty".
+ */
+export function clusterClause(
+  figures: { readonly scoredPairs: number; readonly clusters: number } = METHOD_FIGURES.backtest,
+): string {
+  return `the ${figures.scoredPairs} pairs come from ${figures.clusters} complaints, so this p understates the uncertainty`;
+}
+
+/**
+ * Why two sets of counts appear on the site: the public set's verified overlaps against the scored
+ * pairs the AUC uses. "The 45 complaints and 86 pairs ... are the verified overlaps in the public
+ * set; the AUC scores 68 pairs from 42 complaints, the ones with a Qloo signal for both acts, so the
+ * counts differ."
+ */
+export function countsNote(
+  figures: {
+    readonly verified: { readonly clustersVerified: number; readonly pairsVerified: number };
+    readonly scored: { readonly scoredPairs: number; readonly clusters: number };
+  } = { verified: METHOD_FIGURES.complaints, scored: METHOD_FIGURES.backtest },
+): string {
+  const { clustersVerified, pairsVerified } = figures.verified;
+  const { scoredPairs, clusters } = figures.scored;
+  return `The ${clustersVerified} complaints and ${pairsVerified} pairs counted elsewhere on this site are the verified overlaps in the public set; the AUC scores ${scoredPairs} pairs from ${clusters} complaints, the ones with a Qloo signal for both acts, so the counts differ.`;
+}

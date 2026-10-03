@@ -120,9 +120,8 @@ def single_place_oracle(festival: Festival, mover: str, partner: str) -> set[tup
 def test_the_grid_is_the_what_if_grid_and_the_search_says_what_it_covered():
     assert rulefix.GRID_MINUTES == MOVE_GRID_MINUTES == 5
     searched = rulefix.SEARCHED
-    assert (
-        "5-minute grid" in searched and "swaps" in searched and "longer chains were not searched" in searched
-    )
+    assert "5-minute grid" in searched and "two-set changes" in searched
+    assert "longer chains were not searched" in searched
     assert "every rule" not in searched.lower() and "passes" not in searched.lower()
 
 
@@ -290,3 +289,46 @@ def test_every_change_on_random_days_is_legal_when_checked_independently(case):
         assert found["fixes_found"] == len(found["fixes"])
         for fix in found["fixes"]:
             check_fix(festival, matrix, config, fix, ids[i], ids[k])
+
+
+def test_wider_two_set_changes_add_to_the_exchanges_and_each_one_is_re_checked(monkeypatch):
+    festival, matrix, config = build(constraints={"changeover_minutes": 5})
+    wide = search(festival, matrix, config)
+    monkeypatch.setattr(rulefix, "_wide_swaps", lambda *args, **kwargs: iter(()))
+    narrow = search(festival, matrix, config)
+    monkeypatch.undo()
+    key = lambda fix: json.dumps(fix["moves"], sort_keys=True)  # noqa: E731
+    assert wide["fixes_found"] > narrow["fixes_found"] > 0
+    assert {key(f) for f in narrow["fixes"]} <= {key(f) for f in wide["fixes"]}  # nothing is lost
+    assert wide["single_set_places"] == narrow["single_set_places"]
+    gained = [f for f in wide["fixes"] if key(f) not in {key(n) for n in narrow["fixes"]}]
+    assert gained and all(f["sets_moved"] == 2 for f in gained)
+    for fix in gained:  # the new ones are rebuilt and checked on their own
+        check_fix(festival, matrix, config, fix)
+        assert {m["stage_id"] for m in fix["moves"]} <= {"main", "side", "tent"}
+        assert all(parse_minutes(m["start"]) % rulefix.GRID_MINUTES == 0 for m in fix["moves"])
+
+
+def test_a_wider_change_can_be_smaller_than_any_exchange(monkeypatch):
+    festival, matrix, config = build(constraints={"changeover_minutes": 5})
+    wide = search(festival, matrix, config)
+    monkeypatch.setattr(rulefix, "_wide_swaps", lambda *args, **kwargs: iter(()))
+    narrow = search(festival, matrix, config)
+    two = lambda found: min(  # noqa: E731
+        f["minutes_moved"] for f in found["fixes"] if f["sets_moved"] == 2
+    )
+    assert two(wide) <= two(narrow)
+
+
+def test_the_wider_search_is_bounded_and_says_so_when_it_stops(monkeypatch):
+    festival, matrix, config = build(constraints={"changeover_minutes": 5})
+    monkeypatch.setattr(rulefix, "WIDE_CHECKS", 10**9)
+    full = search(festival, matrix, config)
+    assert full["searched"] == rulefix.SEARCHED  # nothing was cut off
+    monkeypatch.setattr(rulefix, "WIDE_CHECKS", 3)
+    cut = search(festival, matrix, config)
+    assert cut["searched"].startswith(rulefix.SEARCHED) and "cut off after 3 checks" in cut["searched"]
+    assert cut["single_set_places"] == full["single_set_places"]  # one-set places are never cut
+    assert 0 < cut["fixes_found"] < full["fixes_found"]
+    for fix in cut["fixes"]:
+        check_fix(festival, matrix, config, fix)

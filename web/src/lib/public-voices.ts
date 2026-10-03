@@ -23,7 +23,7 @@ export const PUBLIC_VOICES: readonly PublicVoice[] = [
   },
   {
     who: "Cora Chan, promoter at Clockenflap",
-    said: "Two acts the team expected to draw different audiences turned out to share many, and the festival took criticism.",
+    said: "The team had expected different audiences, and the clash drew criticism.",
     links: [{ label: "AAA Magazine", href: "https://www.alpsinc.kr/aaamagazine/issue-05-eng/02" }],
   },
   {
@@ -41,8 +41,8 @@ export const PUBLIC_VOICES: readonly PublicVoice[] = [
     said: "Builds the Portola lineup in a spreadsheet that holds mock set times.",
     links: [
       {
-        label: "Billboard, 2025, repost",
-        href: "https://hadnews.com/how-is-the-portola-lineup-designed-the-festivals-founder-on-his-mad-scientist-approach/",
+        label: "Billboard, 2025",
+        href: "https://www.billboard.com/music/concerts/portola-2026-danny-bell-interview-san-francisco-dom-dolla-1236069579/",
       },
     ],
   },

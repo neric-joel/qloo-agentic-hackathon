@@ -1,0 +1,148 @@
+[
+  {
+    "name": "clean_three_stages",
+    "note": "Gaps of exactly 15 minutes are allowed; sets that only touch share nothing.",
+    "rows": [
+      ["Alpha One", "Main", "18:00", "19:00"],
+      ["Alpha Two", "Main", "19:15", "20:15"],
+      ["Bravo One", "Side", "18:30", "19:30"],
+      ["Bravo Two", "Side", "19:45", "20:45"],
+      ["Charlie One", "Tent", "19:00", "20:00"]
+    ],
+    "resolved": [[1080, 1140], [1155, 1215], [1110, 1170], [1185, 1245], [1140, 1200]],
+    "settings": { "changeover": "15", "curfew": "", "pairs": [] },
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 0, "curfew": 0, "keep_apart": 0, "shared_pairs": 6 }
+  },
+  {
+    "name": "changeover_boundary",
+    "note": "A 14-minute gap breaks a 15-minute changeover; a 15-minute gap does not.",
+    "rows": [
+      ["Xray One", "Main", "18:00", "19:00"],
+      ["Xray Two", "Main", "19:14", "20:00"],
+      ["Xray Three", "Main", "20:15", "21:00"]
+    ],
+    "resolved": [[1080, 1140], [1154, 1200], [1215, 1260]],
+    "settings": { "changeover": "15", "curfew": "", "pairs": [] },
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 1, "curfew": 0, "keep_apart": 0, "shared_pairs": 0 }
+  },
+  {
+    "name": "changeover_zero",
+    "note": "With a 0-minute changeover, sets that touch are fine.",
+    "rows": [
+      ["Papa One", "Main", "18:00", "19:00"],
+      ["Papa Two", "Main", "19:00", "20:00"]
+    ],
+    "resolved": [[1080, 1140], [1140, 1200]],
+    "settings": { "changeover": "0", "curfew": "", "pairs": [] },
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 0, "curfew": 0, "keep_apart": 0, "shared_pairs": 0 }
+  },
+  {
+    "name": "changeover_thirty",
+    "note": "A larger setting: 20 minutes is under 30, 30 is not.",
+    "rows": [
+      ["Quebec One", "Main", "18:00", "19:00"],
+      ["Quebec Two", "Main", "19:20", "20:00"],
+      ["Quebec Three", "Main", "20:30", "21:00"]
+    ],
+    "resolved": [[1080, 1140], [1160, 1200], [1230, 1260]],
+    "settings": { "changeover": "30", "curfew": "", "pairs": [] },
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 1, "curfew": 0, "keep_apart": 0, "shared_pairs": 0 }
+  },
+  {
+    "name": "curfew_midnight",
+    "note": "Curfew 00:00 is midnight. An end written 24:00 is on time; an end written 00:30 after a 23:00 start is 24:30.",
+    "rows": [
+      ["Romeo One", "Main", "22:00", "23:30"],
+      ["Romeo Two", "Main", "23:45", "24:00"],
+      ["Romeo Three", "Side", "23:00", "00:30"],
+      ["Romeo Four", "Side", "21:00", "22:45"]
+    ],
+    "resolved": [[1320, 1410], [1425, 1440], [1380, 1470], [1260, 1365]],
+    "settings": { "changeover": "15", "curfew": "00:00", "pairs": [] },
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 0, "curfew": 1, "keep_apart": 0, "shared_pairs": 3 }
+  },
+  {
+    "name": "curfew_evening",
+    "note": "An end exactly at the curfew is not past it; one minute later is.",
+    "rows": [
+      ["Sierra One", "Main", "21:00", "22:00"],
+      ["Sierra Two", "Main", "22:15", "23:01"],
+      ["Sierra Three", "Side", "21:30", "23:00"]
+    ],
+    "resolved": [[1260, 1320], [1335, 1381], [1290, 1380]],
+    "settings": { "changeover": "15", "curfew": "23:00", "pairs": [] },
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 0, "curfew": 1, "keep_apart": 0, "shared_pairs": 2 }
+  },
+  {
+    "name": "keep_apart_pairs",
+    "note": "Tara and Uma share 25 minutes; Tara and Vik only touch.",
+    "rows": [
+      ["Tara", "Main", "20:00", "21:00"],
+      ["Uma", "Side", "20:35", "21:35"],
+      ["Vik", "Tent", "21:00", "22:00"]
+    ],
+    "resolved": [[1200, 1260], [1235, 1295], [1260, 1320]],
+    "settings": { "changeover": "15", "curfew": "", "pairs": [["Tara", "Uma"], ["Tara", "Vik"]] },
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 0, "curfew": 0, "keep_apart": 1, "shared_pairs": 2 }
+  },
+  {
+    "name": "double_booked_engine_rejects",
+    "note": "One act on two stages at once. The page reports it; the engine's Festival rejects it.",
+    "rows": [
+      ["Wren", "Main", "20:00", "21:00"],
+      ["Wren", "Side", "20:30", "21:30"],
+      ["Xan", "Side", "22:00", "23:00"]
+    ],
+    "resolved": [[1200, 1260], [1230, 1290], [1320, 1380]],
+    "settings": { "changeover": "15", "curfew": "", "pairs": [] },
+    "expected": { "engine": "rejects", "engine_error": "more than one set", "double_booked": 1, "same_stage": 0, "changeover": 0, "curfew": 0, "keep_apart": 0 }
+  },
+  {
+    "name": "same_stage_overlap_engine_rejects",
+    "note": "Two sets overlap on one stage. The page reports it; the engine's Festival rejects it.",
+    "rows": [
+      ["Yara", "Main", "20:00", "21:00"],
+      ["Zed", "Main", "20:45", "21:45"]
+    ],
+    "resolved": [[1200, 1260], [1245, 1305]],
+    "settings": { "changeover": "15", "curfew": "", "pairs": [] },
+    "expected": { "engine": "rejects", "engine_error": "overlap on stage", "double_booked": 0, "same_stage": 1, "changeover": 0, "curfew": 0, "keep_apart": 0 }
+  },
+  {
+    "name": "after_midnight_chain",
+    "note": "Times written past 24:00 and an end that wraps past midnight; a 10-minute gap across midnight breaks the changeover.",
+    "rows": [
+      ["Mike One", "Main", "23:00", "00:30"],
+      ["Mike Two", "Main", "24:40", "25:30"],
+      ["Mike Three", "Main", "25:45", "26:30"],
+      ["November One", "Side", "24:00", "25:00"]
+    ],
+    "resolved": [[1380, 1470], [1480, 1530], [1545, 1590], [1440, 1500]],
+    "settings": { "changeover": "15", "curfew": "", "pairs": [] },
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 1, "curfew": 0, "keep_apart": 0, "shared_pairs": 2 }
+  },
+  {
+    "name": "one_of_each_the_engine_accepts",
+    "note": "A short changeover, a set past the curfew and a pair kept apart in one day.",
+    "rows": [
+      ["Kai", "Main", "20:00", "21:00"],
+      ["Mara", "Main", "21:10", "22:10"],
+      ["Lou", "Side", "20:30", "21:30"],
+      ["Nell", "Side", "22:00", "00:20"]
+    ],
+    "resolved": [[1200, 1260], [1270, 1330], [1230, 1290], [1320, 1460]],
+    "settings": { "changeover": "15", "curfew": "00:00", "pairs": [["Kai", "Lou"]] },
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 1, "curfew": 1, "keep_apart": 1, "shared_pairs": 3 }
+  },
+  {
+    "name": "case_and_spacing_do_not_hide_a_double_booking",
+    "note": "Names compare after trimming and ignoring case, so these are one act.",
+    "rows": [
+      ["Oscar  Lane", "Main", "19:00", "20:00"],
+      ["  oscar lane ", "Side", "19:30", "20:30"]
+    ],
+    "resolved": [[1140, 1200], [1170, 1230]],
+    "settings": { "changeover": "15", "curfew": "", "pairs": [] },
+    "expected": { "engine": "rejects", "engine_error": "more than one set", "double_booked": 1, "same_stage": 0, "changeover": 0, "curfew": 0, "keep_apart": 0 }
+  }
+]

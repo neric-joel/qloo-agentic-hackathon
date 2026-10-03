@@ -132,11 +132,11 @@ describe("buildDecisionCopy", () => {
     expect(copy.receipt).toBe("Bo Diddly Squat 60 minutes later: 60 → 0 minutes shared");
     expect(copy.title).toBe("One decision on Tiny Fest Saturday, published timetable");
     expect(copy.clashLine).toBe(
-      "The costliest clash with a set that can move: Ann Arbor (Main) and Bo Diddly Squat (Side) share 60 minutes, 20:30–21:30. " +
+      "The costliest clash with a set that has a legal place that lowers the index: Ann Arbor (Main) and Bo Diddly Squat (Side) share 60 minutes, 20:30–21:30. " +
         "Their main genre tags differ; their taste overlap is 70 of 100 on this bill, among its highest. It is a rank, not attendance.",
     );
     expect(copy.moveLine).toBe(
-      "Move one set: of the 4 legal places for Bo Diddly Squat, the one with the lowest index is Side 21:30–23:00 (60 minutes later, same stage). " +
+      "Move one set: of the 4 legal places on the 5-minute grid for Bo Diddly Squat, the one with the lowest index is Side 21:30–23:00 (60 minutes later, same stage). " +
         "Time shared with Ann Arbor goes from 60 to 0 minutes and the index from 104.2 to 98.4.",
     );
     expect([copy.indexBefore, copy.indexAfter]).toEqual(["104.2", "98.4"]);
@@ -149,6 +149,27 @@ describe("buildDecisionCopy", () => {
     expect(copy.seedMove).toEqual({ actId: "bo", stageId: "side", day: 0, start: "21:30" });
     expect(copy.seedRule).toEqual({ aId: "ann", bId: "bo" });
     expect(copy.testing).toBe("Testing Bo Diddly Squat at 21:30.");
+  });
+
+  it("prints the first rule change's index beside the published one on line 3, and words the alternative", () => {
+    const copy = buildDecisionCopy(preset(), parseDecision(rawDecision()))!;
+    expect(copy.ruleLine).toContain(
+      "The smallest change this search found that ends it moves 1 set, 60 start-time minutes in all; index 104.2 → 98.4.",
+    );
+    expect(copy.ruleLine).toContain("Ann Arbor is locked, so only Bo Diddly Squat can move. 1 single-set place ends it.");
+    const alt = rawDecision();
+    alt.move.same_index_alternative = {
+      act_id: "ann",
+      act: "Ann Arbor",
+      from: "Main 20:00-21:30",
+      stage_id: "main",
+      stage: "Main",
+      day: 0,
+      start: "19:00",
+      end: "20:30",
+      minutes_moved: 60,
+    };
+    expect(buildDecisionCopy(preset(), parseDecision(alt))!.moveLine).toContain("gives the same index to one decimal.");
   });
 
   it("is a rank, not attendance, for an ordinary clash too", () => {

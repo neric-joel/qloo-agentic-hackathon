@@ -16,7 +16,7 @@ import { pluralize } from "./format";
 import { clockMinutes } from "./moves";
 import { planVerdict, rangeLead } from "./plan-copy";
 import type { Preset } from "./preset";
-import { parseRuleFixes, ruleSentence, shiftBrief, shiftWords, type RuleFixes } from "./rule-fix";
+import { lowerFirst, parseRuleFixes, ruleSentence, shiftBrief, shiftWords, type RuleFixes } from "./rule-fix";
 import { isSafeId, type ScaleRange, type StackMove } from "./stack";
 import { formatClock, formatRange, overlapWindow } from "./timetable";
 
@@ -157,7 +157,7 @@ export function decisionDay(preset: Pick<Preset, "festival" | "report">): number
 export const ATTRIBUTION = "Selected and scored by this app’s index";
 export const NO_MOVE = "No legal place for either set lowers the index.";
 export const LIMITS_WITH_RULE =
-  "Lines 1 and 2 are selected and scored by this app’s index. Line 3 is checked against the timetable’s rules. A reading, not a verdict.";
+  "Lines 1 and 2 are selected and scored by this app’s index. Line 3 is checked against the timetable’s rules; the index in it is shown for information, not as a verdict. A reading, not a verdict.";
 export const LIMITS_NO_RULE = "Lines 1 and 2 are selected and scored by this app’s index. A reading, not a verdict.";
 
 /** Rectangles are in drawing units on a 288-wide canvas, as the design spec draws them. */
@@ -234,12 +234,12 @@ export function sharedTimeline(
     const window = overlapWindow(fixed, item);
     return window ? bar(window) : null;
   };
-  // A label is dropped when it would sit within 26 units of the one before it.
+  // A label is dropped when it would sit within 44 units of the one before it (about one "14:00" in 12-unit type).
   const minutes = [...new Set(all.flatMap((item) => [item.start, item.end]))].sort((p, q) => p - q);
   const ticks: { x: number; label: string }[] = [];
   for (const minute of minutes) {
     const at = x(minute);
-    if (ticks.length > 0 && at - ticks[ticks.length - 1].x < 26) continue;
+    if (ticks.length > 0 && at - ticks[ticks.length - 1].x < 44) continue;
     ticks.push({ x: at, label: formatClock(minute) });
   }
   return {
@@ -285,7 +285,7 @@ export function buildDecisionCopy(preset: Preset, decision: Decision | null): De
         (item.a.act_id === clash.bId && item.b.act_id === clash.aId),
     );
     const parts = [
-      `The costliest clash with a set that can move: ${actA.name} (${stageOf(slotA)}) and ${actB.name} (${stageOf(slotB)}) share ${pluralize(clash.minutes, "minute")}${window ? `, ${formatRange(window)}` : ""}.`,
+      `The costliest clash with a set that has a legal place that lowers the index: ${actA.name} (${stageOf(slotA)}) and ${actB.name} (${stageOf(slotB)}) share ${pluralize(clash.minutes, "minute")}${window ? `, ${formatRange(window)}` : ""}.`,
     ];
     if (pair) {
       const taste = formatOverlap(pair.audience_overlap);
@@ -327,11 +327,11 @@ export function buildDecisionCopy(preset: Preset, decision: Decision | null): De
       indexBefore = published.toFixed(1);
       indexAfter = move.budgetAfter.toFixed(1);
       const sentences = [
-        `Move one set: of the ${pluralize(move.legalPlaces, "legal place")} for ${move.act}, the one with the lowest index is ${move.stage} ${move.start}–${move.end} (${shiftWords(move)}).`,
+        `Move one set: of the ${pluralize(move.legalPlaces, "legal place")} on the 5-minute grid for ${move.act}, the one with the lowest index is ${move.stage} ${move.start}–${move.end} (${lowerFirst(shiftWords(move))}).`,
         `Time shared with ${other.name} goes from ${clash.minutes} to ${move.minutesSharedAfter} minutes and the index from ${indexBefore} to ${indexAfter}.`,
       ];
       if (move.alternative) {
-        sentences.push(`Moving ${move.alternative.act} ${shiftBrief(move.alternative)} gives the same index.`);
+        sentences.push(`Moving ${move.alternative.act} ${shiftBrief(move.alternative)} gives the same index to one decimal.`);
       }
       moveLine = sentences.join(" ");
       rangeLine = [rangeLead(range), planVerdict(move.budgetAfter, published, range)].filter(Boolean).join(" ") || null;
@@ -348,7 +348,7 @@ export function buildDecisionCopy(preset: Preset, decision: Decision | null): De
     }
 
     // Line 3: the rule. Absent when the route gave none, or the pair already shares nothing.
-    const ruleLine = decision.rule ? ruleSentence(decision.rule) : null;
+    const ruleLine = decision.rule ? ruleSentence(decision.rule, published) : null;
     const tryable = ruleLine !== null && decision.rule !== null && !(decision.rule.a.locked && decision.rule.b.locked);
 
     return {

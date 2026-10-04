@@ -567,6 +567,31 @@ export function ruleReceipt(step: Pick<PlanRuleStep, "ruleHoldsAfter" | "newBrea
 }
 
 /**
+ * "Sprints and Katy J Pearson share 30 minutes after this plan." (or "share no time"): what the pair a move
+ * was made for still shares, as the decision route priced it for that one move. Only for a plan that is that
+ * one move (see `moveStepReceipt`), so "after this plan" is exact.
+ */
+export function pairSharedReceipt(a: string, b: string, minutes: number): string {
+  return minutes === 0
+    ? `${a} and ${b} share no time after this plan.`
+    : `${a} and ${b} share ${pluralize(minutes, "minute")} after this plan.`;
+}
+
+/**
+ * The receipt line of a single-move step: the card's receipt when the plan is exactly the card's move (one
+ * step, the same set at the same place), else null. A plan of more steps has no figure for the pair after
+ * the whole plan from the route, so it prints none rather than a number that belongs to the move alone.
+ */
+export function moveStepReceipt(
+  steps: readonly StackStep[],
+  card: { move: StackMove; receipt: string } | null | undefined,
+): string | null {
+  if (!card || steps.length !== 1) return null;
+  const [only] = steps;
+  return !isRuleStackStep(only) && sameStep(only, card.move) ? card.receipt : null;
+}
+
+/**
  * What the page's status region says once a plan is priced after Keep, Undo or Start over: "Plan:
  * 2 kept moves. Clash Budget Index 116.7 to 106.6, 10.1 lower." (or "0.6 higher", "no change"),
  * read from the server's plan answer to one decimal; "kept steps" when the plan holds a rule step,

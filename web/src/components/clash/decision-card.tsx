@@ -318,9 +318,11 @@ export function DecisionCard({
           {onKeepChange && copy.seedChange ? (
             // Not disabled once kept: it stays pressable so a repeat press says "Already in your plan."
             // and a keyboard visitor never loses focus to the page.
+            // Once kept it is a quiet state, not a second primary button: no fill, a check and a dotted outline.
             <Button
               type="button"
-              variant={kept?.change ? "ink" : "outline"}
+              variant={kept?.change ? "ghost" : "outline"}
+              className={kept?.change ? "border-dotted border-border-strong text-muted-foreground" : undefined}
               aria-describedby={`${ruleLineId} ${changeSummaryId}`}
               onClick={keepChange}
             >

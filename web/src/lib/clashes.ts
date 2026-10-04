@@ -197,12 +197,12 @@ export function hiddenReason(clash: Pick<PairClash, "a" | "b" | "audience_overla
  * (no lens reading for the pair) gets none. `of` is how many pairs are ranked in that view, when the
  * server says; without it the line keeps the bare ordinal.
  */
-export function withoutTasteLine(rank: number | null | undefined, of?: number): string | null {
+export function withoutTasteLine(rank: number | null | undefined, of?: number, synthetic = false): string | null {
   if (rank === undefined) return null;
   if (rank === null) return "On draw and time alone this pair would not be ranked: it carries no cost in that view.";
   if (!Number.isInteger(rank) || rank < 1) return null;
   const place = Number.isInteger(of) && of !== undefined && of >= rank ? `${ordinal(rank)} of ${of}` : ordinal(rank);
-  return `On draw and time alone (draw is also a Qloo field) this clash would rank ${place}.`;
+  return `On draw and time alone (${synthetic ? "draw is also an invented figure here" : "draw is also a Qloo field"}) this clash would rank ${place}.`;
 }
 
 // ---------------------------------------------------------------------------

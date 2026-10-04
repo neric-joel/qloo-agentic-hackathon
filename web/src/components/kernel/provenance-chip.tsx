@@ -30,6 +30,12 @@ export const PROVENANCE_META: Record<
   },
 };
 
+/** What a chip's tooltip says on the invented day, where nothing comes from Qloo; the other two chips keep their words. */
+const SYNTHETIC_DESCRIPTION: Partial<Record<Provenance, string>> = {
+  derived: "Calculated by this app from invented figures.",
+  recorded: "Part of the invented example day, not a saved Qloo response.",
+};
+
 export const PROVENANCE_ORDER: readonly Provenance[] = ["qloo", "derived", "llm", "recorded"];
 
 const chipVariants = cva(
@@ -56,11 +62,14 @@ type ProvenanceChipProps = {
   provenance: Provenance;
   size?: "sm" | "md";
   className?: string;
+  /** The invented day: the tooltip says the figure is invented instead of crediting Qloo. */
+  synthetic?: boolean;
 };
 
 /** Says where a value came from. Always an icon plus a text label, never colour alone. */
-export function ProvenanceChip({ provenance, size = "md", className }: ProvenanceChipProps) {
-  const { label, description, Icon } = PROVENANCE_META[provenance];
+export function ProvenanceChip({ provenance, size = "md", className, synthetic = false }: ProvenanceChipProps) {
+  const { label, description: saved, Icon } = PROVENANCE_META[provenance];
+  const description = (synthetic ? SYNTHETIC_DESCRIPTION[provenance] : undefined) ?? saved;
   return (
     <span
       className={cn(chipVariants({ provenance, size }), className)}

@@ -13,11 +13,13 @@ import {
   briefHref,
   isPlanRuleStep,
   isRuleStackStep,
+  moveStepReceipt,
   ruleReceipt,
   ruleStepLine,
   shiftText,
   type Plan,
   type ScaleRange,
+  type StackMove,
   type StackStep,
 } from "@/lib/stack";
 
@@ -97,6 +99,7 @@ export function ScratchPlan({
   onUndo,
   onStartOver,
   backToDecision = false,
+  cardMove = null,
 }: {
   preset: Preset;
   day: number;
@@ -106,11 +109,14 @@ export function ScratchPlan({
   onUndo: () => void;
   onStartOver: () => void;
   backToDecision?: boolean;
+  /** The decision card's move and its receipt, for a plan that is just that move. */
+  cardMove?: { move: StackMove; receipt: string } | null;
 }) {
   const headingId = useId();
   const clashesId = useId();
   const { festival } = preset;
   const verdict = planVerdict(plan.budget, plan.publishedBudget, range);
+  const singleReceipt = moveStepReceipt(moves, cardMove);
   const stageName = (stageId: string) => festival.stages.find((stage) => stage.id === stageId)?.name ?? stageId;
 
   return (
@@ -119,7 +125,7 @@ export function ScratchPlan({
         <h3 id={headingId} className="type-title">
           Your tested moves
         </h3>
-        <ProvenanceChip provenance="derived" size="sm" className="mt-1" />
+        <ProvenanceChip provenance="derived" size="sm" className="mt-1" synthetic={preset.synthetic === true} />
       </div>
 
       <BudgetMove
@@ -166,6 +172,7 @@ export function ScratchPlan({
                   </span>
                   {raisesIndex(before, step.budgetAfter) ? RAISES_MARK : null}
                 </p>
+                {singleReceipt && i === 0 ? <p className="mt-0.5 text-sm">{singleReceipt}</p> : null}
               </li>
             );
           })}

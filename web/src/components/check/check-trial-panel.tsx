@@ -4,7 +4,9 @@ import { Button } from "@/components/ui/button";
 import {
   TRIAL_COPY,
   TRIAL_LIMITS,
+  raisesSharedTotal,
   sharedEffect,
+  sharedRiseLine,
   sizeLine,
   targetId,
   wasPlace,
@@ -26,12 +28,27 @@ export type TrialState = {
 
 export type TrialUi = {
   state: TrialState | null;
+  /** The grid, curfew, changeover or pair rules were edited after the last check: no search until the next check. */
+  stale?: boolean;
   onFind: (target: TrialTarget, label: string) => void;
   onApply: (change: TrialChange) => void;
   onClose: () => void;
 };
 
-function ChangeItem({ change, onApply }: { change: TrialChange; onApply: (change: TrialChange) => void }) {
+function ChangeItem({
+  change,
+  onApply,
+  gloss,
+  stale,
+}: {
+  change: TrialChange;
+  onApply: (change: TrialChange) => void;
+  /** The grid or settings changed since the last check: nothing is tried until the next one. */
+  stale: boolean;
+  /** The plain line under "Adds no rule break and makes none larger.", on the first change of a list. */
+  gloss: boolean;
+}) {
+  const rise = sharedRiseLine(change);
   return (
     <li className="rounded-md border border-border bg-card p-3">
       <ul className="space-y-1">
@@ -43,9 +60,19 @@ function ChangeItem({ change, onApply }: { change: TrialChange; onApply: (change
         ))}
       </ul>
       <p className="mt-2 text-sm font-semibold">{TRIAL_COPY.adds}</p>
-      <p className="mt-0.5 text-sm break-words text-muted-foreground">{sharedEffect(change)}</p>
+      {gloss ? <p className="mt-0.5 text-sm text-muted-foreground">{TRIAL_COPY.addsGloss}</p> : null}
+      <p
+        className={
+          raisesSharedTotal(change)
+            ? "mt-0.5 text-sm font-semibold break-words text-warning"
+            : "mt-0.5 text-sm break-words text-muted-foreground"
+        }
+      >
+        {sharedEffect(change)}
+      </p>
+      {rise ? <p className="mt-0.5 text-sm break-words text-warning">{rise}</p> : null}
       <p className="mt-0.5 text-sm text-muted-foreground">{sizeLine(change)}</p>
-      <Button type="button" variant="outline" className="mt-3" onClick={() => onApply(change)}>
+      <Button type="button" variant="outline" className="mt-3" disabled={stale} onClick={() => onApply(change)}>
         {TRIAL_COPY.tryIt}
         <span className="sr-only">: {change.lines.join(" and ")}</span>
       </Button>
@@ -70,7 +97,7 @@ function TrialPanel({
     return (
       <p aria-busy="true" className="mt-3 text-sm text-muted-foreground">
         {progress
-          ? `Searching ${progress.phase === "one-set" ? "one-set moves" : "two-set swaps"}: ${progress.tested.toLocaleString("en-US")} of up to ${TRIAL_LIMITS.candidates.toLocaleString("en-US")} candidates tested.`
+          ? `Searching ${progress.phase === "one-set" ? "one-set moves" : "two-set changes"}: ${progress.tested.toLocaleString("en-US")} of up to ${TRIAL_LIMITS.candidates.toLocaleString("en-US")} candidates tested.`
           : "Searching."}
       </p>
     );
@@ -88,7 +115,7 @@ function TrialPanel({
       {result.changes.length > 0 ? (
         <ol className="mt-3 space-y-3">
           {result.changes.map((change, index) => (
-            <ChangeItem key={index} change={change} onApply={ui.onApply} />
+            <ChangeItem key={index} change={change} onApply={ui.onApply} gloss={index === 0} stale={ui.stale === true} />
           ))}
         </ol>
       ) : null}
@@ -122,7 +149,7 @@ export function TrialControl({
       <button
         type="button"
         onClick={() => ui.onFind(target, label)}
-        disabled={mine?.running === true}
+        disabled={mine?.running === true || ui.stale === true}
         className="min-h-11 rounded-md border border-border-strong px-4 text-sm font-semibold hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50"
       >
         {TRIAL_COPY.button}

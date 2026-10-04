@@ -49,7 +49,10 @@ describe("the check links follow the flag", () => {
       const open = html.indexOf(">", from) + 1;
       return html.slice(open, html.indexOf("</a>", open)).replace(/<[^>]+>/g, "").trim();
     };
-    expect(label(header)).toBe("Check a draft grid");
+    // The header link keeps the one name for assistive tech; below 768 px it reads "Check" so it fits.
+    expect(header).toContain('aria-label="Check a draft grid"');
+    expect(label(header)).toBe("CheckCheck a draft grid");
+    expect(header).toMatch(/<span class="md:hidden">Check<\/span><span class="max-md:hidden">Check a draft grid<\/span>/);
     expect(label(hero)).toBe("Check a draft grid");
     expect(label(footer)).toBe("Check a draft grid");
     for (const html of [header, hero, footer]) {

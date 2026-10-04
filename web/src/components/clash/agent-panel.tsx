@@ -32,6 +32,7 @@ import {
 } from "@/lib/agent-session";
 import { panelMode, type AgentStatus } from "@/lib/agent-status";
 import { formatOverlap } from "@/lib/clashes";
+import { agentDataLine, explainPrompt } from "@/lib/credit";
 import { formatLatency, humanizeIdentifier, pluralize } from "@/lib/format";
 import type { Festival, Preset } from "@/lib/preset";
 import type { RecordedRun } from "@/lib/recorded-run";
@@ -487,7 +488,7 @@ function ExchangeView({
   );
 }
 
-function Capabilities() {
+function Capabilities({ synthetic = false }: { synthetic?: boolean }) {
   return (
     <div>
       <h3 className="type-kicker border-b-2 border-foreground pb-2 text-foreground">What it can do</h3>
@@ -495,7 +496,9 @@ function Capabilities() {
         {CAPABILITIES.map((item) => (
           <li key={item.tool} className="grid grid-cols-[minmax(0,1fr)] gap-0.5">
             <span className="font-semibold">{item.title}</span>
-            <span className="text-muted-foreground">{item.text}</span>
+            <span className="text-muted-foreground">
+              {item.tool === "explain_clash" ? explainPrompt(synthetic) : item.text}
+            </span>
           </li>
         ))}
       </ul>
@@ -507,7 +510,7 @@ function Capabilities() {
   );
 }
 
-function AgentHeading({ isMock }: { isMock: boolean }) {
+function AgentHeading({ isMock, synthetic = false }: { isMock: boolean; synthetic?: boolean }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:items-end">
       <div>
@@ -519,7 +522,7 @@ function AgentHeading({ isMock }: { isMock: boolean }) {
         </h2>
       </div>
       <p className="text-[0.9375rem] leading-relaxed">
-        The agent works on this day&rsquo;s timetable with the same Qloo data. Ask why two sets
+        The agent works on this day&rsquo;s timetable {agentDataLine(synthetic)}. Ask why two sets
         clash, give it a rule, or ask it to try a move: it tests the move against every rule and
         prices it before saying anything.
       </p>
@@ -784,7 +787,7 @@ export function AgentPanel({
   return (
     <section id="agent" aria-labelledby="agent-heading" className="border-t border-border bg-muted/40">
       <div className="container-page py-14 sm:py-20">
-        <AgentHeading isMock={run.isMock} />
+        <AgentHeading isMock={run.isMock} synthetic={preset.synthetic === true} />
 
         <div className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:gap-12">
           <div className="min-w-0">
@@ -810,7 +813,7 @@ export function AgentPanel({
                 </ul>
               </div>
             ) : null}
-            <Capabilities />
+            <Capabilities synthetic={preset.synthetic === true} />
             {all.length > 0 && mode !== "checking" ? (
               <Button type="button" variant="outline" size="sm" onClick={startOver} disabled={busy}>
                 <RotateCcw aria-hidden="true" /> Start over

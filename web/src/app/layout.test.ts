@@ -31,6 +31,31 @@ async function html(): Promise<string> {
   return renderToStaticMarkup(tree);
 }
 
+describe("the default descriptions", () => {
+  it("say nothing that is true of only a published day, so /method, /brief and /check are right on both", async () => {
+    const { metadata } = await import("./layout");
+    const { metadata: method } = await import("./method/page");
+    const { metadata: brief } = await import("./brief/page");
+    const { metadata: check } = await import("./check/page");
+    const descriptions = [
+      check.description,
+      metadata.description,
+      metadata.openGraph?.description,
+      metadata.twitter?.description,
+      method.description,
+      brief.description,
+    ];
+    for (const description of descriptions) {
+      expect(typeof description).toBe("string");
+      expect(description).not.toMatch(/Qloo/);
+    }
+    expect(metadata.description).toMatch(/Taste, not attendance./);
+    // The same default is the one shared links show.
+    expect(metadata.openGraph?.description).toBe(metadata.description);
+    expect(metadata.twitter?.description).toBe(metadata.description);
+  });
+});
+
 describe("the root layout", () => {
   it("prints the synthetic notice and the invented-day footer when the server serves its invented day", async () => {
     serve([{ ...entry, synthetic: true }]);

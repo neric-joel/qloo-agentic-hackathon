@@ -4,6 +4,8 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
 import { ProvenanceChip } from "@/components/kernel/provenance-chip";
+import { BySyntheticDay } from "@/components/site/synthetic-context";
+import { BUILT_FROM_REAL, BUILT_FROM_SYNTHETIC, COUNTS_ONLY_NEUTRAL, formulaNote } from "@/lib/credit";
 import type { Provenance } from "@/lib/events";
 import {
   METHOD_FIGURES,
@@ -309,8 +311,10 @@ export default function MethodPage() {
           two acts&rsquo; draw (their geometric mean), times a rarity factor of {price.rarityFloor} plus
           the average of the two acts&rsquo; rarity. On both saved days every act carries the neutral
           rarity {price.neutralRarity}, so the factor is {price.neutralFactor.toFixed(1)} for every pair
-          and does not move any price.
+          and does not move any price. The invented example day, which a server shows when it has no
+          built day, is the exception: its acts carry their own rarity.
         </p>
+        <p>{formulaNote(false)}</p>
         <p>
           Draw is each act&rsquo;s popularity on Qloo, a percentile among Qloo artists, and the two
           acts&rsquo; draw is the square root of their product. Taste overlap
@@ -330,7 +334,7 @@ export default function MethodPage() {
           by the mean total price of {index.baselineSamples} sampled random valid timetables of the
           same lineup, in which each set stays inside its allowed window and stages and locked sets
           stay put. Lower
-          is better. It counts only what clashes cost: taste overlap, time shared and draw.
+          is better. {COUNTS_ONLY_NEUTRAL}
         </p>
       </Section>
 
@@ -437,8 +441,7 @@ export default function MethodPage() {
           ))}
         </dl>
         <p>
-          The festival days shown were built from saved Qloo responses; the festivals themselves do
-          not use Clash Control.
+          <BySyntheticDay real={BUILT_FROM_REAL} invented={BUILT_FROM_SYNTHETIC} />
         </p>
       </Section>
 

@@ -232,10 +232,99 @@ describe("the page and its results", () => {
     expect(out).toContain("&lt;img src=x onerror=alert(1)&gt;");
     const shown = text(out);
     expect(shown).toContain("What this search found");
-    expect(shown).toContain("Adds no rule break.");
+    expect(shown).toContain("Adds no rule break and makes none larger.");
     expect(shown).toContain("Try it");
-    expect(shown).toContain("How it searched: one-set moves first, then two-set swaps");
+    expect(shown).toContain("How it searched: one-set moves first, then two-set changes");
+    expect(shown).toContain("nothing you paste is sent anywhere");
+    expect(shown).not.toContain("nothing leaves this browser");
+    expect(shown).toMatch(/\d+ found, \d+ shown: each ends it/);
     expect(out).toMatch(/<div class="mt-2 print:hidden"><button[^>]*>Find a change<span class="sr-only">[\s\S]*What this search found/);
+    // The plain gloss comes once, under the first change only.
+    expect((shown.match(/Other sets may still share time; the grid line below shows the total\./g) ?? []).length).toBe(1);
+  });
+
+  it("colours the grid line and adds a warning when a change raises shared time, and only then", () => {
+    const outcome = runCheck(SAMPLE);
+    if (!outcome.ok) throw new Error(outcome.errors.join(" | "));
+    const item = outcome.report.breaks[0];
+    const result = findChange(outcome.report, targetOfBreak(item));
+    const render = (changes: typeof result.changes) =>
+      renderToStaticMarkup(
+        createElement(CheckResults, {
+          report: outcome.report,
+          kept: new Set<string>(),
+          onKeep: () => {},
+          showAll: false,
+          onShowAll: () => {},
+          nonce: 1,
+          trial: {
+            state: {
+              targetId: `break-${item.rule}-${item.rows.join("-")}`,
+              label: item.text,
+              running: false,
+              progress: null,
+              result: { ...result, changes },
+            },
+            onFind: () => {},
+            onApply: () => {},
+            onClose: () => {},
+          },
+        }),
+      );
+    const raising = result.changes.find((c) => c.sharedAfter.minutes > c.sharedBefore.minutes);
+    expect(raising).toBeDefined();
+    const risen = render([raising!]);
+    expect(risen).toMatch(/text-warning">[^<]*Across the grid:/);
+    expect(text(risen)).toContain("Shared time elsewhere rises by");
+    const calm: typeof raising = {
+      ...raising!,
+      sharedRise: 0,
+      sharedAfter: raising!.sharedBefore,
+    };
+    const flat = render([calm]);
+    expect(flat).not.toMatch(/text-warning">[^<]*Across the grid:/);
+    expect(text(flat)).not.toContain("Shared time elsewhere rises by");
+  });
+
+  it("disables Find a change and Try it while the grid or settings differ from the last check", () => {
+    const outcome = runCheck(SAMPLE);
+    if (!outcome.ok) throw new Error(outcome.errors.join(" | "));
+    const item = outcome.report.breaks[0];
+    const result = findChange(outcome.report, targetOfBreak(item));
+    const render = (stale: boolean) =>
+      renderToStaticMarkup(
+        createElement(CheckResults, {
+          report: outcome.report,
+          kept: new Set<string>(),
+          onKeep: () => {},
+          showAll: false,
+          onShowAll: () => {},
+          nonce: 1,
+          trial: {
+            state: {
+              targetId: `break-${item.rule}-${item.rows.join("-")}`,
+              label: item.text,
+              running: false,
+              progress: null,
+              result,
+            },
+            stale,
+            onFind: () => {},
+            onApply: () => {},
+            onClose: () => {},
+          },
+        }),
+      );
+    const live = render(false);
+    const stale = render(true);
+    const find = (html: string) => html.match(/<button[^>]*>Find a change<span/g) ?? [];
+    expect(find(live).some((tag) => tag.includes(" disabled=\"\""))).toBe(false);
+    expect(find(stale)).toHaveLength(find(live).length);
+    expect(find(stale).every((tag) => tag.includes(" disabled=\"\""))).toBe(true);
+    const tryIt = (html: string) => html.match(/<button[^>]*>Try it<span/g) ?? [];
+    expect(tryIt(live).length).toBeGreaterThan(0);
+    expect(tryIt(live).some((tag) => tag.includes(" disabled=\"\""))).toBe(false);
+    expect(tryIt(stale).every((tag) => tag.includes(" disabled=\"\""))).toBe(true);
   });
 
   it("says plainly when nothing breaks", () => {

@@ -277,6 +277,10 @@ def _engine_search(vector: dict, target: dict) -> list[list[dict]]:
             if takes["end"] > span[1] or (takes["stage"], takes["start"]) == (x_stage, x_start):
                 continue
             if _judge(vector, target, [takes])[0]:
+                # One set taking another set's exact start is a one-set move; off the 5-minute grid it is
+                # the only place the grid loop above does not visit (on the grid it was found there).
+                if takes["start"] % STEP != 0:
+                    found.append([takes])
                 continue  # one set's move is enough
             y_start, y_end = resolved[y - 1]
             y_stage = vector["rows"][y - 1][1]
@@ -304,3 +308,68 @@ def test_engine_search_includes_the_change_the_page_lists_first(vector: dict, tr
         sorted(candidate, key=lambda m: m["row"]) for candidate in _engine_search(vector, trial["target"])
     ]
     assert recorded in searched
+
+
+# --- The page's ranking, judged by the engine ----------------------------------------------------------
+#
+# The page lists the change with the least total start-time minutes moved first, then the one that adds the
+# least shared time between sets elsewhere (summed over pairs that share more than before), and it lists a
+# change that moves any set more than three hours only when nothing smaller exists. The recorded first
+# change of each trial must be the engine's own best by that ranking, over the engine's own search.
+
+LARGE_SHIFT = 180
+
+
+def _shift(vector: dict, move: dict) -> int:
+    return abs(move["start"] - vector["resolved"][move["row"] - 1][0])
+
+
+def _shared_by_pair(layout: Layout) -> dict[tuple[int, int], int]:
+    return {(min(i, k), max(i, k)): minutes for i, k, minutes in layout.concurrent_pairs()}
+
+
+def _rank(vector: dict, moves: list[dict]) -> tuple[int, int]:
+    """(total start minutes moved, shared minutes added elsewhere), both from the engine's layouts."""
+    before = _shared_by_pair(Layout.from_festival(build_festival(vector)))
+    after = _shared_by_pair(Layout.from_festival(build_festival(vector, _placements(vector, moves))))
+    gained = sum(max(0, minutes - before.get(pair, 0)) for pair, minutes in after.items())
+    return sum(_shift(vector, move) for move in moves), gained
+
+
+@pytest.mark.parametrize(("vector", "trial"), RECORDED, ids=[_id(p) for p in RECORDED])
+def test_the_change_the_page_lists_first_is_the_engines_best_by_the_pages_ranking(
+    vector: dict, trial: dict
+) -> None:
+    candidates = _engine_search(vector, trial["target"])
+    ordinary = [c for c in candidates if all(_shift(vector, m) <= LARGE_SHIFT for m in c)]
+    pool = ordinary or candidates
+    recorded = trial["change"]["moves"]
+    assert _rank(vector, recorded) == min(_rank(vector, c) for c in pool)
+    if ordinary:
+        assert all(_shift(vector, m) <= LARGE_SHIFT for m in recorded)
+
+
+def test_the_ranking_vectors_show_each_rule_at_work() -> None:
+    """Minutes before set count, shared time as a tie-break, and the three-hour rule each change an answer."""
+    by_name = {v["name"]: v for v in TRIAL_VECTORS}
+    pair = by_name["trial_minutes_before_set_count_pair"]
+    first = pair["trials"][0]
+    one_sets = [c for c in _engine_search(pair, first["target"]) if len(c) == 1]
+    assert len(first["change"]["moves"]) == 2
+    assert one_sets, "a one-set move exists, and still ranks after the two-set change"
+    assert min(_rank(pair, c)[0] for c in one_sets) > _rank(pair, first["change"]["moves"])[0]
+
+    tie = by_name["trial_less_shared_time_first"]
+    chosen = tie["trials"][0]
+    ranks = {tuple(_rank(tie, c)) for c in _engine_search(tie, chosen["target"])}
+    best_minutes = _rank(tie, chosen["change"]["moves"])[0]
+    gains = {gain for minutes, gain in ranks if minutes == best_minutes}
+    assert len(gains) >= 2
+    assert _rank(tie, chosen["change"]["moves"])[1] == min(gains)
+
+    large = by_name["trial_large_shift_not_first"]
+    chosen_large = large["trials"][0]
+    everything = _engine_search(large, chosen_large["target"])
+    cheapest = min(everything, key=lambda c: _rank(large, c))
+    assert any(_shift(large, m) > LARGE_SHIFT for m in cheapest)
+    assert all(_shift(large, m) <= LARGE_SHIFT for m in chosen_large["change"]["moves"])

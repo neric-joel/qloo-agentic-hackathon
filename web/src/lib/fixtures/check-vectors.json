@@ -219,5 +219,49 @@
     "trials": [
       { "target": {"kind": "break", "rule": 3, "rows": [1, 2]}, "change": {"moves": [{"row": 2, "stage": "Side", "start": 1145, "end": 1205}, {"row": 4, "stage": "Main", "start": 1155, "end": 1200}], "shared_pairs_after": 2} }
     ]
+  },
+  {
+    "name": "trial_minutes_before_set_count_pair",
+    "note": "A pair that shares time: a two-set change of 30 minutes in all is listed before the 45-minute one-set move.",
+    "rows": [["ActA", "Main", "18:00", "18:45"], ["ActB", "Main", "18:45", "19:15"], ["ActC", "Side", "18:00", "18:30"], ["ActD", "Side", "18:45", "19:30"], ["ActE", "Side", "19:35", "20:05"]],
+    "resolved": [[1080,1125], [1125,1155], [1080,1110], [1125,1170], [1175,1205]],
+    "settings": { "changeover": "15", "curfew": "20:00", "pairs": [["ActA", "ActD"]] },
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 2, "curfew": 1, "keep_apart": 0, "shared_pairs": 2 },
+    "trials": [
+      {"target": {"kind": "shared", "rows": [2,4]}, "change": {"moves": [{"row": 2, "stage": "Side", "start": 1125, "end": 1155},{"row": 4, "stage": "Main", "start": 1155, "end": 1200}], "shared_pairs_after": 2}}
+    ]
+  },
+  {
+    "name": "trial_minutes_before_set_count_keep_apart",
+    "note": "A keep-apart pair: the best two-set change moves 80 minutes in all, a one-set move needs 105.",
+    "rows": [["ActA", "Main", "18:00", "18:30"], ["ActB", "Main", "18:40", "19:40"], ["ActC", "Main", "19:50", "20:20"], ["ActD", "Side", "18:00", "18:30"], ["ActE", "Side", "18:40", "19:25"]],
+    "resolved": [[1080,1110], [1120,1180], [1190,1220], [1080,1110], [1120,1165]],
+    "settings": { "changeover": "20", "curfew": "21:30", "pairs": [["ActA", "ActD"]] },
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 3, "curfew": 0, "keep_apart": 1, "shared_pairs": 2 },
+    "trials": [
+      {"target": {"kind": "break", "rule": 5, "rows": [1,4]}, "change": {"moves": [{"row": 4, "stage": "Side", "start": 1120, "end": 1150},{"row": 5, "stage": "Side", "start": 1160, "end": 1205}], "shared_pairs_after": 3}}
+    ]
+  },
+  {
+    "name": "trial_less_shared_time_first",
+    "note": "Equal total minutes: the change that adds no shared time elsewhere is listed before one that does.",
+    "rows": [["ActA", "Main", "18:00", "18:45"], ["ActB", "Main", "18:45", "19:30"], ["ActC", "Main", "19:50", "20:35"], ["ActD", "Main", "20:45", "21:30"], ["ActE", "Side", "18:00", "19:00"], ["ActF", "Side", "19:20", "20:20"], ["ActG", "Side", "20:40", "21:40"]],
+    "resolved": [[1080,1125], [1125,1170], [1190,1235], [1245,1290], [1080,1140], [1160,1220], [1240,1300]],
+    "settings": { "changeover": "15", "curfew": "", "pairs": [["ActA", "ActD"]] },
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 2, "curfew": 0, "keep_apart": 0, "shared_pairs": 5 },
+    "trials": [
+      {"target": {"kind": "break", "rule": 3, "rows": [3,4]}, "change": {"moves": [{"row": 4, "stage": "Main", "start": 1250, "end": 1295}], "shared_pairs_after": 5}}
+    ]
+  },
+  {
+    "name": "trial_large_shift_not_first",
+    "note": "A set moved more than three hours is listed only when nothing smaller exists.",
+    "rows": [["ActA", "Main", "18:00", "19:00"], ["ActB", "Main", "19:20", "20:05"], ["ActC", "Main", "20:25", "21:25"], ["ActD", "Main", "21:55", "22:55"], ["ActE", "Side", "18:00", "19:00"], ["ActF", "Side", "19:20", "20:20"], ["ActG", "Side", "20:25", "20:55"], ["ActH", "Side", "20:55", "21:25"]],
+    "resolved": [[1080,1140], [1160,1205], [1225,1285], [1315,1375], [1080,1140], [1160,1220], [1225,1255], [1255,1285]],
+    "settings": { "changeover": "15", "curfew": "", "pairs": [] },
+    "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 2, "curfew": 0, "keep_apart": 0, "shared_pairs": 4 },
+    "trials": [
+      {"target": {"kind": "shared", "rows": [1,5]}, "change": {"moves": [{"row": 1, "stage": "Main", "start": 1225, "end": 1285},{"row": 3, "stage": "Side", "start": 1300, "end": 1360}], "shared_pairs_after": 4}}
+    ]
   }
 ]

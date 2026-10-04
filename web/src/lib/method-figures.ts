@@ -157,6 +157,13 @@ export const METHOD_FIGURES = {
     neutralRarity: 0.5,
     /** rarityFloor + neutralRarity: the factor of every pair on the saved days. */
     neutralFactor: 1,
+    /** The price's factors are multiplied on this scale; the page shows taste overlap and draw out of 100. */
+    scaleFactor: [0, 1],
+    /**
+     * The stand-in draw an act with no popularity takes, by billing tier (`DRAW_PRIOR` in
+     * `backend/app/schedule/metrics.py`): tier 1 is the headliner.
+     */
+    drawPrior: { 1: 0.9, 2: 0.7, 3: 0.5, 4: 0.3 },
   },
   index: {
     /** Random valid timetables the Clash Budget Index is measured against. */

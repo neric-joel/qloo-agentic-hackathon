@@ -3,6 +3,7 @@
 import { Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+import { noSignalLabel } from "@/lib/credit";
 import { formatDraw, partnerOf, type SetView } from "@/lib/clashes";
 import type { PairClash } from "@/lib/preset";
 import { formatClock, formatRange } from "@/lib/timetable";
@@ -13,10 +14,12 @@ type TimetableListProps = {
   views: readonly SetView[];
   dayLabel: string;
   onOpen: (clash: PairClash, trigger: HTMLElement) => void;
+  /** The invented day: a set with no signal is "not priced", not "no Qloo signal". */
+  synthetic?: boolean;
   className?: string;
 };
 
-/** Genre, draw and signal strength, for sets that have a Qloo signal. */
+/** Genre, draw and signal strength, for sets that have a usable signal. */
 function meta(view: SetView): string {
   if (view.coverage === "none") return view.act.genre ?? "";
   return [
@@ -29,7 +32,7 @@ function meta(view: SetView): string {
 }
 
 /** The small-screen timetable: every set in start order, grouped by hour, with its ranked clashes. */
-export function TimetableList({ views, dayLabel, onOpen, className }: TimetableListProps) {
+export function TimetableList({ views, dayLabel, onOpen, synthetic = false, className }: TimetableListProps) {
   const ordered = [...views].sort((p, q) => p.slot.start - q.slot.start || p.col - q.col);
   const groups: { hour: number; items: SetView[] }[] = [];
   for (const view of ordered) {
@@ -74,7 +77,7 @@ export function TimetableList({ views, dayLabel, onOpen, className }: TimetableL
                     {none ? (
                       <p className="mt-1.5">
                         <span className="rounded-sm bg-card px-1 text-xs font-semibold">
-                          No Qloo signal, not priced
+                          {noSignalLabel(synthetic)}, not priced
                         </span>
                       </p>
                     ) : null}

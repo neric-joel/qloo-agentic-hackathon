@@ -11,6 +11,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import type { AgentStatus } from "@/lib/agent-status";
 import { CHECK_LIVE } from "@/lib/check-flag";
 import { describeReach, samplingReach } from "@/lib/clash-budget";
+import { popularityName } from "@/lib/credit";
 import {
   buildSetViews,
   clashKey,
@@ -465,6 +466,7 @@ function PresetView({
   const [keptSteps, setKeptSteps] = useState<readonly StackStep[]>([]);
 
   const { festival, report } = preset;
+  const synthetic = preset.synthetic === true;
   const dayLabel = festival.days[day] ?? `Day ${day + 1}`;
   const views = useMemo(() => buildSetViews(preset, day), [preset, day]);
   const ranked = useMemo(() => topClashes(report.clashes, day, Number.POSITIVE_INFINITY), [report, day]);
@@ -629,12 +631,12 @@ function PresetView({
         </div>
 
         <div className="mt-4 grid gap-x-10 gap-y-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-          <CoverageMeter coverage={report.coverage} metrics={report.metrics} />
+          <CoverageMeter coverage={report.coverage} metrics={report.metrics} synthetic={synthetic} />
           <div className="max-md:hidden">
-            <TimetableLegend planShown={planPreview !== null || rulePreview !== null} />
+            <TimetableLegend planShown={planPreview !== null || rulePreview !== null} synthetic={synthetic} />
             <p className="mt-2.5 text-xs text-muted-foreground">
               Lines join the {links.length} costliest clashes; draw on each set is its{" "}
-              {preset.synthetic === true ? "invented popularity" : "Qloo popularity"}. Hover or focus a set to see its clashes, and open any clash for the figures
+              {popularityName(synthetic)}. Hover or focus a set to see its clashes, and open any clash for the figures
               behind it.
             </p>
           </div>
@@ -673,7 +675,11 @@ function PresetView({
           <div className="min-w-0">
             {/* Below 768 px: the clash list above, then the board itself in a sideways scroller
                 that snaps to the stage columns, then the start-order list behind a summary. */}
-            <TimetableLegend planShown={planPreview !== null || rulePreview !== null} className="mb-3 md:hidden" />
+            <TimetableLegend
+              planShown={planPreview !== null || rulePreview !== null}
+              synthetic={synthetic}
+              className="mb-3 md:hidden"
+            />
             <p className="mb-3 text-xs text-muted-foreground md:hidden">Scroll sideways to see every stage.</p>
             <div className="max-md:snap-x max-md:snap-mandatory max-md:scroll-pl-[72px] max-md:overflow-x-auto max-md:overscroll-x-contain max-md:pb-3">
               <TimetableGrid
@@ -691,6 +697,7 @@ function PresetView({
                 onOpen={openClash}
                 plan={planPreview}
                 rulePreview={rulePreview}
+                synthetic={synthetic}
               />
             </div>
             <details className="group mt-8 md:hidden">
@@ -701,13 +708,13 @@ function PresetView({
                   className="size-4 shrink-0 group-open:rotate-180 motion-safe:transition-transform motion-safe:duration-150"
                 />
               </summary>
-              <TimetableList className="mt-4" views={views} dayLabel={dayLabel} onOpen={openClash} />
+              <TimetableList className="mt-4" views={views} dayLabel={dayLabel} onOpen={openClash} synthetic={synthetic} />
             </details>
           </div>
         </div>
       </BoardFrame>
 
-      {lenses ? <TasteLens lenses={lenses} ranked={ranked} onOpen={openClash} /> : null}
+      {lenses ? <TasteLens lenses={lenses} ranked={ranked} onOpen={openClash} synthetic={synthetic} /> : null}
 
       <TryAMove
         preset={preset}
@@ -719,13 +726,14 @@ function PresetView({
         seedStep={seedStep}
         seedRule={seedRule}
         onKeptChange={setKeptSteps}
+        cardMove={decisionCopy?.seedMove && decisionCopy.moveReceipt ? { move: decisionCopy.seedMove, receipt: decisionCopy.moveReceipt } : null}
       />
 
       <AgentPanel preset={preset} day={day} agentStatus={agentStatus} />
 
-      <HiddenWall evidence={preset.evidence} />
+      <HiddenWall evidence={preset.evidence} synthetic={synthetic} />
       {twins.length > 0 ? (
-        <TwinCards twins={twins} acts={festival.acts} />
+        <TwinCards twins={twins} acts={festival.acts} synthetic={synthetic} />
       ) : (
         <p className="container-page py-8 text-sm text-muted-foreground">
           This day has no same-size twin pairs to show.

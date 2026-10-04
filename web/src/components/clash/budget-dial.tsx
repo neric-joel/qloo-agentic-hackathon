@@ -2,6 +2,7 @@ import { useId, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 import { ProvenanceChip } from "@/components/kernel";
+import { COUNTS_ONLY } from "@/lib/credit";
 import {
   describeReach,
   describeVsRandom,
@@ -81,7 +82,7 @@ export function BudgetDial({
     <figure className={className}>
       <div className="flex items-start justify-between gap-3">
         <p className="type-kicker text-muted-foreground">Clash Budget Index</p>
-        <ProvenanceChip provenance="derived" size="sm" />
+        <ProvenanceChip provenance="derived" size="sm" synthetic={synthetic} />
       </div>
 
       <div className="mt-3 grid grid-cols-[minmax(0,13rem)_minmax(6.5rem,1fr)] items-end gap-x-4 sm:gap-x-5">
@@ -161,15 +162,14 @@ export function BudgetDial({
       {compact ? (
         <figcaption className="mt-4 text-sm leading-relaxed">
           <p className="font-medium">
-            100 = the average random valid timetable of this lineup. It counts only what clashes cost: taste
-            overlap, time shared and draw.
+            100 = the average random valid timetable of this lineup. {COUNTS_ONLY}
           </p>
         </figcaption>
       ) : (
         <figcaption className="mt-4 text-sm leading-relaxed">
           <p className="font-medium">
-            100 = the average of random valid timetables of this lineup in which {reach}. It counts
-            only what clashes cost: taste overlap, time shared and draw, {synthetic ? "all invented for this day" : "calculated from Qloo data"}.
+            100 = the average of random valid timetables of this lineup in which {reach}.{" "}
+            {COUNTS_ONLY.slice(0, -1)}, {synthetic ? "all invented for this day" : "calculated from Qloo data"}.
           </p>
           <p className="mt-1.5 text-muted-foreground">
             {p10 !== null && p90 !== null

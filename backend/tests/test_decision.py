@@ -739,3 +739,69 @@ def test_costliest_is_none_when_no_clash_of_the_day_has_a_price(client):
         report.clashes[0].a.name,
         report.clashes[0].b.name,
     )
+
+
+# ------------------------------------------------------------------------- a day under the festival's top 15
+
+
+def four_day_preset():
+    """Four days; day 0 is headliner-heavy (18 high-cost clashes), days 1 to 3 have two modest clashes each.
+    ``score_festival`` keeps only the festival's 15 costliest pairs, all of them on day 0."""
+    sets = []
+    popularity = {}
+    pairs = {}
+    for block in range(6):  # day 0: three concurrent headliners per block, 3 pairs each
+        ids = [f"h{block}{n}" for n in range(3)]
+        for stage, act in zip(("main", "side", "tent"), ids, strict=True):
+            sets.append((act, 0, stage, 540 + block * 90, 600 + block * 90, {"locked": True}))
+            popularity[act] = 0.95
+        pairs |= {(ids[0], ids[1]): 0.9, (ids[0], ids[2]): 0.9, (ids[1], ids[2]): 0.9}
+    for day in (1, 2, 3):
+        for tag, (start, value) in {"a": (600, 0.4), "b": (800, 0.3)}.items():
+            first, second = f"d{day}{tag}1", f"d{day}{tag}2"
+            sets += [(first, day, "main", start, start + 60), (second, day, "side", start, start + 60)]
+            popularity |= {first: 0.5, second: 0.5}
+            pairs[(first, second)] = value
+    hours = {stage: [(day, 480, 1380) for day in range(4)] for stage in ("main", "side", "tent")}
+    festival = make_festival(
+        sets, days=4, hours=hours, acts={a: {"popularity": p} for a, p in popularity.items()}
+    )
+    matrix = make_matrix([row[0] for row in sets], pairs, default=0.05)
+    report = score_festival(festival, matrix)
+    return decision.Preset(
+        id="four",
+        title="Four",
+        festival=festival,
+        matrix=matrix,
+        report={"baseline": report.baseline.model_dump(mode="json")},
+    )
+
+
+def test_the_costliest_clash_after_is_found_on_a_day_whose_clashes_all_fall_under_the_festivals_top_15():
+    preset = four_day_preset()
+    state = published_state(preset)
+    narrow = score_festival(state["festival"], state["matrix"], state["config"])
+    assert {c.day for c in narrow.clashes} == {0}  # the trap: the day-wide list holds day 0 only
+    wide = state["config"].model_copy(update={"top_clashes": 200})
+    for day in (1, 2, 3):
+        body = decision.compute_decision(preset, day)
+        assert body["clash"] is not None, day
+        for after in (body["move"]["costliest_after"], body["rule"]["fixes"][0]["costliest_after"]):
+            assert after is not None and set(after) == COSTLIEST_KEYS, day
+            assert after["minutes"] > 0 and after["points"] > 0
+        # the move's figure is the day's costliest clash as an independent, fully ranked scoring gives it
+        move = body["move"]
+        plan = apply_plan(
+            state["festival"],
+            state["matrix"],
+            wide,
+            [PlanMove(move["act_id"], move["stage_id"], move["day"], parse_minutes(move["start"]))],
+        )
+        top = next(c for c in plan.report.clashes if c.day == day)
+        index = plan.report.metrics.clash_budget_index
+        assert move["costliest_after"] == {
+            "a": top.a.name,
+            "b": top.b.name,
+            "minutes": top.overlap_minutes,
+            "points": round(top.regret_share * index, 1),
+        }

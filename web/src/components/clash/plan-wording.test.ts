@@ -62,8 +62,8 @@ function planOf(budget: number, published = 116.71, afterFirst = budget): Plan {
   };
 }
 
-function card(plan: Plan) {
-  return createElement(ScratchPlan, {
+function cardProps(plan: Plan) {
+  return {
     preset: PRESET,
     day: 0,
     plan,
@@ -71,7 +71,11 @@ function card(plan: Plan) {
     range: RANGE,
     onUndo: () => {},
     onStartOver: () => {},
-  });
+  };
+}
+
+function card(plan: Plan) {
+  return createElement(ScratchPlan, cardProps(plan));
 }
 
 describe("the plan card", () => {
@@ -91,6 +95,28 @@ describe("the plan card", () => {
   it("carries the caveat once", () => {
     const text = textOf(card(planOf(100)));
     expect(text.split(PLAN_CAVEAT)).toHaveLength(2);
+  });
+
+  it("states an index-raising plan plainly: its index, the published one and the band, with no range verdict", () => {
+    const text = textOf(card(planOf(118, 116.71, 118)));
+    // The band is stated once, before the plan's own index; the plan's sentence does not repeat it.
+    expect(text).toContain(
+      "The middle 80% of random valid timetables of this lineup score 92 to 109. This plan’s index is 118.0, 1.3 higher than the published timetable’s 116.7.",
+    );
+    expect(text.split("score 92 to 109").length - 1).toBe(1);
+    expect(text).not.toMatch(/scores (below|inside|[0-9.]+ index points above) that range/);
+    // A plan that lowers the index keeps its range sentence.
+    expect(textOf(card(planOf(80)))).toContain("This plan scores below that range.");
+  });
+
+  it("prints a receipt line under a single move that is the card's move, and only for that plan", () => {
+    const cardMove = { move: MOVES[0], receipt: "Act One and Act Two share 30 minutes after this plan." };
+    const withReceipt = textOf(createElement(ScratchPlan, { ...cardProps(planOf(100)), cardMove }));
+    expect(withReceipt).toContain("Act One and Act Two share 30 minutes after this plan.");
+    // No card, or a card whose move is another one: nothing to say.
+    expect(textOf(card(planOf(100)))).not.toContain("after this plan");
+    const other = { move: { ...MOVES[0], start: "14:45" }, receipt: cardMove.receipt };
+    expect(textOf(createElement(ScratchPlan, { ...cardProps(planOf(100)), cardMove: other }))).not.toContain("after this plan");
   });
 
   it("marks a kept step that raises the index, and only that one", () => {

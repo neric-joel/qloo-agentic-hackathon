@@ -7,10 +7,11 @@
  *
  * What is searched (the page says the same):
  * - One-set moves: each set of the break (or the breaking set), on a 5-minute grid within the day's
- *   span, on its own stage and on every other stage.
- * - Two-set swaps, only when fewer than five one-set changes exist: one set of the break takes the slot
- *   of another set (that set's stage and start), and the other set moves to a free place (a stage and a
- *   5-minute start where no other set is playing).
+ *   span, on its own stage and on every other stage; and the set taking another set's exact stage and
+ *   start, which may be off the 5-minute grid.
+ * - Two-set changes (after the one-set moves, if the limit is not reached first): one set of the break
+ *   takes the slot of another set (that set's stage and start), and the other set moves to a free place
+ *   (a stage and a 5-minute start where no other set is playing).
  * - Sets marked locked are never moved and never displaced.
  * - At most 20,000 candidates are tested; a candidate is one complete arrangement tested against the five
  *   rules. When the limit is hit the result says so.
@@ -21,7 +22,11 @@
  * a fast incremental check; every change it shows is then re-tested with the full `findBreaks` and
  * `findShared`, so a displayed "adds no rule break" is the page's own rule check, not the shortcut.
  *
- * Ranking: fewest sets moved, then start-time minutes moved, then stage changes, then a fixed order.
+ * Ranking: total start-time minutes moved first, then how much shared time the change adds elsewhere,
+ * then sets moved, then stage changes, then a fixed order. At most one change is listed per moved set and
+ * stage (its smallest shift). A change that moves any set by more than three hours is listed only when
+ * nothing smaller exists. One-set moves include a set taking another set's exact start (any minute), and
+ * two-set changes are searched even when one-set changes exist, in the same ranking.
  */
 
 import {
@@ -46,6 +51,8 @@ export const TRIAL_LIMITS = {
   grid: 5,
   /** Candidates tested between two yields when the search runs in chunks. */
   chunk: 1_500,
+  /** A change that moves any set by more than this many minutes is listed only when nothing smaller exists. */
+  largeShift: 180,
 } as const;
 
 export type TrialTarget =
@@ -72,6 +79,10 @@ export type TrialChange = {
   /** The sum of the sets' start-time shifts in minutes. */
   minutesMoved: number;
   stageChanges: number;
+  /** The largest start-time shift of any one set in this change, in minutes. */
+  largestShift: number;
+  /** Minutes of shared time this change adds between sets elsewhere (pairs that share more than before). */
+  sharedRise: number;
   /** One line per move: "{Act} → {Stage} {start}–{end}". */
   lines: string[];
   /** Shared minutes of the targeted pair before this change (pair targets only). */
@@ -89,10 +100,16 @@ export type TrialResult = {
   capped: boolean;
   /** True when every set of the target is locked, so nothing could be moved. */
   allLocked: boolean;
-  /** Whether two-set swaps were searched (they are skipped when five one-set changes exist). */
+  /** Whether two-set changes were searched (they are skipped only when the limit was reached first). */
   swapsSearched: boolean;
-  /** Changes that passed, in total (the list shows the smallest). */
+  /** One-set moves that passed the search, every variant counted, before near-duplicates are dropped. */
+  oneSetPassed: number;
+  /** Distinct changes that passed (one per moved set and stage); the list shows the smallest. */
   found: number;
+  /** Distinct changes left out because a set moves more than three hours while smaller ones exist. */
+  largeOmitted: number;
+  /** True when every change found moves a set by more than three hours, so those are the ones listed. */
+  onlyLarge: boolean;
   changes: TrialChange[];
   summary: string;
 };
@@ -108,6 +125,11 @@ export type TrialOptions = {
   chunk?: number;
   /** Changes to list; five by default. */
   shown?: number;
+  /**
+   * Every change that passed, ranked, with nothing dropped: no one-per-moved-set-and-stage rule and no
+   * three-hour rule. For tests that compare the search with a brute-force check; the page never sets it.
+   */
+  everyChange?: boolean;
 };
 
 /** The page's wording for the trial, in one place. */
@@ -115,8 +137,10 @@ export const TRIAL_COPY = {
   button: "Find a change",
   heading: "What this search found",
   scope:
-    "How it searched: one-set moves first, then two-set swaps, on a 5-minute grid within the day’s span, at most 20,000 candidates. A change is listed only if it ends this break, adds no rule break and makes none of the existing ones larger, under your settings. Sets marked locked are not moved. It uses no taste reading, and nothing leaves this browser.",
-  adds: "Adds no rule break.",
+    "How it searched: one-set moves first, then two-set changes, on a 5-minute grid within the day’s span (a set may also take another set’s exact start time), at most 20,000 candidates. A change is listed only if it ends this break, adds no rule break and makes none of the existing ones larger, under your settings. They are ranked by total start-time minutes moved, one per moved set and stage; a change that moves a set by more than 3 hours is listed only when nothing smaller exists. Sets marked locked are not moved. It uses no taste reading, and nothing you paste is sent anywhere.",
+  adds: "Adds no rule break and makes none larger.",
+  addsGloss: "Other sets may still share time; the grid line below shows the total.",
+  stale: "You changed the grid or settings; check again to search.",
   tryIt: "Try it",
   back: "Back to the pasted grid",
 } as const;
@@ -162,7 +186,12 @@ type Candidate = {
   places: Place[];
   minutesMoved: number;
   stageChanges: number;
+  largestShift: number;
+  /** Minutes of shared time added between sets (pairs sharing more than before), summed over pairs. */
+  gain: number;
 };
+
+type Verdict = { gone: boolean; clean: boolean; gain: number };
 
 /** The rule-break identity: rule, then the sets by index. Rules 1, 2 and 5 are unordered pairs; rule 3 is (first, second). */
 function pairKey(rule: 1 | 2 | 5, i: number, j: number): number {
@@ -317,7 +346,7 @@ class Search {
    * the grid and is no larger now. Only breaks that involve a moved set, or a neighbour on a stage the
    * moves leave or enter, can differ from the grid as pasted, so only those are recomputed.
    */
-  private test(places: readonly Place[]): { gone: boolean; clean: boolean } {
+  private test(places: readonly Place[]): Verdict {
     const saved = places.map((p) => [this.stage[p.index], this.start[p.index]] as const);
     const stages = new Set<number>();
     for (const [stage] of saved) stages.add(stage);
@@ -349,11 +378,38 @@ class Search {
     } else {
       gone = this.targetKey !== null && !out.has(this.targetKey);
     }
+    // Only a change that passes needs its effect on the shared time of the whole grid.
+    const pairs = gone && clean ? this.sharedPairsOf(places) : null;
+    const after = pairs === null ? null : pairs.map(([i, j]) => this.sharedMinutes(i, j));
     places.forEach((p, k) => {
       this.stage[p.index] = saved[k][0];
       this.start[p.index] = saved[k][1];
     });
-    return { gone, clean };
+    let gain = 0;
+    if (pairs !== null && after !== null) {
+      pairs.forEach(([i, j], k) => {
+        gain += Math.max(0, after[k] - this.sharedMinutes(i, j));
+      });
+    }
+    return { gone, clean, gain };
+  }
+
+  /** Minutes two different acts share (the grid line of the page); the same act twice is a rule break, not shared time. */
+  private sharedMinutes(i: number, j: number): number {
+    return this.act[i] === this.act[j] ? 0 : Math.max(0, this.overlapOf(i, j));
+  }
+
+  /** Every pair of sets with at least one of the places in it, each pair once. */
+  private sharedPairsOf(places: readonly Place[]): [number, number][] {
+    const moved = new Set(places.map((p) => p.index));
+    const out: [number, number][] = [];
+    for (const m of moved) {
+      for (let j = 0; j < this.n; j += 1) {
+        if (j === m || (moved.has(j) && j < m)) continue;
+        out.push([m, j]);
+      }
+    }
+    return out;
   }
 
   /** Start times on the 5-minute grid inside the day's span for a set of this length. */
@@ -362,14 +418,17 @@ class Search {
     return { from: Math.ceil(this.spanStart / step) * step, to: this.spanEnd - duration };
   }
 
-  private candidateOf(places: Place[]): Candidate {
+  private candidateOf(places: Place[], gain: number): Candidate {
     let minutesMoved = 0;
     let stageChanges = 0;
+    let largestShift = 0;
     for (const p of places) {
-      minutesMoved += Math.abs(p.start - this.originalStart[p.index]);
+      const shift = Math.abs(p.start - this.originalStart[p.index]);
+      minutesMoved += shift;
+      largestShift = Math.max(largestShift, shift);
       if (p.stage !== this.originalStage[p.index]) stageChanges += 1;
     }
-    return { places, minutesMoved, stageChanges };
+    return { places, minutesMoved, stageChanges, largestShift, gain };
   }
 
   /** Free places for set `y` (no other set playing there), nearest to where it plays now first. */
@@ -429,20 +488,48 @@ class Search {
           tested += 1;
           if (tested % chunk === 0) yield marker();
           const place: Place = { index, stage, start: t };
-          const { gone, clean } = this.test([place]);
+          const { gone, clean, gain } = this.test([place]);
           if (gone && clean) {
             singles += 1;
             singleKeys.add(`${index}:${stage}:${t}`);
-            found.push(this.candidateOf([place]));
+            found.push(this.candidateOf([place], gain));
           }
         }
         if (capped) break;
       }
       if (capped) break;
+
+      // A set may also take another set's exact stage and start, which can be off the 5-minute grid.
+      const slots = new Set<string>();
+      for (let y = 0; y < this.n; y += 1) {
+        if (y === index) continue;
+        const stage = this.originalStage[y];
+        const t = this.originalStart[y];
+        if (t % TRIAL_LIMITS.grid === 0) continue; // on the grid: the loop above has been there
+        if (t < this.spanStart || t + this.dur[index] > this.spanEnd) continue;
+        if (stage === this.originalStage[index] && t === this.originalStart[index]) continue;
+        const key = `${index}:${stage}:${t}`;
+        if (slots.has(key)) continue;
+        slots.add(key);
+        if (tested >= bound) {
+          capped = true;
+          break;
+        }
+        tested += 1;
+        if (tested % chunk === 0) yield marker();
+        const place: Place = { index, stage, start: t };
+        const { gone, clean, gain } = this.test([place]);
+        if (gone && clean) {
+          singles += 1;
+          singleKeys.add(key);
+          found.push(this.candidateOf([place], gain));
+        }
+      }
+      if (capped) break;
     }
 
-    // Two-set swaps, only when five one-set changes are not already there to show.
-    if (!capped && singles < TRIAL_LIMITS.shown) {
+    // Two-set changes, also when one-set changes exist: both go into the same ranking.
+    if (!capped) {
       swapsSearched = true;
       phase = "two-set";
       yield marker();
@@ -451,14 +538,15 @@ class Search {
           .filter((y) => y !== x && !this.locked[y])
           .sort((p, q) => Math.abs(this.originalStart[p] - this.originalStart[x]) - Math.abs(this.originalStart[q] - this.originalStart[x]) || p - q);
         for (const y of others) {
-          if (tested >= bound) {
-            capped = true;
-            break swapLoop;
-          }
           const takes: Place = { index: x, stage: this.originalStage[y], start: this.originalStart[y] };
           if (takes.stage === this.originalStage[x] && takes.start === this.originalStart[x]) continue;
           // The set keeps its own length, so taking a shorter slot can run past the day's span.
           if (takes.start + this.dur[x] > this.spanEnd) continue;
+          // The limit counts only candidates there are to test.
+          if (tested >= bound) {
+            capped = true;
+            break swapLoop;
+          }
           tested += 1;
           if (tested % chunk === 0) yield marker();
           const alone = this.test([takes]);
@@ -483,10 +571,10 @@ class Search {
             }
             tested += 1;
             if (tested % chunk === 0) yield marker();
-            const { gone, clean } = this.test([takes, place]);
+            const { gone, clean, gain } = this.test([takes, place]);
             if (gone && clean) {
               swaps += 1;
-              found.push(this.candidateOf([takes, place]));
+              found.push(this.candidateOf([takes, place], gain));
             }
           }
         }
@@ -507,11 +595,14 @@ type SearchOutcome = {
   swapsSearched: boolean;
 };
 
+/** Total start-time minutes first; at equal size, less shared time added elsewhere; then sets, stage changes, a fixed order. */
 function compareCandidates(a: Candidate, b: Candidate): number {
-  const byCount = a.places.length - b.places.length;
-  if (byCount !== 0) return byCount;
   const byMinutes = a.minutesMoved - b.minutesMoved;
   if (byMinutes !== 0) return byMinutes;
+  const byGain = a.gain - b.gain;
+  if (byGain !== 0) return byGain;
+  const byCount = a.places.length - b.places.length;
+  if (byCount !== 0) return byCount;
   const byStages = a.stageChanges - b.stageChanges;
   if (byStages !== 0) return byStages;
   for (let k = 0; k < a.places.length; k += 1) {
@@ -601,6 +692,19 @@ export function confirmChange(report: CheckReport, target: TrialTarget, change: 
   });
 }
 
+/** The two rows of a pair of sets, smaller first, as one key. */
+function pairRows(pair: SharedPair): string {
+  return `${Math.min(pair.a.row, pair.b.row)}-${Math.max(pair.a.row, pair.b.row)}`;
+}
+
+/** Minutes of shared time that pairs have after a change and did not have before it, summed over the pairs. */
+function sharedRiseOf(before: CheckReport, after: CheckReport): number {
+  const was = new Map(before.shared.map((pair) => [pairRows(pair), pair.minutes]));
+  let rise = 0;
+  for (const pair of after.shared) rise += Math.max(0, pair.minutes - (was.get(pairRows(pair)) ?? 0));
+  return rise;
+}
+
 function buildChange(report: CheckReport, target: TrialTarget, search: Search, candidate: Candidate): TrialChange {
   const moves: TrialMove[] = candidate.places
     .map((place) => {
@@ -630,6 +734,8 @@ function buildChange(report: CheckReport, target: TrialTarget, search: Search, c
     setsMoved: moves.length,
     minutesMoved: candidate.minutesMoved,
     stageChanges: candidate.stageChanges,
+    largestShift: candidate.largestShift,
+    sharedRise: sharedRiseOf(report, after),
     lines: moves.map((move) => `${move.act} → ${move.stage} ${clockWindow(move.start, move.end)}`),
     pairBefore,
     sharedBefore: totals(report),
@@ -644,23 +750,53 @@ function count(value: number, one: string, many: string = `${one}s`): string {
   return `${value.toLocaleString("en-US")} ${value === 1 ? one : many}`;
 }
 
+const LARGE_HOURS = TRIAL_LIMITS.largeShift / 60;
+
 /** One sentence on what the search did, for the result and the polite live region. */
 export function trialSummary(result: Omit<TrialResult, "summary">): string {
   if (result.allLocked) {
-    return "Every set in this break is marked locked, and this search does not move locked sets.";
+    const rows = result.target.rows.length;
+    if (result.target.kind === "shared") {
+      return "Both sets of this pair are marked locked, and this search does not move locked sets.";
+    }
+    return rows === 1
+      ? "The set in this break is marked locked, and this search does not move locked sets."
+      : "Both sets in this break are marked locked, and this search does not move locked sets.";
   }
+  const parts: string[] = [];
+  const bound = result.bound.toLocaleString("en-US");
   if (result.found === 0) {
-    const within = result.capped ? `${result.bound.toLocaleString("en-US")} candidates (the limit)` : count(result.tested, "candidate");
-    return `This search found no change that ends it within ${within}; it did not look for longer chains.`;
+    if (result.swapsSearched && result.oneSetPassed === 0) parts.push("No one-set move ends it, so two-set changes were tried.");
+    const within = result.capped ? `${bound} candidates (the limit)` : count(result.tested, "candidate");
+    parts.push(
+      `This search found no change that ends it within ${within}, on the 5-minute grid or into another set’s start time; it did not look for longer chains.`,
+    );
+    return parts.join(" ");
   }
-  const parts = [
-    `This search found ${count(result.found, "change")} that end${result.found === 1 ? "s" : ""} it and add${result.found === 1 ? "s" : ""} no rule break, within ${count(result.tested, "candidate")} tested.`,
-  ];
-  if (result.found > result.changes.length) parts.push(`The ${result.changes.length} smallest are listed.`);
-  if (!result.swapsSearched && !result.capped) {
-    parts.push(`It did not try two-set swaps because ${TRIAL_LIMITS.shown} one-set changes were found.`);
+  parts.push(
+    `${result.found.toLocaleString("en-US")} found, ${result.changes.length.toLocaleString("en-US")} shown: each ends it, adds no rule break and makes none larger, ranked by total start-time minutes moved.`,
+  );
+  parts.push(`${count(result.tested, "candidate")} tested.`);
+  if (result.swapsSearched) {
+    parts.push(
+      result.oneSetPassed === 0
+        ? "No one-set move ends it, so two-set changes were tried."
+        : "Two-set changes were tried as well.",
+    );
   }
-  if (result.capped) parts.push(`It stopped at the limit of ${result.bound.toLocaleString("en-US")} candidates, so there may be more.`);
+  if (result.largeOmitted > 0) {
+    parts.push(
+      `${count(result.largeOmitted, "more change")} ${result.largeOmitted === 1 ? "moves" : "move"} a set by more than ${LARGE_HOURS} hours and ${result.largeOmitted === 1 ? "is" : "are"} not listed.`,
+    );
+  }
+  if (result.onlyLarge) {
+    parts.push(`Every change found moves a set by more than ${LARGE_HOURS} hours; they are listed because nothing smaller ends it.`);
+  }
+  if (result.capped) {
+    parts.push(
+      `It stopped at the limit of ${bound} candidates${result.swapsSearched ? "" : ", before trying two-set changes"}, so there may be more.`,
+    );
+  }
   return parts.join(" ");
 }
 
@@ -671,10 +807,45 @@ export function sharedEffect(change: TrialChange): string {
   return `${pair}Across the grid: ${count(before.pairs, "pair")} sharing ${minutesLabel(before.minutes)} → ${count(after.pairs, "pair")} sharing ${minutesLabel(after.minutes)}.`;
 }
 
+/** True when the grid as a whole shares more minutes after the change than before it. */
+export function raisesSharedTotal(change: TrialChange): boolean {
+  return change.sharedAfter.minutes > change.sharedBefore.minutes;
+}
+
+/**
+ * The warning on a change that lengthens an overlap elsewhere or raises the grid's shared minutes; null when
+ * it does neither. When the total rises it says by how much; when only some overlaps get longer and others
+ * shorter it says that, so the line never contradicts the grid line above it.
+ */
+export function sharedRiseLine(change: TrialChange): string | null {
+  const net = change.sharedAfter.minutes - change.sharedBefore.minutes;
+  if (net > 0) return `Shared time elsewhere rises by ${minutesLabel(net)}.`;
+  if (change.sharedRise > 0) {
+    return `Some overlaps elsewhere get ${minutesLabel(change.sharedRise)} longer in all; others get shorter, so the grid total ${net < 0 ? "falls" : "stays the same"}.`;
+  }
+  return null;
+}
+
 /** The size line of a change. */
 export function sizeLine(change: TrialChange): string {
   const sets = change.setsMoved === 1 ? "One set moved" : "Two sets moved";
   return `${sets}; ${minutesLabel(change.minutesMoved)} of start time; ${count(change.stageChanges, "stage change")}.`;
+}
+
+/** At most one change per moved set and stage: the first in ranking order, which is its smallest shift. */
+function distinctChanges(ranked: readonly Candidate[]): Candidate[] {
+  const seen = new Set<string>();
+  const out: Candidate[] = [];
+  for (const candidate of ranked) {
+    const key = candidate.places
+      .map((place) => `${place.index}:${place.stage}`)
+      .sort()
+      .join(",");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(candidate);
+  }
+  return out;
 }
 
 /**
@@ -694,15 +865,21 @@ export function* trialSteps(
     ? { found: [], tested: 0, capped: false, singles: 0, swaps: 0, swapsSearched: false }
     : yield* search.run(bound, chunk);
 
+  // One change per moved set and stage; a set moved more than three hours only when nothing smaller exists.
+  const distinct = options.everyChange ? outcome.found : distinctChanges(outcome.found);
+  const ordinary = options.everyChange
+    ? distinct
+    : distinct.filter((candidate) => candidate.largestShift <= TRIAL_LIMITS.largeShift);
+  const onlyLarge = !options.everyChange && ordinary.length === 0 && distinct.length > 0;
+  const pool = onlyLarge ? distinct : ordinary;
+
   const shown = options.shown ?? TRIAL_LIMITS.shown;
   const changes: TrialChange[] = [];
-  let confirmed = 0;
-  for (const candidate of outcome.found) {
-    // The list is the smallest few; the rest are only counted, from the search's own tally.
+  for (const candidate of pool) {
+    // The list is the first few; the rest are only counted, from the search's own tally.
     if (changes.length >= shown) break;
     const change = buildChange(report, target, search, candidate);
     if (!confirmChange(report, target, change)) continue;
-    confirmed += 1;
     changes.push(change);
   }
   const base = {
@@ -712,7 +889,10 @@ export function* trialSteps(
     capped: outcome.capped,
     allLocked,
     swapsSearched: outcome.swapsSearched,
-    found: changes.length === 0 ? 0 : Math.max(outcome.singles + outcome.swaps, confirmed),
+    oneSetPassed: outcome.singles,
+    found: changes.length === 0 ? 0 : pool.length,
+    largeOmitted: onlyLarge ? 0 : distinct.length - ordinary.length,
+    onlyLarge,
     changes,
   };
   return { ...base, summary: trialSummary(base) };

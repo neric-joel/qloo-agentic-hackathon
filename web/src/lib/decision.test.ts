@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 
+import { decisionState } from "@/components/clash/use-decision";
+
 import { rawTinyPreset } from "./fixtures/tiny-preset";
 import {
   ATTRIBUTION,
   LIMITS_NO_RULE,
   LIMITS_WITH_RULE,
   NO_MOVE,
+  TRADEOFF_NOTE_BRIEF,
+  TRADEOFF_NOTE_CARD,
+  TRADEOFF_SUBTITLE,
   buildDecisionCopy,
+  lacksComparison,
   decisionDay,
   decisionPath,
   parseDecision,
@@ -322,17 +328,88 @@ describe("the side-by-side comparison", () => {
   it("builds one row per figure, move first and rule second, with the attribution and the gloss kept", () => {
     const tradeoff = buildTradeoff(parseDecision(withAfter()))!;
     expect([tradeoff.moveHead, tradeoff.ruleHead]).toEqual(["Move one set", "Keep the two apart"]);
-    expect(tradeoff.rows.map((row) => row.id)).toEqual(["sets", "minutes", "shared", "index", "flags", "costliest"]);
+    expect(tradeoff.rows.map((row) => row.id)).toEqual([
+      "sets",
+      "minutes",
+      "shared",
+      "ends",
+      "index",
+      "flags",
+      "costliest",
+    ]);
     const row = (id: string) => tradeoff.rows.find((item) => item.id === id)!;
     expect(row("sets")).toMatchObject({ move: "1 (Bo Diddly Squat)", rule: "1 (Bo Diddly Squat)" });
     expect(row("minutes")).toMatchObject({ move: "60", rule: "60" });
-    expect(row("shared")).toMatchObject({ move: "0 minutes", rule: "0 minutes" });
+    // The pair's own minutes before (the clash's) and after each change, and whether each ends the overlap.
+    expect(row("shared")).toMatchObject({
+      label: "Time the pair shares, before → after",
+      move: "60 → 0 minutes",
+      rule: "60 → 0 minutes",
+    });
+    expect(row("ends")).toMatchObject({ label: "Ends the overlap", move: "Yes", rule: "Yes" });
     expect(row("index")).toMatchObject({ move: "104.2 → 98.4", rule: "104.2 → 98.4", note: ATTRIBUTION });
     expect(row("flags")).toMatchObject({ move: "2 → 3", rule: "1 → 1", note: STAGE_FIT_GLOSS });
     expect(row("costliest")).toMatchObject({
       move: "Cy Twombly and Di Vine, 30 minutes, 9.5 index points",
       rule: "Ed Sheeran-ish and Fay Wray, 45 minutes, 1.2 index points",
     });
+  });
+
+  it("says what each column is and that the figures are for the published day, with a non-verdict line", () => {
+    const tradeoff = buildTradeoff(parseDecision(withAfter()))!;
+    expect(tradeoff.subtitle).toBe(TRADEOFF_SUBTITLE);
+    expect(TRADEOFF_SUBTITLE).toBe(
+      "Each change tested alone on the published day: the first column is the single move with the lowest index; the second is the smallest change this search found that ends the overlap.",
+    );
+    expect(tradeoff.footnote).toBe(TRADEOFF_NOTE_CARD);
+    expect(TRADEOFF_NOTE_CARD).toMatch(/^A reading to weigh, not a verdict;/);
+    expect(TRADEOFF_NOTE_BRIEF).toBe("A reading to weigh, not a verdict; the plan receipt above is what your plan does.");
+  });
+
+  it("marks a change that leaves the pair sharing time, from the after minutes", () => {
+    const raw = withAfter();
+    raw.move.minutes_shared_after = 15;
+    raw.rule.fixes[0].minutes_shared_after = 0;
+    const tradeoff = buildTradeoff(parseDecision(raw))!;
+    const row = (id: string) => tradeoff.rows.find((item) => item.id === id)!;
+    expect(row("shared")).toMatchObject({ move: "60 → 15 minutes", rule: "60 → 0 minutes" });
+    expect(row("ends")).toMatchObject({ move: "No", rule: "Yes" });
+    raw.move.minutes_shared_after = 1;
+    expect(buildTradeoff(parseDecision(raw))!.rows.find((item) => item.id === "shared")!.move).toBe("60 → 1 minute");
+  });
+
+  it("knows when an answer lacks the comparison's figures, so the browser asks again", () => {
+    // An answer cached before the route sent the extra fields.
+    expect(lacksComparison(parseDecision(rawDecision()))).toBe(true);
+    expect(lacksComparison(parseDecision(withAfter()))).toBe(false);
+    // Missing any one of the figures the table prints.
+    const noFlags = withAfter();
+    delete noFlags.move.stage_fit_flags_now;
+    expect(lacksComparison(parseDecision(noFlags))).toBe(true);
+    const noCostliest = withAfter();
+    delete noCostliest.rule.fixes[0].costliest_after;
+    expect(lacksComparison(parseDecision(noCostliest))).toBe(true);
+    const noShared = withAfter();
+    delete noShared.rule.fixes[0].minutes_shared_after;
+    expect(lacksComparison(parseDecision(noShared))).toBe(true);
+    // Nothing to compare (no move, no rule, no published index, a rule that holds): nothing to ask for.
+    const raw = rawDecision();
+    expect(lacksComparison(null)).toBe(false);
+    expect(lacksComparison(parseDecision({ ...raw, move: null }))).toBe(false);
+    expect(lacksComparison(parseDecision({ ...raw, rule: null }))).toBe(false);
+    expect(lacksComparison(parseDecision({ ...raw, published_budget: null }))).toBe(false);
+    expect(lacksComparison(parseDecision({ ...raw, rule: rawRule({ holds: true, fixes: [], shared_minutes: 0 }) }))).toBe(false);
+  });
+
+  it("gives the card's move a receipt for a plan that is just that move", () => {
+    const copy = buildDecisionCopy(preset(), parseDecision(withAfter()))!;
+    expect(copy.moveReceipt).toBe("Ann Arbor and Bo Diddly Squat share no time after this plan.");
+    const raw = withAfter();
+    raw.move.minutes_shared_after = 30;
+    expect(buildDecisionCopy(preset(), parseDecision(raw))!.moveReceipt).toBe(
+      "Ann Arbor and Bo Diddly Squat share 30 minutes after this plan.",
+    );
+    expect(buildDecisionCopy(preset(), parseDecision({ ...raw, move: null }))!.moveReceipt).toBeNull();
   });
 
   it("names both sets of a two-set change and says so when no priced clash is left", () => {
@@ -380,10 +457,54 @@ describe("the side-by-side comparison", () => {
     const copy = buildDecisionCopy(preset(), parseDecision(withAfter()))!;
     expect(copy.tradeoff).not.toBeNull();
     const text = JSON.stringify(copy.tradeoff);
-    for (const banned of ["better", "worse", "winner", "best", "optimal", "recommend", "overlap", "popularity"]) {
+    for (const banned of ["better", "worse", "winner", "best", "optimal", "recommend", "taste overlap", "popularity"]) {
       expect(text.toLowerCase()).not.toContain(banned);
     }
     // No tradeoff on a card that has no single move to compare.
     expect(buildDecisionCopy(preset(), parseDecision({ ...withAfter(), move: null }))!.tradeoff).toBeNull();
+  });
+});
+
+describe("the card without the server's cache", () => {
+  const stale = () => parseDecision(rawDecision())!;
+  const fresh = () => parseDecision(withAfter())!;
+  const key = "tiny-fest-sat|0";
+
+  it("keeps a complete server answer and asks for nothing", () => {
+    expect(decisionState(fresh(), 0, key, null, false)).toEqual({ status: "ready", decision: fresh() });
+    // Even when a fetch happens to be in hand, a complete answer is the page's.
+    expect(decisionState(fresh(), 0, key, { key, decision: stale() }, false).status).toBe("ready");
+    expect(decisionState(fresh(), 0, key, { key, decision: stale() }, false)).toMatchObject({ decision: fresh() });
+  });
+
+  it("shows a stale server answer at once, then the browser's own fetch once it has a full one", () => {
+    expect(decisionState(stale(), 0, key, null, false)).toEqual({ status: "ready", decision: stale() });
+    const after = decisionState(stale(), 0, key, { key, decision: fresh() }, false);
+    expect(after).toEqual({ status: "ready", decision: fresh() });
+    if (after.status !== "ready") throw new Error("not ready");
+    // The full table: every row the comparison has, from the browser's answer.
+    expect(buildTradeoff(after.decision)!.rows.map((row) => row.id)).toEqual([
+      "sets",
+      "minutes",
+      "shared",
+      "ends",
+      "index",
+      "flags",
+      "costliest",
+    ]);
+    // A failed fetch leaves the server's answer in place; so does a fetch for another preset or day.
+    expect(decisionState(stale(), 0, key, { key, decision: null }, false)).toEqual({ status: "ready", decision: stale() });
+    expect(decisionState(stale(), 0, key, { key: "other|0", decision: fresh() }, false)).toEqual({
+      status: "ready",
+      decision: stale(),
+    });
+  });
+
+  it("falls back to the fetch alone when the server holds no answer for this day", () => {
+    expect(decisionState(null, 0, key, null, false)).toEqual({ status: "loading" });
+    expect(decisionState(stale(), 1, key, null, false)).toEqual({ status: "loading" });
+    expect(decisionState(null, 0, key, { key, decision: fresh() }, false)).toEqual({ status: "ready", decision: fresh() });
+    expect(decisionState(null, 0, key, { key, decision: null }, false)).toEqual({ status: "none" });
+    expect(decisionState(null, 0, key, null, true)).toEqual({ status: "none" });
   });
 });

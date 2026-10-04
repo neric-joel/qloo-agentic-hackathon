@@ -2,6 +2,7 @@ import { cn } from "@/lib/utils";
 
 import { ProvenanceChip } from "@/components/kernel";
 import { formatDraw, formatOverlap, popularitySpread } from "@/lib/clashes";
+import { popularityName } from "@/lib/credit";
 import type { Act, Twin, TwinRival } from "@/lib/preset";
 
 import { Meter } from "./marks";
@@ -51,7 +52,7 @@ function RivalRow({ rival, of, draw }: { rival: TwinRival; of: string; draw: num
   );
 }
 
-function TwinCard({ twin, acts }: { twin: Twin; acts: readonly Act[] }) {
+function TwinCard({ twin, acts, synthetic }: { twin: Twin; acts: readonly Act[]; synthetic: boolean }) {
   const sharedDraw = drawOf(twin.shared, acts);
   const separateDraw = drawOf(twin.separate, acts);
   const hasDraw = sharedDraw !== null && separateDraw !== null;
@@ -66,7 +67,7 @@ function TwinCard({ twin, acts }: { twin: Twin; acts: readonly Act[] }) {
         <span />
         {hasDraw ? (
           <span className="text-xs font-semibold">
-            Draw <span className="font-normal text-muted-foreground">(Qloo popularity)</span>
+            Draw <span className="font-normal text-muted-foreground">({popularityName(synthetic)})</span>
           </span>
         ) : null}
         <span className="text-xs font-semibold">
@@ -84,7 +85,7 @@ function TwinCard({ twin, acts }: { twin: Twin; acts: readonly Act[] }) {
             : `${drawGap === 0 ? "Level" : `${drawGap} ${drawGap === 1 ? "point" : "points"} apart`} on draw, `}
           {overlapGap} apart on taste overlap.
         </strong>{" "}
-        Clashing {twin.act} with {twin.shared.act} puts two acts whose audiences Qloo ranks as much
+        Clashing {twin.act} with {twin.shared.act} puts two acts whose audiences {synthetic ? "the day’s figures rank" : "Qloo ranks"} as much
         alike against each other; clashing {twin.act} with {twin.separate.act} puts two acts whose
         audiences it ranks as unlike.
       </p>
@@ -93,7 +94,16 @@ function TwinCard({ twin, acts }: { twin: Twin; acts: readonly Act[] }) {
 }
 
 /** "Same popularity, different taste overlap": one act, two rivals of near-equal draw, very different taste overlap. */
-export function TwinCards({ twins, acts }: { twins: readonly Twin[]; acts: readonly Act[] }) {
+export function TwinCards({
+  twins,
+  acts,
+  synthetic = false,
+}: {
+  twins: readonly Twin[];
+  acts: readonly Act[];
+  /** The invented day: draw and taste overlap are invented, not Qloo's. */
+  synthetic?: boolean;
+}) {
   if (twins.length === 0) return null;
   const spread = popularitySpread(acts);
   return (
@@ -107,20 +117,25 @@ export function TwinCards({ twins, acts }: { twins: readonly Twin[]; acts: reado
         </div>
         <div className="space-y-3 text-[0.9375rem] leading-relaxed">
           <p>
-            Draw is Qloo popularity, a percentile among Qloo artists: {spread.atLeast} of {spread.total}{" "}
+            {synthetic
+              ? "Draw is an invented popularity figure"
+              : "Draw is Qloo popularity, a percentile among Qloo artists"}
+            : {spread.atLeast} of {spread.total}{" "}
             acts on this bill score 90 or more, so it barely separates one clash from another. These
             two rivals have near-equal draw and very different taste overlap with the same act.
           </p>
           <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <ProvenanceChip provenance="recorded" size="sm" />
-            <ProvenanceChip provenance="derived" size="sm" />
-            Draw is a saved Qloo value; taste overlap is derived from saved Qloo rankings.
+            <ProvenanceChip provenance="recorded" size="sm" synthetic={synthetic} />
+            <ProvenanceChip provenance="derived" size="sm" synthetic={synthetic} />
+            {synthetic
+              ? "Draw is an invented value; taste overlap is derived from invented rankings."
+              : "Draw is a saved Qloo value; taste overlap is derived from saved Qloo rankings."}
           </p>
         </div>
       </div>
       <ul className="mt-8 grid gap-4 lg:grid-cols-2">
         {twins.map((twin) => (
-          <TwinCard key={twin.act} twin={twin} acts={acts} />
+          <TwinCard key={twin.act} twin={twin} acts={acts} synthetic={synthetic} />
         ))}
       </ul>
     </section>

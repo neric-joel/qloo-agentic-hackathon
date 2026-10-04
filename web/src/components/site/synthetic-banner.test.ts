@@ -8,6 +8,7 @@ import { parsePreset, parsePresetList } from "@/lib/preset";
 import { showsSyntheticNotice, SYNTHETIC_NOTICE } from "@/lib/synthetic-notice";
 
 import { SyntheticNotice } from "./synthetic-banner";
+import { syntheticFromList } from "./synthetic-context";
 
 // Every name and figure below is invented for the test.
 
@@ -65,5 +66,23 @@ describe("PresetSources on a synthetic day", () => {
     expect(html).toContain("does not use Clash Control");
     expect(html).toContain("Draw (Qloo popularity)");
     expect(html).not.toContain(SYNTHETIC_NOTICE);
+  });
+});
+
+describe("syntheticFromList", () => {
+  const entry = { id: "a", title: "A", city: null, sets: 3, stages: 2, scored_share: 0.9 };
+
+  it("reads the first day's flag, as the server's layout reads it", () => {
+    expect(syntheticFromList([{ ...entry, synthetic: true }])).toBe(true);
+    expect(syntheticFromList([entry])).toBe(false);
+    expect(syntheticFromList([{ ...entry, synthetic: true }, { ...entry, id: "b" }])).toBe(true);
+    expect(syntheticFromList([entry, { ...entry, id: "b", synthetic: true }])).toBe(false);
+    expect(syntheticFromList([])).toBe(false);
+  });
+
+  it("says nothing for an answer that is not a list, so the page keeps what the server read", () => {
+    expect(syntheticFromList("not a list")).toBeNull();
+    expect(syntheticFromList({})).toBeNull();
+    expect(syntheticFromList(null)).toBeNull();
   });
 });

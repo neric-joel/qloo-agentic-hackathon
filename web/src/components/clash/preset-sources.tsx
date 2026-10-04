@@ -4,6 +4,7 @@ import { RecordedBadge } from "@/components/kernel";
 import { describeReach, samplingReach } from "@/lib/clash-budget";
 import { festivalName, hostOf, popularitySpread } from "@/lib/clashes";
 import type { Preset } from "@/lib/preset";
+import { COUNTS_ONLY, formulaNote } from "@/lib/credit";
 import { SYNTHETIC_NOTICE } from "@/lib/synthetic-notice";
 
 /** "/news/lineups/some-long-slug..." trimmed to fit one line. */
@@ -45,7 +46,7 @@ export function PresetSources({ preset }: { preset: Preset }) {
               here is the festival&rsquo;s own data or view.
             </p>
           )}
-          {preset.built_at ? <RecordedBadge builtAt={preset.built_at} className="mt-5" /> : null}
+          {preset.built_at && !synthetic ? <RecordedBadge builtAt={preset.built_at} className="mt-5" /> : null}
         </div>
 
         <div className="space-y-8">
@@ -55,8 +56,8 @@ export function PresetSources({ preset }: { preset: Preset }) {
               <dd className="text-muted-foreground">
                 {synthetic ? (
                   <>
-                    Each act&rsquo;s invented popularity, 0 to 100, standing where Qloo popularity
-                    sits on a real day: {spread.atLeast} of {spread.total} acts on this day score 90
+                    Each act&rsquo;s invented popularity, 0 to 100, standing where a real day carries
+                    a measured one: {spread.atLeast} of {spread.total} acts on this day score 90
                     or more.
                   </>
                 ) : (
@@ -94,15 +95,16 @@ export function PresetSources({ preset }: { preset: Preset }) {
               <dt className="font-semibold">Clash price</dt>
               <dd className="text-muted-foreground">
                 Taste overlap &times; the share of the shorter set the two sets play at once &times;
-                combined draw. Acts without a Qloo signal are left out, never scored as zero.
+                combined draw &times; a rarity factor. Acts without a{synthetic ? " priced signal" : " Qloo signal"}{" "}
+                are left out, never scored as zero. {formulaNote(synthetic)}
               </dd>
             </div>
             <div>
               <dt className="font-semibold">Clash Budget Index</dt>
               <dd className="text-muted-foreground">
                 100 &times; the day&rsquo;s total clash price &divide; the average of{" "}
-                {samples ? `${samples} ` : ""}random valid timetables of this lineup ({reach}). It
-                counts only what clashes cost: taste overlap, time shared and draw. Lower is better. It is not a verdict on the festival: real programming
+                {samples ? `${samples} ` : ""}random valid timetables of this lineup ({reach}).{" "}
+                {COUNTS_ONLY} Lower is better. It is not a verdict on the festival: real programming
                 weighs much more than taste overlap.
               </dd>
             </div>

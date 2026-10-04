@@ -1,12 +1,15 @@
 import { cn } from "@/lib/utils";
 
 import { formatPercent } from "@/lib/clashes";
+import { coverageAll, coverageHeading, coverageNone, coverageUnscored } from "@/lib/credit";
 import { pluralize } from "@/lib/format";
 import type { CoverageSummary, ScheduleMetrics } from "@/lib/preset";
 
 type CoverageMeterProps = {
   coverage: CoverageSummary;
   metrics: ScheduleMetrics;
+  /** The invented day: nothing here credits Qloo. */
+  synthetic?: boolean;
   className?: string;
 };
 
@@ -19,7 +22,7 @@ function joinNames(names: readonly string[]): string {
  * How much of the lineup Qloo could speak for, as one compact strip. Acts without a signal are
  * named and left out of every price; they are never counted as zero taste overlap.
  */
-export function CoverageMeter({ coverage, metrics, className }: CoverageMeterProps) {
+export function CoverageMeter({ coverage, metrics, synthetic = false, className }: CoverageMeterProps) {
   const total = coverage.strong + coverage.weak + coverage.none;
   const segments = [
     { key: "strong", count: coverage.strong, label: "strong signal", className: "bg-foreground" },
@@ -29,7 +32,7 @@ export function CoverageMeter({ coverage, metrics, className }: CoverageMeterPro
       label: "weak signal",
       className: "bg-[repeating-linear-gradient(90deg,var(--foreground)_0_2px,transparent_2px_4px)]",
     },
-    { key: "none", count: coverage.none, label: "no Qloo signal", className: "bg-hatch bg-card" },
+    { key: "none", count: coverage.none, label: coverageNone(synthetic), className: "bg-hatch bg-card" },
   ].filter((segment) => segment.count > 0);
   const breakdown = segments.map((segment) => `${segment.count} ${segment.label}`).join(", ");
   const unscored = coverage.unscored.map((item) => item.name);
@@ -38,7 +41,7 @@ export function CoverageMeter({ coverage, metrics, className }: CoverageMeterPro
     <section aria-labelledby="coverage-heading" className={cn("min-w-0", className)}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <h3 id="coverage-heading" className="type-kicker text-muted-foreground">
-          Qloo coverage
+          {coverageHeading(synthetic)}
         </h3>
         <p className="flex items-baseline gap-1.5">
           <span className="type-numeral text-2xl leading-none">{formatPercent(coverage.scored_share)}</span>
@@ -65,14 +68,14 @@ export function CoverageMeter({ coverage, metrics, className }: CoverageMeterPro
         {unscored.length > 0 ? (
           <>
             <strong className="font-semibold text-foreground">Left out, not scored as zero:</strong>{" "}
-            {joinNames(unscored)} (no usable Qloo signal; hatched below)
+            {joinNames(unscored)} ({coverageUnscored(synthetic)})
             {metrics.unscored_concurrent_pairs > 0
               ? `. ${pluralize(metrics.unscored_concurrent_pairs, "overlapping pair")} could not be priced`
               : ""}
             {coverage.weak > 0 ? `. ${pluralize(coverage.weak, "act")} with a weak signal` : ""}.
           </>
         ) : (
-          <>Every act on this day has a Qloo signal{coverage.weak > 0 ? `; ${coverage.weak} weak` : ""}.</>
+          <>{coverageAll(synthetic)}{coverage.weak > 0 ? `; ${coverage.weak} weak` : ""}.</>
         )}
       </p>
     </section>

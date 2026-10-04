@@ -1,4 +1,5 @@
 import { ProvenanceChip } from "@/components/kernel/provenance-chip";
+import { COUNTS_ONLY } from "@/lib/credit";
 import type { ServerSummary } from "@/lib/server-summary";
 
 /*
@@ -25,8 +26,7 @@ export function SummaryScore({ summary }: { summary: ServerSummary }) {
         <p className="type-title mt-3">No index for this day</p>
       )}
       <p className="mt-4 text-sm leading-relaxed font-medium">
-        {summary.title}. 100 = the average random valid timetable of this lineup. It counts only what clashes cost:
-        taste overlap, time shared and draw.
+        {summary.title}. 100 = the average random valid timetable of this lineup. {COUNTS_ONLY}
       </p>
       <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{summary.evidence}</p>
     </div>

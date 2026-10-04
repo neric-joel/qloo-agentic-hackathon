@@ -20,9 +20,16 @@ import {
   isFixedByLocks,
   topClashes,
 } from "./clashes";
+import { COUNTS_ONLY } from "./credit";
 import { pluralize } from "./format";
 import { numberWord } from "./method-figures";
-import { buildDecisionCopy, type Decision, type Tradeoff } from "./decision";
+import {
+  TRADEOFF_HEADING_ALONE,
+  TRADEOFF_NOTE_BRIEF,
+  buildDecisionCopy,
+  type Decision,
+  type Tradeoff,
+} from "./decision";
 import { currentPlacement } from "./moves";
 import { planVerdict, publishedVerdict, raisesIndex } from "./plan-copy";
 import type { BaselineStats, Preset } from "./preset";
@@ -35,6 +42,7 @@ import {
   shiftText,
   type Plan,
   type ScaleRange,
+  type StackMove,
   type StackStep,
 } from "./stack";
 import { formatRange, overlapWindow } from "./timetable";
@@ -61,7 +69,7 @@ export const TO_DECIDE =
 export const HOW_TO_READ: readonly string[] = [
   "Taste overlap is calculated by this app from Qloo data: how highly Qloo ranks each act for the other’s audience, as a rank among the acts compared for this bill, 0 to 100. It measures taste, not attendance.",
   "Combined draw is the two acts’ Qloo popularity, 0 to 100.",
-  "The Clash Budget Index is 100 for the average random valid timetable of this lineup; lower is better; it counts only what clashes cost: taste overlap, time shared and draw. It is a reading, not a verdict on the festival: real programming weighs much more than taste overlap.",
+  `The Clash Budget Index is 100 for the average random valid timetable of this lineup; lower is better. ${COUNTS_ONLY} It is a reading, not a verdict on the festival: real programming weighs much more than taste overlap.`,
 ];
 
 /** The same block on an invented day: nothing here credits Qloo, because no Qloo request was made. */
@@ -298,6 +306,8 @@ export type BriefMoveStep = {
   after: string;
   /** This step raised the index, compared as printed; the brief marks it " · raises the index". */
   raises: boolean;
+  /** What the pair this move was made for shares after the plan, when the plan is just this move and the route priced it; else null. */
+  receipt: string | null;
 };
 
 /** A step of the brief's plan: a single move or a kept change. */
@@ -322,33 +332,63 @@ function stepLines(step: BriefStep, columns: 1 | 2): number {
   return isBriefRuleStep(step) ? (columns === 2 ? 4.5 : 3) : 2;
 }
 
-/** A plan that takes this many printed lines or more down its tallest column shortens the published-day table. */
-const HEAVY_PLAN_LINES = 8;
+/**
+ * A plan that takes this many printed lines or more down its tallest column shortens the published-day table to
+ * three clashes. Measured with headless Chrome on Letter and A4: seven single moves with five rows ran to 99% of a
+ * Letter page, and six to 97%, so the limit sits where the sheet keeps a margin.
+ */
+const HEAVY_PLAN_LINES = 4;
 
-/** With the comparison on the sheet, a plan this tall shortens the published-day table to one clash. */
-const TALL_PLAN_LINES = 6;
+/** With the comparison on the sheet, a plan this tall leaves the published-day table off the printed page. */
+const TALL_PLAN_LINES = 3;
 
 /**
  * How many of the published day's costliest clashes the table lists. Five, unless the kept steps are so
- * long (three long two-set changes, in one column, take nine printed lines; eight single moves, in two
- * columns, take eight) that the sheet would run to the bottom of a Letter page or spill onto a second: then
- * three, and the heading says "three". `columns` is how many columns
- * the steps print in (two from four steps). With the side-by-side comparison on the sheet it is two, or one for a tall plan.
+ * long (two single moves in one column take four printed lines; four in two columns take four, and three long
+ * two-set changes in one column take nine) that the sheet would run to the bottom of a page: then three, and
+ * the heading says "three". `columns` is how many columns
+ * the steps print in (two from four steps). With the side-by-side comparison on the sheet the table lists one
+ * (the comparison names the day's costliest clash with a move and says what each change leaves of it); see `tableOnPaper`.
  */
 export function tableClashes(steps: readonly BriefStep[], columns: 1 | 2, withTradeoff = false): number {
   const lines = steps.reduce((sum, step) => sum + stepLines(step, columns), 0);
-  // The side-by-side comparison takes about ten printed lines of its own, so the published day's table gives
-  // up three rows for it and lists two; a plan that takes six printed lines down its tallest column (a kept
-  // change and four single moves, say) leaves room for one.
-  if (withTradeoff) return lines / columns >= TALL_PLAN_LINES ? 1 : 2;
+  // The side-by-side comparison takes about sixteen printed lines of its own (its sentence under the heading,
+  // seven rows, their notes and the non-verdict line), so the published day's table gives up all but one row.
+  if (withTradeoff) return 1;
   return lines / columns >= HEAVY_PLAN_LINES ? 3 : BRIEF_CLASHES;
+}
+
+/**
+ * Whether the plan's steps are so long on paper (four printed lines or more down the tallest column: two
+ * single moves, or four in two columns) that the sheet gives up the list of hidden clashes too, which
+ * the table's own marks repeat. It stays on the screen.
+ */
+export function heavyPlan(steps: readonly BriefStep[], columns: 1 | 2): boolean {
+  const lines = steps.reduce((sum, step) => sum + stepLines(step, columns), 0);
+  return lines / columns >= HEAVY_PLAN_LINES;
+}
+
+/**
+ * Whether the published day's table is printed at all. With the comparison on the sheet, a plan that takes
+ * three printed lines or more down its tallest column (one kept change, or a move and another step) leaves no
+ * margin for it on a Letter or A4 page, and the comparison already names that clash. It stays on the screen.
+ */
+export function tableOnPaper(steps: readonly BriefStep[], columns: 1 | 2, withTradeoff = false): boolean {
+  if (!withTradeoff) return true;
+  const lines = steps.reduce((sum, step) => sum + stepLines(step, columns), 0);
+  return lines / columns < TALL_PLAN_LINES;
 }
 
 /**
  * The plan's steps in order, each with where the set now plays, how far it moved from its
  * published place, and the index before and after it (the server's figures, never recomputed).
  */
-export function briefSteps(preset: Pick<Preset, "festival">, plan: Pick<Plan, "publishedBudget" | "steps">): BriefStep[] {
+export function briefSteps(
+  preset: Pick<Preset, "festival">,
+  plan: Pick<Plan, "publishedBudget" | "steps">,
+  /** The card's move and its receipt, when the brief holds the decision (see `BriefTradeoff`). */
+  card: { move: StackMove; receipt: string } | null = null,
+): BriefStep[] {
   const stages = new Map(preset.festival.stages.map((stage) => [stage.id, stage.name]));
   const slots = new Map(preset.festival.timetable.map((slot) => [slot.act_id, slot]));
   return plan.steps.map((step, index): BriefStep => {
@@ -373,6 +413,10 @@ export function briefSteps(preset: Pick<Preset, "festival">, plan: Pick<Plan, "p
       before: formatIndex(before),
       after: formatIndex(step.budgetAfter),
       raises: raisesIndex(before, step.budgetAfter),
+      receipt:
+        plan.steps.length === 1 && card && sameStep({ actId: step.actId, stageId: step.stageId, day: step.day, start: step.start }, card.move)
+          ? card.receipt
+          : null,
     };
   });
 }
@@ -411,8 +455,17 @@ export function planClashLines(plan: Pick<Plan, "clashes">): string[] {
 
 // ------------------------------------------------------------------------------------ the trade-off
 
-/** The card's two changes side by side, and which of them the plan holds. */
-export type BriefTradeoff = { tradeoff: Tradeoff; held: { move: boolean; change: boolean } };
+/**
+ * The card's two changes side by side, and which of them the plan holds. `alone` is true when the plan holds
+ * more than one step: the table's figures are each change tested alone on the published day, not what the
+ * whole plan does, and the table says so. `moveReceipt` is the card's receipt for a plan that is just its move.
+ */
+export type BriefTradeoff = {
+  tradeoff: Tradeoff;
+  held: { move: boolean; change: boolean };
+  alone: boolean;
+  moveReceipt: { move: StackMove; receipt: string } | null;
+};
 
 /**
  * The decision card's comparison for the brief, only when the plan holds the card's move or the card's
@@ -433,7 +486,18 @@ export function briefTradeoff(
     move: seedMove !== null && steps.some((step) => !isRuleStackStep(step) && sameStep(step, seedMove)),
     change: seedChange !== null && steps.some((step) => sameStep(step, seedChange)),
   };
-  return held.move || held.change ? { tradeoff: copy.tradeoff, held } : null;
+  if (!held.move && !held.change) return null;
+  const alone = steps.length > 1;
+  return {
+    tradeoff: {
+      ...copy.tradeoff,
+      heading: alone ? TRADEOFF_HEADING_ALONE : copy.tradeoff.heading,
+      footnote: TRADEOFF_NOTE_BRIEF,
+    },
+    held,
+    alone,
+    moveReceipt: seedMove !== null && copy.moveReceipt !== null ? { move: seedMove, receipt: copy.moveReceipt } : null,
+  };
 }
 
 // ------------------------------------------------------------------------------------ the footer

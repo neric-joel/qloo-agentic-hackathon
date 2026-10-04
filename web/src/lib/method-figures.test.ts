@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import MethodPage, { metadata } from "@/app/method/page";
+import { SyntheticContext } from "@/components/site/synthetic-context";
 
 import {
   METHOD_FIGURES,
@@ -209,7 +210,13 @@ describe("method figures", () => {
   });
 
   it("pins the rarity factor of the price and states the whole formula", () => {
-    expect(price).toEqual({ rarityFloor: 0.5, neutralRarity: 0.5, neutralFactor: 1 });
+    expect(price).toEqual({
+      rarityFloor: 0.5,
+      neutralRarity: 0.5,
+      neutralFactor: 1,
+      scaleFactor: [0, 1],
+      drawPrior: { 1: 0.9, 2: 0.7, 3: 0.5, 4: 0.3 },
+    });
     // The pair factor is the floor plus the mean of the two acts' rarity.
     expect(price.rarityFloor + (price.neutralRarity + price.neutralRarity) / 2).toBe(price.neutralFactor);
     const text = pageText();
@@ -218,6 +225,48 @@ describe("method figures", () => {
     );
     expect(text).toContain("times the two acts' draw (their geometric mean), times a rarity factor of 0.5 plus the average of the two acts' rarity");
     expect(text).toContain("the mean total price of 300 sampled random valid timetables");
+  });
+
+  it("pins the stand-in draw to the engine's own table when the backend source is in the tree", () => {
+    const source = fileURLToPath(new URL("../../../backend/app/schedule/metrics.py", import.meta.url));
+    if (!existsSync(source)) return;
+    const line = /^DRAW_PRIOR\s*=\s*{([^}]*)}/m.exec(readFileSync(source, "utf8"))?.[1] ?? "";
+    const table = Object.fromEntries(
+      [...line.matchAll(/(\d+)\s*:\s*([\d.]+)/g)].map((entry) => [Number(entry[1]), Number(entry[2])]),
+    );
+    expect(table).toEqual({ ...price.drawPrior });
+    const floor = /^RARITY_FLOOR\s*=\s*([\d.]+)/m.exec(readFileSync(source, "utf8"))?.[1];
+    expect(Number(floor)).toBe(price.rarityFloor);
+  });
+
+  it("says the factors are on a 0 to 1 scale, printed rounded, with a stand-in draw by billing tier", () => {
+    const text = pageText();
+    expect(text).toContain("The factors are on a 0 to 1 scale (taste overlap and draw are shown out of 100 elsewhere on the page)");
+    expect(text).toContain("and are rounded when printed, so they may not multiply to exactly the printed price.");
+    expect(text).toContain(
+      "An act with no Qloo popularity takes a stand-in draw set by its billing tier (0.9, 0.7, 0.5 and 0.3 for tiers 1 to 4).",
+    );
+    // The index line names the rarity factor and says why it moves nothing on the saved days.
+    expect(text).toContain(
+      "It counts only what clashes cost: taste overlap, time shared, draw and a rarity factor (rarity is neutral on the two published days).",
+    );
+    expect(text).not.toContain("taste overlap, time shared and draw.");
+    // The invented day is the exception to a neutral rarity.
+    expect(text).toContain("The invented example day, which a server shows when it has no built day, is the exception");
+  });
+
+  it("keeps the saved-responses line on a published day and swaps it on the invented one", () => {
+    const real = pageText();
+    expect(real).toContain(
+      "The festival days shown were built from saved Qloo responses; the festivals themselves do not use Clash Control.",
+    );
+    const invented = renderToStaticMarkup(
+      createElement(SyntheticContext.Provider, { value: true }, createElement(MethodPage)),
+    )
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ");
+    expect(invented).toContain("This server is showing an invented example day: its figures are invented and no Qloo request was made.");
+    expect(invented).not.toContain("built from saved Qloo responses");
   });
 
   it("pins the index baseline and the move check", () => {

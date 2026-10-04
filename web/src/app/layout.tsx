@@ -5,6 +5,7 @@ import { MockBanner } from "@/components/site/mock-banner";
 import { SiteFooter } from "@/components/site/site-footer";
 import { SiteHeader } from "@/components/site/site-header";
 import { SyntheticBanner } from "@/components/site/synthetic-banner";
+import { SyntheticProvider } from "@/components/site/synthetic-context";
 import { THEME_INIT_SCRIPT } from "@/components/theme/theme-config";
 import { ThemeProvider } from "@/components/theme/theme-provider";
 import { loadSyntheticFlag } from "@/lib/server-summary";
@@ -25,8 +26,10 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
+// The default for every page, so it says nothing that is true of only one kind of day: a published day
+// credits Qloo and the invented day does not. The home page replaces it with the day it serves.
 const DESCRIPTION =
-  "Clash Control prices the set-time clashes on a festival timetable with Qloo: how popular the two acts are, times how much their audiences overlap in taste. Taste, not attendance.";
+  "Clash Control prices the set-time clashes on a festival timetable: how popular the two acts are, times how much their audiences overlap in taste. Taste, not attendance.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://clash-control.vercel.app"),
@@ -63,19 +66,21 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       </head>
       <body className="flex min-h-dvh flex-col">
         <ThemeProvider>
-          <a
-            href="#main"
-            className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:rounded-md focus:bg-foreground focus:px-4 focus:py-2.5 focus:text-sm focus:font-semibold focus:text-background"
-          >
-            Skip to main content
-          </a>
-          <MockBanner />
-          <SyntheticBanner initial={synthetic} />
-          <SiteHeader />
-          <main id="main" className="flex-1">
-            {children}
-          </main>
-          <SiteFooter synthetic={synthetic} />
+          <SyntheticProvider initial={synthetic}>
+            <a
+              href="#main"
+              className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:rounded-md focus:bg-foreground focus:px-4 focus:py-2.5 focus:text-sm focus:font-semibold focus:text-background"
+            >
+              Skip to main content
+            </a>
+            <MockBanner />
+            <SyntheticBanner initial={synthetic} />
+            <SiteHeader />
+            <main id="main" className="flex-1">
+              {children}
+            </main>
+            <SiteFooter synthetic={synthetic} />
+          </SyntheticProvider>
         </ThemeProvider>
       </body>
     </html>

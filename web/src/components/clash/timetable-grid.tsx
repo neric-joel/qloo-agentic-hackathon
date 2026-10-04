@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type Keyboard
 import { Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+import { noSignalLabel, weakSignalLabel } from "@/lib/credit";
 import { clashKey, formatDraw, formatShare, LABEL_META, partnerOf, type SetView } from "@/lib/clashes";
 import type { PairClash, Stage } from "@/lib/preset";
 import type { RulePreview } from "@/lib/rule-fix";
@@ -48,6 +49,8 @@ type TimetableGridProps = {
   plan?: PlanPreview | null;
   /** A change from "Keep two sets apart", drawn as ghosts and never part of the plan. */
   rulePreview?: RulePreview | null;
+  /** The invented day: a set with no signal is "not priced", not "no Qloo signal". */
+  synthetic?: boolean;
   className?: string;
 };
 
@@ -93,9 +96,9 @@ function placeGhosts(
 }
 
 /** What a set block adds for screen readers after its visible text. */
-function describeSetTail(view: SetView, moved: boolean): string {
+export function describeSetTail(view: SetView, moved: boolean, synthetic = false): string {
   const parts = [
-    view.coverage === "weak" ? "Weak Qloo signal." : "",
+    view.coverage === "weak" ? weakSignalLabel(synthetic) : "",
     view.slot.locked ? "Locked set." : "",
     moved ? "Moved in your tested plan." : "",
   ];
@@ -135,6 +138,7 @@ export function TimetableGrid({
   onOpen,
   plan = null,
   rulePreview = null,
+  synthetic = false,
   className,
 }: TimetableGridProps) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -482,7 +486,7 @@ export function TimetableGrid({
                           <span className="mt-auto flex items-center gap-1.5 pt-1 font-mono text-[0.6875rem]">
                             {none ? (
                               <span className="rounded-sm bg-card px-1 font-sans font-semibold text-foreground">
-                                No Qloo signal
+                                {noSignalLabel(synthetic)}
                                 <span className="sr-only">, not priced. </span>
                               </span>
                             ) : view.act.popularity !== null ? (
@@ -508,13 +512,13 @@ export function TimetableGrid({
                         ) : (
                           <span className="sr-only">
                             {none
-                              ? "No Qloo signal, not priced. "
+                              ? `${noSignalLabel(synthetic)}, not priced. `
                               : view.act.popularity !== null
                                 ? `Draw ${formatDraw(view.act.popularity)}. `
                                 : ""}
                           </span>
                         )}
-                        <span className="sr-only">{describeSetTail(view, moved)}</span>
+                        <span className="sr-only">{describeSetTail(view, moved, synthetic)}</span>
                       </button>
                     );
                   })}

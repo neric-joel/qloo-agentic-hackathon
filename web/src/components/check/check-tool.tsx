@@ -34,7 +34,8 @@ import type { TrialState, TrialUi } from "./check-trial-panel";
 const FIELD =
   "mt-1.5 w-full min-w-0 rounded-md border border-border-strong bg-card px-3 text-[0.9375rem] text-foreground placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 
-type Run = { nonce: number; outcome: CheckOutcome; note: string };
+/** `input` is what the check read: the paste and settings as they were when it ran. */
+type Run = { nonce: number; outcome: CheckOutcome; note: string; input: CheckInput };
 
 /** The pasted grid with some changes tried on it: a copy held in this tab, never the paste itself. */
 type Working = { report: CheckReport; applied: TrialChange[] };
@@ -56,7 +57,7 @@ export function CheckTool({
 }) {
   const [input, setInput] = useState<CheckInput>(initial);
   const [run, setRun] = useState<Run | null>(() =>
-    checkOnLoad ? { nonce: 1, outcome: runCheck(initial), note: "" } : null,
+    checkOnLoad ? { nonce: 1, outcome: runCheck(initial), note: "", input: initial } : null,
   );
   const [kept, setKept] = useState<ReadonlySet<string>>(() => new Set());
   const [showAll, setShowAll] = useState(false);
@@ -117,12 +118,16 @@ export function CheckTool({
       setWorking(null);
       setNote("");
       setShowAll(false);
-      setRun((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, outcome, note }));
+      setRun((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, outcome, note, input: next }));
     },
     [stopSearch],
   );
 
+  // Any edit to the paste or the settings drops the search results on show: they were for the grid
+  // as last checked, and nothing is searched or tried until the next check.
   function update(field: keyof CheckInput, value: string) {
+    stopSearch();
+    setTrial(null);
     setInput((current) => ({ ...current, [field]: value }));
   }
 
@@ -159,10 +164,16 @@ export function CheckTool({
 
   const outcome = run?.outcome;
   const pasted = outcome?.ok ? outcome.report : null;
+  const stale =
+    run !== null &&
+    (input.grid !== run.input.grid ||
+      input.changeover !== run.input.changeover ||
+      input.curfew !== run.input.curfew ||
+      input.pairs !== run.input.pairs);
   const shown = working?.report ?? pasted;
 
   function findChange(target: TrialTarget, label: string) {
-    if (!shown || !pasted) return;
+    if (!shown || !pasted || stale) return;
     stopSearch();
     const token = searchToken.current;
     const id = targetId(target);
@@ -184,7 +195,7 @@ export function CheckTool({
   }
 
   function tryChange(change: TrialChange) {
-    if (!shown) return;
+    if (!shown || stale) return;
     stopSearch();
     const report = applyChange(shown, change);
     setTrial(null);
@@ -203,6 +214,7 @@ export function CheckTool({
 
   const trialUi: TrialUi = {
     state: trial,
+    stale,
     onFind: findChange,
     onApply: tryChange,
     onClose: () => {
@@ -389,6 +401,10 @@ export function CheckTool({
               </details>
             </section>
           ) : null}
+          {/* Always in the page, so the line is announced when it appears: the results below it are for the grid as last checked. */}
+          <div role="status" className="print:hidden">
+            {stale ? <p className="mt-6 text-sm font-semibold text-warning">{TRIAL_COPY.stale}</p> : null}
+          </div>
           <CheckResults
             report={shown}
             kept={kept}

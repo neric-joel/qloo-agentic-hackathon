@@ -230,6 +230,10 @@ describe("DecisionCard", () => {
     const button = kept.slice(kept.lastIndexOf("<button", kept.indexOf("In your plan")), kept.indexOf("In your plan"));
     expect(button).not.toBe("");
     expect(button).not.toContain(`disabled=""`);
+    // A quiet state, not a second primary button: no ink fill, and the unkept button is the outline one.
+    expect(button).toContain('data-variant="ghost"');
+    expect(button).not.toContain('data-variant="ink"');
+    expect(html).toContain('data-variant="outline"');
   });
 
   it("says so, with no receipt, figure, timeline or move to open, when no place lowers the index", () => {
@@ -298,7 +302,8 @@ describe("the side-by-side comparison in the card", () => {
       "Move one set Keep the two apart",
       "Sets moved",
       "Start-time minutes moved",
-      "Time the pair shares after",
+      "Time the pair shares, before → after",
+      "Ends the overlap",
       "Clash Budget Index, before → after",
       "Stage-fit flags, now → after",
       "Costliest clash after",
@@ -310,11 +315,31 @@ describe("the side-by-side comparison in the card", () => {
     });
     expect(plain).toContain("104.2 → 98.4");
     expect(plain).toContain("104.2 → 99.1");
+    // The pair's minutes before and after each change, and a yes or no for whether each ends the overlap.
+    expect(plain).toMatch(/Time the pair shares, before → after \d+ → 0 minutes \d+ → 0 minutes/);
+    expect(plain).toMatch(/Ends the overlap Yes Yes/);
     expect(plain).toContain("1 → 1");
     expect(plain).toContain("1 → 2");
     expect(plain).toContain("Ed Sheeran-ish and Fay Wray, 45 minutes, 1.2 index points");
     expect(plain).toContain("Cy Twombly and Di Vine, 30 minutes, 9.5 index points");
     expect(plain).toContain(STAGE_FIT_GLOSS);
+  });
+
+  it("says what each column is, under the heading, and ends with a non-verdict line that shows on a phone", () => {
+    const html = compared();
+    const plain = text(html);
+    const subtitle =
+      "Each change tested alone on the published day: the first column is the single move with the lowest index; the second is the smallest change this search found that ends the overlap.";
+    expect(plain.indexOf(subtitle)).toBeGreaterThan(plain.indexOf("The two changes side by side"));
+    expect(plain.indexOf(subtitle)).toBeLessThan(plain.indexOf("Move one set Keep the two apart"));
+    const note = "A reading to weigh, not a verdict; once you keep a change, the plan receipt below is what your plan does.";
+    expect(plain.indexOf(note)).toBeGreaterThan(plain.indexOf("Costliest clash after"));
+    expect(plain.indexOf(note)).toBeLessThan(plain.indexOf("How this was chosen"));
+    // Neither line is in the collapsed disclosure: no `hidden` or `max-sm:hidden` class on its paragraph.
+    for (const line of [subtitle, note]) {
+      const paragraph = html.slice(html.lastIndexOf("<p", html.indexOf(line.slice(0, 30))), html.indexOf(line.slice(0, 30)));
+      expect(paragraph).not.toMatch(/hidden/);
+    }
   });
 
   it("keeps the attribution beside the index row and stacks every row on a phone", () => {

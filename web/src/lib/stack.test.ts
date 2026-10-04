@@ -38,6 +38,8 @@ import {
   type PlanStep,
   type RuleStackStep,
   type StackMove,
+  moveStepReceipt,
+  pairSharedReceipt,
 } from "./stack";
 
 /** Synthetic moves on an invented day. */
@@ -933,5 +935,27 @@ describe("plan storage and requests with rule steps", () => {
     const seven = Array.from({ length: 7 }, (_, i) => ({ ...one, actId: `act-${i}` }));
     expect(await requestPlan("example-sun", [...seven, change], null)).toEqual({ status: "error" });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("the receipt of a single-move step", () => {
+  const card = { move: { actId: "act-one", stageId: "west", day: 0, start: "20:30" }, receipt: "Act One and Act Two share 30 minutes after this plan." };
+
+  it("words what the pair still shares after the plan, in minutes or none", () => {
+    expect(pairSharedReceipt("Sprints", "Katy J Pearson", 30)).toBe("Sprints and Katy J Pearson share 30 minutes after this plan.");
+    expect(pairSharedReceipt("Sprints", "Katy J Pearson", 1)).toBe("Sprints and Katy J Pearson share 1 minute after this plan.");
+    expect(pairSharedReceipt("Sprints", "Katy J Pearson", 0)).toBe("Sprints and Katy J Pearson share no time after this plan.");
+  });
+
+  it("is the card's receipt only for a plan that is exactly the card's move", () => {
+    expect(moveStepReceipt([card.move], card)).toBe(card.receipt);
+    // The same time written another way is the same move.
+    expect(moveStepReceipt([{ ...card.move, start: "20:30" }], { ...card, move: { ...card.move, start: "20:30" } })).toBe(card.receipt);
+    // Another place, a longer plan, a kept change, an empty plan or no card: no figure that could be read as the plan's.
+    expect(moveStepReceipt([{ ...card.move, start: "20:45" }], card)).toBeNull();
+    expect(moveStepReceipt([card.move, { actId: "act-two", stageId: "west", day: 0, start: "18:00" }], card)).toBeNull();
+    expect(moveStepReceipt([{ rule: { aId: "act-one", bId: "act-two" }, moves: [card.move] }], card)).toBeNull();
+    expect(moveStepReceipt([], card)).toBeNull();
+    expect(moveStepReceipt([card.move], null)).toBeNull();
   });
 });

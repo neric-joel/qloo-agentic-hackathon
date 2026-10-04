@@ -11,6 +11,7 @@ import {
   sourceLabel,
   tagLabel,
 } from "@/lib/clashes";
+import { popularityName, tagsTitle } from "@/lib/credit";
 import { pluralize } from "@/lib/format";
 import type { Evidence, HiddenWallItem, SharedTag } from "@/lib/preset";
 
@@ -56,7 +57,7 @@ function TagChips({ tags }: { tags: readonly SharedTag[] }) {
   );
 }
 
-function WallCard({ item }: { item: HiddenWallItem }) {
+function WallCard({ item, synthetic }: { item: HiddenWallItem; synthetic: boolean }) {
   const [a, b] = item.acts;
   const source = isWebUrl(item.source) ? item.source : null;
   return (
@@ -115,13 +116,13 @@ function WallCard({ item }: { item: HiddenWallItem }) {
         </dl>
         <p className="mt-2 text-xs text-muted-foreground">
           Both figures here rank this pair among that day&rsquo;s clashes, 0 to 100, so they are not on
-          the same scale as the timetable above, where draw is Qloo popularity.
+          the same scale as the timetable above, where draw is {popularityName(synthetic)}.
           {item.overlap_min ? ` ${item.overlap_min} min at the same time.` : ""}
         </p>
 
         {item.shared_tags.length > 0 ? (
           <div className="mt-4">
-            <p className="text-xs font-semibold">Tags Qloo returned for this pair</p>
+            <p className="text-xs font-semibold">{tagsTitle(synthetic)}</p>
             <TagChips tags={item.shared_tags} />
             <p className="mt-1.5 text-[0.6875rem] text-muted-foreground">{BROAD_TAGS_NOTE}</p>
           </div>
@@ -163,7 +164,7 @@ export function wallCount(shown: number, total: number): string {
  * no genre tag but their taste overlap is among the highest of that day. Shown as examples with
  * their sources, not as proof that the measure detects such clashes.
  */
-export function HiddenWall({ evidence }: { evidence: Evidence | null }) {
+export function HiddenWall({ evidence, synthetic = false }: { evidence: Evidence | null; synthetic?: boolean }) {
   const items = evidence?.hidden_wall ?? [];
   // A day with no sourced examples has nothing to show: the section, its link and its nav entry stay out.
   if (items.length === 0) return null;
@@ -199,11 +200,11 @@ export function HiddenWall({ evidence }: { evidence: Evidence | null }) {
           <p className="text-sm font-semibold">
             {wallCount(items.length, evidence?.hidden_wall_total ?? items.length)}
           </p>
-          <ProvenanceChip provenance="recorded" size="sm" />
+          <ProvenanceChip provenance="recorded" size="sm" synthetic={synthetic} />
         </div>
         <ul className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {items.map((item) => (
-            <WallCard key={`${item.festival}-${item.acts.join("|")}`} item={item} />
+            <WallCard key={`${item.festival}-${item.acts.join("|")}`} item={item} synthetic={synthetic} />
           ))}
         </ul>
       </div>

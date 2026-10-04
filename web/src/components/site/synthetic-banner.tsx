@@ -2,11 +2,10 @@
 
 import { FlaskConical } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
 
-import { MOCK_STREAM_ENABLED } from "@/lib/mock-stream";
-import { parsePresetList } from "@/lib/preset";
 import { showsSyntheticNotice, SYNTHETIC_NOTICE } from "@/lib/synthetic-notice";
+
+import { useSynthetic } from "./synthetic-context";
 
 /** The notice itself, in the same strip as the simulated-data banner. */
 export function SyntheticNotice() {
@@ -25,27 +24,14 @@ export function SyntheticNotice() {
 
 /**
  * Shown on the pages that print the day when the server has no built preset and serves its invented one
- * (`synthetic: true` on the preset list). `initial` is what the server already read from that list, so
- * the notice is in the server HTML and does not wait for hydration; the browser then asks again and
- * follows the answer. If the list cannot be read the page keeps `initial`: it reports its own errors.
+ * (`synthetic: true` on the preset list). The flag is the page's one shared answer (`SyntheticProvider`):
+ * the server HTML carries what the server read, and the browser then asks again and every reader of the
+ * flag, the footer included, follows it. `initial` is the answer used when no provider is above, so the
+ * banner mounted alone still renders from the server's reading.
  */
 export function SyntheticBanner({ initial = false }: { initial?: boolean }) {
   const pathname = usePathname();
-  const [synthetic, setSynthetic] = useState(initial);
-
-  useEffect(() => {
-    if (MOCK_STREAM_ENABLED) return; // the simulated-data banner already covers this build
-    const controller = new AbortController();
-    fetch("/api/presets", { signal: controller.signal, headers: { Accept: "application/json" } })
-      .then((response) => (response.ok ? response.json() : Promise.reject(new Error("no list"))))
-      .then((raw) => {
-        const first = parsePresetList(raw)[0];
-        setSynthetic(first?.synthetic === true);
-      })
-      .catch(() => {});
-    return () => controller.abort();
-  }, []);
-
+  const synthetic = useSynthetic(initial);
   if (!synthetic || !showsSyntheticNotice(pathname)) return null;
   return <SyntheticNotice />;
 }

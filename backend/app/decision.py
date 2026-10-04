@@ -32,6 +32,7 @@ the day's first ``RANKED`` clashes at most.
 
 from __future__ import annotations
 
+import sys
 import threading
 import time
 from collections import OrderedDict
@@ -206,6 +207,15 @@ def _place(slot: SetSlot, act: str, option: dict[str, Any], *, text_from: str) -
     }
 
 
+def _every_clash(config: ScoringConfig) -> ScoringConfig:
+    """The same scoring with no cut to the festival's costliest pairs. ``score_festival`` keeps only the
+    ``top_clashes`` costliest pairs across all days (15 by default), so on a multi-day festival a day whose
+    clashes all fall below that line would have none in ``report.clashes``. The copy skips the field's
+    validation on purpose: its ``le=200`` bound would cut a large festival too. Prices, the index and the
+    order of the pairs are unchanged; only the length of the list is."""
+    return config.model_copy(update={"top_clashes": sys.maxsize})
+
+
 class _Candidate(NamedTuple):
     """One set's first place (the lowest index after) as the day's decision considers it."""
 
@@ -236,7 +246,7 @@ def _candidates(
             continue
         place = options["options"][0]
         step = PlanMove(act_id, place["stage_id"], place["day"], _clock(place["start"]))
-        plan = apply_plan(festival, matrix, config, [step])
+        plan = apply_plan(festival, matrix, _every_clash(config), [step])
         index = 100.0 * plan.report.metrics.regret / config.baseline.mean_regret
         found.append(_Candidate(index, act_id, options, place, plan))
     return sorted(found, key=lambda c: (c.index, c.act_id))
@@ -274,7 +284,7 @@ def _after_rule_change(
         rule,
     )
     try:
-        plan = apply_plan(festival, matrix, config, [step])
+        plan = apply_plan(festival, matrix, _every_clash(config), [step])
     except IllegalStep:
         return {"minutes_shared_after": None, "costliest_after": None}
     slots = {slot.act_id: slot for slot in plan.festival.timetable}

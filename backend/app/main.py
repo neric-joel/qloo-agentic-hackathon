@@ -68,7 +68,7 @@ app.include_router(whatif_router)
 app.include_router(audit_router)
 app.include_router(decision_router)
 app.add_middleware(NoStoreOnPairRoute)
-app.add_middleware(BodyLimit)  # outermost: a body over 16 KB to /whatif or /api/pair is a 413 unread
+app.add_middleware(BodyLimit)  # outermost: a body over its route's cap is a 413 unread
 install_probe(app, get_settings())
 
 _limiter: RunLimiter | None = None

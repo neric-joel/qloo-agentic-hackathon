@@ -29,7 +29,7 @@ import {
   shiftWords,
   type RuleFixes,
 } from "./rule-fix";
-import { isSafeId, type RuleStackStep, type ScaleRange, type StackMove } from "./stack";
+import { isSafeId, pairSharedReceipt, type RuleStackStep, type ScaleRange, type StackMove } from "./stack";
 import { formatClock, formatRange, overlapWindow } from "./timetable";
 
 // ------------------------------------------------------------------------------------ the answer
@@ -176,6 +176,27 @@ export function parseDecision(json: unknown): Decision | null {
   }
 }
 
+/**
+ * True when the decision has the card's move and a keep-apart change but lacks a figure the side-by-side
+ * comparison prints (stage-fit flags, the costliest clash after, the time the pair shares after the
+ * change). The server renders the card from a fetch it keeps for an hour, so an answer cached before the
+ * route sent those fields lacks them; the browser then asks again once and prints the full table.
+ */
+export function lacksComparison(decision: Decision | null): boolean {
+  if (!decision || !decision.move || !decision.rule || decision.publishedBudget === null) return false;
+  const first = decision.rule.fixes[0];
+  if (decision.rule.holds || !first || (decision.rule.a.locked && decision.rule.b.locked)) return false;
+  const { move, ruleChange } = decision;
+  return (
+    move.flagsNow === null ||
+    move.flagsAfter === null ||
+    move.costliestAfter === undefined ||
+    ruleChange === null ||
+    ruleChange.minutesSharedAfter === null ||
+    ruleChange.costliestAfter === undefined
+  );
+}
+
 /** The route's path, or null for an id the page will not put in a request. */
 export function decisionPath(presetId: string, day: number | null = null): string | null {
   if (!isSafeId(presetId)) return null;
@@ -214,6 +235,16 @@ export const LIMITS_WITH_RULE =
 export const LIMITS_NO_RULE = "Lines 1 and 2 are selected and scored by this app’s index. A reading, not a verdict.";
 
 export const TRADEOFF_HEADING = "The two changes side by side";
+/** The heading when the plan holds more than the one change the table is about (the brief). */
+export const TRADEOFF_HEADING_ALONE = "The two changes, tested alone, not your whole plan";
+/** Under the heading: what each column is, and that the figures are for the published day. */
+export const TRADEOFF_SUBTITLE =
+  "Each change tested alone on the published day: the first column is the single move with the lowest index; the second is the smallest change this search found that ends the overlap.";
+/** Under the table on the card, where the plan is priced further down the page. */
+export const TRADEOFF_NOTE_CARD =
+  "A reading to weigh, not a verdict; once you keep a change, the plan receipt below is what your plan does.";
+/** Under the table in the brief, where the plan receipt comes first. */
+export const TRADEOFF_NOTE_BRIEF = "A reading to weigh, not a verdict; the plan receipt above is what your plan does.";
 export const TRADEOFF_MOVE_HEAD = "Move one set";
 export const TRADEOFF_RULE_HEAD = "Keep the two apart";
 export const NO_PRICED_CLASH = "No priced clash left on this day";
@@ -221,6 +252,11 @@ export const NO_PRICED_CLASH = "No priced clash left on this day";
 /** "Sprints and Katy J Pearson". */
 function andList(names: readonly string[]): string {
   return names.length <= 2 ? names.join(" and ") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
+
+/** "45 → 30 minutes": the minutes the pair shares before and after one change. */
+function sharedText(before: number, after: number): string {
+  return `${before} → ${after} ${after === 1 ? "minute" : "minutes"}`;
 }
 
 /** "A and B, 30 minutes, 9.5 index points": the costliest clash as the plan's clash list prints it. */
@@ -258,12 +294,20 @@ export function buildTradeoff(decision: Decision | null): Tradeoff | null {
         note: null,
       },
     ];
-    if (after && after.minutesSharedAfter !== null) {
+    if (after && after.minutesSharedAfter !== null && decision.clash) {
+      const before = decision.clash.minutes;
       rows.push({
         id: "shared",
-        label: "Time the pair shares after",
-        move: pluralize(move.minutesSharedAfter, "minute"),
-        rule: pluralize(after.minutesSharedAfter, "minute"),
+        label: "Time the pair shares, before → after",
+        move: sharedText(before, move.minutesSharedAfter),
+        rule: sharedText(before, after.minutesSharedAfter),
+        note: null,
+      });
+      rows.push({
+        id: "ends",
+        label: "Ends the overlap",
+        move: move.minutesSharedAfter === 0 ? "Yes" : "No",
+        rule: after.minutesSharedAfter === 0 ? "Yes" : "No",
         note: null,
       });
     }
@@ -294,7 +338,14 @@ export function buildTradeoff(decision: Decision | null): Tradeoff | null {
         note: null,
       });
     }
-    return { heading: TRADEOFF_HEADING, moveHead: TRADEOFF_MOVE_HEAD, ruleHead: TRADEOFF_RULE_HEAD, rows };
+    return {
+      heading: TRADEOFF_HEADING,
+      subtitle: TRADEOFF_SUBTITLE,
+      footnote: TRADEOFF_NOTE_CARD,
+      moveHead: TRADEOFF_MOVE_HEAD,
+      ruleHead: TRADEOFF_RULE_HEAD,
+      rows,
+    };
   } catch {
     return null;
   }
@@ -317,7 +368,7 @@ export type SharedTimeline = {
 
 /** One row of the side-by-side comparison; both cells are printed text, built from the route's figures. */
 export type TradeoffRow = {
-  id: "sets" | "minutes" | "shared" | "index" | "flags" | "costliest";
+  id: "sets" | "minutes" | "shared" | "ends" | "index" | "flags" | "costliest";
   label: string;
   /** The cell under "Move one set". */
   move: string;
@@ -330,6 +381,10 @@ export type TradeoffRow = {
 /** The two changes of the card in one place: the lowest-index single move and the smallest keep-apart change. */
 export type Tradeoff = {
   heading: string;
+  /** Says what each column is and that the figures are for the published day. */
+  subtitle: string;
+  /** One short non-verdict line under the table. */
+  footnote: string;
   moveHead: string;
   ruleHead: string;
   rows: TradeoffRow[];
@@ -362,6 +417,8 @@ export type DecisionCopy = {
   minutesAfter: number | null;
   /** What "Open this move" keeps; null without a move. */
   seedMove: StackMove | null;
+  /** "Sprints and Katy J Pearson share 30 minutes after this plan.": the receipt of a plan that is just that move. */
+  moveReceipt: string | null;
   /** What "Try this rule yourself" searches; null when there is no rule line to try. */
   seedRule: { aId: string; bId: string } | null;
   /** What "Keep this change" keeps: line 3's change as one step of a plan; null without that change. */
@@ -487,6 +544,7 @@ export function buildDecisionCopy(preset: Preset, decision: Decision | null): De
     let rangeLine: string | null = null;
     let timeline: SharedTimeline | null = null;
     let seedMove: StackMove | null = null;
+    let moveReceipt: string | null = null;
     let testing: string | null = null;
     if (move && published !== null) {
       const other = move.actId === clash.aId ? actB : actA;
@@ -514,6 +572,7 @@ export function buildDecisionCopy(preset: Preset, decision: Decision | null): De
         );
       }
       seedMove = { actId: move.actId, stageId: move.stageId, day: move.day, start: move.start };
+      moveReceipt = pairSharedReceipt(actA.name, actB.name, move.minutesSharedAfter);
       testing = `Testing ${move.act} at ${move.start}.`;
     }
 
@@ -542,6 +601,7 @@ export function buildDecisionCopy(preset: Preset, decision: Decision | null): De
       minutesBefore: move ? clash.minutes : null,
       minutesAfter: move ? move.minutesSharedAfter : null,
       seedMove,
+      moveReceipt,
       seedRule: tryable ? { aId: clash.aId, bId: clash.bId } : null,
       seedChange: change,
       testingChange:

@@ -31,7 +31,9 @@ import {
   planVerdictSentence,
   savedDate,
   sourceHosts,
+  heavyPlan,
   tableClashes,
+  tableOnPaper,
   type BriefStep,
 } from "./brief";
 import { parseDecision } from "./decision";
@@ -305,35 +307,55 @@ describe("the day's figures", () => {
 });
 
 describe("how many published-day clashes the table lists", () => {
-  const move = (n: number): BriefStep => ({ n, act: "A", place: "P", shift: "s", before: "1.0", after: "0.9", raises: false });
+  const move = (n: number): BriefStep => ({
+    n,
+    act: "A",
+    place: "P",
+    shift: "s",
+    before: "1.0",
+    after: "0.9",
+    raises: false,
+    receipt: null,
+  });
   const change = (n: number): BriefStep => ({ n, line: "L", before: "1.0", after: "0.9", raises: false, receipt: "r" });
 
-  it("lists five, as the brief always did, unless the kept steps are long", () => {
+  it("lists five, as the brief always did, for no steps, one move or one kept change", () => {
     expect(tableClashes([], 1)).toBe(5);
-    expect(tableClashes([move(1), move(2), move(3)], 1)).toBe(5);
-    // Four singles and two kept changes, as a visitor can keep, in two columns.
-    expect(tableClashes([move(1), move(2), move(3), move(4)], 2)).toBe(5);
-    expect(tableClashes([0, 1, 2, 3, 4, 5].map((i) => move(i + 1)), 2)).toBe(5);
+    expect(tableClashes([move(1)], 1)).toBe(5);
+    expect(tableClashes([change(1)], 1)).toBe(5);
+    expect(heavyPlan([move(1)], 1)).toBe(false);
   });
 
-  it("lists three when three long kept changes, or four singles with two of them, would spill past one page", () => {
+  it("lists three when the kept steps would take the sheet to the foot of a Letter page", () => {
+    // Measured with headless Chrome: seven single moves with five rows ran to 99% of a Letter page.
+    expect(tableClashes([move(1), move(2)], 1)).toBe(3);
+    expect(tableClashes([change(1), move(2)], 1)).toBe(3);
     expect(tableClashes([change(1), change(2), change(3)], 1)).toBe(3);
-    // Two long kept changes and a move already reach the foot of a Letter page.
-    expect(tableClashes([change(1), change(2), move(3)], 1)).toBe(3);
-    expect(tableClashes([change(1), move(2), move(3)], 1)).toBe(5);
+    expect(tableClashes([move(1), move(2), move(3), move(4)], 2)).toBe(3);
+    expect(tableClashes([0, 1, 2, 3, 4, 5].map((i) => move(i + 1)), 2)).toBe(3);
     expect(tableClashes([move(1), move(2), move(3), move(4), change(5), change(6)], 2)).toBe(3);
-    // Eight single moves in two columns reach the foot of a Letter page.
     expect(tableClashes([0, 1, 2, 3, 4, 5, 6, 7].map((i) => move(i + 1)), 2)).toBe(3);
+    // The same plans give up the list of hidden clashes on paper too.
+    expect(heavyPlan([move(1), move(2)], 1)).toBe(true);
+    expect(heavyPlan([0, 1, 2, 3, 4, 5, 6, 7].map((i) => move(i + 1)), 2)).toBe(true);
   });
 
-  it("gives up rows to the side-by-side comparison: two, or one when the plan is tall", () => {
-    // One move: light, so two. A kept change and four singles (the worst case printed) is tall, so one.
-    expect(tableClashes([move(1)], 1, true)).toBe(2);
-    expect(tableClashes([change(1), move(2)], 1, true)).toBe(2);
+  it("gives up rows to the side-by-side comparison: it lists one, and none are printed for a plan of three lines or more", () => {
+    // With the comparison the published day's table lists one clash, whatever the plan.
+    expect(tableClashes([move(1)], 1, true)).toBe(1);
+    expect(tableClashes([change(1), move(2)], 1, true)).toBe(1);
     expect(tableClashes([change(1), move(2), move(3), move(4), move(5)], 2, true)).toBe(1);
     expect(tableClashes([0, 1, 2, 3, 4, 5, 6, 7].map((i) => move(i + 1)), 2, true)).toBe(1);
-    // Without the comparison nothing changes.
-    expect(tableClashes([change(1), move(2), move(3), move(4), move(5)], 2)).toBe(5);
+    // On paper: a move alone keeps its one row; a kept change (three lines), or a move and another step, leaves it to the screen.
+    expect(tableOnPaper([move(1)], 1, true)).toBe(true);
+    expect(tableOnPaper([change(1)], 1, true)).toBe(false);
+    expect(tableOnPaper([move(1), move(2)], 1, true)).toBe(false);
+    expect(tableOnPaper([change(1), move(2), move(3), move(4), move(5)], 2, true)).toBe(false);
+    // Without the comparison the table is always printed.
+    expect(tableOnPaper([change(1), change(2), change(3)], 1, false)).toBe(true);
+    expect(tableOnPaper([], 1, false)).toBe(true);
+    // Without the comparison the plan's length decides.
+    expect(tableClashes([change(1), move(2), move(3), move(4), move(5)], 2)).toBe(3);
     expect(clashesTitle(1, true)).toBe("The costliest clash on the published day, before these moves");
     expect(clashesTitle(2, true)).toBe("The two costliest clashes on the published day, before these moves");
   });
@@ -359,9 +381,9 @@ describe("the plan's verdict in the brief", () => {
   it("states a raised index as a fact, never as a plan that scores well", () => {
     const sentence = planVerdictSentence({ publishedBudget: 86.5, budget: 88.8 }, band) ?? "";
     expect(sentence).toBe(
-      "The middle 80% of random valid timetables of this lineup score 92 to 109; this plan scores below that range. This plan’s index is 2.3 higher than the published timetable’s.",
+      "This plan’s index is 88.8, 2.3 higher than the published timetable’s 86.5. The middle 80% of random valid timetables of this lineup score 92 to 109.",
     );
-    expect(sentence).not.toMatch(/good|better|improve/i);
+    expect(sentence).not.toMatch(/good|better|improve|scores below that range/i);
   });
 });
 
@@ -385,6 +407,7 @@ describe("kept moves", () => {
         before: "116.7",
         after: "110.2",
         raises: false,
+        receipt: null,
       },
       {
         n: 2,
@@ -394,6 +417,7 @@ describe("kept moves", () => {
         before: "110.2",
         after: "108.0",
         raises: false,
+        receipt: null,
       },
       {
         n: 3,
@@ -403,6 +427,7 @@ describe("kept moves", () => {
         before: "108.0",
         after: "106.6",
         raises: false,
+        receipt: null,
       },
     ]);
   });
@@ -483,7 +508,7 @@ describe("the brief sheet", () => {
     const own = text.indexOf("The costliest clash with these moves");
     const decide = text.indexOf(TO_DECIDE);
     const day = text.indexOf("The day Clash Budget Index 116.7");
-    const before = text.indexOf("The five costliest clashes on the published day, before these moves");
+    const before = text.indexOf("The three costliest clashes on the published day, before these moves");
     expect(plan).toBeGreaterThan(-1);
     for (const [earlier, later] of [
       [plan, verdict],
@@ -764,11 +789,90 @@ describe("the brief's trade-off", () => {
     expect(briefTradeoff(preset, decision, [{ ...CARD_MOVE, start: "14:45" }], 0)).toBeNull();
   });
 
+  it("says the figures are each change tested alone when the plan holds more than one step", () => {
+    const preset = makePreset();
+    const decision = parseDecision(decisionRaw());
+    const one = briefTradeoff(preset, decision, [CARD_MOVE], 0)!;
+    expect(one.alone).toBe(false);
+    expect(one.tradeoff.heading).toBe("The two changes side by side");
+    const more = briefTradeoff(preset, decision, [CARD_MOVE, OTHER_MOVE], 0)!;
+    expect(more.alone).toBe(true);
+    expect(more.tradeoff.heading).toBe("The two changes, tested alone, not your whole plan");
+    // The sentence under the heading and the line under the table are the brief's.
+    expect(more.tradeoff.subtitle).toMatch(/^Each change tested alone on the published day/);
+    expect(more.tradeoff.footnote).toBe("A reading to weigh, not a verdict; the plan receipt above is what your plan does.");
+  });
+
+  it("gives the card's move a receipt only for a plan that is just that move", () => {
+    const preset = makePreset();
+    const decision = parseDecision(decisionRaw());
+    const one = briefTradeoff(preset, decision, [CARD_MOVE], 0)!;
+    expect(one.moveReceipt?.receipt).toBe("Act One and Act Two share 30 minutes after this plan.");
+    const plan = { ...PLAN, steps: PLAN.steps.slice(0, 1) };
+    // Act One is the plan's first step in the fixture; the card's move is Act Two, so no step matches.
+    expect(briefSteps(preset, plan, one.moveReceipt)[0]).toMatchObject({ receipt: null });
+    const cardPlan = {
+      ...PLAN,
+      steps: [{ ...PLAN.steps[0], act: "Act Two", actId: "act-two", stage: "The Barn", stageId: "barn", start: "14:30", end: "15:30" }],
+    };
+    expect(briefSteps(preset, cardPlan, one.moveReceipt)[0]).toMatchObject({
+      receipt: "Act One and Act Two share 30 minutes after this plan.",
+    });
+    // Two steps: the figure belongs to the move alone, so there is no receipt line.
+    const two = { ...cardPlan, steps: [...cardPlan.steps, PLAN.steps[1]] };
+    expect(briefSteps(preset, two, one.moveReceipt)[0]).toMatchObject({ receipt: null });
+  });
+
   it("is absent without a decision, for another day's decision, and when the card has nothing to compare", () => {
     const preset = makePreset();
     expect(briefTradeoff(preset, null, [CARD_MOVE], 0)).toBeNull();
     expect(briefTradeoff(preset, parseDecision(decisionRaw()), [CARD_MOVE], 1)).toBeNull();
     expect(briefTradeoff(preset, parseDecision(decisionRaw({ rule: null })), [CARD_MOVE], 0)).toBeNull();
+  });
+
+  it("labels the table as tested alone when the plan holds more steps, and keeps the plan's own receipts first and larger", () => {
+    const preset = makePreset();
+    const tradeoff = briefTradeoff(preset, parseDecision(decisionRaw()), [CARD_MOVE, OTHER_MOVE], 0);
+    const html = renderToStaticMarkup(createElement(BriefContent, { preset, day: 0, plan: PLAN, tradeoff }));
+    const plain = html
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&#x27;|&#39;/g, "'")
+      .replace(/\s+/g, " ");
+    // The plan's heading, its summary and its steps come before the table, which says it is not the plan.
+    const order = ["Your plan", "3 kept moves", "1. Act One", "The two changes, tested alone, not your whole plan", "Each change tested alone on the published day"];
+    const at = order.map((part) => plain.indexOf(part));
+    at.forEach((position, i) => {
+      expect(position, order[i]).toBeGreaterThan(-1);
+      if (i > 0) expect(position).toBeGreaterThan(at[i - 1]);
+    });
+    expect(plain).toContain("A reading to weigh, not a verdict; the plan receipt above is what your plan does.");
+    expect(plain.indexOf("A reading to weigh")).toBeGreaterThan(plain.indexOf("Costliest clash after"));
+    // The heading is kept on paper when the table is tested alone; the plan summary is the larger type.
+    expect(html).toMatch(/<h3[^>]*print:text-\[9pt\][^>]*>The two changes, tested alone/);
+    expect(html).toMatch(/<p class="[^"]*text-lg[^"]*font-bold[^"]*">3 kept moves/);
+    // Three single steps with the comparison: the published day's table stays on the screen only.
+    const tableSection = html.match(/<section[^>]*aria-labelledby="brief-[^"]*on-the-published-day[^"]*"[^>]*>/)?.[0] ?? "";
+    expect(tableSection).toContain("print:hidden");
+    const bare = renderToStaticMarkup(createElement(BriefContent, { preset, day: 0, plan: PLAN }));
+    expect(bare.match(/<section[^>]*aria-labelledby="brief-[^"]*on-the-published-day[^"]*"[^>]*>/)?.[0] ?? "").not.toContain("print:hidden");
+    // A table about the plan's one step keeps the plain heading, which stays off paper.
+    const one = briefTradeoff(preset, parseDecision(decisionRaw()), [CARD_MOVE], 0);
+    const single = renderToStaticMarkup(createElement(BriefContent, { preset, day: 0, plan: PLAN, tradeoff: one }));
+    expect(single).not.toContain("tested alone, not your whole plan");
+    expect(single).toMatch(/<h3[^>]*print:sr-only[^>]*>The two changes side by side/);
+  });
+
+  it("prints the card's receipt under the one step of a plan that is just the card's move", () => {
+    const preset = makePreset();
+    const tradeoff = briefTradeoff(preset, parseDecision(decisionRaw()), [CARD_MOVE], 0);
+    const plan: Plan = {
+      ...PLAN,
+      steps: [{ ...PLAN.steps[0], act: "Act Two", actId: "act-two", stage: "The Barn", stageId: "barn", start: "14:30", end: "15:30" }],
+    };
+    const html = renderToStaticMarkup(createElement(BriefContent, { preset, day: 0, plan, tradeoff }));
+    expect(html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")).toContain("Act One and Act Two share 30 minutes after this plan.");
+    const none = renderToStaticMarkup(createElement(BriefContent, { preset, day: 0, plan }));
+    expect(none).not.toContain("after this plan.");
   });
 
   it("prints the same comparison as the card, under the plan and before its caveat, and none without it", () => {
@@ -792,7 +896,9 @@ describe("the brief's trade-off", () => {
     // Prints compact on paper, with no fixed-width cell.
     expect(html).toContain("print:table");
     expect(html).not.toMatch(/w-\[\d+px\]|min-w-\[/);
-    const without = renderToStaticMarkup(createElement(BriefContent, { preset, day: 0, plan: PLAN }));
+    // One step is light enough to keep the list of hidden clashes on paper when there is no comparison.
+    const oneStep: Plan = { ...PLAN, steps: PLAN.steps.slice(0, 1) };
+    const without = renderToStaticMarkup(createElement(BriefContent, { preset, day: 0, plan: oneStep }));
     expect(without).not.toContain("The two changes side by side");
     // The list of hidden clashes gives its place on paper to the comparison, and stays on the screen.
     expect(html).toMatch(/<section[^>]*class="[^"]*print:hidden[^"]*"[^>]*aria-labelledby="brief-hidden-clashes"|<section[^>]*aria-labelledby="brief-hidden-clashes"[^>]*class="[^"]*print:hidden/);

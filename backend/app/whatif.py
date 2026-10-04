@@ -23,11 +23,13 @@ Identical plans are single-flight: concurrent first requests for one plan wait o
 but the first find its answer in the cache (or its illegal step remembered) once they hold it, so a plan is
 priced once and takes one slot. A plan is keyed canonically (the two moves of a rule step in a fixed order,
 the pair label unordered); the answer echoes the order the request used. A body over ``MAX_BODY_BYTES`` to
-this route or to the pair check is refused with 413 before it is parsed or takes a slot.
+this route, to the pair check, to ``POST /api/runs`` or to ``POST /api/schedule/score`` (each its own cap) is
+refused with 413 before it is parsed or takes a slot.
 """
 
 from __future__ import annotations
 
+import asyncio
 import re
 import threading
 from collections import OrderedDict
@@ -36,7 +38,6 @@ from contextlib import contextmanager
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag, model_validator
 from starlette.datastructures import Headers
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -74,6 +75,14 @@ ILLEGAL_STEP = "Step {n} is not a legal place for that set after the steps befor
 RULE_MOVES_A_SET = "A rule step moves at least one of its two sets."
 TOO_LARGE = "Request too large."
 MAX_BODY_BYTES = 16 * 1024  # the largest legal plan is a few KB; this leaves room for any whitespace
+# The agent run: the largest body the page can send is about 71 KB (eight history turns of 4,000 characters,
+# an 80-set session with every optional field, 30 rules, 50 keep-apart pairs); a usual one is 17 KB. 256 KB
+# also holds that same body written with 3-byte characters (136 KB). Recorded runs are replayed in the browser
+# and never posted.
+MAX_RUN_BODY_BYTES = 256 * 1024
+# The timetable score: 80 sets with every optional field and an 80 x 80 matrix of full-precision floats is
+# 213 KB; the saved days are 22 to 26 KB. 512 KB is 2.4 times the first.
+MAX_SCORE_BODY_BYTES = 512 * 1024
 
 ILLEGAL_CACHE_SIZE = 256
 
@@ -464,32 +473,75 @@ def post_whatif(
 # -------------------------------------------------------------------------------------- the size cap
 
 _CAPPED = re.compile(r"/api/presets/[^/]+/whatif")
+RUNS_PATH = "/api/runs"
+SCORE_PATH = "/api/schedule/score"
+REFUSAL = b'{"detail":"Request too large."}'
+DRAIN_SECONDS = 5.0  # the longest a refused body is read and thrown away after the 413 has been sent
+DRAIN_BYTES = 8 * 1024 * 1024  # and the most; past either the connection closes with the rest unread
 
 
 class BodyLimit:
-    """Refuses a POST to the what-if route or the pair check whose body is over ``MAX_BODY_BYTES`` with 413,
-    before anything parses it or takes a slot. The body is counted as it arrives (a chunked body or a wrong
-    ``Content-Length`` cannot get past) and at most that much is held; a body within the cap is replayed to
-    the app unchanged."""
+    """Refuses a POST whose body is over its route's cap with 413, before anything parses it or takes a slot.
 
-    def __init__(self, app: ASGIApp, *, limit: int = MAX_BODY_BYTES) -> None:
+    The routes and their caps: the what-if route and the pair check, ``limit`` (``MAX_BODY_BYTES``); the agent
+    run, ``runs_limit``; the timetable score, ``score_limit``. The body is counted as it arrives (a chunked
+    body or a wrong ``Content-Length`` cannot get past) and at most that much is held; a body within the cap
+    is replayed to the app unchanged.
+
+    A refusal is answered at once and says ``Connection: close``. When the client is still sending, the rest
+    is then read and thrown away (at most ``DRAIN_BYTES`` and ``DRAIN_SECONDS``) before the response is
+    ended: a server that closes a socket with unread data in it can reset the connection, and a client that
+    sends its whole body before it reads would then lose the 413. Nothing drained is kept or parsed.
+    """
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        limit: int = MAX_BODY_BYTES,
+        runs_limit: int = MAX_RUN_BODY_BYTES,
+        score_limit: int = MAX_SCORE_BODY_BYTES,
+    ) -> None:
         self.app = app
         self.limit = limit
+        self.runs_limit = runs_limit
+        self.score_limit = score_limit
 
-    def _capped(self, scope: Scope) -> bool:
+    def _limit_for(self, scope: Scope) -> int | None:
+        """The cap of this request's route, or None when the route is not capped."""
         if scope["type"] != "http" or scope["method"] != "POST":
-            return False
+            return None
         path = scope["path"].rstrip("/")
-        return path == PAIR_PATH or _CAPPED.fullmatch(path) is not None
+        if path == RUNS_PATH:
+            return self.runs_limit
+        if path == SCORE_PATH:
+            return self.score_limit
+        return self.limit if path == PAIR_PATH or _CAPPED.fullmatch(path) is not None else None
+
+    @staticmethod
+    async def _refuse(receive: Receive, send: Send, *, complete: bool) -> None:
+        """Answer 413 now. ``complete`` says the whole request body has already been read."""
+        headers = [
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(REFUSAL)).encode()),
+            (b"cache-control", b"no-store"),
+            (b"connection", b"close"),
+        ]
+        await send({"type": "http.response.start", "status": 413, "headers": headers})
+        await send({"type": "http.response.body", "body": REFUSAL, "more_body": not complete})
+        if complete:
+            return
+        await _drain(receive)
+        await send({"type": "http.response.body", "body": b""})
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if not self._capped(scope):
+        limit = self._limit_for(scope)
+        if limit is None:
             await self.app(scope, receive, send)
             return
-        refusal = JSONResponse(status_code=413, content={"detail": TOO_LARGE}, headers=NO_STORE)
         declared = Headers(scope=scope).get("content-length", "")
-        if declared.isdigit() and int(declared) > self.limit:
-            await refusal(scope, receive, send)
+        if declared.isdigit() and int(declared) > limit:
+            await self._refuse(receive, send, complete=False)
             return
         held: list[Message] = []
         size = 0
@@ -499,8 +551,8 @@ class BodyLimit:
             if message["type"] != "http.request":
                 break
             size += len(message.get("body", b""))
-            if size > self.limit:
-                await refusal(scope, receive, send)
+            if size > limit:
+                await self._refuse(receive, send, complete=not message.get("more_body", False))
                 return
             if not message.get("more_body", False):
                 break
@@ -510,3 +562,17 @@ class BodyLimit:
             return next(replay, None) or await receive()
 
         await self.app(scope, replayed, send)
+
+
+async def _drain(receive: Receive) -> None:
+    """Read and discard what the client is still sending of a refused body, within the two bounds."""
+    seen = 0
+    try:
+        async with asyncio.timeout(DRAIN_SECONDS):
+            while seen <= DRAIN_BYTES:
+                message = await receive()
+                if message["type"] != "http.request" or not message.get("more_body", False):
+                    return
+                seen += len(message.get("body", b""))
+    except TimeoutError:
+        return

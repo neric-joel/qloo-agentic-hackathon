@@ -30,9 +30,13 @@ describe("planVerdict", () => {
     );
   });
 
-  it("leaves the published gap out when the published timetable is not above the band", () => {
+  it("states a raising plan plainly even when it is above the band, with both indexes and the band", () => {
+    // Without the standalone option the band is not said again: the card has just printed it.
     expect(planVerdict(109.3, 104.2, range)).toBe(
-      "This plan scores 0.3 index points above that range. This plan’s index is 5.1 higher than the published timetable’s.",
+      "This plan’s index is 109.3, 5.1 higher than the published timetable’s 104.2.",
+    );
+    expect(planVerdict(109.3, 104.2, range, { standalone: true })).toBe(
+      "This plan’s index is 109.3, 5.1 higher than the published timetable’s 104.2. The middle 80% of random valid timetables of this lineup score 92 to 109.",
     );
   });
 
@@ -47,14 +51,13 @@ describe("planVerdict", () => {
     expect(planVerdict(91.96, 116.71, range)).toBe("This plan scores inside that range.");
   });
 
-  it("states a raised index as a plain fact beside the range sentence, never as good news", () => {
-    // Below the band, and higher than the published index: both are said.
-    expect(planVerdict(88.8, 86.5, range)).toBe(
-      "This plan scores below that range. This plan’s index is 2.3 higher than the published timetable’s.",
-    );
-    expect(planVerdict(100, 98.4, range)).toBe(
-      "This plan scores inside that range. This plan’s index is 1.6 higher than the published timetable’s.",
-    );
+  it("states a raised index as a plain fact in place of the range verdict, never as good news", () => {
+    // Below the band, and higher than the published index: no "scores below that range" beside a higher figure.
+    expect(planVerdict(88.8, 86.5, range)).toBe("This plan’s index is 88.8, 2.3 higher than the published timetable’s 86.5.");
+    expect(planVerdict(100, 98.4, range)).toBe("This plan’s index is 100.0, 1.6 higher than the published timetable’s 98.4.");
+    for (const [plan, published] of [[88.8, 86.5], [100, 98.4], [109.3, 104.2]]) {
+      expect(planVerdict(plan, published, range)).not.toMatch(/scores (below|inside|[\d.]+ index points above) that range/);
+    }
     // A lower or equal index adds nothing.
     expect(planVerdict(85.5, 86.5, range)).toBe("This plan scores below that range.");
     expect(planVerdict(86.5, 86.5, range)).toBe("This plan scores below that range.");
@@ -65,7 +68,7 @@ describe("planVerdict", () => {
       "The middle 80% of random valid timetables of this lineup score 92 to 109; this plan scores 0.3 index points above that range. The published timetable is 7.7 above it.",
     );
     expect(planVerdict(88.8, 86.5, range, { standalone: true })).toBe(
-      "The middle 80% of random valid timetables of this lineup score 92 to 109; this plan scores below that range. This plan’s index is 2.3 higher than the published timetable’s.",
+      "This plan’s index is 88.8, 2.3 higher than the published timetable’s 86.5. The middle 80% of random valid timetables of this lineup score 92 to 109.",
     );
     expect(planVerdict(100, 116.71, null, { standalone: true })).toBeNull();
   });

@@ -35,7 +35,9 @@ import {
   planSummary,
   planVerdictSentence,
   sourceHosts,
+  heavyPlan,
   tableClashes,
+  tableOnPaper,
   type BriefRow,
   type BriefTradeoff,
 } from "@/lib/brief";
@@ -295,10 +297,10 @@ function ClashTable({ rows, captionId }: { rows: readonly BriefRow[]; captionId:
             Time shared
           </th>
           <th scope="col" className={cn(TH, "text-right")}>
-            Taste overlap<span className="hidden print:inline"> (of 100)</span>
+            Taste overlap<span className="hidden print:inline"> /100</span>
           </th>
           <th scope="col" className={cn(TH, "text-right")}>
-            Combined draw<span className="hidden print:inline"> (of 100)</span>
+            Combined draw<span className="hidden print:inline"> /100</span>
           </th>
           <th scope="col" className={cn(TH, "text-right")}>
             Share of the day&rsquo;s cost
@@ -426,15 +428,15 @@ export function BriefContent({
   const figures = dayFigures(preset);
   const band = figures.index === null ? null : bandSentence(figures.index, figures.range);
   const hidden = hiddenSentence(hiddenNames(preset, day));
-  const steps = plan && plan.steps.length > 0 ? briefSteps(preset, plan) : [];
+  const steps = plan && plan.steps.length > 0 ? briefSteps(preset, plan, tradeoff?.moveReceipt ?? null) : [];
   const withMoves = steps.length > 0;
   const twoColumns = steps.length > 3;
   // A long plan shortens the published-day table to three clashes so the sheet stays on one page.
-  const rows = briefRows(
-    preset,
-    day,
-    withMoves ? tableClashes(steps, twoColumns ? 2 : 1, tradeoff !== null) : BRIEF_CLASHES,
-  );
+  const limit = withMoves ? tableClashes(steps, twoColumns ? 2 : 1, tradeoff !== null) : BRIEF_CLASHES;
+  const rows = briefRows(preset, day, limit);
+  // A tall plan with the comparison on the sheet has no room for the published day's one-row table on paper:
+  // the comparison names the same clash and says what each change leaves of it. It stays on the screen.
+  const tableOnPage = !withMoves || tableOnPaper(steps, twoColumns ? 2 : 1, tradeoff !== null);
   const tableTitle = clashesTitle(rows.length, withMoves);
   const planLines = plan && withMoves ? planClashLines(plan) : [];
   const verdict = plan && withMoves ? planVerdictSentence(plan, figures.range) : null;
@@ -453,7 +455,7 @@ export function BriefContent({
   );
 
   const tableBlock = (
-    <Block title={tableTitle}>
+    <Block title={tableTitle} className={tableOnPage ? undefined : "print:hidden"}>
       {rows.length === 0 ? (
         <p className="text-muted-foreground">{noPricedClashes(synthetic)}</p>
       ) : (
@@ -473,7 +475,11 @@ export function BriefContent({
 
   // On paper the comparison takes the room of the list of hidden clashes, which the table's own marks repeat.
   const hiddenBlock = hidden ? (
-    <Block title="Hidden clashes" quietInPrint className={tradeoff ? "print:hidden" : undefined}>
+    <Block
+      title="Hidden clashes"
+      quietInPrint
+      className={tradeoff || (withMoves && heavyPlan(steps, twoColumns ? 2 : 1)) ? "print:hidden" : undefined}
+    >
       <p className="print:text-[9pt]">{hidden}</p>
     </Block>
   ) : null;
@@ -495,7 +501,7 @@ export function BriefContent({
     plan && withMoves ? (
       <>
         <Block title="Your plan">
-          <p className="font-semibold print:inline">{planSummary(plan)}</p>
+          <p className="text-lg leading-snug font-bold print:inline print:text-[10pt]">{planSummary(plan)}</p>
           {verdict ? (
             <>
               {" "}
@@ -534,6 +540,7 @@ export function BriefContent({
                       {step.before} → {step.after}
                     </span>
                     {step.raises ? RAISES_MARK : null}
+                    {step.receipt ? <> · {step.receipt}</> : null}
                   </span>
                 </li>
               ),
@@ -544,7 +551,11 @@ export function BriefContent({
               print
               tradeoff={tradeoff.tradeoff}
               held={tradeoff.held}
-              className="mt-3 border-t border-border pt-2 print:mt-[3pt] print:pt-[2pt]"
+              className={cn(
+                "mt-4 border-t border-border pt-2 print:mt-[3pt] print:pt-[2pt]",
+                // Tested alone, so it sits below the plan's own receipts in lighter type, never as the plan's result.
+                tradeoff.alone && "text-[0.9375rem]",
+              )}
             />
           ) : null}
           <p className="mt-2 text-sm text-muted-foreground print:mt-[4pt] print:text-[9pt]">{PLAN_CAVEAT}</p>
@@ -582,7 +593,7 @@ export function BriefContent({
       aria-labelledby="brief-heading"
       className={cn(
         "rounded-xl border border-border bg-card p-5 text-[0.9375rem] leading-relaxed sm:p-8 lg:p-10",
-        "print:rounded-none print:border-0 print:bg-transparent print:p-0 print:text-[9pt] print:leading-[1.2]",
+        "print:rounded-none print:border-0 print:bg-transparent print:p-0 print:text-[9pt] print:leading-[1.17]",
         className,
       )}
     >

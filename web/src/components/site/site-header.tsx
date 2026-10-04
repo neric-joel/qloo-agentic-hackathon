@@ -35,15 +35,17 @@ export function SiteHeader() {
             <span className="min-[420px]:hidden">Method</span>
             <span className="max-[420px]:hidden">How we know</span>
           </Link>
-          {/* From 768 px up only: below that the header has no room for a third link, and the page is
-              also linked from the footer. Never rendered while the page is not live. */}
+          {/* Below 768 px the label reads "Check" (its name stays "Check a draft grid") so the third
+              link fits beside "Method" and the theme toggle, even at 320 px. Never rendered while the
+              page is not live. */}
           {CHECK_LIVE ? (
             <Link
               href="/check"
               aria-label="Check a draft grid"
-              className="hidden rounded-sm py-1 text-sm leading-tight font-semibold whitespace-nowrap underline-offset-4 hover:underline md:inline"
+              className="rounded-sm py-1 text-[0.8125rem] leading-tight font-semibold whitespace-nowrap underline-offset-4 hover:underline sm:text-sm"
             >
-              Check a draft grid
+              <span className="md:hidden">Check</span>
+              <span className="max-md:hidden">Check a draft grid</span>
             </Link>
           ) : null}
           {/* No wrapping, so the group's narrowest width is the full toggle plus the link. */}

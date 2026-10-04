@@ -54,9 +54,10 @@ export function rangeLead(range: ScaleRange): string | null {
  * that range." or "This plan scores 0.3 index points above that range." When the plan is above it
  * and the published timetable is too, the published gap follows, so a plan 0.3 above the band after
  * a 7-point drop never reads as a plan that failed: "The published timetable is 7.7 above it." When
- * the plan's index is higher than the published timetable's, a plain fact is added beside the range
- * sentence, so a plan that raises the index never reads as good news: "This plan’s index is 2.3
- * higher than the published timetable’s." Null when the band is unknown.
+ * the plan's index is higher than the published timetable's, the range sentence gives way to a plain one,
+ * so a plan that raises the index never reads as good news: "This plan’s index is 88.8, 2.3 higher than
+ * the published timetable’s 86.5." (the standalone form adds the band: "The middle 80% of random valid
+ * timetables of this lineup score 92 to 109."). Null when the band is unknown.
  *
  * `standalone` states the band in the same sentence ("The middle 80% of random valid timetables of
  * this lineup score 92 to 109; this plan scores below that range."), for the brief, where the band
@@ -71,6 +72,16 @@ export function planVerdict(
   const verdict = rangeVerdict(plan, range);
   if (!verdict || !usable(range)) return null;
   const { low, high } = printedBand(range);
+  // A plan that raises the index is stated plainly: its index, the published one and the band, with no
+  // "scores below that range", which reads as good news beside a higher figure.
+  const raised = budgetDelta(published, plan);
+  if (raised !== null && raised > 0 && published !== null) {
+    const fact = `This plan’s index is ${oneDecimal(plan).toFixed(1)}, ${raised.toFixed(1)} higher than the published timetable’s ${oneDecimal(published).toFixed(1)}.`;
+    // Where the band has been stated just before (the plan card, the decision card) it is not said twice.
+    return options.standalone
+      ? `${fact} The middle 80% of random valid timetables of this lineup score ${low} to ${high}.`
+      : fact;
+  }
   const clause =
     verdict === "below"
       ? "scores below that range"
@@ -84,10 +95,6 @@ export function planVerdict(
   ];
   if (verdict === "above" && published !== null && rangeVerdict(published, range) === "above") {
     parts.push(`The published timetable is ${gapText(published, high)} above it.`);
-  }
-  const delta = budgetDelta(published, plan);
-  if (delta !== null && delta > 0) {
-    parts.push(`This plan’s index is ${delta.toFixed(1)} higher than the published timetable’s.`);
   }
   return parts.join(" ");
 }

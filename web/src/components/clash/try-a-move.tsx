@@ -7,6 +7,7 @@ import { ProvenanceChip } from "@/components/kernel";
 import { Button } from "@/components/ui/button";
 import { budgetDelta, changeLabel } from "@/lib/agent-session";
 import { dayName } from "@/lib/clashes";
+import { noSignalMove } from "@/lib/credit";
 import { pluralize } from "@/lib/format";
 import type { RulePreview } from "@/lib/rule-fix";
 import {
@@ -41,6 +42,7 @@ import {
   type GhostSlot,
   type PlanPreview,
   type RuleStackStep,
+  type StackMove,
   type StackStep,
 } from "@/lib/stack";
 import { cn } from "@/lib/utils";
@@ -278,7 +280,7 @@ function MovesCard({
           <h3 className="type-title break-words">Where {result.act} could go</h3>
           <p className="mt-1.5 text-sm text-muted-foreground">Now: {dashRanges(result.from)}</p>
         </div>
-        <ProvenanceChip provenance="derived" size="sm" className="mt-1" />
+        <ProvenanceChip provenance="derived" size="sm" className="mt-1" synthetic={preset.synthetic === true} />
       </div>
 
       {!result.movable ? (
@@ -289,8 +291,7 @@ function MovesCard({
         <>
           {!result.priced ? (
             <p className="mt-4 rounded-md border border-border bg-muted/50 px-3 py-2 text-sm">
-              Qloo has no usable signal for {result.act}, so its clashes are not priced and no place changes the
-              Clash Budget Index.
+              {noSignalMove(preset.synthetic === true, result.act)}
             </p>
           ) : null}
           <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-8">
@@ -407,6 +408,7 @@ export function TryAMove({
   seedStep = null,
   seedRule = null,
   onKeptChange,
+  cardMove = null,
 }: {
   preset: Preset;
   day: number;
@@ -424,6 +426,8 @@ export function TryAMove({
   seedRule?: { nonce: number; aId: string; bId: string } | null;
   /** Hears the steps the plan holds, so the decision card can mark what it already holds. */
   onKeptChange?: (steps: readonly StackStep[]) => void;
+  /** The card's move and its receipt: a plan that is just that move prints the receipt under its step. */
+  cardMove?: { move: StackMove; receipt: string } | null;
 }) {
   const selectId = useId();
   const startLabelId = useId();
@@ -818,6 +822,7 @@ export function TryAMove({
                 onUndo={undo}
                 onStartOver={startOver}
                 backToDecision={fromCard}
+                cardMove={cardMove}
               />
             ) : state.status === "error" && !actId ? (
               <PlanError onRetry={state.retry} onStartOver={startOver} />

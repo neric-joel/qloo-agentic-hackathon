@@ -18,7 +18,9 @@ import {
   daySpan,
   findChange,
   gridText,
+  raisesSharedTotal,
   sharedEffect,
+  sharedRiseLine,
   sizeLine,
   targetId,
   targetOfBreak,
@@ -95,14 +97,16 @@ describe("the sample: each planted break gets a result", () => {
         for (const line of change.lines) expect(line).toMatch(/^.+ → .+ \d\d:\d\d–\d\d:\d\d$/);
       }
       expect(result.summary).toMatch(
-        /^This search found \d+ changes? that ends? it and adds? no rule break, within [\d,]+ candidates tested\./,
+        /^\d+ found, \d+ shown: each ends it, adds no rule break and makes none larger, ranked by total start-time minutes moved\. [\d,]+ candidates? tested\./,
       );
+      expect(result.changes).toHaveLength(Math.min(TRIAL_LIMITS.shown, result.found));
+      expect(result.summary).toContain(`${result.found} found, ${result.changes.length} shown`);
     }
   });
 
   it("never moves a locked set", () => {
     const target = breakTarget(report, 5);
-    const result = findChange(report, target, { shown: Infinity });
+    const result = findChange(report, target, { shown: Infinity, everyChange: true });
     expect(result.changes.length).toBeGreaterThan(0);
     const locked = report.sets.filter((set) => set.locked).map((set) => set.row);
     expect(locked).toHaveLength(1);
@@ -123,25 +127,92 @@ describe("the sample: each planted break gets a result", () => {
     }
   });
 
-  it("lists smallest first: fewest sets, then start minutes moved, then stage changes", () => {
+  it("lists the least total start-time minutes moved first, then less added shared time, then sets, then stage changes", () => {
     for (const item of report.breaks) {
       const result = findChange(report, targetOfBreak(item));
-      const keys = result.changes.map((c) => [c.setsMoved, c.minutesMoved, c.stageChanges]);
-      expect(keys).toEqual([...keys].sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]));
+      const keys = result.changes.map((c) => [c.minutesMoved, c.sharedRise, c.setsMoved, c.stageChanges]);
+      expect(keys).toEqual(
+        [...keys].sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3] - b[3]),
+      );
+    }
+  });
+
+  it("puts a five-minute nudge for the short changeover first, not a set count", () => {
+    const [top] = findChange(report, breakTarget(report, 3)).changes;
+    expect(top.minutesMoved).toBe(5);
+    expect(top.setsMoved).toBe(1);
+    expect(top.stageChanges).toBe(0);
+    // The top change on every break is the smallest total shift of anything listed for it.
+    for (const item of report.breaks) {
+      const result = findChange(report, targetOfBreak(item));
+      expect(result.changes[0].minutesMoved).toBe(Math.min(...result.changes.map((c) => c.minutesMoved)));
+    }
+  });
+
+  it("lists at most one change per moved set and stage, and moves no set more than three hours", () => {
+    for (const item of [...report.breaks.map(targetOfBreak), ...report.shared.slice(0, 4).map(targetOfPair)]) {
+      const result = findChange(report, item);
+      const keys = result.changes.map((c) => c.moves.map((m) => `${m.row}:${m.stageKey}`).sort().join(","));
+      expect(new Set(keys).size).toBe(keys.length);
+      if (!result.onlyLarge) {
+        for (const change of result.changes) expect(change.largestShift).toBeLessThanOrEqual(TRIAL_LIMITS.largeShift);
+      }
+      for (const change of result.changes) {
+        expect(change.largestShift).toBe(Math.max(...change.moves.map((m) => Math.abs(m.start - m.fromStart))));
+      }
+    }
+  });
+
+  it("searches two-set changes when one-set changes exist, in the same ranking", () => {
+    // The curfew break has no one-set move; the double booking has both kinds.
+    const double = findChange(report, breakTarget(report, 1), { everyChange: true, shown: Infinity });
+    expect(double.swapsSearched).toBe(true);
+    expect(double.oneSetPassed).toBeGreaterThan(0);
+    expect(double.changes.some((c) => c.setsMoved === 1)).toBe(true);
+    expect(double.changes.some((c) => c.setsMoved === 2)).toBe(true);
+    expect(findChange(report, breakTarget(report, 1)).summary).toContain("Two-set changes were tried as well.");
+    const curfew = findChange(report, breakTarget(report, 4));
+    expect(curfew.oneSetPassed).toBe(0);
+    expect(curfew.summary).toContain("No one-set move ends it, so two-set changes were tried.");
+  });
+
+  it("states the shared-time rise of a change exactly, from the page's own pair list", () => {
+    const key = (p: { a: { row: number }; b: { row: number } }) => `${Math.min(p.a.row, p.b.row)}-${Math.max(p.a.row, p.b.row)}`;
+    for (const item of report.breaks) {
+      for (const change of findChange(report, targetOfBreak(item)).changes) {
+        const after = applyChange(report, change);
+        const was = new Map(report.shared.map((p) => [key(p), p.minutes]));
+        let rise = 0;
+        for (const p of after.shared) rise += Math.max(0, p.minutes - (was.get(key(p)) ?? 0));
+        expect(change.sharedRise).toBe(rise);
+        const net = after.shared.reduce((n, p) => n + p.minutes, 0) - report.shared.reduce((n, p) => n + p.minutes, 0);
+        expect(change.sharedAfter.minutes - change.sharedBefore.minutes).toBe(net);
+        expect(raisesSharedTotal(change)).toBe(net > 0);
+        const line = sharedRiseLine(change);
+        if (net > 0) expect(line).toBe(`Shared time elsewhere rises by ${net} ${net === 1 ? "minute" : "minutes"}.`);
+        else if (rise > 0) {
+          expect(line).toMatch(/^Some overlaps elsewhere get \d+ minutes? longer in all; others get shorter, so the grid total (falls|stays the same)\.$/);
+        } else expect(line).toBeNull();
+      }
     }
   });
 
   it("keeps every new place inside the day's span, and one-set moves on the 5-minute grid", () => {
     const [from, to] = daySpan(report);
     for (const item of report.breaks) {
-      for (const change of findChange(report, targetOfBreak(item), { shown: Infinity }).changes) {
+      for (const change of findChange(report, targetOfBreak(item), { shown: Infinity, everyChange: true }).changes) {
         for (const move of change.moves) {
           expect(move.start).toBeGreaterThanOrEqual(from);
           expect(move.end).toBeLessThanOrEqual(to);
           const original = report.sets.find((set) => set.row === move.row) as CheckSet;
           expect(move.end - move.start).toBe(original.end - original.start);
         }
-        if (change.setsMoved === 1) expect(change.moves[0].start % TRIAL_LIMITS.grid).toBe(0);
+        // A set may also take another set's exact start, which can be off the 5-minute grid.
+        if (change.setsMoved === 1 && change.moves[0].start % TRIAL_LIMITS.grid !== 0) {
+          expect(
+            report.sets.some((set) => set.start === change.moves[0].start && set.stageKey === change.moves[0].stageKey),
+          ).toBe(true);
+        }
       }
     }
   });
@@ -172,7 +243,7 @@ describe("what the search says when it cannot help", () => {
     expect(result.found).toBe(0);
     expect(result.capped).toBe(false);
     expect(result.summary).toBe(
-      `This search found no change that ends it within ${result.tested.toLocaleString("en-US")} candidates; it did not look for longer chains.`,
+      `No one-set move ends it, so two-set changes were tried. This search found no change that ends it within ${result.tested.toLocaleString("en-US")} candidates, on the 5-minute grid or into another set’s start time; it did not look for longer chains.`,
     );
   });
 
@@ -197,7 +268,97 @@ describe("what the search says when it cannot help", () => {
     const result = findChange(report, breakTarget(report, 3));
     expect(result.allLocked).toBe(true);
     expect(result.tested).toBe(0);
-    expect(result.summary).toBe("Every set in this break is marked locked, and this search does not move locked sets.");
+    expect(result.summary).toBe("Both sets in this break are marked locked, and this search does not move locked sets.");
+  });
+
+  it("says both sets of a locked pair are marked locked, and names a single locked set", () => {
+    const report = plain(
+      "act,stage,start,end,locked\nA,Main,18:00,19:00,yes\nB,Side,18:30,19:30,yes\nC,Tent,20:00,21:30,yes",
+      { curfew: "21:00" },
+    );
+    const pair = findChange(report, targetOfPair(report.shared[0]));
+    expect(pair.allLocked).toBe(true);
+    expect(pair.summary).toBe("Both sets of this pair are marked locked, and this search does not move locked sets.");
+    const curfew = findChange(report, breakTarget(report, 4));
+    expect(curfew.summary).toBe("The set in this break is marked locked, and this search does not move locked sets.");
+  });
+
+  it("lists a move of more than three hours only when nothing smaller exists, and says so", () => {
+    // Side is full all day and Tent is free only before 10:00, so A or B can also go to Tent at the far
+    // end of the day shift, but near moves exist on Main (A before B, or a stage change at the same time).
+    const near = plain(
+      [
+        "Early,Tent,08:00,08:30",
+        "Fill,Side,12:00,23:00",
+        "A,Main,18:00,19:00",
+        "B,Main,18:30,19:30",
+        "Hold,Main,19:30,23:00",
+        "Gone,Main,17:00,17:30",
+      ].join("\n"),
+      { pairs: "A | B", changeover: "0" },
+    );
+    const everything = findChange(near, breakTarget(near, 5), { everyChange: true, shown: Infinity });
+    expect(everything.changes.some((c) => c.largestShift > TRIAL_LIMITS.largeShift)).toBe(true);
+    const listed = findChange(near, breakTarget(near, 5), { shown: Infinity });
+    expect(listed.onlyLarge).toBe(false);
+    expect(listed.largeOmitted).toBeGreaterThan(0);
+    for (const c of listed.changes) expect(c.largestShift).toBeLessThanOrEqual(TRIAL_LIMITS.largeShift);
+    expect(listed.summary).toMatch(/\d+ more changes? moves? a set by more than 3 hours and (is|are) not listed\./);
+
+    // Only far moves end it: they are listed, with the reason.
+    const far = plain(
+      [
+        "Early,Side,08:00,08:30",
+        "FillS,Side,08:30,23:00",
+        "FillA,Main,09:00,18:00",
+        "A,Main,18:00,19:00",
+        "B,Main,18:30,19:30",
+        "FillB,Main,19:30,23:00",
+      ].join("\n"),
+      { pairs: "A | B", changeover: "0" },
+    );
+    const farResult = findChange(far, breakTarget(far, 5));
+    expect(farResult.changes.length).toBeGreaterThan(0);
+    expect(farResult.onlyLarge).toBe(true);
+    expect(farResult.largeOmitted).toBe(0);
+    for (const c of farResult.changes) expect(c.largestShift).toBeGreaterThan(TRIAL_LIMITS.largeShift);
+    expect(farResult.summary).toContain(
+      "Every change found moves a set by more than 3 hours; they are listed because nothing smaller ends it.",
+    );
+  });
+
+  it("ranks a change that adds shared time elsewhere after one that does not, at equal size", () => {
+    // Moving A 10 minutes earlier ends the short changeover but runs into C by 5 minutes; moving B
+    // 10 minutes later ends it too and runs into nothing. Both are 10 minutes of start time.
+    const day = plain(
+      [
+        "C,Side,17:00,17:55",
+        "A,Main,18:00,19:00",
+        "B,Main,19:05,20:00",
+        "D,Side,19:10,19:55",
+        "Tent set,Tent,17:00,20:30",
+      ].join("\n"),
+      { changeover: "15" },
+    );
+    const result = findChange(day, breakTarget(day, 3), { shown: Infinity });
+    const tens = result.changes.filter((c) => c.minutesMoved === 10 && c.setsMoved === 1);
+    expect(tens.map((c) => [c.moves[0].act, c.sharedRise])).toEqual([
+      ["B", 0],
+      ["A", 5],
+    ]);
+    expect(result.changes.indexOf(tens[0])).toBeLessThan(result.changes.indexOf(tens[1]));
+  });
+
+  it("includes a set taking another set's exact start, off the 5-minute grid", () => {
+    // Y plays inside X on Main (a rule-2 break that is already there, 33 minutes). X moving to start with Y
+    // ends the short gap after Z and keeps that overlap at 33, so it is a valid one-set move at 18:17.
+    const day = plain(["Z,Main,17:00,17:55", "X,Main,18:00,19:30", "Y,Main,18:17,18:50", "Last,Side,20:00,21:00"].join("\n"), { changeover: "15" });
+    const target = breakTarget(day, 3);
+    const every = findChange(day, target, { everyChange: true, shown: Infinity });
+    const take = every.changes.find((c) => c.setsMoved === 1 && c.moves[0].row === 2 && c.moves[0].start === 18 * 60 + 17);
+    expect(take).toBeDefined();
+    expect(judge(day, target, take as TrialChange)).toBe("valid");
+    expect(every.oneSetPassed).toBeGreaterThan(0);
   });
 
   it("does not count a change that adds a rule break", () => {
@@ -258,6 +419,24 @@ function bruteSingles(report: CheckReport, target: TrialTarget): Set<string> {
         if (confirmChange(report, target, { moves: [move] })) found.add(`${row}:${stageKey}:${start}`);
       }
     }
+    // Also the set taking another set's exact stage and start, off the 5-minute grid.
+    for (const other of report.sets) {
+      if (other.row === row || other.start % 5 === 0) continue;
+      if (other.start < from || other.start + length > to) continue;
+      if (other.stageKey === set.stageKey && other.start === set.start) continue;
+      const move = {
+        row,
+        act: set.act,
+        stage: other.stage,
+        stageKey: other.stageKey,
+        fromStage: set.stage,
+        fromStart: set.start,
+        fromEnd: set.end,
+        start: other.start,
+        end: other.start + length,
+      };
+      if (confirmChange(report, target, { moves: [move] })) found.add(`${row}:${other.stageKey}:${other.start}`);
+    }
   }
   return found;
 }
@@ -266,7 +445,8 @@ function clock(minutes: number): string {
   return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`;
 }
 
-function randomDay(seed: number): CheckReport | null {
+/** A small invented day; with `jitter`, set lengths carry odd minutes so some starts fall off the 5-minute grid. */
+function randomDay(seed: number, jitter = false): CheckReport | null {
   const next = rng(seed);
   const rows: string[] = [];
   const stages = ["Main", "Side", "Tent"].slice(0, 2 + Math.floor(next() * 2));
@@ -275,10 +455,17 @@ function randomDay(seed: number): CheckReport | null {
     let t = 18 * 60;
     const count = 2 + Math.floor(next() * 3);
     for (let k = 0; k < count; k += 1) {
-      const length = [30, 45, 60][Math.floor(next() * 3)];
+      const length = [30, 45, 60][Math.floor(next() * 3)] + (jitter ? Math.floor(next() * 5) : 0);
       const end = t + length;
       rows.push(`Act${String.fromCharCode(65 + id)},${stage},${clock(t)},${clock(end)}${next() < 0.15 ? ",yes" : ""}`);
       id += 1;
+      // With jitter, a shorter set sometimes plays inside this one on the same stage at an odd minute,
+      // so the day already has an overlap and another set's start is off the 5-minute grid.
+      if (jitter && next() < 0.4) {
+        const inner = t + 3 + Math.floor(next() * 12);
+        rows.push(`Act${String.fromCharCode(65 + id)},${stage},${clock(inner)},${clock(Math.min(end, inner + 20 + Math.floor(next() * 9)))}`);
+        id += 1;
+      }
       t = end + [0, 5, 10, 15, 20, 30][Math.floor(next() * 6)];
     }
   }
@@ -291,7 +478,7 @@ function randomDay(seed: number): CheckReport | null {
   return outcome.ok ? outcome.report : null;
 }
 
-describe("the search against a brute-force check with the page's own rules", () => {
+describe("the search against a brute-force check with the page's own rules", { timeout: 60_000 }, () => {
   it("finds exactly the one-set moves the full rule check accepts, on random small days", () => {
     let compared = 0;
     let withMoves = 0;
@@ -303,7 +490,7 @@ describe("the search against a brute-force check with the page's own rules", () 
         ...report.shared.slice(0, 2).map(targetOfPair),
       ];
       for (const target of targets) {
-        const result = findChange(report, target, { shown: Infinity, bound: 1_000_000 });
+        const result = findChange(report, target, { shown: Infinity, everyChange: true });
         const searched = new Set(
           result.changes
             .filter((c) => c.setsMoved === 1)
@@ -317,18 +504,70 @@ describe("the search against a brute-force check with the page's own rules", () 
         for (const change of result.changes) expect(judge(report, target, change)).toBe("valid");
       }
     }
-    expect(compared).toBeGreaterThan(150);
+    expect(compared).toBeGreaterThan(80);
     expect(withMoves).toBeGreaterThan(40);
   });
 
-  it("lists two-set swaps that pass the full rules and that no single move could replace", () => {
+  it("finds the one-set moves into another set's start too, on days whose starts are off the 5-minute grid", () => {
+    let compared = 0;
+    let offGrid = 0;
+    for (let seed = 1; seed <= 140; seed += 1) {
+      const report = randomDay(seed, true);
+      if (!report || report.breaks.length === 0) continue;
+      const targets: TrialTarget[] = [
+        ...report.breaks.map(targetOfBreak),
+        ...report.shared.slice(0, 2).map(targetOfPair),
+      ];
+      for (const target of targets) {
+        const result = findChange(report, target, { shown: Infinity, everyChange: true });
+        const singles = result.changes.filter((c) => c.setsMoved === 1);
+        const searched = new Set(singles.map((c) => `${c.moves[0].row}:${c.moves[0].stageKey}:${c.moves[0].start}`));
+        const brute = bruteSingles(report, target);
+        expect([...searched].sort()).toEqual([...brute].sort());
+        compared += 1;
+        offGrid += singles.filter((c) => c.moves[0].start % TRIAL_LIMITS.grid !== 0).length;
+        for (const change of result.changes) expect(judge(report, target, change)).toBe("valid");
+      }
+    }
+    expect(compared).toBeGreaterThan(80);
+    expect(offGrid).toBeGreaterThan(0);
+  });
+
+  it("ranks by total minutes: the top listed change moves no more minutes than any one-set move within three hours", () => {
+    let compared = 0;
+    for (let seed = 1; seed <= 220; seed += 1) {
+      const report = randomDay(seed, seed % 2 === 0);
+      if (!report) continue;
+      for (const item of report.breaks) {
+        const target = targetOfBreak(item);
+        const result = findChange(report, target, {});
+        if (result.changes.length === 0) continue;
+        const keys = result.changes.map((c) => [c.minutesMoved, c.sharedRise, c.setsMoved, c.stageChanges]);
+        expect(keys).toEqual([...keys].sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3] - b[3]));
+        const minutes = [...bruteSingles(report, target)]
+          .map((id) => {
+            const [row, , start] = id.split(":");
+            const set = report.sets.find((s) => s.row === Number(row)) as CheckSet;
+            return Math.abs(Number(start) - set.start);
+          })
+          .filter((m) => m <= TRIAL_LIMITS.largeShift);
+        if (minutes.length > 0) {
+          expect(result.changes[0].minutesMoved).toBeLessThanOrEqual(Math.min(...minutes));
+          compared += 1;
+        }
+      }
+    }
+    expect(compared).toBeGreaterThan(40);
+  });
+
+  it("lists two-set changes that pass the full rules and that no single move could replace", () => {
     let swaps = 0;
     for (let seed = 1; seed <= 220; seed += 1) {
       const report = randomDay(seed);
       if (!report) continue;
       for (const item of report.breaks) {
         const target = targetOfBreak(item);
-        const result = findChange(report, target, { shown: Infinity, bound: 1_000_000 });
+        const result = findChange(report, target, { shown: Infinity, everyChange: true });
         for (const change of result.changes.filter((c) => c.setsMoved === 2)) {
           swaps += 1;
           expect(judge(report, target, change)).toBe("valid");

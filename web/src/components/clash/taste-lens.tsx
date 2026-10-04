@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 
 import { ordinal } from "@/lib/clashes";
+import { formulaNote } from "@/lib/credit";
 import type { LensApart, Lenses } from "@/lib/lenses";
 import type { PairClash } from "@/lib/preset";
 
@@ -22,6 +23,7 @@ const CHECK_NOT_PASSED = "The check we set before building did not pass (see How
  */
 export function lensLead(
   lenses: Pick<Lenses, "ranked" | "only_with_taste" | "only_without_taste" | "shuffled">,
+  synthetic = false,
 ): string {
   const { ranked, only_with_taste: withOnly, only_without_taste: withoutOnly, shuffled } = lenses;
   if (withOnly === 0 && withoutOnly === 0) {
@@ -33,11 +35,11 @@ export function lensLead(
       `would drop out of the ${ranked}.`;
     const spread = `shuffled among the same acts ${shuffled.runs} times, they drop ${shuffled.median} (usually ${shuffled.low} to ${shuffled.high})`;
     return withOnly <= shuffled.high
-      ? `${count} Random taste numbers do about as much: ${spread}. So this shows that taste overlap reorders the list, not that Qloo’s numbers pick the right clashes. ${CHECK_NOT_PASSED}`
+      ? `${count} Random taste numbers do about as much: ${spread}. So this shows that taste overlap reorders the list, not that ${synthetic ? "these numbers" : "Qloo’s numbers"} pick the right clashes. ${CHECK_NOT_PASSED}`
       : `${count} That is more than random taste numbers do: ${spread}. It shows the numbers carry structure, not that they pick the right clashes. ${CHECK_NOT_PASSED}`;
   }
   return (
-    `Count only how popular two acts are (popularity is also a Qloo field) and how long they share ` +
+    `Count only how popular two acts are (popularity is also ${synthetic ? "an invented figure here" : "a Qloo field"}) and how long they share ` +
     `the stage clock, and ${withOnly} of this day’s ${ranked} costliest clashes would no longer ` +
     `be among the ${ranked} costliest.`
   );
@@ -162,11 +164,14 @@ export function TasteLens({
   lenses,
   ranked,
   onOpen,
+  synthetic = false,
 }: {
   lenses: Lenses;
   /** The day's priced concurrent clashes, costliest first: a listed pair opens its drawer from here. */
   ranked: readonly PairClash[];
   onOpen: (clash: PairClash, trigger: HTMLElement | null) => void;
+  /** The invented day: the lead does not credit Qloo's numbers or its popularity field. */
+  synthetic?: boolean;
 }) {
   const withTaste = droppedRows(
     lenses.with_taste.map((pair) => ({ ...pair, other: pair.rank_without_taste })),
@@ -192,7 +197,7 @@ export function TasteLens({
           <div className="space-y-2 text-[0.9375rem] leading-relaxed">
             <p>
               <WithMethodLink
-                text={lensLead(lenses)}
+                text={lensLead(lenses, synthetic)}
                 linkClassName="font-semibold text-foreground underline underline-offset-4"
               />
             </p>
@@ -239,7 +244,7 @@ export function TasteLens({
             <p className="text-muted-foreground">
               Taste overlap only costs something when two sets share time: price = taste overlap
               &times; the share of the shorter set they play at once &times; the two acts&rsquo; draw
-              (their geometric mean) &times; a rarity factor.
+              (their geometric mean) &times; a rarity factor. {formulaNote(synthetic)}
             </p>
           </div>
         ) : null}

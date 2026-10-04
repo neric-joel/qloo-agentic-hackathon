@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 import { Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+import { legendNoSignal } from "@/lib/credit";
+
 function Item({ swatch, children }: { swatch: ReactNode; children: ReactNode }) {
   return (
     <li className="flex items-center gap-2">
@@ -29,10 +31,13 @@ function Block({ className, children }: { className?: string; children?: ReactNo
 export function TimetableLegend({
   showLinks = true,
   planShown = false,
+  synthetic = false,
   className,
 }: {
   showLinks?: boolean;
   planShown?: boolean;
+  /** The invented day: the key does not name Qloo. */
+  synthetic?: boolean;
   className?: string;
 }) {
   return (
@@ -51,7 +56,7 @@ export function TimetableLegend({
         Locked set: fixed slot
       </Item>
       <Item swatch={<Block className="bg-hatch border-dashed border-border-strong" />}>
-        No Qloo signal: left out, not scored as zero
+        {legendNoSignal(synthetic)}
       </Item>
       {showLinks ? (
         <>

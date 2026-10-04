@@ -1,6 +1,6 @@
 import { useId } from "react";
 
-import type { Tradeoff } from "@/lib/decision";
+import { TRADEOFF_HEADING_ALONE, type Tradeoff } from "@/lib/decision";
 import { cn } from "@/lib/utils";
 
 /** What the plan already holds of the two changes; the matching column says so. */
@@ -41,10 +41,22 @@ export function TradeoffTable({
     <section aria-labelledby={headingId} className={cn("min-w-0", className)}>
       <h3
         id={headingId}
-        className={cn("type-kicker text-muted-foreground", print && "print:sr-only")}
+        className={cn(
+          "type-kicker text-muted-foreground",
+          print && tradeoff.heading !== TRADEOFF_HEADING_ALONE && "print:sr-only",
+          print && tradeoff.heading === TRADEOFF_HEADING_ALONE && "print:text-[9pt]",
+        )}
       >
         {tradeoff.heading}
       </h3>
+      <p
+        className={cn(
+          "mt-1 max-w-prose text-xs leading-snug text-muted-foreground",
+          print && "print:mt-0 print:max-w-none print:text-[9pt] print:leading-[1.15]",
+        )}
+      >
+        {tradeoff.subtitle}
+      </p>
       <table
         className={cn(
           "mt-2 block w-full border-collapse text-left text-sm leading-snug sm:table",
@@ -110,6 +122,14 @@ export function TradeoffTable({
           </tbody>
         ))}
       </table>
+      <p
+        className={cn(
+          "mt-2 text-xs leading-snug font-semibold text-muted-foreground",
+          print && "print:mt-[1pt] print:text-[9pt] print:leading-[1.15]",
+        )}
+      >
+        {tradeoff.footnote}
+      </p>
     </section>
   );
 }

@@ -16,6 +16,9 @@ import { TimetableLegend } from "@/components/clash/timetable-legend";
 import { TimetableList } from "@/components/clash/timetable-list";
 import { TryAMove } from "@/components/clash/try-a-move";
 import { TwinCards } from "@/components/clash/twin-cards";
+import { SummaryBoard, SummaryScore } from "@/components/clash/server-summary";
+import { WhyThisMatters } from "@/components/clash/why-this-matters";
+import { TraceDrawer } from "@/components/kernel";
 import { SiteFooter } from "@/components/site/site-footer";
 import { SyntheticBanner } from "@/components/site/synthetic-banner";
 import { SyntheticContext } from "@/components/site/synthetic-context";
@@ -28,12 +31,15 @@ import {
   drawPriorList,
   formulaNote,
   formulaNoteShort,
+  boardTraceDescription,
   noSignalMove,
   qlooCredits,
+  usedTitle,
 } from "@/lib/credit";
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
 import type { Lenses } from "@/lib/lenses";
 import { parsePreset, type Preset } from "@/lib/preset";
+import { summarize } from "@/lib/server-summary";
 
 // Every name and figure below is invented for the test. The invented day is the tiny preset with the
 // server's flag set, which is how the API marks its day with no Qloo data behind it.
@@ -168,6 +174,21 @@ function mount(preset: Preset): Record<string, string> {
       createElement(BudgetDial, { index: 104.2, baseline: preset.report.baseline, reach: "x", compact: true, synthetic }),
     ),
     "sources": everything(createElement(PresetSources, { preset })),
+    // The first page's server HTML, before the interactive page loads: the Derived chip's tooltip and the board's notes.
+    "summary score": everything(createElement(SummaryScore, { summary: summarize(preset) })),
+    "summary board": everything(createElement(SummaryBoard, { summary: summarize(preset) })),
+    // The board's trace button, with the props the board gives it.
+    "board trace button": everything(
+      createElement(TraceDrawer, {
+        toolCalls: [],
+        mode: "recorded",
+        triggerVariant: "ink",
+        triggerLabel: usedTitle(synthetic),
+        title: usedTitle(synthetic),
+        synthetic,
+        description: boardTraceDescription(synthetic, preset.title),
+      }),
+    ),
     "agent panel": everything(createElement(AgentPanel, { preset, day: 0, agentStatus: "off" })),
   };
 }
@@ -196,6 +217,8 @@ describe("the invented day credits no Qloo anywhere on the page", () => {
       "taste lens",
       "taste lens (no shuffle)",
       "sources",
+      "summary score",
+      "board trace button",
     ]) {
       expect(qlooCredits(real[name]).length, name).toBeGreaterThan(0);
     }
@@ -231,6 +254,51 @@ describe("the invented day credits no Qloo anywhere on the page", () => {
     expect(real["coverage strip"]).toContain("Qloo coverage");
     expect(real["timetable legend"]).toContain("No Qloo signal: left out, not scored as zero");
     expect(real["taste lens"]).toContain("not that Qloo's numbers pick the right clashes");
+  });
+});
+
+describe("the invented day: the pieces that used to credit Qloo", () => {
+  const wrap = (value: boolean, child: ReactElement) => createElement(SyntheticContext.Provider, { value }, child);
+
+  it("labels the board's trace button as where the figures came from, with no stray space before its comma", () => {
+    const sweep = mount(invented());
+    const markup = renderToStaticMarkup(
+      createElement(TraceDrawer, { toolCalls: [], mode: "recorded", triggerLabel: usedTitle(true), synthetic: true }),
+    );
+    expect(markup).toContain('aria-label="Where the figures came from, 0 requests"');
+    expect(markup).not.toMatch(/ ,\s*\d+ requests?/);
+    expect(sweep["board trace button"]).not.toContain("How Qloo was used");
+    const real = renderToStaticMarkup(createElement(TraceDrawer, { toolCalls: [], mode: "recorded" }));
+    expect(real).toContain('aria-label="How Qloo was used, 0 requests"');
+    expect(real).not.toMatch(/ ,\s*\d+ requests?/);
+  });
+
+  it("calls the server summary's Derived chip invented, not Qloo data", () => {
+    const markup = renderToStaticMarkup(createElement(SummaryScore, { summary: summarize(invented()) }));
+    expect(markup).toContain("Calculated by this app from invented figures.");
+    expect(markup).not.toContain("from Qloo data");
+    expect(renderToStaticMarkup(createElement(SummaryScore, { summary: summarize(published()) }))).toContain(
+      "Calculated by this app from Qloo data.",
+    );
+  });
+
+  it("opens /method without crediting Qloo, and prints the invented day's formula note", () => {
+    const method = text(renderToStaticMarkup(wrap(true, createElement(MethodPage))));
+    expect(method).toContain("a number it calculates from taste-overlap and draw figures");
+    expect(method).not.toContain("a number it derives from Qloo data");
+    const opening = method.slice(method.indexOf("Clash Control prices set-time clashes"), method.indexOf("This page says what that number is"));
+    expect(qlooCredits(opening)).toEqual([]);
+    expect(method).toContain(formulaNote(true));
+    expect(method).not.toContain(formulaNote(false));
+    const real = text(renderToStaticMarkup(wrap(false, createElement(MethodPage))));
+    expect(real).toContain("a number it derives from Qloo data");
+    expect(real).toContain(formulaNote(false));
+  });
+
+  it("says the home evidence block's popularity figure is about the published festivals", () => {
+    const block = text(renderToStaticMarkup(createElement(WhyThisMatters)));
+    expect(block).toContain("An exploratory follow-up on those published festivals");
+    expect(block).toMatch(/on the same set, popularity, also a Qloo field, scores 0\.\d{3}\./);
   });
 });
 

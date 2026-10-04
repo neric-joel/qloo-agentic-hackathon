@@ -60,8 +60,8 @@ export function WhyThisMatters({ demand = DEMAND }: { demand?: Demand }) {
             <p className="mt-3">
               <strong className="font-semibold">The test we set before looking failed.</strong> {formatPct(taste.topQuarterPct)}{" "}
               of the complained-about clashes ranked in the top quarter of their day by taste overlap, against a bar of{" "}
-              {backtest.bar.topQuarterPct}%. An exploratory follow-up puts taste overlap at an AUC of {formatAuc(taste.auc)}{" "}
-              on this press-skewed set; popularity, also a Qloo field, scores {formatAuc(popularity.auc)}.{" "}
+              {backtest.bar.topQuarterPct}%. An exploratory follow-up on those published festivals puts taste overlap at an AUC of {formatAuc(taste.auc)}{" "}
+              on this press-skewed set; on the same set, popularity, also a Qloo field, scores {formatAuc(popularity.auc)}.{" "}
               <Link href="/method" className={LINK}>
                 How we know
               </Link>

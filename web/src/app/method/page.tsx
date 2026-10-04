@@ -294,8 +294,11 @@ export default function MethodPage() {
         <p className="type-kicker text-muted-foreground">Method</p>
         <h1 className="type-poster mt-4">How we know</h1>
         <p className="mt-6 max-w-2xl text-lg leading-snug font-medium sm:text-xl">
-          Clash Control prices set-time clashes with a number it derives from Qloo data. This page
-          says what that number is, what we checked it against, and where the check fell short.
+          <BySyntheticDay
+            real="Clash Control prices set-time clashes with a number it derives from Qloo data."
+            invented="Clash Control prices set-time clashes with a number it calculates from taste-overlap and draw figures. The day this server is showing is an invented example, so its figures are invented and no Qloo request was made for it."
+          />{" "}
+          This page says what that number is, what we checked it against, and where the check fell short.
         </p>
         <ShortVersion />
       </header>
@@ -314,7 +317,9 @@ export default function MethodPage() {
           and does not move any price. The invented example day, which a server shows when it has no
           built day, is the exception: its acts carry their own rarity.
         </p>
-        <p>{formulaNote(false)}</p>
+        <p>
+          <BySyntheticDay real={formulaNote(false)} invented={formulaNote(true)} />
+        </p>
         <p>
           Draw is each act&rsquo;s popularity on Qloo, a percentile among Qloo artists, and the two
           acts&rsquo; draw is the square root of their product. Taste overlap

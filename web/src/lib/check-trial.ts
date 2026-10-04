@@ -773,8 +773,12 @@ export function trialSummary(result: Omit<TrialResult, "summary">): string {
     );
     return parts.join(" ");
   }
+  // The found count is the changes this list draws from. When changes over three hours are held back it says so
+  // in its own words, and the omitted count below says how many more there are and what the two make in all.
+  const found = result.found.toLocaleString("en-US");
+  const foundWords = result.largeOmitted > 0 ? `${found} within ${LARGE_HOURS} hours found` : `${found} found`;
   parts.push(
-    `${result.found.toLocaleString("en-US")} found, ${result.changes.length.toLocaleString("en-US")} shown: each ends it, adds no rule break and makes none larger, ranked by total start-time minutes moved.`,
+    `${foundWords}, ${result.changes.length.toLocaleString("en-US")} shown: each ends it, adds no rule break and makes none larger, ranked by total start-time minutes moved.`,
   );
   parts.push(`${count(result.tested, "candidate")} tested.`);
   if (result.swapsSearched) {
@@ -786,7 +790,7 @@ export function trialSummary(result: Omit<TrialResult, "summary">): string {
   }
   if (result.largeOmitted > 0) {
     parts.push(
-      `${count(result.largeOmitted, "more change")} ${result.largeOmitted === 1 ? "moves" : "move"} a set by more than ${LARGE_HOURS} hours and ${result.largeOmitted === 1 ? "is" : "are"} not listed.`,
+      `${count(result.largeOmitted, "more change")} ${result.largeOmitted === 1 ? "moves" : "move"} a set by more than ${LARGE_HOURS} hours and ${result.largeOmitted === 1 ? "is" : "are"} not listed (${(result.found + result.largeOmitted).toLocaleString("en-US")} found in all).`,
     );
   }
   if (result.onlyLarge) {
@@ -814,12 +818,20 @@ export function raisesSharedTotal(change: TrialChange): boolean {
 
 /**
  * The warning on a change that lengthens an overlap elsewhere or raises the grid's shared minutes; null when
- * it does neither. When the total rises it says by how much; when only some overlaps get longer and others
+ * it does neither. When the total rises it gives the gross rise on the pairs that get longer (and, if other
+ * overlaps shrink, the net change the grid line shows); when only some overlaps get longer and others
  * shorter it says that, so the line never contradicts the grid line above it.
  */
 export function sharedRiseLine(change: TrialChange): string | null {
   const net = change.sharedAfter.minutes - change.sharedBefore.minutes;
-  if (net > 0) return `Shared time elsewhere rises by ${minutesLabel(net)}.`;
+  if (net > 0) {
+    // The warning is the gross rise on the pairs that get longer (what `sharedRise` sums), not the grid's net change:
+    // a pair that falls by 30 while another rises by 45 is 45 minutes added elsewhere, and a net 15 on the grid line.
+    const rise = Math.max(change.sharedRise, net);
+    return rise > net
+      ? `Shared time elsewhere rises by ${minutesLabel(rise)}. Other overlaps get shorter, so the grid total rises by ${minutesLabel(net)}.`
+      : `Shared time elsewhere rises by ${minutesLabel(rise)}.`;
+  }
   if (change.sharedRise > 0) {
     return `Some overlaps elsewhere get ${minutesLabel(change.sharedRise)} longer in all; others get shorter, so the grid total ${net < 0 ? "falls" : "stays the same"}.`;
   }

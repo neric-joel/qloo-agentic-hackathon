@@ -14,6 +14,7 @@ import {
   SEARCH_COVERS,
   SEARCH_RULE,
   SMALLEST_FIRST,
+  collapseSimilar,
   fixGhosts,
   fixIndexLine,
   fixStep,
@@ -27,6 +28,8 @@ import {
   moveLine,
   previewAnnouncement,
   requestRuleFixes,
+  rowsCover,
+  similarLine,
   roomNote,
   searchedSentence,
   type RuleAnswer,
@@ -98,6 +101,7 @@ type KeepState = "ready" | "full" | "kept";
 
 export function ChangeCard({
   fix,
+  similar = 0,
   n,
   before,
   dayLabel,
@@ -110,6 +114,8 @@ export function ChangeCard({
   buttonRef,
 }: {
   fix: RuleFix;
+  /** Near-duplicates of this change (the same sets and stages, starts within five minutes) that share this row. */
+  similar?: number;
   n: number;
   before: number | null;
   dayLabel: (day: number) => string | null;
@@ -135,6 +141,7 @@ export function ChangeCard({
           </li>
         ))}
       </ul>
+      {similar > 0 ? <p className="mt-0.5 text-sm text-muted-foreground">{similarLine(similar)}</p> : null}
       <p className="mt-1.5 text-sm text-muted-foreground tabular-nums">
         {fixSummary(fix)}
         {index ? ` · ${index}` : ""}
@@ -415,6 +422,9 @@ export function KeepApart({
 
   const canSearch = first !== "" && second !== "" && first !== second && search.status !== "loading";
   const result = search.status === "ready" ? search.fixes : null;
+  // Near-duplicates (the same sets and stages, starts within five minutes) share a row; the route's count stays as sent.
+  const rows = useMemo(() => (result ? collapseSimilar(result.fixes) : []), [result]);
+  const covered = rowsCover(rows);
   const note = result ? lockedNote(result) : null;
 
   return (
@@ -545,15 +555,19 @@ export function KeepApart({
                       {result.singleSetPlaces === 0
                         ? "This search found no single-set place that ends it."
                         : `${pluralize(result.singleSetPlaces, "single-set place")} end${result.singleSetPlaces === 1 ? "s" : ""} it.`}
-                      {result.fixesFound > result.fixes.length
-                        ? ` Showing ${result.fixes.length} of ${result.fixesFound} changes found.`
+                      {result.fixesFound > covered
+                        ? ` Showing ${covered} of ${result.fixesFound} changes found.`
+                        : ""}
+                      {covered > rows.length
+                        ? " A change that moves the same sets to the same stages, with starts within 5 minutes, shares a row."
                         : ""}
                     </p>
                     <ol aria-label="Changes that end the overlap" className="mt-3 grid gap-3 lg:grid-cols-3">
-                      {result.fixes.map((fix, i) => (
+                      {rows.map(({ fix, similar }, i) => (
                         <ChangeCard
                           key={fix.moves.map((move) => `${move.actId}@${move.start}`).join("+")}
                           fix={fix}
+                          similar={similar}
                           n={i + 1}
                           before={before}
                           dayLabel={dayLabel}

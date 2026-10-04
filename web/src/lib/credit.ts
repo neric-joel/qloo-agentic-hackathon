@@ -81,6 +81,13 @@ export function traceDescription(synthetic: boolean): string {
     : "The Qloo requests behind this clash, replayed from the saved preset rather than fetched live. The API key stays on the server and is never sent to the browser.";
 }
 
+/** The trace drawer's description on the board (every request behind the day, or the lack of any). */
+export function boardTraceDescription(synthetic: boolean, title: string): string {
+  return synthetic
+    ? `${title} is an invented day: no Qloo request was made for it, so there is nothing to replay.`
+    : `Every Qloo request behind ${title}, replayed from the saved preset rather than fetched live. The API key stays on the server and is never sent to the browser.`;
+}
+
 /** The coverage strip's heading. */
 export function coverageHeading(synthetic: boolean): string {
   return synthetic ? "Signal coverage" : "Qloo coverage";

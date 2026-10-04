@@ -17,6 +17,7 @@ import {
   bandSentence,
   briefIntro,
   briefRows,
+  baselineNote,
   briefSteps,
   briefTitle,
   briefTradeoff,
@@ -474,14 +475,20 @@ export function BriefContent({
   );
 
   // On paper the comparison takes the room of the list of hidden clashes, which the table's own marks repeat.
+  const hiddenOnPaper = !(tradeoff || (withMoves && heavyPlan(steps, twoColumns ? 2 : 1)));
   const hiddenBlock = hidden ? (
-    <Block
-      title="Hidden clashes"
-      quietInPrint
-      className={tradeoff || (withMoves && heavyPlan(steps, twoColumns ? 2 : 1)) ? "print:hidden" : undefined}
-    >
+    <Block title="Hidden clashes" quietInPrint className={hiddenOnPaper ? undefined : "print:hidden"}>
       <p className="print:text-[9pt]">{hidden}</p>
     </Block>
+  ) : null;
+  // What the printed page leaves off the published day is said on paper, in one line, so a sheet that fits one page
+  // never reads as the whole baseline: the day's costliest clash and the count of the rest, or the count not listed.
+  const baseline =
+    withMoves && (!tableOnPage || (hidden !== null && !hiddenOnPaper))
+      ? baselineNote(preset, day, { rows: tableOnPage ? rows.length : 0, hiddenListed: hiddenOnPaper })
+      : null;
+  const baselineBlock = baseline ? (
+    <p className="mt-2 hidden text-sm text-muted-foreground print:mt-[3pt] print:block print:text-[9pt]">{baseline}</p>
   ) : null;
 
   const howBlock = (
@@ -558,6 +565,11 @@ export function BriefContent({
               )}
             />
           ) : null}
+          {tradeoff?.pairNote ? (
+            <p className="mt-1 text-sm text-muted-foreground print:mt-[1pt] print:text-[9pt] print:leading-[1.15]">
+              {tradeoff.pairNote}
+            </p>
+          ) : null}
           <p className="mt-2 text-sm text-muted-foreground print:mt-[4pt] print:text-[9pt]">{PLAN_CAVEAT}</p>
         </Block>
 
@@ -613,6 +625,7 @@ export function BriefContent({
           {planBlock}
           {dayBlock}
           {tableBlock}
+          {baselineBlock}
           {hiddenBlock}
         </>
       ) : (

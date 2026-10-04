@@ -265,6 +265,62 @@ export function hiddenSentence(names: readonly string[]): string | null {
     : `${names.length} of this day’s ranked clashes are hidden clashes: ${list}.`;
 }
 
+/** What the printed sheet gives of the published day: the table's rows and whether the hidden list is on paper. */
+export type PrintedBaseline = { rows: number; hiddenListed: boolean };
+
+/**
+ * The published day's baseline on paper when the sheet leaves part of it off. With no table on paper it is the
+ * day's costliest clash (index points as the plan's clash list prints them) and how many more the full list on
+ * the timetable page holds; with a shortened table it says how many clashes are not listed. Hidden clashes that are
+ * in neither a printed row nor the printed list are counted too. Null when the whole ranked list is on paper.
+ */
+export function baselineNote(
+  preset: Pick<Preset, "report">,
+  day: number,
+  printed: PrintedBaseline,
+): string | null {
+  const ranked = topClashes(preset.report.clashes, day, Number.POSITIVE_INFINITY);
+  const first = ranked[0];
+  if (!first) return null;
+  // With no table on paper the costliest clash is named in the line itself, so "more" counts the others.
+  const listed = Math.max(printed.rows, 1);
+  const rest = ranked.length - listed;
+  if (rest <= 0) return null;
+  const hiddenOff = printed.hiddenListed
+    ? 0
+    : ranked.slice(listed).filter((clash) => clash.label === "hidden").length;
+  const hiddenText = hiddenOff === 0 ? "" : ` (${hiddenOff} hidden)`;
+  if (printed.rows === 0) {
+    const index = preset.report.metrics.clash_budget_index;
+    const points = index === null ? "" : `, ${(first.regret_share * index).toFixed(1)} index points`;
+    const kind = first.label === "hidden" ? ", a hidden clash" : "";
+    return `Published day before these moves: costliest ${first.a.name} and ${first.b.name}${kind}${points}; ${rest} more on the timetable page${hiddenText}.`;
+  }
+  return `${rest === 1 ? "1 more clash of the published day is" : `${rest} more clashes of the published day are`} not listed here${hiddenText}; the full list is on the timetable page.`;
+}
+
+/**
+ * One line when the comparison's pair is not the published day's costliest pair (a costlier clash is between
+ * locked sets, or no set of theirs has a legal place that lowers the index), so the two are not confused.
+ */
+export function comparisonPairNote(
+  preset: Pick<Preset, "festival" | "report">,
+  decision: Pick<Decision, "clash" | "day">,
+): string | null {
+  if (!decision.clash) return null;
+  const first = topClashes(preset.report.clashes, decision.day, 1)[0];
+  if (!first) return null;
+  const { aId, bId } = decision.clash;
+  const same =
+    (first.a.act_id === aId && first.b.act_id === bId) || (first.a.act_id === bId && first.b.act_id === aId);
+  if (same) return null;
+  const names = new Map(preset.festival.acts.map((act) => [act.id, act.name]));
+  const a = names.get(aId);
+  const b = names.get(bId);
+  if (!a || !b) return null;
+  return `The comparison is about ${a} and ${b}, the costliest clash with a set that can move. The published day’s costliest clash is ${first.a.name} and ${first.b.name}.`;
+}
+
 // ------------------------------------------------------------------------------------ the plan
 
 /**
@@ -465,6 +521,8 @@ export type BriefTradeoff = {
   held: { move: boolean; change: boolean };
   alone: boolean;
   moveReceipt: { move: StackMove; receipt: string } | null;
+  /** Said under the table when its pair is not the published day's costliest pair; else null. */
+  pairNote: string | null;
 };
 
 /**
@@ -497,6 +555,7 @@ export function briefTradeoff(
     held,
     alone,
     moveReceipt: seedMove !== null && copy.moveReceipt !== null ? { move: seedMove, receipt: copy.moveReceipt } : null,
+    pairNote: comparisonPairNote(preset, decision),
   };
 }
 

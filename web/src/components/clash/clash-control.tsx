@@ -11,7 +11,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import type { AgentStatus } from "@/lib/agent-status";
 import { CHECK_LIVE } from "@/lib/check-flag";
 import { describeReach, samplingReach } from "@/lib/clash-budget";
-import { popularityName } from "@/lib/credit";
+import { boardTraceDescription, popularityName, usedTitle } from "@/lib/credit";
 import {
   buildSetViews,
   clashKey,
@@ -620,11 +620,10 @@ function PresetView({
               toolCalls={allCalls}
               mode="recorded"
               triggerVariant="ink"
-              description={
-                preset.synthetic === true
-                  ? `${preset.title} is an invented day: no Qloo request was made for it, so there is nothing to replay.`
-                  : `Every Qloo request behind ${preset.title}, replayed from the saved preset rather than fetched live. The API key stays on the server and is never sent to the browser.`
-              }
+              triggerLabel={usedTitle(preset.synthetic === true)}
+              title={usedTitle(preset.synthetic === true)}
+              synthetic={preset.synthetic === true}
+              description={boardTraceDescription(preset.synthetic === true, preset.title)}
               footnote={`Preset ${preset.id}${preset.built_at ? ` · built ${preset.built_at.slice(0, 10)}` : ""}`}
             />
           </div>

@@ -13,6 +13,8 @@ import {
   READING_NOTE,
   TO_DECIDE,
   bandSentence,
+  baselineNote,
+  comparisonPairNote,
   briefRows,
   briefSteps,
   briefTitle,
@@ -903,5 +905,60 @@ describe("the brief's trade-off", () => {
     // The list of hidden clashes gives its place on paper to the comparison, and stays on the screen.
     expect(html).toMatch(/<section[^>]*class="[^"]*print:hidden[^"]*"[^>]*aria-labelledby="brief-hidden-clashes"|<section[^>]*aria-labelledby="brief-hidden-clashes"[^>]*class="[^"]*print:hidden/);
     expect(without).not.toMatch(/aria-labelledby="brief-hidden-clashes"[^>]*class="[^"]*print:hidden/);
+  });
+});
+
+describe("the printed baseline", () => {
+  const preset = makePreset();
+
+  it("names the published day's costliest clash and counts the rest when no table is on paper", () => {
+    // Day 0 ranks six clashes; the costliest is Act One and Act Two, 29% of the 116.71 index (33.8 points).
+    expect(baselineNote(preset, 0, { rows: 0, hiddenListed: false })).toBe(
+      "Published day before these moves: costliest Act One and Act Two, a hidden clash, 33.8 index points; 5 more on the timetable page (2 hidden).",
+    );
+    expect(baselineNote(preset, 0, { rows: 0, hiddenListed: true })).toBe(
+      "Published day before these moves: costliest Act One and Act Two, a hidden clash, 33.8 index points; 5 more on the timetable page.",
+    );
+  });
+
+  it("says how many clashes a shortened table leaves off, and counts the hidden ones it leaves off", () => {
+    expect(baselineNote(preset, 0, { rows: 1, hiddenListed: false })).toBe(
+      "5 more clashes of the published day are not listed here (2 hidden); the full list is on the timetable page.",
+    );
+    expect(baselineNote(preset, 0, { rows: 3, hiddenListed: true })).toBe(
+      "3 more clashes of the published day are not listed here; the full list is on the timetable page.",
+    );
+    expect(baselineNote(preset, 0, { rows: 6, hiddenListed: false })).toBeNull();
+    expect(baselineNote(preset, 5, { rows: 0, hiddenListed: false })).toBeNull();
+  });
+
+  it("is printed on paper only, for a plan that leaves the table or the hidden list off the page", () => {
+    const html = (plan: Plan, tradeoff = briefTradeoff(preset, parseDecision(decisionRaw()), [CARD_MOVE, OTHER_MOVE], 0)) =>
+      renderToStaticMarkup(createElement(BriefContent, { preset, day: 0, plan, tradeoff }));
+    const heavy = html(PLAN);
+    expect(heavy).toMatch(/<p class="[^"]*hidden[^"]*print:block[^"]*">Published day before these moves: costliest Act One and Act Two/);
+    // A light plan (one step, no comparison) keeps the five rows and the hidden list: nothing to say.
+    const light = renderToStaticMarkup(createElement(BriefContent, { preset, day: 0, plan: { ...PLAN, steps: PLAN.steps.slice(0, 1) } }));
+    expect(light).not.toContain("Published day before these moves");
+    expect(light).not.toContain("are not listed here");
+    // No moves at all: the brief is the published day, no baseline note.
+    expect(renderToStaticMarkup(createElement(BriefContent, { preset, day: 0, plan: null }))).not.toContain("Published day before");
+  });
+
+  it("says when the comparison's pair is not the day's costliest pair, and only then", () => {
+    // The card's pair is the costliest one here: no note.
+    expect(briefTradeoff(preset, parseDecision(decisionRaw()), [CARD_MOVE], 0)?.pairNote).toBeNull();
+    // A decision for the rank-2 pair (the costliest is between sets that cannot move): the note names both.
+    const other = decisionRaw({ clash: { a_id: "act-four", b_id: "act-five", rank: 2, minutes: 30 }, skipped_locked: 1 });
+    const decision = parseDecision(other);
+    expect(comparisonPairNote(preset, decision!)).toBe(
+      "The comparison is about Act Four and Act Five, the costliest clash with a set that can move. The published day’s costliest clash is Act One and Act Two.",
+    );
+    const tradeoff = briefTradeoff(preset, decision, [CARD_MOVE], 0);
+    const text = renderToStaticMarkup(createElement(BriefContent, { preset, day: 0, plan: PLAN, tradeoff }))
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&#x27;|&#39;/g, "'")
+      .replace(/\s+/g, " ");
+    if (tradeoff) expect(text).toContain("The comparison is about Act Four and Act Five");
   });
 });

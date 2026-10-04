@@ -97,10 +97,12 @@ describe("the sample: each planted break gets a result", () => {
         for (const line of change.lines) expect(line).toMatch(/^.+ → .+ \d\d:\d\d–\d\d:\d\d$/);
       }
       expect(result.summary).toMatch(
-        /^\d+ found, \d+ shown: each ends it, adds no rule break and makes none larger, ranked by total start-time minutes moved\. [\d,]+ candidates? tested\./,
+        /^\d+ (within 3 hours )?found, \d+ shown: each ends it, adds no rule break and makes none larger, ranked by total start-time minutes moved\. [\d,]+ candidates? tested\./,
       );
       expect(result.changes).toHaveLength(Math.min(TRIAL_LIMITS.shown, result.found));
-      expect(result.summary).toContain(`${result.found} found, ${result.changes.length} shown`);
+      expect(result.summary).toContain(
+        `${result.found} ${result.largeOmitted > 0 ? "within 3 hours " : ""}found, ${result.changes.length} shown`,
+      );
     }
   });
 
@@ -189,12 +191,30 @@ describe("the sample: each planted break gets a result", () => {
         expect(change.sharedAfter.minutes - change.sharedBefore.minutes).toBe(net);
         expect(raisesSharedTotal(change)).toBe(net > 0);
         const line = sharedRiseLine(change);
-        if (net > 0) expect(line).toBe(`Shared time elsewhere rises by ${net} ${net === 1 ? "minute" : "minutes"}.`);
-        else if (rise > 0) {
+        if (net > 0) {
+          // The warning is the gross rise on the pairs that get longer; the grid line keeps the net change.
+          expect(rise).toBeGreaterThanOrEqual(net);
+          expect(line).toContain(`Shared time elsewhere rises by ${rise} ${rise === 1 ? "minute" : "minutes"}.`);
+          if (rise > net) expect(line).toContain(`the grid total rises by ${net} ${net === 1 ? "minute" : "minutes"}.`);
+        } else if (rise > 0) {
           expect(line).toMatch(/^Some overlaps elsewhere get \d+ minutes? longer in all; others get shorter, so the grid total (falls|stays the same)\.$/);
         } else expect(line).toBeNull();
       }
     }
+  });
+
+  it("warns with the gross rise elsewhere, not the net change: 30 minutes down on one pair, 45 up on another", () => {
+    const change = {
+      sharedRise: 45,
+      pairBefore: null,
+      sharedBefore: { pairs: 4, minutes: 100 },
+      sharedAfter: { pairs: 4, minutes: 115 },
+    } as TrialChange;
+    const line = sharedRiseLine(change);
+    expect(line).toBe("Shared time elsewhere rises by 45 minutes. Other overlaps get shorter, so the grid total rises by 15 minutes.");
+    expect(sharedEffect(change)).toContain("sharing 100 minutes → 4 pairs sharing 115 minutes");
+    // No pair shrinks: gross and net are the same number, and the line is the plain one.
+    expect(sharedRiseLine({ ...change, sharedRise: 15 } as TrialChange)).toBe("Shared time elsewhere rises by 15 minutes.");
   });
 
   it("keeps every new place inside the day's span, and one-set moves on the 5-minute grid", () => {
@@ -303,7 +323,10 @@ describe("what the search says when it cannot help", () => {
     expect(listed.onlyLarge).toBe(false);
     expect(listed.largeOmitted).toBeGreaterThan(0);
     for (const c of listed.changes) expect(c.largestShift).toBeLessThanOrEqual(TRIAL_LIMITS.largeShift);
-    expect(listed.summary).toMatch(/\d+ more changes? moves? a set by more than 3 hours and (is|are) not listed\./);
+    expect(listed.summary).toMatch(/\d+ more changes? moves? a set by more than 3 hours and (is|are) not listed/);
+    // The two counts add up in the words: "N within 3 hours found, ... M more ... (N+M found in all)".
+    expect(listed.summary).toContain(`${listed.found} within 3 hours found, ${listed.changes.length} shown`);
+    expect(listed.summary).toContain(`(${listed.found + listed.largeOmitted} found in all)`);
 
     // Only far moves end it: they are listed, with the reason.
     const far = plain(

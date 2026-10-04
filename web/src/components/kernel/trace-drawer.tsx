@@ -76,6 +76,10 @@ export type TraceDrawerProps = {
   triggerClassName?: string;
   /** The trigger's text. Defaults to "How Qloo was used". */
   triggerLabel?: string;
+  /** The drawer's title. Defaults to "How Qloo was used"; an invented day names where its figures came from instead. */
+  title?: string;
+  /** The invented day: the notes under the counts do not describe saved Qloo responses. */
+  synthetic?: boolean;
   /** Replaces the opening paragraph (which describes a live run). */
   description?: ReactNode;
   /** Replaces the run id line at the bottom. */
@@ -99,6 +103,8 @@ export function TraceDrawer({
   triggerVariant = "outline",
   triggerClassName,
   triggerLabel = "How Qloo was used",
+  title = "How Qloo was used",
+  synthetic = false,
   description,
   footnote,
   open,
@@ -150,12 +156,15 @@ export function TraceDrawer({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetTrigger asChild>
-        <Button variant={triggerVariant} className={triggerClassName}>
+        {/* The count is part of the accessible name through aria-label, not a hidden span: a hidden span is read
+            as its own word, with a space before its comma ("How Qloo was used , 0 requests"). */}
+        <Button
+          variant={triggerVariant}
+          className={triggerClassName}
+          aria-label={`${triggerLabel}, ${pluralize(total, "request")}`}
+        >
           <Waypoints aria-hidden="true" />
-          <span>
-            {triggerLabel}
-            <span className="sr-only">, {pluralize(total, "request")}</span>
-          </span>
+          <span>{triggerLabel}</span>
           <span
             aria-hidden="true"
             className="ml-0.5 inline-flex min-w-6 items-center justify-center rounded-full bg-foreground px-1.5 py-0.5 text-xs font-bold text-background tabular-nums"
@@ -168,7 +177,7 @@ export function TraceDrawer({
       <SheetContent className="gap-0 p-0 data-[side=right]:lg:max-w-2xl">
         <SheetHeader className="gap-0 border-b border-border p-5 pr-14 sm:p-6 sm:pr-16">
           <p className="type-kicker text-muted-foreground">Trace</p>
-          <SheetTitle className="type-headline mt-2 text-balance">How Qloo was used</SheetTitle>
+          <SheetTitle className="type-headline mt-2 text-balance">{title}</SheetTitle>
         </SheetHeader>
 
         {/* A keyboard-reachable scroll area: focus starts on Close, so without this the arrow and
@@ -196,7 +205,9 @@ export function TraceDrawer({
           <p className="mt-3 mb-8 text-xs text-muted-foreground">
             {hasLive
               ? "Cached means answered from this app’s cache. The median covers live requests only."
-              : "Cached means answered from this app’s cache. Recorded means replayed from a saved Qloo response, not fetched live."}
+              : synthetic
+                ? "Cached means answered from this app’s cache. Recorded means replayed from a saved response, not fetched live."
+                : "Cached means answered from this app’s cache. Recorded means replayed from a saved Qloo response, not fetched live."}
           </p>
 
           {/* Always mounted, so the end of the run is announced even while this drawer is open. */}

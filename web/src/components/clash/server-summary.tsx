@@ -14,7 +14,7 @@ export function SummaryScore({ summary }: { summary: ServerSummary }) {
     <div className="rounded-xl border border-border bg-card p-5 sm:p-6">
       <div className="flex items-start justify-between gap-3">
         <p className="type-kicker text-muted-foreground">Clash Budget Index</p>
-        <ProvenanceChip provenance="derived" size="sm" />
+        <ProvenanceChip provenance="derived" size="sm" synthetic={summary.synthetic} />
       </div>
       {summary.index !== null ? (
         <div className="mt-3">

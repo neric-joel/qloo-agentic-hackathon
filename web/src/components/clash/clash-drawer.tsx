@@ -329,9 +329,9 @@ export function ClashDetails({
           />
         </dl>
         <p className="mt-5 rounded-md bg-muted px-3 py-2.5 font-mono text-xs leading-relaxed">
-          price = taste overlap {shown.audience_overlap.toFixed(2)} &times; share of the shorter set{" "}
-          {shown.concurrency.toFixed(2)} &times; combined draw {shown.draw.toFixed(2)}
-          {rarityFactor !== null ? ` × rarity factor ${rarityFactor.toFixed(2)}` : ""} ={" "}
+          price = taste overlap {shown.audience_overlap.toFixed(3)} &times; share of the shorter set{" "}
+          {shown.concurrency.toFixed(3)} &times; combined draw {shown.draw.toFixed(3)}
+          {rarityFactor !== null ? ` × rarity factor ${rarityFactor.toFixed(3)}` : ""} ={" "}
           {shown.regret.toFixed(3)}
         </p>
         <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{formulaNoteShort(synthetic)}</p>

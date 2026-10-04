@@ -3,6 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   ALREADY_KEPT,
   BOTH_LOCKED,
+  PANEL_ROWS,
+  collapseSimilar,
+  isSimilar,
+  rowsCover,
+  similarLine,
   NO_RESULT,
   fixGhosts,
   fixIndexLine,
@@ -318,5 +323,39 @@ describe("keeping a change", () => {
     expect(roomNote(2, 1)).toBe("This change uses 2 moves and your plan has 1 left.");
     expect(roomNote(1, 0)).toBe("Your plan holds 8 moves, the most it can. Undo one or start over.");
     expect(roomNote(2, -1)).toBe("Your plan holds 8 moves, the most it can. Undo one or start over.");
+  });
+});
+
+describe("collapseSimilar", () => {
+  const fixOf = (annStart: string, overrides: Raw = {}) => {
+    const rule = parseRuleFixes({
+      ...rawRule(),
+      fixes: [rawFix({ moves: [rawMove({ start: annStart }), rawMove({ act_id: "bo", act: "Bo Diddly Squat", stage_id: "main", stage: "Main", start: "20:00", end: "21:30", from: "Side 20:30-22:00", minutes_moved: 30 })], ...overrides })],
+    });
+    return rule!.fixes[0];
+  };
+
+  it("joins changes that move the same sets to the same stages with starts within five minutes", () => {
+    const lead = fixOf("21:30");
+    expect(isSimilar(lead, fixOf("21:35"))).toBe(true);
+    expect(isSimilar(lead, fixOf("21:25"))).toBe(true);
+    expect(isSimilar(lead, fixOf("21:40"))).toBe(false);
+    const other = rawFix({ moves: [rawMove({ stage_id: "main", stage: "Main", start: "21:30" })] });
+    expect(isSimilar(lead, parseRuleFixes({ ...rawRule(), fixes: [other] })!.fixes[0])).toBe(false);
+  });
+
+  it("lists the lead of each group once, with how many it stands for, and caps the rows", () => {
+    const fixes = [fixOf("21:30"), fixOf("21:35"), fixOf("22:30"), fixOf("21:25"), fixOf("22:35"), fixOf("23:30"), fixOf("23:45")];
+    const rows = collapseSimilar(fixes);
+    expect(rows.map((row) => [row.fix.moves[0].start, row.similar])).toEqual([
+      ["21:30", 2],
+      ["22:30", 1],
+      ["23:30", 0],
+    ]);
+    expect(rows.length).toBeLessThanOrEqual(PANEL_ROWS);
+    // The last change did not fit a fourth row, so the rows stand for six of the seven; the route's count is separate.
+    expect(rowsCover(rows)).toBe(6);
+    expect(similarLine(2)).toBe("and 2 similar places, within 5 minutes of these start times");
+    expect(similarLine(1)).toBe("and 1 similar place, within 5 minutes of these start times");
   });
 });

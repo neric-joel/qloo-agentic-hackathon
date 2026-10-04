@@ -13,8 +13,14 @@ import { pluralize } from "./format";
 import { clockMinutes } from "./moves";
 import { MAX_STACK, isSafeId, type GhostSlot, type RuleStackStep } from "./stack";
 
-/** How many changes the card and the panel ask for. */
-export const RULE_LIMIT = 3;
+/** How many changes the panel asks for; near-duplicates among them share a row (`collapseSimilar`). */
+export const RULE_LIMIT = 5;
+
+/** How many rows the panel lists once near-duplicates are collapsed. */
+export const PANEL_ROWS = 3;
+
+/** Starts within this many minutes of a listed change's, for the same sets on the same stages, are "similar places". */
+export const SIMILAR_MINUTES = 5;
 
 export type RuleSide = { actId: string; act: string; locked: boolean; place: string };
 
@@ -248,6 +254,50 @@ export function fixIndexLine(fix: RuleFix, before: number | null): string | null
 export function stageFitNote(fix: RuleFix): string | null {
   const added = fix.flagsAfter - fix.flagsNow;
   return added > 0 ? `Adds ${pluralize(added, "stage-fit flag")}` : null;
+}
+
+/** One listed row: a change and how many of the others fetched are its near-duplicates. */
+export type ChangeRow = { fix: RuleFix; similar: number };
+
+function startOf(move: RuleMove): number | null {
+  return clockMinutes(move.start);
+}
+
+/** True when `other` moves the same sets to the same stages as `lead`, each start within `SIMILAR_MINUTES` of it. */
+export function isSimilar(lead: RuleFix, other: RuleFix): boolean {
+  if (lead.moves.length !== other.moves.length) return false;
+  return lead.moves.every((move) => {
+    const twin = other.moves.find((candidate) => candidate.actId === move.actId);
+    if (!twin || twin.stageId !== move.stageId || twin.day !== move.day) return false;
+    const a = startOf(move);
+    const b = startOf(twin);
+    return a !== null && b !== null && Math.abs(a - b) <= SIMILAR_MINUTES;
+  });
+}
+
+/**
+ * The changes as the panel lists them: in the route's order, a change that only shifts a start by five minutes
+ * or less for the same sets and stages joins the row it repeats ("and 2 similar places"), and at most
+ * `maxRows` rows are listed. Display only: the route's own count of changes found is printed as it came.
+ */
+export function collapseSimilar(fixes: readonly RuleFix[], maxRows: number = PANEL_ROWS): ChangeRow[] {
+  const rows: ChangeRow[] = [];
+  for (const fix of fixes) {
+    const row = rows.find((item) => isSimilar(item.fix, fix));
+    if (row) row.similar += 1;
+    else if (rows.length < maxRows) rows.push({ fix, similar: 0 });
+  }
+  return rows;
+}
+
+/** "and 2 similar places", under the row they repeat. */
+export function similarLine(similar: number): string {
+  return `and ${pluralize(similar, "similar place")}, within ${SIMILAR_MINUTES} minutes of these start times`;
+}
+
+/** How many changes the listed rows stand for, the near-duplicates included. */
+export function rowsCover(rows: readonly ChangeRow[]): number {
+  return rows.reduce((sum, row) => sum + 1 + row.similar, 0);
 }
 
 export const SMALLEST_FIRST = "Smallest changes first: fewest sets, then fewest minutes moved.";

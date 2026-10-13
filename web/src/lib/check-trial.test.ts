@@ -46,6 +46,12 @@ type Vector = {
 };
 const VECTORS = vectors as Vector[];
 
+/**
+ * The searches that run for seconds under a loaded test runner (several brute-force checks): an explicit
+ * 30-second timeout, so a clean clone's first run does not fail on the 5-second default.
+ */
+const SLOW = 30_000;
+
 function reportOf(input: CheckInput): CheckReport {
   const outcome = runCheck(input);
   if (!outcome.ok) throw new Error(outcome.errors.join(" | "));
@@ -116,7 +122,7 @@ describe("the sample: each planted break gets a result", () => {
     for (const change of result.changes) {
       for (const move of change.moves) expect(locked).not.toContain(move.row);
     }
-  });
+  }, SLOW);
 
   it("lists a shared-time pair's changes with the pair at 0 minutes", () => {
     const pair = report.shared[0];
@@ -179,7 +185,7 @@ describe("the sample: each planted break gets a result", () => {
     const curfew = findChange(late, breakTarget(late, 4));
     expect(curfew.oneSetPassed).toBe(0);
     expect(curfew.summary).toContain("No one-set move ends it, so two-set changes were tried.");
-  });
+  }, SLOW);
 
   it("states the shared-time rise of a change exactly, from the page's own pair list", () => {
     const key = (p: { a: { row: number }; b: { row: number } }) => `${Math.min(p.a.row, p.b.row)}-${Math.max(p.a.row, p.b.row)}`;
@@ -238,7 +244,7 @@ describe("the sample: each planted break gets a result", () => {
         }
       }
     }
-  });
+  }, SLOW);
 
   it("does not change the report it was given", () => {
     const before = JSON.stringify(report);
@@ -532,7 +538,7 @@ describe("the search against a brute-force check with the page's own rules", { t
     }
     expect(compared).toBeGreaterThan(80);
     expect(withMoves).toBeGreaterThan(40);
-  });
+  }, SLOW);
 
   it("finds the one-set moves into another set's start too, on days whose starts are off the 5-minute grid", () => {
     let compared = 0;
@@ -557,7 +563,7 @@ describe("the search against a brute-force check with the page's own rules", { t
     }
     expect(compared).toBeGreaterThan(80);
     expect(offGrid).toBeGreaterThan(0);
-  });
+  }, SLOW);
 
   it("ranks by total minutes: the top listed change moves no more minutes than any one-set move within three hours", () => {
     let compared = 0;
@@ -603,7 +609,7 @@ describe("the search against a brute-force check with the page's own rules", { t
       }
     }
     expect(compared).toBeGreaterThan(40);
-  });
+  }, SLOW);
 
   it("lists two-set changes that pass the full rules and that no single move could replace", () => {
     let swaps = 0;
@@ -623,7 +629,7 @@ describe("the search against a brute-force check with the page's own rules", { t
       }
     }
     expect(swaps).toBeGreaterThan(20);
-  });
+  }, SLOW);
 });
 
 describe("the recorded changes (shared with the engine parity test)", () => {
@@ -813,7 +819,7 @@ describe("a 60-set grid", () => {
       }
     }
     expect(hit).toBeGreaterThan(0);
-  });
+  }, SLOW);
 });
 
 describe("the words", () => {

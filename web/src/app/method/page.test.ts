@@ -295,7 +295,11 @@ describe("Qloo requests (lane A; cards and the request flow, round 20)", () => {
     expect(block).not.toContain("[overflow-wrap:anywhere]");
     expect(block.match(/<dd class="mt-1 min-w-0 text-\[0\.9375rem\] leading-snug @min-\[24rem\]:mt-0">/g)).toHaveLength(10);
     expect(block).toContain('<dd class="mt-1 min-w-0 text-[0.9375rem] leading-snug @min-[24rem]:mt-0"><code class="font-mono text-[0.8125rem]">urn:entity:artist</code></dd>');
-    expect(block).toContain("Sent when the festival has a city.");
+    // Round 31: no saved day was ranked with a location, so the row says so.
+    expect(block).toContain(
+      "Not sent: both saved days were ranked without a location, so their taste overlap is a global reading, not a local one.",
+    );
+    expect(block).not.toContain("Sent when the festival has a city");
     expect(block).not.toContain("uppercase");
     expect(block).toContain("Sent live by the pair re-check (its third request)");
   });
@@ -372,7 +376,7 @@ describe("the short version and the contents card (round 19)", () => {
     const list = short.slice(short.indexOf("<ul"));
     // No edge of any kind (the link's decoration-border-strong underline is not an edge).
     expect(list).not.toMatch(/(?<![w-])border(-[tblrxy])?(?![w-])|divide-/);
-    expect(list.match(/<li/g)).toHaveLength(4);
+    expect(list.match(/<li/g)).toHaveLength(5);
   });
 
   it("draws no full-width rule between the page's sections, and frames the table once with inset row rules", () => {
@@ -783,5 +787,64 @@ describe("the request flow in the rail of How the rest works (round 28)", () => 
       expect(flow).not.toMatch(/<circle|rounded|class="[^"]*border|bg-card|var\(--primary\)|text-primary|bg-primary/);
       expect(flow).not.toMatch(/<a |<button|<input|<select|tabindex|<details/);
     }
+  });
+});
+
+describe("true sentences about location, the test that held, the brief and its limits (round 31)", () => {
+  const html = renderToStaticMarkup(createElement(MethodPage));
+  const plain = text(html);
+  const { backtest, scale } = METHOD_FIGURES;
+  const taste = methodRow("taste");
+  const genre = methodRow("genre");
+  const popularity = methodRow("popularity");
+
+  it("says, right after the failed test in the short version, what the same test did show, every figure from METHOD_FIGURES", () => {
+    const [low, high] = taste.auc95!;
+    const held =
+      `In the same test, taste overlap ranked complained-about clashes above random (AUC ${taste.auc.toFixed(3)}, ` +
+      `${scale.intervalPct}% interval ${low.toFixed(3)} to ${high.toFixed(3)}, which stays above ${scale.auc.chance}) ` +
+      `and above genre tags (${genre.auc.toFixed(3)}), though the two intervals overlap widely. Popularity did better ` +
+      `(${popularity.auc.toFixed(3)}), and the exploratory follow-up did not establish an advantage over popularity. ` +
+      `Taste overlap is nearly unrelated to popularity (correlation ${backtest.popularityCorrelation}).`;
+    expect(held).toBe(
+      "In the same test, taste overlap ranked complained-about clashes above random (AUC 0.634, 95% interval 0.517 to 0.755, which stays above 0.5) and above genre tags (0.512), though the two intervals overlap widely. Popularity did better (0.722), and the exploratory follow-up did not establish an advantage over popularity. Taste overlap is nearly unrelated to popularity (correlation 0.08).",
+    );
+    // "Stays above 0.5" is true of the figures themselves.
+    expect(low).toBeGreaterThan(scale.auc.chance);
+    const start = html.indexOf('<section aria-labelledby="short-heading"');
+    const short = html.slice(start, html.indexOf("</section>", start));
+    const items = [...short.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/g)].map((m) => text(m[1]));
+    expect(items[0]).toMatch(/^The test we set before building failed\./);
+    expect(items[1]).toBe(held);
+    // No heading of its own, and none of the words the decision rules out.
+    expect(short).not.toMatch(/the result that held|beat genre tags/i);
+    expect(plain).not.toMatch(/the result that held|beat genre tags|pre-registered/i);
+  });
+
+  it("says the location parameter is not sent, as a row of the /v2/insights card", () => {
+    expect(text(html.replace(/<wbr\/?>/g, ""))).toContain(
+      "signal.location.query Not sent: both saved days were ranked without a location, so their taste overlap is a global reading, not a local one.",
+    );
+    expect(plain).not.toContain("Sent when the festival has a city");
+  });
+
+  it("describes the brief the way the home page's pilot offers it, and says what the figures must never be used for under #limits", () => {
+    expect(plain).toContain(
+      "It is for evaluating this entry. The pilot on the home page sends one back, free, to a festival that sends its bill, with the same limits: no Qloo tags or identifiers, and not for redistribution.",
+    );
+    expect(plain).not.toContain("it is not offered to festivals");
+    const start = html.indexOf('<section id="limits"');
+    const limits = text(html.slice(start, html.indexOf("</section>", start)));
+    expect(limits).toContain(
+      "Do not use this to set fees, billing order or an artist's worth, or for crowd capacity, safety or attendance.",
+    );
+  });
+
+  it("leaves the site header and footer off the printed page; the light print palette is the stylesheet's", () => {
+    expect(html).toMatch(/<style>[\s\S]*@media print \{\s*body > header, body > footer \{ display: none !important; \}/);
+    const css = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8");
+    const print = css.slice(css.indexOf("@media print {\n  :root.dark {"));
+    expect(print).toMatch(/^@media print \{\s*:root\.dark \{\s*color-scheme: light;/);
+    expect(print.slice(0, print.indexOf("}"))).toContain("--foreground: oklch(0.21 0.018 262);");
   });
 });

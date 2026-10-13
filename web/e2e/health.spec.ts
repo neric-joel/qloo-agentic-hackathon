@@ -75,21 +75,43 @@ test.describe("pages load clean", () => {
     });
   }
 
+  /** The page's links to other sites, in the main content or in the footer. */
+  async function externalLinks(page: import("@playwright/test").Page, where: "main" | "footer") {
+    return page.evaluate((scope) => {
+      const root = scope === "footer" ? document.querySelector("footer") : document.body;
+      return [...(root?.querySelectorAll<HTMLAnchorElement>("a[href^='http']") ?? [])]
+        .filter((link) => !link.href.startsWith(location.origin))
+        .filter((link) => scope === "footer" || !link.closest("footer"))
+        .map((link) => ({ href: link.href, target: link.target, rel: link.rel, name: (link.innerText || link.getAttribute("aria-label") || "").replace(/\s+/g, " ").trim() }));
+    }, where);
+  }
+
   test("external links open in a new tab safely, and say so", async ({ page }) => {
     await requireSavedDays(page);
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
-    const links = await page.evaluate(() =>
-      [...document.querySelectorAll<HTMLAnchorElement>("a[href^='http']")]
-        .filter((link) => !link.href.startsWith(location.origin))
-        .map((link) => ({ href: link.href, target: link.target, rel: link.rel, name: (link.innerText || link.getAttribute("aria-label") || "").replace(/\s+/g, " ").trim() })),
-    );
+    const links = await externalLinks(page, "main");
     expect(links.length, "the page cites its sources").toBeGreaterThan(5);
     for (const link of links) {
       expect(link.target, `${link.href} opens in a new tab`).toBe("_blank");
       expect(link.rel, `${link.href} is noopener`).toMatch(/noopener/);
       expect(link.href, "only https").toMatch(/^https:\/\//);
+    }
+  });
+
+  test("the footer's licence and source links follow the same rule as every other external link", async ({ page }) => {
+    // D4 (round 31, fixed): the footer's "MIT licence" and "Source code" links open in a new tab with rel="noopener".
+    await requireSavedDays(page);
+    const home = new HomePage(page);
+    await home.goto(DAYS.glastonbury.id);
+
+    const links = await externalLinks(page, "footer");
+    expect(links.map((link) => link.name)).toEqual(expect.arrayContaining(["MIT licence", "Source code"]));
+    for (const link of links) {
+      expect(link.href, "only https").toMatch(/^https:\/\//);
+      expect(link.target, `${link.href} opens in a new tab`).toBe("_blank");
+      expect(link.rel, `${link.href} is noopener`).toMatch(/noopener/);
     }
   });
 });

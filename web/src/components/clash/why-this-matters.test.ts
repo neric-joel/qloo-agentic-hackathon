@@ -2,13 +2,16 @@ import { createElement, Fragment } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import type { Demand } from "@/lib/demand";
+import { SyntheticContext } from "@/components/site/synthetic-context";
+import { qlooCredits } from "@/lib/credit";
+import { PAYER_GUESS, PILOT_TERMS, type Demand } from "@/lib/demand";
 import { METHOD_FIGURES } from "@/lib/method-figures";
 import { PUBLIC_VOICES } from "@/lib/public-voices";
 
 import { TasteSection } from "./why-qloo";
 import {
   BacktestBars,
+  COMPLAINTS_ELSEWHERE,
   FIGURE_DOMAIN,
   FIGURE_TICKS,
   FailedTestNote,
@@ -44,7 +47,7 @@ function withoutDisclosures(html: string): string {
 const FAILED =
   "Our test failed: taste overlap put 46.8% of complained-about clashes in the top quarter of their day, below our 60% bar. Popularity, also a Qloo field, did better. The exploratory follow-up did not establish an advantage over popularity.";
 const SECOND_OPINION =
-  "So the taste reading is a second opinion beside time and draw, never folded into a verdict. Where it disagrees with them is where we ask you to look.";
+  "So the taste reading is a second opinion beside time and draw: it is one of the four parts of the price of each clash, the part Qloo adds, and never the verdict on its own. It is nearly unrelated to popularity (r = 0.08), so it orders a day differently from draw alone. Where it disagrees with time and draw is where we ask you to look.";
 
 describe("FailedTestNote", () => {
   it("prints the failed pre-set test and what it taught us, with no AUC jargon, and links to the test on /method", () => {
@@ -57,6 +60,10 @@ describe("FailedTestNote", () => {
     expect(html).toContain('href="/method#tested"');
     expect(plain).toContain(SECOND_OPINION);
     expect(plain).toMatch(/where we ask you to look\. How we know$/);
+    // Round 31: the price does include taste, so the note no longer says it is kept out of a verdict.
+    expect(plain).not.toContain("never folded into a verdict");
+    // The correlation is the figures module's, never typed.
+    expect(plain).toContain(`(r = ${METHOD_FIGURES.backtest.popularityCorrelation})`);
     // Never a disclosure of its own: the failed test reads with no click.
     expect(html).not.toContain("<details");
   });
@@ -632,5 +639,65 @@ describe("the failed test and why this matters, as the home page composes them",
     expect(visible).toContain(SECOND_OPINION);
     expect(visible).not.toMatch(/\bAUC\b/);
     expect(withoutDisclosures(html)).toContain('href="/method#tested"');
+  });
+});
+
+describe("forward-looking lines with no claim (round 31)", () => {
+  it("follows Who would pay is not known. with our untested guess, in the open, before the pilot", () => {
+    expect(PAYER_GUESS).toBe(
+      "Our guess, not yet tested: the festival, through its head of programming, once per edition, before set times go out. The pilot below is how we will find out.",
+    );
+    const html = renderToStaticMarkup(createElement(WhyThisMatters));
+    const visible = text(withoutDisclosures(html));
+    expect(visible).toContain(`Who would pay is not known. ${PAYER_GUESS}`);
+    expect(visible.indexOf(PAYER_GUESS)).toBeLessThan(visible.indexOf("Pilot offer"));
+    expect(html).toContain(`<p data-payer-guess="true" class="mt-2">${PAYER_GUESS}</p>`);
+  });
+
+  it("prints the pilot terms under the offer only once the owner has set them, and nothing while they are null", () => {
+    expect(PILOT_TERMS).toBeNull();
+    const none = renderToStaticMarkup(createElement(WhyThisMatters));
+    expect(none).not.toContain("data-pilot-terms");
+    expect(text(none)).not.toMatch(/^Terms:|\bTerms:/);
+    const terms = "Terms: invented terms for this test only.";
+    const set = renderToStaticMarkup(createElement(WhyThisMatters, { terms }));
+    const pilot = set.slice(set.indexOf("<div data-pilot"));
+    expect(pilot).toContain(`<p data-pilot-terms="true" class="mt-4 max-w-[68ch] text-muted-foreground">${terms}</p>`);
+    // Under the offer, in the open, with the contact fallback kept.
+    expect(text(withoutDisclosures(pilot))).toContain(terms);
+    expect(text(pilot).indexOf(terms)).toBeGreaterThan(text(pilot).indexOf("Pilot offer"));
+    expect(text(pilot)).toContain("Contact is on the Devpost page.");
+  });
+
+  it("says, where the complaints are counted, that most are about other festivals and days than the ones shown", () => {
+    expect(COMPLAINTS_ELSEWHERE).toBe("Most of these complaints are about other festivals and days, not the days this app shows.");
+    const html = renderToStaticMarkup(createElement(WhyThisMatters));
+    const visible = text(withoutDisclosures(html));
+    expect(visible).toContain(
+      `45 clashes that fans or the press complained about at 5 festivals had a verified overlap in time. ${COMPLAINTS_ELSEWHERE}`,
+    );
+    // Muted on paper, an existing pair, with no new kicker.
+    expect(html).toContain(`<p data-why-elsewhere="true" class="mt-2 text-muted-foreground">${COMPLAINTS_ELSEWHERE}</p>`);
+  });
+});
+
+describe("the failed-test note on the invented day (round 31)", () => {
+  const FAILED_QLOO_SENTENCE = "Popularity, also a Qloo field, did better.";
+
+  it("names the price's fourth part without crediting Qloo, from the prop or the page's shared flag", () => {
+    const viaProp = text(renderToStaticMarkup(createElement(FailedTestNote, { synthetic: true })));
+    const viaFlag = text(
+      renderToStaticMarkup(createElement(SyntheticContext.Provider, { value: true }, createElement(FailedTestNote))),
+    );
+    for (const plain of [viaProp, viaFlag]) {
+      expect(plain).toContain(
+        "So the taste reading is a second opinion beside time and draw: it is one of the four parts of the price of each clash, the taste-overlap part, and never the verdict on its own.",
+      );
+      // The one Qloo sentence left is the failed test's, about the published festivals.
+      expect(qlooCredits(plain)).toEqual([FAILED_QLOO_SENTENCE]);
+    }
+    // A published day keeps the words the hero test pins.
+    const real = text(renderToStaticMarkup(createElement(FailedTestNote, { synthetic: false })));
+    expect(real).toContain(SECOND_OPINION);
   });
 });

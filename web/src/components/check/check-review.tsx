@@ -17,6 +17,7 @@ export const REVIEW_COPY = {
   print: "Print draft brief",
   preview: "Printed brief, preview",
   allDecided: "Every finding decided",
+  nothing: "No rule breaks to review.",
 } as const;
 
 /**
@@ -85,7 +86,6 @@ export function CheckReview({
 }) {
   const compared = comparedLine(price);
   const open = counts.openBreaks + counts.openPairs;
-  const segments = Math.max(counts.breaks, 1);
   return (
     <section
       id={RESULT_IDS.review}
@@ -107,22 +107,26 @@ export function CheckReview({
             Invented sample
           </p>
         ) : null}
-        <p className="flex items-baseline gap-2">
-          <span className="type-numeral text-5xl leading-none text-foreground">{counts.breaksReviewed}</span>
-          <span className="type-numeral text-2xl leading-none text-muted-foreground">/ {counts.breaks}</span>
-          <span className="ml-1 text-sm text-muted-foreground">rule breaks reviewed</span>
-        </p>
-        <div aria-hidden="true" className="mt-3 flex gap-1">
-          {Array.from({ length: segments }, (_, index) => (
-            <span
-              key={index}
-              className={cn(
-                "h-1.5 flex-1 rounded-bar",
-                counts.breaks === 0 ? "bg-success" : index < counts.breaksReviewed ? "bg-foreground" : "bg-muted",
-              )}
-            />
-          ))}
-        </div>
+        {counts.breaks === 0 ? (
+          // Nothing to review is not a finished review: no count and no bar, only the words.
+          <p className="text-[0.9375rem] leading-6 font-semibold text-foreground">{REVIEW_COPY.nothing}</p>
+        ) : (
+          <>
+            <p className="flex items-baseline gap-2">
+              <span className="type-numeral text-5xl leading-none text-foreground">{counts.breaksReviewed}</span>
+              <span className="type-numeral text-2xl leading-none text-muted-foreground">/ {counts.breaks}</span>
+              <span className="ml-1 text-sm text-muted-foreground">rule breaks reviewed</span>
+            </p>
+            <div aria-hidden="true" data-review-bar="" className="mt-3 flex gap-1">
+              {Array.from({ length: counts.breaks }, (_, index) => (
+                <span
+                  key={index}
+                  className={cn("h-1.5 flex-1 rounded-bar", index < counts.breaksReviewed ? "bg-foreground" : "bg-muted")}
+                />
+              ))}
+            </div>
+          </>
+        )}
 
         <dl className="mt-3 divide-y divide-border">
           <Row label="Sets checked">

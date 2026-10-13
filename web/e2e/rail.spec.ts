@@ -12,11 +12,12 @@ test.describe("section rail", () => {
     await home.goto(DAYS.glastonbury.id);
 
     const links = home.rail.getByRole("link");
+    // Hidden clashes comes second, straight after the card's own three rankings.
     await expect(links).toHaveText([
       /What Qloo changes/,
+      /Hidden clashes/,
       /Why this matters/,
       /Timetable/,
-      /Hidden clashes/,
       /Try a move/,
       /Recorded runs/,
       /Sources/,
@@ -46,7 +47,7 @@ test.describe("section rail", () => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
-    for (const label of ["Why this matters", "Timetable", "Hidden clashes", "Try a move", "Recorded runs"]) {
+    for (const label of ["Hidden clashes", "Why this matters", "Timetable", "Try a move", "Recorded runs"]) {
       const link = home.railLink(label);
       const href = await link.getAttribute("href");
       await link.click();
@@ -58,13 +59,9 @@ test.describe("section rail", () => {
     }
   });
 
-  test("the last link, Sources, becomes the current section too", async ({ page, isPhone }) => {
-    // DEFECT (app): the current section is the last one whose top is above 40% of the viewport
-    // (JumpNav in clash-control.tsx). "Sources" is the last section, so the page cannot scroll far enough to
-    // lift its top above that line when the viewport is tall: at 1440x900 its top rests at y=435 against a
-    // line of y=360, and the marker stays on "Recorded runs" after "Sources" is pressed. Phone sizes pass.
-    // Repro: open /, at 1440x900 press "Sources" in the section rail and read which link is marked current.
-    test.fail(!isPhone, "Sources never becomes the current rail item at 1440x900 (see comment)");
+  test("the last link, Sources, becomes the current section too", async ({ page }) => {
+    // Was defect D1 (round 31): at 1440x900 the page cannot scroll far enough to lift Sources above the
+    // 40% line, so the rail now marks the last entry once the page is scrolled to its end.
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
@@ -72,6 +69,19 @@ test.describe("section rail", () => {
     await link.click();
     await expect(page.locator("#sources")).toBeInViewport();
     await expect(link).toHaveAttribute("aria-current", "location", { timeout: 3_000 });
+  });
+
+  test("Sources becomes current on a taller desktop window too (1440x1200)", async ({ page, isPhone }) => {
+    test.skip(isPhone, "A tall desktop window only.");
+    await page.setViewportSize({ width: 1440, height: 1200 });
+    const home = new HomePage(page);
+    await home.goto(DAYS.glastonbury.id);
+
+    const link = home.railLink("Sources");
+    await link.click();
+    await expect(page.locator("#sources")).toBeInViewport();
+    await expect(link).toHaveAttribute("aria-current", "location", { timeout: 3_000 });
+    await expect(home.rail.locator('[aria-current="location"]')).toHaveCount(1);
   });
 
   test("the bar stays under the header while a section is read (from 768 px)", async ({ page, isPhone }) => {

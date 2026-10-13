@@ -104,12 +104,63 @@ export function readingText(reading: ReadingRank): string {
   return `${place}, tied with ${reading.tied === 1 ? "1 other" : `${reading.tied} others`}`;
 }
 
-/** What taste overlap does to this pair's place: the draw-and-time rank against the price's. */
-export function tasteVerdict(readings: Pick<ThreeReadings, "draw" | "taste">): string {
-  const { draw, taste } = readings;
+/** What "draw" is, the first time the card says it: Qloo popularity, or invented popularity on the invented day. */
+export function drawGloss(synthetic: boolean): string {
+  return synthetic ? "invented popularity" : "Qloo popularity";
+}
+
+/**
+ * What taste overlap does to this pair's place, on the rank axis: minutes alone (when the readings
+ * hold it), time and draw, then with taste. When taste leaves the place as it is, that is the finding:
+ * "Taste agrees with time and draw: #N either way." With `gloss`, "draw" is glossed where it first
+ * appears: "draw (Qloo popularity)".
+ */
+export function tasteVerdict(
+  readings: Pick<ThreeReadings, "draw" | "taste"> & Partial<Pick<ThreeReadings, "time">>,
+  gloss: string | null = null,
+): string {
+  const { draw, taste, time } = readings;
   if (!draw || !taste) return `What taste changes for this pair: ${NOT_AVAILABLE}.`;
-  if (draw.rank === taste.rank) return "Taste does not change this pair’s place.";
-  return `Taste moves this pair from #${draw.rank} to #${taste.rank}.`;
+  const drawWord = gloss ? `draw (${gloss})` : "draw";
+  if (draw.rank === taste.rank) return `Taste agrees with time and ${drawWord}: #${taste.rank} either way.`;
+  if (time) return `Time alone ranks this pair #${time.rank}, time and ${drawWord} #${draw.rank}, with taste #${taste.rank}.`;
+  return `Time and ${drawWord} rank this pair #${draw.rank}, with taste #${taste.rank}.`;
+}
+
+/** The pair whose place taste changes most in the day's two lens rankings, with its two places. */
+export type TasteMover = { a: string; b: string; from: number; to: number };
+
+/**
+ * The pair taste overlap moves furthest among the pairs the two lens lists hold: its place on time
+ * and draw (`from`) and with taste (`to`), both read from the lens data, never computed. A pair one
+ * list leaves unranked is skipped. Ties go to the pair placed higher with taste. Null when no listed
+ * pair changes place.
+ */
+export function biggestTasteMover(lenses: Pick<Lenses, "with_taste" | "without_taste">): TasteMover | null {
+  const seen = new Map<string, TasteMover>();
+  const key = (aId: string, bId: string) => [aId, bId].sort().join("|");
+  for (const entry of lenses.with_taste) {
+    if (entry.rank_without_taste === null) continue;
+    seen.set(key(entry.a_id, entry.b_id), { a: entry.a, b: entry.b, from: entry.rank_without_taste, to: entry.rank });
+  }
+  for (const entry of lenses.without_taste) {
+    if (entry.rank_with_taste === null) continue;
+    const at = key(entry.a_id, entry.b_id);
+    if (!seen.has(at)) seen.set(at, { a: entry.a, b: entry.b, from: entry.rank, to: entry.rank_with_taste });
+  }
+  let best: TasteMover | null = null;
+  for (const mover of seen.values()) {
+    const size = Math.abs(mover.from - mover.to);
+    if (size === 0) continue;
+    const bestSize = best ? Math.abs(best.from - best.to) : 0;
+    if (!best || size > bestSize || (size === bestSize && mover.to < best.to)) best = mover;
+  }
+  return best;
+}
+
+/** "In this day’s two rankings, taste moves A × B the most: from #9 to #2." */
+export function moverLine(mover: TasteMover): string {
+  return `In this day’s two rankings, taste moves ${mover.a} × ${mover.b} the most: from #${mover.from} to #${mover.to}.`;
 }
 
 /** The anchor of the "What Qloo changes" block, for the card's pointer and the jump links. */
@@ -327,7 +378,7 @@ function triptychParts(
     },
   ];
   const heading = `${pair ? `Same ${pair.minutes}-minute clash.` : "Same clash."} Same timetable.`;
-  return { title, line, caption, steps, heading };
+  return { title, line, caption, steps, heading, readings };
 }
 
 /**
@@ -422,6 +473,11 @@ export function TasteSection({
   synthetic?: boolean;
 }) {
   const parts = clash && lenses ? triptychParts(lenses, pairs, clash.aId, clash.bId, synthetic) : null;
+  // When taste leaves the card's pair where it was, the day's biggest taste mover from the same lens
+  // lists shows what taste does change.
+  const unchanged =
+    parts !== null && !!parts.readings.draw && !!parts.readings.taste && parts.readings.draw.rank === parts.readings.taste.rank;
+  const mover = unchanged && lenses ? biggestTasteMover(lenses) : null;
   return (
     <section id={WHAT_QLOO_ID} aria-labelledby="what-qloo-heading">
       <div className="container-page py-16 lg:py-20">
@@ -445,6 +501,11 @@ export function TasteSection({
               <p className="mt-4 max-w-prose font-semibold">{parts.line}</p>
               {parts.caption ? (
                 <p className="mt-1.5 max-w-prose text-[0.8125rem] leading-snug">{parts.caption}</p>
+              ) : null}
+              {mover ? (
+                <p data-taste-mover="" className="mt-3 max-w-prose text-[0.9375rem] leading-relaxed">
+                  {moverLine(mover)}
+                </p>
               ) : null}
             </div>
           </div>
@@ -483,7 +544,7 @@ export function TasteSection({
           </div>
         ) : null}
 
-        <FailedTestNote className="mt-12" />
+        <FailedTestNote className="mt-12" synthetic={synthetic} />
       </div>
     </section>
   );
@@ -506,7 +567,7 @@ export function WhatQlooPointer({
   const readings = threeReadings(lenses, pairs, aId, bId);
   return (
     <p className="text-sm leading-snug">
-      <span className="font-semibold">{tasteVerdict(readings)}</span>{" "}
+      <span className="font-semibold">{tasteVerdict(readings, drawGloss(synthetic))}</span>{" "}
       <a
         href={`#${WHAT_QLOO_ID}`}
         className="font-semibold text-foreground underline decoration-border-strong decoration-1 underline-offset-4 hover:decoration-foreground"

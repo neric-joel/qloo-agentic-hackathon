@@ -549,6 +549,8 @@ export function briefTradeoff(
   return {
     tradeoff: {
       ...copy.tradeoff,
+      // The brief does not weigh stage fit (TO_DECIDE says so), so it prints no stage-fit row; the card keeps it.
+      rows: copy.tradeoff.rows.filter((row) => row.id !== "flags"),
       heading: alone ? TRADEOFF_HEADING_ALONE : copy.tradeoff.heading,
       footnote: TRADEOFF_NOTE_BRIEF,
     },

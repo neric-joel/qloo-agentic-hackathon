@@ -11,8 +11,8 @@
  * - The two festival days the app shows: coverage from each preset's report.
  * - The move-suggestion check: the second run, with realistic movement limits, which governs.
  * - The live re-check: how many requests one check sends (a definition, set by the API contract).
- * - Symmetry of Qloo's affinity: the printout of the private, read-only script
- *   `_private/backtest/symmetry_check.py` over the saved backtest responses (no request sent).
+ * - Symmetry of Qloo's affinity: the printout of a read-only script in the entry's private backtest folder
+ *   (not in this repository), run over the saved backtest responses (no request sent).
  */
 
 export type MethodId = "taste" | "genre" | "popularity" | "random";
@@ -127,8 +127,8 @@ export const METHOD_FIGURES = {
     rangeMinutes: [10, 90],
   },
   /**
-   * The exploratory follow-up to the failed pre-set test, from `_private/backtest/permutation.py` (printed in
-   * `_private/backtest/permutation-results.md`; saved data only, no request sent). Run after the gate failed.
+   * The exploratory follow-up to the failed pre-set test, from a permutation script in the entry's private
+   * backtest folder (not in this repository; saved data only, no request sent). Run after the gate failed.
    *
    * Label shuffle: within each festival day the complaint labels are dealt out again at random among that
    * day's scored pairs (each day keeps its number of complained-about pairs) and taste overlap's pooled AUC is

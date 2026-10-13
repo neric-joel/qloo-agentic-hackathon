@@ -58,6 +58,21 @@ import { useAnnouncement } from "./use-announcement";
 /** Where the section sits, for links and the seed's scroll. */
 export const KEEP_APART_ID = "keep-apart";
 
+/** Under a change that moves a set to another stage: the production side has to agree before it is used. */
+export const STAGE_SIGN_OFF = "Changes stage: needs production sign-off";
+
+/** The order note when same-stage changes were moved ahead of stage changes. */
+export const SAME_STAGE_FIRST =
+  "Changes that keep every set on its stage come first; within each group, smallest changes first: fewest sets, then fewest minutes moved.";
+
+/**
+ * The route's changes with every change that keeps its sets on their stages ahead of any that moves a set to
+ * another stage, each group in the route's own order (a stable sort; the search itself is unchanged).
+ */
+export function sameStageFirst(fixes: readonly RuleFix[]): RuleFix[] {
+  return [...fixes.filter((fix) => fix.stageChanges === 0), ...fixes.filter((fix) => fix.stageChanges !== 0)];
+}
+
 /** A search, a refusal or a failure for one pair; `idle` before the first search. */
 type Search =
   | { status: "idle" }
@@ -321,6 +336,7 @@ export function ChangeCard({
         {flags ? ` · ${flags}` : ""}
       </p>
       {flags ? <p className="mt-0.5 text-xs text-muted-foreground lg:text-[0.8125rem]">{STAGE_FIT_GLOSS}</p> : null}
+      {fix.stageChanges > 0 ? <p className="mt-0.5 text-sm text-muted-foreground">{STAGE_SIGN_OFF}</p> : null}
       <p className="mt-0.5 text-sm">Adds no rule break; ends this overlap.</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <Button
@@ -666,7 +682,10 @@ export function KeepApart({
   const canSearch = !needsPair && search.status !== "loading";
   const result = search.status === "ready" ? search.fixes : null;
   // Near-duplicates (the same sets and stages, starts within five minutes) share a row; the route's count stays as sent.
-  const rows = useMemo(() => (result ? collapseSimilar(result.fixes) : []), [result]);
+  // Same-stage changes list before stage changes (which need production's sign-off), then rows collapse.
+  const ordered = useMemo(() => (result ? sameStageFirst(result.fixes) : []), [result]);
+  const reordered = result !== null && ordered.some((fix, i) => fix !== result.fixes[i]);
+  const rows = useMemo(() => collapseSimilar(ordered), [ordered]);
   const covered = rowsCover(rows);
   const note = result ? lockedNote(result) : null;
 
@@ -824,7 +843,7 @@ export function KeepApart({
                     </ol>
                     {/* What the search covered, set directly under the changes it qualifies. */}
                     <p className="mt-2.5 max-w-prose text-[0.8125rem] leading-relaxed text-muted-foreground">
-                      {searchedSentence(result)} {SEARCH_RULE} {SMALLEST_FIRST}{" "}
+                      {searchedSentence(result)} {SEARCH_RULE} {reordered ? SAME_STAGE_FIRST : SMALLEST_FIRST}{" "}
                       {result.singleSetPlaces === 0
                         ? "This search found no single-set place that ends it."
                         : `${pluralize(result.singleSetPlaces, "single-set place")} end${result.singleSetPlaces === 1 ? "s" : ""} it.`}

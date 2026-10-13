@@ -3,8 +3,21 @@ import { ArrowRight } from "lucide-react";
 
 import { RecordedBadge } from "@/components/kernel";
 import { Button } from "@/components/ui/button";
-import type { RecordedRun } from "@/lib/recorded-run";
+import { pluralize } from "@/lib/format";
+import { replayFinalState, type RecordedRun } from "@/lib/recorded-run";
 import { cn } from "@/lib/utils";
+
+/** The Qloo requests a recorded run made, read from its own saved stream (the run's end, else its steps). */
+export function recordedQlooCalls(run: RecordedRun): number {
+  const state = replayFinalState(run);
+  return state.summary?.qlooCalls ?? state.toolCalls.reduce((sum, call) => sum + call.requests.length, 0);
+}
+
+/** A recorded run's own Qloo count, as its row says it: "This run made 1 Qloo request." */
+export function runQlooLine(run: RecordedRun): string {
+  const calls = recordedQlooCalls(run);
+  return calls === 0 ? "This run made no Qloo request." : `This run made ${pluralize(calls, "Qloo request")}.`;
+}
 
 /** Where the recorded runs sit on the page, for links that point at them. */
 export const RECORDED_RUNS_ID = "agent-recordings";
@@ -24,6 +37,7 @@ export function RecordedRuns({
   heading = "Watch a recorded run",
   description = DESCRIPTION,
   disabled = false,
+  qlooCounts = false,
   className,
 }: {
   runs: readonly RecordedRun[];
@@ -33,6 +47,8 @@ export function RecordedRuns({
   /** The line under the heading; null leaves it out where the page already says it (the agent-off heading). */
   description?: ReactNode;
   disabled?: boolean;
+  /** Each row says how many Qloo requests its run made, read from the recording (where the page does not say it once for all). */
+  qlooCounts?: boolean;
   className?: string;
 }) {
   if (runs.length === 0) return null;
@@ -51,7 +67,10 @@ export function RecordedRuns({
           >
             <div className="min-w-0">
               <p className="text-[0.9375rem] leading-relaxed break-words">{run.question}</p>
-              <p className="mt-0.5 text-[0.8125rem] text-muted-foreground">{run.title}</p>
+              <p className="mt-0.5 text-[0.8125rem] text-muted-foreground">
+                {run.title}
+                {qlooCounts ? ` · ${runQlooLine(run)}` : null}
+              </p>
             </div>
             <Button
               type="button"

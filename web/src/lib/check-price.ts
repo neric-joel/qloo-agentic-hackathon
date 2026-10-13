@@ -1,16 +1,23 @@
 /**
- * "Compare audience overlap (optional)" on the check page: the one module of the check route that makes a
- * request, and only when the visitor presses Compare audience overlap. It sends `POST /api/price-grid` with the
- * act names and the pairs to price, and nothing else: no times, stages, rules or settings, and never
- * the share link's hash. The request and the answer are built and read here as plain functions, so
- * they are unit tested; `requestPrice` is the only call that touches the network, and it never throws.
+ * "Compare audience overlap (optional)" on the check page, and the check route's one network module.
+ * Nothing of the visitor's grid leaves the browser until they press Compare audience overlap: that press
+ * sends `POST /api/price-grid` with the act names and the pairs to price, and nothing else: no times,
+ * stages, rules or settings, and never the share link's hash. The request and the answer are built and
+ * read here as plain functions, so they are unit tested; `requestPrice` is the only call that sends any
+ * of the grid, and it never throws.
  *
- * The contract is `_private/critique/round-9/CONTRACT-price-grid.md` (frozen): `saved` matches the
- * names to a saved festival day or the invented example day and sends no Qloo request; `live` asks
- * Qloo, is capped per visitor and for everyone, and is offered only after `saved` answers
- * `not_a_saved_day`.
+ * The other calls here only read this app's own API and carry nothing of the visitor's: `GET /api/health`
+ * (whether this server prices live, so the page never offers what it would refuse) and `GET /api/presets`
+ * with `GET /api/presets/{id}` ("Check a published day" loads a public timetable). None of them reaches
+ * Qloo.
+ *
+ * The contract is the price-grid contract (kept outside this repository): `saved` matches the names to
+ * a saved festival day or the invented example day and sends no Qloo request; `live` asks Qloo, is
+ * capped per visitor and for everyone, and is offered only after `saved` answers `not_a_saved_day`, and
+ * only when the server says live pricing is on.
  */
 
+import { isPriceGridLive } from "@/lib/agent-status";
 import type { CheckReport, SharedPair } from "@/lib/check";
 
 export const PRICE_LIMITS = {
@@ -36,6 +43,11 @@ export type PriceRequest = {
   total: number;
   /** Acts of the grid left out of the request (past 25): never sent, so never compared. */
   omitted: number;
+  /**
+   * Overlaps passed over because both of their sets are locked (neither can move), longest first: never
+   * sent, so never compared; the next-longest overlaps are sent instead.
+   */
+  skipped: PriceOverlap[];
 };
 
 export type PriceSource = "saved_day" | "invented_day" | "qloo_live";
@@ -91,17 +103,32 @@ const COMPARE = "Compare audience overlap";
 /** The page's wording for the audience step, in one place. */
 export const PRICE_COPY = {
   heading: `${COMPARE} (optional)`,
-  intro: (k: number, n: number, omitted = 0) =>
+  /**
+   * Before the press. `live` is whether this server prices live (from its health answer; unknown counts as
+   * off), so the last sentence never offers what the server would refuse.
+   */
+  intro: (k: number, n: number, omitted = 0, live = false) =>
     `The checks above ran in your browser and used no Qloo data. To compare audience overlap for the ${count(k, "longest overlap")}, we send ${
       omitted > 0 ? `${n} of the grid’s ${n + omitted} act names (the acts of these overlaps first)` : `the ${count(n, "act name")}`
-    } and the pairs to this site’s server to look for saved audience data. No times, stages or rules are sent; names are not stored or logged. If no saved day matches, you can choose to ask Qloo instead.`,
+    } and the pairs to this site’s server to look for saved audience data. No times, stages or rules are sent; names are not stored or logged. ${
+      live
+        ? "If no saved day matches, you can choose to ask Qloo instead."
+        : "If no saved day matches, nothing is compared: live Qloo pricing is off on this server."
+    }`,
   button: COMPARE,
   savedBanner: "Compared using a saved festival day. No Qloo request was sent.",
   inventedBanner:
     "Compared using the invented example day: its acts and affinities are invented, not Qloo data. No Qloo request was sent.",
   liveBanner: (used: number) => `Asked Qloo just now. This used ${count(used, "Qloo request")}.`,
+  /** No saved day matched and this server prices live: the consent text above the live button. */
   notSaved: (n: number, need: number) =>
-    `These acts are not on a saved day. We can ask Qloo now. This sends ${count(n, "name")} to Qloo and uses about ${need} of its requests; live pricing is capped per day on this server.`,
+    `These acts are not on a saved day. We can ask Qloo now. ${thirdParty(n)} A live answer uses about ${need} Qloo requests; live pricing is capped per day on this server.`,
+  /** No saved day matched and this server does not price live (or did not say): no live button. */
+  liveOff:
+    "These acts are not on a saved day, and live Qloo pricing is off on this server, so they are not compared. Acts on a saved day still compare.",
+  /** No saved day matched a published timetable loaded here: it compares from its saved day only. */
+  publishedNotSaved:
+    "These acts are not on a saved day, so they are not compared. A published timetable loaded here compares from its saved day only; nothing is sent to Qloo.",
   askButton: (n: number) => `Ask Qloo for these ${count(n, "act")}`,
   loading: "Comparing.",
   error: "The server did not answer, so nothing was compared. Your rule results are unchanged.",
@@ -113,10 +140,23 @@ export const PRICE_COPY = {
     "Each value is a rank within a lineup, not attendance: from a saved day, a rank among that day’s lineup; from Qloo live, a rank among the acts sent.",
   cbi: "The Clash Budget Index needs a full priced day and is not computed here.",
   longestFirst: "Longest first",
-  overlapFirst: "Highest audience overlap first",
+  overlapFirst: "Highest taste overlap first",
   sortLabel: "Order",
-  briefHeading: (k: number) => `Audience overlap compared (${count(k, "longest overlap")})`,
+  briefHeading: (k: number) => `Taste overlap compared (${count(k, "longest overlap")})`,
 } as const;
+
+/** The third-party sentence of the live consent: what leaves for Qloo, and whose terms govern it. */
+export function thirdParty(n: number): string {
+  return `This sends ${count(n, "act name")} to Qloo, a third party; Qloo's terms govern what it keeps. Do not send acts you have not announced.`;
+}
+
+/**
+ * An overlap left out because both of its sets are locked, with its reason in words. A lock says a set
+ * cannot move; it says nothing about whether the overlap is wanted.
+ */
+export function lockedLine(overlap: PriceOverlap): string {
+  return `${pairName(overlap)}: ${overlap.minutes} min shared. Not compared: both sets are locked, so neither can move; the next-longest overlap is compared instead.`;
+}
 
 /** "This grid has 30 different acts and at most 25 are sent, so 5 acts are not sent and not compared." */
 export function omittedLine(omitted: number, total: number): string {
@@ -204,12 +244,19 @@ export function priceRequest(report: Pick<CheckReport, "sets" | "shared">): Pric
   for (const set of report.sets) if (!names.has(set.actKey)) names.set(set.actKey, set.act);
   if (names.size < PRICE_LIMITS.minActs) return null;
 
+  // The longest overlaps a programmer could move: a pair whose two sets are both locked is passed over
+  // (said so, with its reason) and the next-longest is taken instead.
   const seen = new Set<string>();
   const chosen: SharedPair[] = [];
+  const passed: SharedPair[] = [];
   for (const pair of report.shared) {
     const key = [pair.a.actKey, pair.b.actKey].sort().join("\u0000");
     if (seen.has(key)) continue;
     seen.add(key);
+    if (pair.a.locked && pair.b.locked) {
+      passed.push(pair);
+      continue;
+    }
     chosen.push(pair);
     if (chosen.length === PRICE_LIMITS.pairs) break;
   }
@@ -236,6 +283,7 @@ export function priceRequest(report: Pick<CheckReport, "sets" | "shared">): Pric
       minutes: pair.minutes,
     })),
     need: order.length + inPairs.size,
+    skipped: passed.map((pair) => ({ a: pair.a.act, b: pair.b.act, minutes: pair.minutes })),
   };
 }
 
@@ -359,11 +407,62 @@ export async function requestPrice(request: PriceRequest, mode: PriceMode, signa
   }
 }
 
+/**
+ * A GET of this app's own API: no body, no credentials beyond the site's own, nothing of the visitor's
+ * grid. The decoded body, or null for an error status, a failed network or a body that is not JSON.
+ */
+async function getJson(url: string, signal?: AbortSignal): Promise<unknown> {
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      cache: "no-store",
+      referrerPolicy: "no-referrer",
+      signal,
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) return null;
+    return await response.json().catch(() => null);
+  } catch {
+    return null;
+  }
+}
+
+/** Whether this server prices live now (`price_grid_live` in `GET /api/health`). No answer counts as off. */
+export async function priceGridLive(signal?: AbortSignal): Promise<boolean> {
+  return isPriceGridLive(await getJson("/api/health", signal));
+}
+
+/** A published (not invented) festival day this app's API serves: its id and its title. */
+export type PublishedDay = { id: string; title: string };
+
+/** The first day of `GET /api/presets` that is not the invented one, or null when there is none. */
+export function firstPublishedDay(json: unknown): PublishedDay | null {
+  if (!Array.isArray(json)) return null;
+  for (const item of json) {
+    if (!isRecord(item) || item.synthetic === true) continue;
+    if (typeof item.id !== "string" || typeof item.title !== "string") continue;
+    const id = item.id.trim();
+    const title = item.title.trim().slice(0, 80);
+    if (title !== "" && /^[\w.-]{1,80}$/.test(id)) return { id, title };
+  }
+  return null;
+}
+
+/** "Check a published day": which day to offer, from `GET /api/presets`; null when none answers. */
+export async function loadPublishedDay(signal?: AbortSignal): Promise<PublishedDay | null> {
+  return firstPublishedDay(await getJson("/api/presets", signal));
+}
+
+/** The published day's own JSON from `GET /api/presets/{id}`, or null. Read with `publishedDayInput`. */
+export async function loadPublishedTimetable(id: string, signal?: AbortSignal): Promise<unknown> {
+  return getJson(`/api/presets/${encodeURIComponent(id)}`, signal);
+}
+
 // ---------------------------------------------------------------------------------------------------
 // The words of an answer
 
 /** "Marble Machine × Glass Mirror". */
-export function pairName(pair: Pick<PricedPair, "a" | "b">): string {
+export function pairName(pair: Pick<PriceOverlap, "a" | "b">): string {
   return `${pair.a} × ${pair.b}`;
 }
 
@@ -409,28 +508,75 @@ function pricedCount(answer: Pick<PriceAnswer, "pairs">): number {
 }
 
 /**
- * One row: "A × B: 80 min shared. Audience overlap 0.91, ranked 1 of 5." The rank is among the priced
- * pairs of this answer. An unpriced row says why and that it is shown by minutes only.
+ * A priced value on the page's one scale, "NN / 100": the same scale as the home page's "Taste NN" and
+ * the brief's "NN / 100". The route answers 0 to 1, and that value is the build's rank-normalised value
+ * (a rank within the lineup `rankScope` names), which is the only reason ×100 is a fair way to print it:
+ * it is a place on a 0 to 100 rank scale, not a percentage of anyone and not attendance.
  */
-export function pairLine(pair: PricedPair, answer: Pick<PriceAnswer, "pairs" | "coverage">): string {
-  const head = `${pairName(pair)}: ${pair.minutes} min shared.`;
-  if (pair.status === "priced" && pair.overlap !== null && pair.rank !== null) {
-    return `${head} Audience overlap ${pair.overlap.toFixed(2)}, ranked ${pair.rank} of ${pricedCount(answer)}.`;
-  }
-  if (pair.reason === "not_ranked_on_saved_day") {
-    return `${head} Not compared: not ranked on the saved day. Shown by minutes only.`;
-  }
-  if (pair.reason === "ambiguous") {
-    const unsure = [pair.a, pair.b].filter((name) => answer.coverage.ambiguous?.includes(name));
-    const which = unsure.length > 0 ? unsure.join(" and ") : `${pair.a} or ${pair.b}`;
-    return `${head} Not compared: ${which} matched more than one act of that name, so none was picked. Shown by minutes only.`;
-  }
-  const missing = [pair.a, pair.b].filter((name) => answer.coverage.unpriced.includes(name));
-  const names = missing.length > 0 ? missing.join(" and ") : `${pair.a} and ${pair.b}`;
-  return `${head} Not compared: no usable Qloo signal for ${names}. Shown by minutes only.`;
+export function tasteScore(value: number): number {
+  return Math.round(Math.min(1, Math.max(0, value)) * 100);
 }
 
-/** The pairs as listed: longest first (the grid's order), or highest audience overlap first with unpriced pairs last. */
+/** What `pairLine` reads of an answer; `source` is optional so an older caller still words. */
+export type LineOf = Pick<PriceAnswer, "pairs" | "coverage"> & { source?: PriceSource };
+
+/**
+ * Why a pair has no value, in words, from the reasons and the coverage lists the route returns: an act
+ * matched with no usable signal, an act that is not on the saved day (so the two are not both on one
+ * saved day), a name that matched more than one act, or a pair the saved day holds no reading for.
+ */
+export function unpricedReason(pair: Pick<PricedPair, "a" | "b" | "reason">, answer: LineOf): string {
+  const sides = [pair.a, pair.b];
+  if (pair.reason === "not_ranked_on_saved_day") {
+    return "both acts are on the saved day, but it holds no reading for these two together";
+  }
+  if (pair.reason === "ambiguous") {
+    const unsure = sides.filter((name) => answer.coverage.ambiguous?.includes(name));
+    const which = unsure.length > 0 ? unsure.join(" and ") : `${pair.a} or ${pair.b}`;
+    return `${which} matched more than one act of that name, so none was picked`;
+  }
+  const signal = answer.source === "invented_day" ? "no usable signal" : "no usable Qloo signal";
+  const { noSignal, ambiguous, unpriced } = answer.coverage;
+  if (noSignal !== null) {
+    const quiet = sides.filter((name) => noSignal.includes(name));
+    const absent = sides.filter(
+      (name) => unpriced.includes(name) && !noSignal.includes(name) && !(ambiguous ?? []).includes(name),
+    );
+    const parts: string[] = [];
+    if (quiet.length > 0) parts.push(`${quiet.join(" and ")} ${quiet.length === 1 ? "has" : "have"} ${signal}`);
+    if (absent.length > 0) {
+      const be = absent.length === 1 ? "is" : "are";
+      parts.push(
+        answer.source === "qloo_live"
+          ? `Qloo found no act named ${absent.join(" or ")}`
+          : answer.source === "invented_day"
+            ? `these two acts are not both on the invented example day (${absent.join(" and ")} ${be} not on it)`
+            : `these two acts are not both on one saved day (${absent.join(" and ")} ${be} not on it)`,
+      );
+    }
+    if (parts.length > 0) return parts.join("; ");
+  }
+  const missing = sides.filter((name) => unpriced.includes(name));
+  const names = missing.length > 0 ? missing : sides;
+  return `${names.join(" and ")} ${names.length === 1 ? "has" : "have"} ${signal}`;
+}
+
+/**
+ * One row: "A × B: 80 min shared. Taste overlap 91 / 100, ranked 1 of 5." The rank is among the priced
+ * pairs of this answer ("the only pair compared" when it is the only one). An unpriced row says why, in
+ * words, and that it is shown by minutes only.
+ */
+export function pairLine(pair: PricedPair, answer: LineOf): string {
+  const head = `${pairName(pair)}: ${pair.minutes} min shared.`;
+  if (pair.status === "priced" && pair.overlap !== null && pair.rank !== null) {
+    const compared = pricedCount(answer);
+    const place = compared === 1 ? "the only pair compared" : `ranked ${pair.rank} of ${compared}`;
+    return `${head} Taste overlap ${tasteScore(pair.overlap)} / 100, ${place}.`;
+  }
+  return `${head} Not compared: ${unpricedReason(pair, answer)}. Shown by minutes only.`;
+}
+
+/** The pairs as listed: longest first (the grid's order), or highest taste overlap first with unpriced pairs last. */
 export function sortedPairs(answer: Pick<PriceAnswer, "pairs">, order: "minutes" | "overlap"): PricedPair[] {
   const pairs = [...answer.pairs];
   if (order === "minutes") return pairs;
@@ -444,8 +590,8 @@ export function sortedPairs(answer: Pick<PriceAnswer, "pairs">, order: "minutes"
 }
 
 /**
- * Whether audience overlap reorders the compared overlaps, judged among the priced pairs only: their
- * order by minutes against their order by audience overlap. "Audience overlap changes the order of the
+ * Whether taste overlap reorders the compared overlaps, judged among the priced pairs only: their
+ * order by minutes against their order by taste overlap. "Taste overlap changes the order of the
  * 4 compared overlaps: A × B moves from 4th to 1st." (the pair that rises most), or "does not change
  * the order". An unpriced pair is never part of that comparison: a separate sentence says it is listed
  * last. Null when fewer than two pairs were priced, so there is no order to compare.
@@ -471,6 +617,6 @@ export function orderLine(answer: Pick<PriceAnswer, "pairs">): string | null {
         : ` The ${unpriced} overlaps without a reading are listed last, by minutes only.`;
   const compared = `the ${priced.length} compared overlaps`;
   const moved = best as { pair: PricedPair; from: number; to: number } | null;
-  if (!moved) return `Audience overlap does not change the order of ${compared}.${tail}`;
-  return `Audience overlap changes the order of ${compared}: ${pairName(moved.pair)} moves from ${ordinal(moved.from + 1)} to ${ordinal(moved.to + 1)}.${tail}`;
+  if (!moved) return `Taste overlap does not change the order of ${compared}.${tail}`;
+  return `Taste overlap changes the order of ${compared}: ${pairName(moved.pair)} moves from ${ordinal(moved.from + 1)} to ${ordinal(moved.to + 1)}.${tail}`;
 }

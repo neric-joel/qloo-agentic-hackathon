@@ -9,6 +9,10 @@ export class CheckPage {
   readonly heading: Locator;
   readonly sampleButton: Locator;
   readonly templateButton: Locator;
+  /** "Check a published day: <day>", shown when this server has a published (not invented) day. */
+  readonly publishedButton: Locator;
+  /** The one privacy sentence by the paste box. */
+  readonly privacy: Locator;
   readonly checkButton: Locator;
   readonly clearButton: Locator;
   readonly tableView: Locator;
@@ -18,6 +22,8 @@ export class CheckPage {
 
   readonly checked: Locator;
   readonly rulesSection: Locator;
+  /** The rule settings (changeover, curfew, pair rules), a disclosure under the grid. */
+  readonly rules: Locator;
   readonly priceSection: Locator;
   readonly priceButton: Locator;
   readonly sharedSection: Locator;
@@ -32,6 +38,8 @@ export class CheckPage {
     this.heading = page.getByRole("heading", { level: 1, name: "Check a draft grid against your rules" });
     this.sampleButton = page.getByRole("button", { name: "Check an invented sample" });
     this.templateButton = page.getByRole("button", { name: "Download a template" });
+    this.publishedButton = page.getByRole("button", { name: /^Check a published day: / });
+    this.privacy = page.getByText(/^Rule checks run in your browser; nothing is sent unless you press Compare audience overlap\./);
     this.checkButton = page.getByRole("button", { name: "Check the grid" });
     this.clearButton = page.getByRole("button", { name: "Clear", exact: true });
     this.tableView = page.getByRole("radiogroup", { name: "Show the draft grid as" }).locator("label").filter({ hasText: /^Table$/ });
@@ -41,6 +49,7 @@ export class CheckPage {
 
     this.checked = page.getByRole("region", { name: "Checked" });
     this.rulesSection = page.getByRole("region", { name: /^Rule breaks \(\d+\)$/ });
+    this.rules = page.getByRole("group").filter({ hasText: "Rules this check applies" });
     this.priceSection = page.getByRole("region", { name: /^Compare audience overlap/ });
     this.priceButton = this.priceSection.getByRole("button", { name: "Compare audience overlap" });
     this.sharedSection = page.getByRole("region", { name: /^Sets that share time \(\d+ pairs?\)$/ });

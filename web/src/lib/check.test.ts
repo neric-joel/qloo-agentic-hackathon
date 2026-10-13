@@ -7,6 +7,8 @@ import {
   announcement,
   clip,
   formatClock,
+  isCloseName,
+  removePairLine,
   replacePairName,
   runCheck,
   suggestName,
@@ -637,5 +639,27 @@ describe("pastes from spreadsheets and other tools", () => {
         ]),
       ).match,
     ).toBeNull();
+  });
+});
+
+describe("round 31: a pair rule's fixes never swap in an unrelated act", () => {
+  it("calls a name close only when it is a typo of the whole name, its start or one of its words", () => {
+    expect(isCloseName("Marlwe", "Marlowe & The Tides")).toBe(true);
+    expect(isCloseName("Amber Kyte", "Amber Kite")).toBe(true);
+    expect(isCloseName("amber kite", "Amber Kite")).toBe(true);
+    expect(isCloseName("Marlwe", "Marble Hall")).toBe(false);
+    expect(isCloseName("Marlwe", "Sable Arcade")).toBe(false);
+    expect(isCloseName("Saffron Season", "Amber Kite")).toBe(false);
+    expect(isCloseName("Saffron Season", "Basalt Choir")).toBe(false);
+    expect(isCloseName("", "Amber Kite")).toBe(false);
+  });
+
+  it("removes exactly one pair line and leaves the others as typed", () => {
+    const pairs = "A | B\nC  |  D\nE | F";
+    expect(removePairLine(pairs, 2)).toBe("A | B\nE | F");
+    expect(removePairLine(pairs, 1)).toBe("C  |  D\nE | F");
+    expect(removePairLine("A | B", 1)).toBe("");
+    expect(removePairLine(pairs, 0)).toBe(pairs);
+    expect(removePairLine(pairs, 9)).toBe(pairs);
   });
 });

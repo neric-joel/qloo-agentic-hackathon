@@ -25,6 +25,15 @@ import { TrialButton, TrialResult, type TrialUi } from "./check-trial-panel";
 /** Pairs listed before "Show all"; the heading always carries the total. */
 export const SHARED_SHOWN = 5;
 
+/** Under a pair whose two sets are both locked, in place of "Find a change": a lock says a set cannot move. */
+export const BOTH_LOCKED = "Both sets are locked, so this search would not move them.";
+
+/** What a pair's locks say after its window: " (both are locked).", " (one is locked)." or ".". */
+export function lockNote(pair: Pick<SharedPair, "a" | "b">): string {
+  if (pair.a.locked && pair.b.locked) return " (both are locked).";
+  return pair.a.locked || pair.b.locked ? " (one is locked)." : ".";
+}
+
 /** Ids of the result sections, for the jump links above them and in the draft review. */
 export const RESULT_IDS = {
   rules: "check-rules-heading",
@@ -540,6 +549,8 @@ function SharedRow({
   const names = `${pair.a.act} and ${pair.b.act}`;
   const id = pairDecisionId(pair);
   const decision = decisions.get(id);
+  // Neither set can move, so no search is offered for this pair; a line says why instead.
+  const bothLocked = pair.a.locked && pair.b.locked;
   return (
     <FindingRow
       id={id}
@@ -549,7 +560,7 @@ function SharedRow({
       onDecide={onDecide}
       {...editingOf(id)}
       target={targetOfPair(pair)}
-      trial={trial}
+      trial={bothLocked ? undefined : trial}
       trialHeadingRef={trialHeadingRef}
       compact={`${names} · ${minutesLabel(pair.minutes)} shared`}
       extra={
@@ -566,8 +577,9 @@ function SharedRow({
         <p className="mt-0.5 text-sm break-words text-muted-foreground print:mt-0">
           <span className="font-mono text-[0.8125rem] text-foreground tabular-nums">{pair.minutes} min</span> shared,{" "}
           <span className="font-mono text-[0.8125rem] tabular-nums">{clockWindow(pair.windowStart, pair.windowEnd)}</span>
-          {pair.a.locked || pair.b.locked ? " (one is locked)." : "."}
+          {lockNote(pair)}
         </p>
+        {bothLocked && trial ? <p className="mt-0.5 text-sm break-words text-muted-foreground print:hidden">{BOTH_LOCKED}</p> : null}
       </div>
     </FindingRow>
   );

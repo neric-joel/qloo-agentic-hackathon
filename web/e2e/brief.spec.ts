@@ -7,6 +7,8 @@ import { TryAMove } from "./pages/try-a-move";
 /** /brief: the one-page print view of a festival day, with the plan a visitor kept. */
 
 const PLAN = "moves=gurriers~woodsies~0~1215";
+/** The decision card's own move, which also sets the brief's two changes side by side (its longest form). */
+const CARD_PLAN = "moves=sprints~woodsies~0~1415";
 
 test.describe("one-page brief", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
@@ -55,7 +57,7 @@ test.describe("one-page brief", () => {
     const home = new HomePage(page);
     const move = new TryAMove(page);
     await home.goto(DAYS.glastonbury.id);
-    await home.openMove.click(); // the card's own move, so the brief can set it beside the alternative
+    await home.keepMove.click(); // the card's own move, so the brief can set it beside the alternative
     await expect(move.kept).toHaveCount(1);
     const keptLine = (await move.kept.first().innerText()).replace(/\s+/g, " ");
     const [, from, to] = /(\d+\.\d) → (\d+\.\d)/.exec(keptLine) ?? [];
@@ -119,26 +121,44 @@ test.describe("one-page brief", () => {
     await expect(article.getByRole("heading", { level: 1 })).toBeVisible();
   });
 
-  test("print media: the brief with a plan fits one Letter page and one A4 page", async ({ page }) => {
-    await open(page, `preset=${DAYS.glastonbury.id}&day=0&${PLAN}`);
-    await page.emulateMedia({ media: "print" });
-    for (const format of ["Letter", "A4"] as const) {
-      const pdf = await page.pdf({ format, printBackground: true });
-      expect(pdf.subarray(0, 5).toString("latin1"), "a PDF").toBe("%PDF-");
-      expect(pdfPages(pdf), `${format} pages`).toBe(1);
-    }
+  for (const [name, plan] of [["a plan", PLAN], ["the card's move and its alternative", CARD_PLAN], ["no plan", ""]] as const) {
+    test(`print media: the brief with ${name} fits one Letter page and one A4 page`, async ({ page }) => {
+      await open(page, `preset=${DAYS.glastonbury.id}&day=0${plan ? `&${plan}` : ""}`);
+      await page.emulateMedia({ media: "print" });
+      for (const format of ["Letter", "A4"] as const) {
+        const pdf = await page.pdf({ format, printBackground: true });
+        expect(pdf.subarray(0, 5).toString("latin1"), "a PDF").toBe("%PDF-");
+        expect(pdfPages(pdf), `${format} pages`).toBe(1);
+      }
+    });
+  }
+
+  test("a bare /brief renders the first published day's brief, with a heading and no moves kept yet", async ({ page }) => {
+    await page.goto("/brief", { waitUntil: "domcontentloaded" });
+    const article = page.getByRole("article");
+    await expect(article).toBeVisible();
+    await expect(article.getByRole("heading", { level: 1 })).toHaveText("Glastonbury Festival 2025 Sunday: where the clash budget goes");
+    await expect(article.getByRole("region", { name: "Tested moves" })).toContainText("No moves kept yet.");
+    await expect(article.getByRole("region", { name: "Your plan" })).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /This brief link is unavailable/ })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Back to the timetable" })).toBeVisible();
   });
 
-  test("a link with no day, or a day that does not exist, says so and offers the way back", async ({ page }) => {
-    await page.goto("/brief", { waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("alert").filter({ hasText: /This brief link is unavailable/ })).toContainText(
-      "Open the timetable and choose ‘Open as a one-page brief’.",
-    );
-    await expect(page.getByRole("link", { name: "Back to the timetable" })).toHaveAttribute("href", "/");
-
+  test("a day that does not exist says so in one line, under a heading, and offers the way back", async ({ page }) => {
     await page.goto(`/brief?preset=${DAYS.glastonbury.id}&day=9`, { waitUntil: "domcontentloaded" });
-    await expect(page.getByText("The day in this link has no timetable.")).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveText("The day in this link has no timetable.");
     await expect(page.getByRole("link", { name: "Back to the timetable" })).toBeVisible();
+  });
+
+  test("the brief says what it is not for, has a sign-off, and no stage-fit row", async ({ page }) => {
+    const article = await open(page, `preset=${DAYS.glastonbury.id}&day=0&${CARD_PLAN}`);
+    await expect(article.getByRole("region", { name: "Your plan" }).getByRole("region", { name: "The two changes side by side" })).toBeVisible();
+    await expect(article).not.toContainText("Stage-fit flags");
+    await expect(article).toContainText("Do not use this to set fees, billing order or an artist’s worth, or for crowd capacity, safety or attendance.");
+    await expect(article).toContainText("Nothing moves until the acts’ teams agree.");
+    await expect(article).toContainText("Prepared by");
+    await expect(article).toContainText("Reviewed by (head of programming)");
   });
 
   test("a mangled plan in the link is ignored: the day's brief still renders", async ({ page }) => {

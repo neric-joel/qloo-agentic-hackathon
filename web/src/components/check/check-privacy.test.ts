@@ -180,8 +180,11 @@ describe("the page and its results", () => {
     expect(page).toContain("Compare audience overlap (optional)");
     expect(page).not.toContain("Add audience overlap");
     expect(page).toContain(
-      "The checks above ran in your browser and used no Qloo data. To compare audience overlap for the 5 longest overlaps, we send the 24 act names and the pairs to this site’s server to look for saved audience data. No times, stages or rules are sent; names are not stored or logged. If no saved day matches, you can choose to ask Qloo instead.",
+      "The checks above ran in your browser and used no Qloo data. To compare audience overlap for the 5 longest overlaps, we send the 24 act names and the pairs to this site’s server to look for saved audience data. No times, stages or rules are sent; names are not stored or logged. If no saved day matches, nothing is compared: live Qloo pricing is off on this server.",
     );
+    // Until the server says live pricing is on, nothing on the page offers to ask Qloo.
+    expect(page).not.toContain("you can choose to ask Qloo");
+    expect(page).not.toContain("We can ask Qloo now");
     expect(html).toMatch(/<button[^>]*>Compare audience overlap<\/button>/);
     expect(page).not.toMatch(/Price the \d+ longest/);
     expect(page).not.toContain("Ask Qloo for these");
@@ -285,6 +288,17 @@ describe("the page and its results", () => {
     expect(form.indexOf("Check an invented sample")).toBeLessThan(form.indexOf("One set per line"));
     expect(form.indexOf("Download a template")).toBeLessThan(form.indexOf("One set per line"));
     expect(form).toMatch(/<textarea[^>]*rows="8"/);
+    // The privacy line sits where the paste happens: under the sheet's name row (after its text actions),
+    // above the sheet's switch and the paste field. One copy, one id.
+    const privacyAt = form.indexOf(CHECK_COPY.privacy.slice(0, 40));
+    expect(privacyAt).toBeGreaterThan(form.indexOf("Check an invented sample"));
+    expect(privacyAt).toBeLessThan(form.indexOf('aria-label="Show the draft grid as"'));
+    expect(privacyAt).toBeLessThan(form.indexOf("<textarea"));
+    expect(html.split("Rule checks run in your browser; nothing is sent unless you press Compare audience overlap.").length - 1).toBe(1);
+    const privacyId = /<p id="([^"]+)" class="[^"]*"><svg[^>]*lucide-lock/.exec(form)?.[1];
+    expect(privacyId).toBeTruthy();
+    expect(html.split(`id="${privacyId}"`).length - 1).toBe(1);
+    expect(form).toMatch(new RegExp(`aria-describedby="[^"]*${privacyId}`));
     // The privacy line and the consent text before Compare are never inside a closed disclosure.
     const open = html.replace(/<details(?![^>]*\bopen\b)[^>]*>[\s\S]*?<\/details>/g, " ");
     expect(text(open)).toContain(CHECK_COPY.privacy);
@@ -587,7 +601,7 @@ const NETWORK: readonly [string, RegExp][] = [
 // The two UI primitives the route draws with (a button and the Table / CSV switch) import only React and
 // `cn`; neither fetches.
 const ALLOWED_IMPORT =
-  /^(react|react-dom|lucide-react|next|next\/link|@\/components\/ui\/button|@\/components\/ui\/segmented-control|@\/lib\/check|@\/lib\/check-sample|@\/lib\/check-trial|@\/lib\/check-flag|@\/lib\/check-decisions|@\/lib\/check-share|@\/lib\/check-price|@\/lib\/art|@\/lib\/utils|@\/components\/check\/.+|\.\/.+)$/;
+  /^(react|react-dom|lucide-react|next|next\/link|@\/components\/ui\/button|@\/components\/ui\/segmented-control|@\/lib\/check|@\/lib\/check-sample|@\/lib\/check-trial|@\/lib\/check-flag|@\/lib\/check-decisions|@\/lib\/check-share|@\/lib\/check-price|@\/lib\/agent-status|@\/lib\/art|@\/lib\/utils|@\/components\/check\/.+|\.\/.+)$/;
 
 describe("the check route holds no network call", () => {
   it("finds the route's files", () => {
@@ -619,11 +633,18 @@ describe("the check route holds no network call", () => {
     });
   }
 
-  it("has exactly one fetch, in the price module, to /api/price-grid with the price body only", () => {
+  it("has its fetches in the price module only: one POST with the price body, and one bodiless GET of this app's own API", () => {
     const source = readFileSync(FETCH_MODULE, "utf8");
-    expect(source.match(/\bfetch\s*\(/g)).toHaveLength(1);
+    expect(source.match(/\bfetch\s*\(/g)).toHaveLength(2);
     expect(source).toMatch(/fetch\("\/api\/price-grid", \{/);
     expect(source).toMatch(/body: priceBody\(request, mode\)/);
+    // The GET carries no body and reads only the health switch and the published days, never Qloo.
+    const get = source.slice(source.indexOf("async function getJson("), source.indexOf("export async function priceGridLive("));
+    expect(get).toMatch(/fetch\(url, \{\s*method: "GET"/);
+    expect(get).not.toMatch(/body/);
+    const urls = [...source.matchAll(/getJson\(([^,)]+)/g)].map((match) => match[1].trim());
+    expect(urls.sort()).toEqual(["\"/api/health\"", "\"/api/presets\"", "`/api/presets/${encodeURIComponent(id", "url: string"].sort());
+    expect(source).not.toMatch(/qloo\.com|api\.qloo/i);
     const users = ROUTE_FILES.filter((f) => /\brequestPrice\b/.test(readFileSync(f, "utf8"))).map((f) => relative(SRC, f).replaceAll("\\", "/"));
     expect(users.sort()).toEqual(["components/check/check-tool.tsx", "lib/check-price.ts"]);
     // The press is the only caller: `requestPrice` is reached from the price handler alone.

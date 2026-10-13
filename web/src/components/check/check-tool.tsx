@@ -24,8 +24,10 @@ import {
   announcement,
   clockWindow,
   formatClock,
+  isCloseName,
   parseGrid,
   pairCountLabel,
+  removePairLine,
   replacePairName,
   runCheck,
   type CheckInput,
@@ -44,8 +46,29 @@ import {
   type Decision,
   type Decisions,
 } from "@/lib/check-decisions";
-import { PRICE_COPY, priceRequest, requestPrice, sourceBanner, type PriceMode } from "@/lib/check-price";
-import { SAMPLE_GRID, SAMPLE_LABEL, SAMPLE_SETTINGS, isSampleInput } from "@/lib/check-sample";
+import {
+  PRICE_COPY,
+  loadPublishedDay,
+  loadPublishedTimetable,
+  priceGridLive,
+  priceRequest,
+  requestPrice,
+  sourceBanner,
+  type PriceMode,
+  type PublishedDay,
+} from "@/lib/check-price";
+import {
+  SAMPLE_GRID,
+  SAMPLE_LABEL,
+  SAMPLE_RULES,
+  SAMPLE_SETTINGS,
+  dropSampleRules,
+  isPublishedInput,
+  isSampleInput,
+  keepSampleRules,
+  publishedDayInput,
+  type PublishedInput,
+} from "@/lib/check-sample";
 import { SHARE_COPY, csvName, readShareHash, shareHash, shareable } from "@/lib/check-share";
 import {
   TRIAL_COPY,
@@ -93,6 +116,10 @@ type Run = {
   checkedAt: number | null;
   /** The invented sample the page opens with: drawn, but it takes no focus and scrolls nothing. */
   arrival?: boolean;
+  /** The sample's pair rules dropped since the last check because the new grid has none of their acts. */
+  removed?: string[];
+  /** The checked grid is the published day "Check a published day" loaded: its label. */
+  published?: string | null;
 };
 
 /** The pasted grid with some changes tried on it: a copy held in this tab, never the paste itself. */
@@ -811,6 +838,37 @@ function WhatYouGet({
   );
 }
 
+/** "Pair line 3: ..." errors carry their line; any other error has none. */
+export function pairLineOf(error: string): number | null {
+  const match = /^Pair line (\d+):/.exec(error);
+  return match ? Number(match[1]) : null;
+}
+
+/**
+ * The fixes offered under one refused pair line, in order: "Remove this rule" first (once per line), then
+ * the name the page would use when one act starts with or holds the typed words, then the nearest names
+ * only when they are close to what was typed (a typo), never an unrelated act.
+ */
+export function pairFixes(
+  error: string,
+  suggestion: PairSuggestion | undefined,
+  typed: string | null,
+  firstOfLine: boolean,
+): { remove: number | null; names: string[] } {
+  const line = pairLineOf(error);
+  const remove = line !== null && firstOfLine ? line : null;
+  if (!suggestion) return { remove, names: [] };
+  if (suggestion.match) return { remove, names: [suggestion.match] };
+  const names = typed === null ? [] : suggestion.nearest.filter((name) => isCloseName(typed, name));
+  return { remove, names };
+}
+
+/** What was typed on one side of one pair line, or null when the line is not there. */
+export function typedName(pairs: string, line: number, side: 0 | 1): string | null {
+  const parts = pairs.split(/\r\n|\r|\n/)[line - 1]?.split("|");
+  return parts && parts.length === 2 ? parts[side] : null;
+}
+
 function saveFile(name: string, text: string, type: string) {
   const url = URL.createObjectURL(new Blob([text], { type }));
   const link = document.createElement("a");
@@ -845,6 +903,20 @@ export function CheckTool({
   startWithSample?: boolean;
 }) {
   const [input, setInput] = useState<CheckInput>(startWithSample ? SAMPLE_INPUT : initial);
+  // The pair lines that came from the invented sample, not from the person (only these are ever removed
+  // without a press, and only when a pasted grid replaced the sample and has none of their acts).
+  const [sampleRules, setSampleRules] = useState<readonly string[]>(() =>
+    startWithSample || isSampleInput(initial) ? SAMPLE_RULES : [],
+  );
+  // Sample rules removed since the last check: said once, in the results of the next check.
+  const removedSince = useRef<string[]>([]);
+  // Whether this server prices live; unknown counts as off, so the page never offers what it would refuse.
+  const [live, setLive] = useState(false);
+  // The published day "Check a published day" offers (none until this app's API names one), and the one loaded.
+  const [publishedDay, setPublishedDay] = useState<PublishedDay | null>(null);
+  const publishedRef = useRef<PublishedInput | null>(null);
+  const [published, setPublished] = useState<PublishedInput | null>(null);
+  const [publishedNote, setPublishedNote] = useState("");
   // The invented sample opens as a table; a paste is edited as text.
   const [view, setView] = useState<GridView>(startWithSample ? "table" : "csv");
   // "Clear" switches to the text and focuses it once it is back in view.
@@ -858,6 +930,7 @@ export function CheckTool({
     [previewOutcome],
   );
   const editingSample = isSampleInput(input);
+  const editingPublished = isPublishedInput(input, published);
   const [run, setRun] = useState<Run | null>(() =>
     startWithSample
       ? {
@@ -927,6 +1000,9 @@ export function CheckTool({
       const fields = readShareHash(hash);
       if (fields) {
         setInput(fields);
+        // A link's rules are the sender's own, never the sample's.
+        setSampleRules([]);
+        removedSince.current = [];
         // The sample the page opened with is not this grid: it gives way rather than showing as stale.
         setRun((current) => (current?.arrival ? null : current));
       }
@@ -941,6 +1017,19 @@ export function CheckTool({
     if (focusGrid === 0) return;
     gridRef.current?.focus();
   }, [focusGrid]);
+
+  // Two reads of this app's own API, carrying nothing of the visitor's: whether live pricing is on, and
+  // which published day to offer. Neither reaches Qloo; a failure leaves live off and the offer hidden.
+  useEffect(() => {
+    const controller = new AbortController();
+    void priceGridLive(controller.signal).then((on) => {
+      if (!controller.signal.aborted) setLive(on);
+    });
+    void loadPublishedDay(controller.signal).then((day) => {
+      if (!controller.signal.aborted) setPublishedDay(day);
+    });
+    return () => controller.abort();
+  }, []);
 
   // After a check that read the grid, or a change tried on it, the first result heading takes focus.
   useEffect(() => {
@@ -984,6 +1073,9 @@ export function CheckTool({
   const check = useCallback(
     (next: CheckInput, note = "") => {
       const outcome = runCheck(next);
+      const removed = removedSince.current;
+      removedSince.current = [];
+      const publishedNow = publishedRef.current;
       stopSearch();
       dropPrice();
       setTrial(null);
@@ -1003,6 +1095,8 @@ export function CheckTool({
         input: next,
         sample: isSampleInput(next),
         checkedAt: nowMinutes(),
+        removed,
+        published: isPublishedInput(next, publishedNow) ? (publishedNow?.label ?? null) : null,
       }));
     },
     [stopSearch, dropPrice],
@@ -1011,10 +1105,27 @@ export function CheckTool({
   // Any edit to the paste or the settings drops the search results on show: they were for the grid
   // as last checked, and nothing is searched, tried or compared until the next check. The results on
   // show keep the provenance of their snapshot (an invented sample stays labelled as one).
+  /**
+   * Where each pair rule came from, after an edit of one field. A pair line the person typed or changed is
+   * theirs from then on. A pasted grid that replaced the invented one drops the invented rules whose acts it
+   * does not have (the next check says so) and returns the rules text without them; a rule the person
+   * typed is never dropped. Null when the rules text stays as it is. It never touches a result's labels.
+   */
+  function rulesAfter(field: keyof CheckInput, value: string): string | null {
+    if (field === "pairs") setSampleRules((current) => keepSampleRules(value, current));
+    if (field !== "grid") return null;
+    const drop = dropSampleRules(input.pairs, sampleRules, value);
+    if (drop.removed.length === 0) return null;
+    removedSince.current = [...removedSince.current, ...drop.removed];
+    setSampleRules(drop.sampleRules);
+    return drop.pairs;
+  }
+
   function update(field: keyof CheckInput, value: string) {
     stopSearch();
     setTrial(null);
-    setInput((current) => ({ ...current, [field]: value }));
+    const pairs = rulesAfter(field, value);
+    setInput((current) => ({ ...current, [field]: value, ...(pairs === null ? {} : { pairs }) }));
   }
 
   /** A rule break's row button: the sheet shows as a table, scrolls to the row and marks it. */
@@ -1066,7 +1177,31 @@ export function CheckTool({
 
   function loadSample() {
     setInput(SAMPLE_INPUT);
+    setSampleRules(SAMPLE_RULES);
+    removedSince.current = [];
     check(SAMPLE_INPUT, "Invented sample loaded. ");
+  }
+
+  /**
+   * "Check a published day": the day's public timetable from this app's API, with that day's own
+   * changeover, curfew and pair rules (never the sample's), checked at once. Nothing is sent to Qloo.
+   */
+  async function loadPublished() {
+    if (!publishedDay) return;
+    setPublishedNote("Loading the published timetable.");
+    const day = publishedDayInput(await loadPublishedTimetable(publishedDay.id));
+    if (!day) {
+      setPublishedNote("The published timetable did not load. Your fields are unchanged.");
+      return;
+    }
+    setPublishedNote("");
+    publishedRef.current = day;
+    setPublished(day);
+    setInput(day.input);
+    setSampleRules([]);
+    removedSince.current = [];
+    setView("table");
+    check(day.input, "Published timetable loaded. ");
   }
 
   /** "Clear": empty fields, no results, no marks; the grid field takes focus for a paste. */
@@ -1074,6 +1209,8 @@ export function CheckTool({
     stopSearch();
     dropPrice();
     setInput(EMPTY);
+    setSampleRules([]);
+    removedSince.current = [];
     setRun(null);
     setTrial(null);
     setWorking(null);
@@ -1094,7 +1231,16 @@ export function CheckTool({
   function applySuggestion(suggestion: PairSuggestion, name: string) {
     const next = { ...input, pairs: replacePairName(input.pairs, suggestion.line, suggestion.side, name) };
     setInput(next);
+    setSampleRules((current) => keepSampleRules(next.pairs, current));
     check(next, `Pair line ${suggestion.line} now names ${name}. `);
+  }
+
+  /** "Remove this rule": that pair line alone is taken out, and the grid is checked again. */
+  function removeRule(line: number) {
+    const next = { ...input, pairs: removePairLine(input.pairs, line) };
+    setInput(next);
+    setSampleRules((current) => keepSampleRules(next.pairs, current));
+    check(next, `Pair line ${line} removed. `);
   }
 
   function decide(id: string, label: string, patch: DecisionPatch) {
@@ -1202,8 +1348,14 @@ export function CheckTool({
       setPrice({ phase: "ready", answer: result.answer });
       setNote(sourceBanner(result.answer));
     } else if (result.status === "not_saved") {
+      // Ask the server again whether it prices live before offering it; no answer counts as off.
+      const on = await priceGridLive(controller.signal);
+      if (controller.signal.aborted) return;
+      setLive(on);
       setPrice({ phase: "not_saved" });
-      setNote(PRICE_COPY.notSaved(request.acts.length, request.need));
+      setNote(
+        !on ? PRICE_COPY.liveOff : run?.published ? PRICE_COPY.publishedNotSaved : PRICE_COPY.notSaved(request.acts.length, request.need),
+      );
     } else if (result.status === "refused") {
       setPrice({ phase: "refused", mode, code: result.code, message: result.message });
       setNote(result.message);
@@ -1251,6 +1403,7 @@ export function CheckTool({
           decisions: listed,
           price: price.phase === "ready" ? price.answer : null,
           sample: run.sample,
+          published: run.published ?? null,
           checkedAt: run.checkedAt,
           stale,
         }
@@ -1267,7 +1420,7 @@ export function CheckTool({
       >
         {/* One column on a phone: the sheet's name with its two input utilities under it, the sheet (its
             header row of Table / CSV and "Check the grid"), "Clear" on a quiet row under it, the preview and
-            the rules, then the notes. From lg the name row runs over the left column, the sheet and its notes
+            the rules, then the notes. From lg the name row (its actions and the privacy line under it) runs over both columns, the sheet and its notes
             run down it, and the preview's top lines up with the sheet's top. */}
         <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:grid-rows-[auto_auto_1fr] lg:gap-x-8 lg:gap-y-0">
           {/* The sheet's name (and, while the invented rows are on show, a plain muted line that says so), then
@@ -1279,7 +1432,7 @@ export function CheckTool({
               1024, a 640 screen), the pair wraps whole to a line of its own, still set right, 10px under the
               name so no hit area reaches its text; the muted line itself never wraps to make room. On a
               phone they sit on their own lines under the name, set left, before the sheet. */}
-          <div className="min-w-0 pb-2 sm:pb-3 lg:col-start-1 lg:row-start-1">
+          <div className="min-w-0 pb-2 sm:pb-3 lg:col-span-2 lg:col-start-1 lg:row-start-1">
             <div className="flex min-w-0 flex-wrap items-start gap-x-6 sm:gap-y-2.5">
               <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
                 <label htmlFor={ids.grid} className="block text-[0.9375rem] leading-6 font-semibold">
@@ -1287,6 +1440,8 @@ export function CheckTool({
                 </label>
                 {editingSample ? (
                   <span className="text-[0.8125rem] leading-5 text-muted-foreground">Invented sample, to show the format</span>
+                ) : editingPublished && published ? (
+                  <span className="text-[0.8125rem] leading-5 text-muted-foreground">Published timetable: {published.title}</span>
                 ) : null}
               </div>
               <div className="ml-auto flex flex-wrap items-center max-sm:ml-0 sm:-my-2.5 sm:-mr-2">
@@ -1302,8 +1457,28 @@ export function CheckTool({
                 <Button type="button" variant="ghost" className={cn(BAR_TEXT_ACTION, "ml-1 max-sm:-ml-2")} onClick={loadSample}>
                   Check an invented sample
                 </Button>
+                {publishedDay ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className={cn(BAR_TEXT_ACTION, "ml-1 max-sm:-ml-2 max-sm:h-auto max-sm:min-h-11 max-sm:justify-start max-sm:py-2.5 max-sm:text-left max-sm:whitespace-normal")}
+                    onClick={() => void loadPublished()}
+                  >
+                    Check a published day: {publishedDay.title}
+                  </Button>
+                ) : null}
               </div>
             </div>
+            {publishedNote ? (
+              <p role="status" className="mt-1 text-sm font-semibold">
+                {publishedNote}
+              </p>
+            ) : null}
+            {/* What leaves the browser, said where the paste happens: under the sheet's name, above the field. */}
+            <p id={ids.privacy} className="mt-2 flex max-w-5xl items-start gap-2 text-[0.8125rem] leading-5 sm:mt-1.5">
+              <Lock aria-hidden="true" className="mt-[3px] size-3.5 shrink-0" />
+              <span>{CHECK_COPY.privacy}</span>
+            </p>
           </div>
           <div className="min-w-0 lg:col-start-1 lg:row-start-2">
             {/* The editor surface: a field in the site's ruled style, marked by its card fill and a 1px
@@ -1407,13 +1582,22 @@ export function CheckTool({
                 <ul className="mt-2 list-disc space-y-2 pl-5 break-words">
                   {outcome.errors.map((error, index) => {
                     const suggestion = outcome.suggestions.find((item) => item.message === error);
-                    const names = suggestion ? (suggestion.match ? [suggestion.match] : suggestion.nearest) : [];
+                    const line = pairLineOf(error);
+                    const firstOfLine = line !== null && outcome.errors.findIndex((other) => pairLineOf(other) === line) === index;
+                    const typed = suggestion ? typedName(input.pairs, suggestion.line, suggestion.side) : null;
+                    const { remove, names } = pairFixes(error, suggestion, typed, firstOfLine);
                     return (
                       <li key={index}>
                         {error}
-                        {suggestion && names.length > 0 ? (
+                        {remove !== null || (suggestion && names.length > 0) ? (
                           <span className="mt-1.5 flex flex-wrap gap-2">
-                            {names.map((name) => (
+                            {remove !== null ? (
+                              <Button type="button" variant="outline" size="sm" onClick={() => removeRule(remove)}>
+                                Remove this rule
+                                <span className="sr-only">: pair line {remove}</span>
+                              </Button>
+                            ) : null}
+                            {suggestion ? names.map((name) => (
                               <Button
                                 key={name}
                                 type="button"
@@ -1428,7 +1612,7 @@ export function CheckTool({
                                   </span>
                                 ) : null}
                               </Button>
-                            ))}
+                            )) : null}
                           </span>
                         ) : null}
                       </li>
@@ -1527,14 +1711,6 @@ export function CheckTool({
                 day.
               </p>
             </RuledDetails>
-            {/* A ruled note, not a grey box: the line under the sheet says what leaves the browser. */}
-            <p
-              id={ids.privacy}
-              className="flex items-start gap-2 border-t border-border-strong pt-3 text-[0.8125rem] leading-relaxed"
-            >
-              <Lock aria-hidden="true" className="mt-[3px] size-3.5 shrink-0" />
-              <span>{CHECK_COPY.privacy}</span>
-            </p>
             {linkNote ? (
               <p role="status" className="mt-3 text-sm font-semibold">
                 {linkNote}
@@ -1545,7 +1721,7 @@ export function CheckTool({
       </form>
 
       <p role="status" aria-live="polite" className="sr-only">
-        {run && outcome?.ok ? note || `${run.note}${announcement(outcome)}` : ""}
+        {run && outcome?.ok ? note || `${run.note}${(run.removed ?? []).map((notice) => `${notice} `).join("")}${announcement(outcome)}` : ""}
       </p>
 
       {run && outcome?.ok && shown ? (
@@ -1559,6 +1735,16 @@ export function CheckTool({
                 <p className="rounded-md border border-warning bg-warning-bg px-3 py-2 text-sm font-semibold text-foreground print:hidden">
                   {SAMPLE_LABEL}
                 </p>
+              ) : null}
+              {run.published ? <p className="text-sm leading-relaxed font-semibold text-foreground print:hidden">{run.published}</p> : null}
+              {run.removed && run.removed.length > 0 ? (
+                <div className="space-y-1 print:hidden">
+                  {run.removed.map((notice) => (
+                    <p key={notice} className="text-sm leading-relaxed break-words text-foreground">
+                      {notice}
+                    </p>
+                  ))}
+                </div>
               ) : null}
               {working ? (
                 <section
@@ -1623,6 +1809,8 @@ export function CheckTool({
                     onOrder={setPriceOrder}
                     onPrice={(mode) => void priceIt(mode)}
                     stale={stale}
+                    live={live}
+                    published={Boolean(run.published)}
                   />
                 }
                 after={

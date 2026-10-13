@@ -1,8 +1,8 @@
-import { DAYS, HONESTY, requireSavedDays } from "./helpers";
+import { DAYS, HONESTY, literal, requireSavedDays } from "./helpers";
 import { expect, test } from "./fixtures";
 import { HomePage } from "./pages/home-page";
 
-/** The hero decision: one costed clash, one tested move, and the button that carries it into "Try a move". */
+/** The hero decision: one costed clash, one tested move, and "Keep this move", which keeps it in your plan in place. */
 
 test.describe("hero decision", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
@@ -13,8 +13,12 @@ test.describe("hero decision", () => {
 
     await expect(home.cardHeading).toBeInViewport();
     await expect(home.card.getByText("Clash Budget Index", { exact: true })).toBeInViewport();
-    await expect(home.openMove).toBeInViewport();
+    await expect(home.keepMove).toBeInViewport();
     await expect(home.card).toContainText(HONESTY.reading);
+    // The index says what its scale is, with no click, beside "Lower is better".
+    const scale = home.card.getByText("A score, not money: 100 = the average random valid timetable of this lineup. Lower is better.");
+    await expect(scale).toBeVisible();
+    await expect(scale).toBeInViewport();
     // The drawing says what its three kinds of line mean.
     await expect(home.card.getByRole("figure")).toContainText("Solid: where the sets play now. Dashed: tested. Hatched: time shared.");
     // The same drawing in words, for a screen reader: where each set plays now and tested, and what is shared.
@@ -43,7 +47,7 @@ test.describe("hero decision", () => {
     await expect(home.whatQloo).toContainText("It does not prove #1 is the right clash to move.");
   });
 
-  test("Open this move tests the card's move and carries it into Try a move", async ({ page }) => {
+  test("Keep this move keeps the card's move in place: no scroll, \"Kept in your plan.\", focus on See your plan", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
@@ -51,38 +55,54 @@ test.describe("hero decision", () => {
     const [before = "", after = ""] = receipt.match(/\d+\.\d/g) ?? [];
     const mover = (await home.cardHeading.innerText()).split(/ \d+ minutes? (earlier|later)/)[0];
 
-    await home.openMove.click();
+    // Nothing is said about the plan before the press.
+    await expect(home.keptNotice).toHaveCount(0);
+    await home.keepMove.scrollIntoViewIfNeeded();
+    const scrolled = await page.evaluate(() => window.scrollY);
+    await home.keepMove.click();
 
-    // The page says what it is testing, and moves focus to the answer.
-    await expect(home.card.getByRole("status")).toHaveText(new RegExp(`^Testing ${mover} at \\d{2}:\\d{2}\\.`));
-    const plan = home.tryAMove.getByRole("group", { name: "Your tested moves" });
-    await expect(plan).toBeVisible();
-    await expect(plan).toBeFocused();
-    await expect(plan).toBeInViewport();
+    // The card confirms in place, in ink, and moves focus to the way to the plan, not to the page.
+    await expect(home.keptNotice).toBeVisible();
+    await expect(home.keptNotice).toHaveText(/^Kept in your plan\.\s*See your plan$/);
+    await expect(home.seeYourPlan).toHaveAttribute("href", "#your-plan");
+    await expect(home.seeYourPlan).toBeFocused();
+    await expect(home.cardAnnouncement).toHaveText(new RegExp(`^Testing ${literal(mover)} at \\d{2}:\\d{2}\\.`));
+    // The press never scrolls the page.
+    expect(await page.evaluate(() => window.scrollY)).toBe(scrolled);
+    await expect(home.keptNotice).toBeInViewport();
 
     // One kept move, the card's: same set, and the plan's index is the card's "after".
-    const kept = plan.getByRole("list", { name: "Kept moves" }).getByRole("listitem");
+    const kept = home.plan.getByRole("list", { name: "Kept moves" }).getByRole("listitem");
     await expect(kept).toHaveCount(1);
     await expect(kept).toContainText(mover);
-    await expect(plan.getByRole("region", { name: "Your tested moves" })).toContainText(`${before}`);
-    await expect(plan.getByRole("region", { name: "Your tested moves" })).toContainText(`${after}`);
-    await expect(plan.getByRole("link", { name: "Open as a one-page brief" })).toHaveAttribute("href", /^\/brief\?preset=glastonbury-2025-sun&day=0&moves=/);
+    await expect(home.plan.getByRole("region", { name: "Your tested moves" })).toContainText(`${before}`);
+    await expect(home.plan.getByRole("region", { name: "Your tested moves" })).toContainText(`${after}`);
+    await expect(home.plan.getByRole("link", { name: "Open as a one-page brief" })).toHaveAttribute("href", /^\/brief\?preset=glastonbury-2025-sun&day=0&moves=/);
+    expect(await page.evaluate(() => window.scrollY), "the plan filled in without moving the page").toBe(scrolled);
 
     // The board's own index does not change: a tested plan is previewed, never applied.
     const dial = page.getByRole("figure").filter({ hasText: "Clash Budget Index" });
     await expect(dial.getByText(before, { exact: true }).first()).toBeVisible();
+
+    // "See your plan" takes the visitor there and gives the plan focus.
+    await home.seeYourPlan.click();
+    await expect(home.plan).toHaveAttribute("id", "your-plan");
+    await expect(home.plan).toBeFocused();
+    await expect(home.plan).toBeInViewport();
   });
 
-  test("pressing Open this move again does not add the move twice", async ({ page }) => {
+  test("pressing Keep this move again does not add the move twice", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
-    await home.openMove.click();
-    const kept = home.tryAMove.getByRole("list", { name: "Kept moves" }).getByRole("listitem");
+    await home.keepMove.click();
+    const kept = home.plan.getByRole("list", { name: "Kept moves" }).getByRole("listitem");
     await expect(kept).toHaveCount(1);
+    await expect(home.keptNotice).toBeVisible();
 
-    await home.openMove.click();
-    await expect(home.card.getByRole("status")).toHaveText("Already in your plan.");
+    await home.keepMove.click();
+    await expect(home.cardAnnouncement).toHaveText("Already in your plan.");
+    await expect(home.keptNotice).toBeVisible();
     await expect(kept).toHaveCount(1);
   });
 
@@ -100,6 +120,11 @@ test.describe("hero decision", () => {
     // The two changes side by side, as a table with its figures.
     await expect(home.working.getByRole("table")).toContainText("Ends the overlap");
     await expect(home.working.getByRole("button", { name: "Open a hidden clash" })).toBeVisible();
+    // Where this day's reading came from, with its Recorded stamp.
+    await expect(home.card).toContainText(/Saved Qloo reading of this day: built .+ from \d+ saved Qloo responses?\./);
+    // The live re-check is offered only while this server answers live pair checks.
+    const health = (await (await page.request.get("/api/health")).json()) as { pair_check?: boolean };
+    if (health.pair_check !== true) await expect(home.card.getByRole("button", { name: /^Re-check this pair with Qloo/ })).toHaveCount(0);
 
     await home.showWorking.focus();
     await page.keyboard.press("Enter");
@@ -121,15 +146,15 @@ test.describe("hero decision", () => {
     await expect(home.drawer).toHaveCount(0);
   });
 
-  test("the second day has its own decision, and Open this move works there too", async ({ page }) => {
+  test("the second day has its own decision, and Keep this move works there too", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.riot.id);
 
     await expect(home.card).toContainText(`${DAYS.riot.title} · published timetable`);
-    await expect(home.card).toContainText("Taste does not change this pair’s place.");
-    await home.openMove.click();
-    const plan = home.tryAMove.getByRole("group", { name: "Your tested moves" });
-    await expect(plan.getByRole("list", { name: "Kept moves" }).getByRole("listitem")).toHaveCount(1);
-    await expect(plan.getByRole("link", { name: "Open as a one-page brief" })).toHaveAttribute("href", /preset=riot-fest-2026-sun/);
+    await expect(home.card).toContainText(/Taste agrees with time and draw \(Qloo popularity\): #\d+ either way\./);
+    await home.keepMove.click();
+    await expect(home.keptNotice).toBeVisible();
+    await expect(home.plan.getByRole("list", { name: "Kept moves" }).getByRole("listitem")).toHaveCount(1);
+    await expect(home.plan.getByRole("link", { name: "Open as a one-page brief" })).toHaveAttribute("href", /preset=riot-fest-2026-sun/);
   });
 });

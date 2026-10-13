@@ -44,19 +44,76 @@ import {
 } from "@/lib/brief";
 import { daysWithSets } from "@/lib/clashes";
 import { requestDecision, type Decision } from "@/lib/decision";
-import { MOCK_PRESET_ID, mockPreset } from "@/lib/mock-preset";
+import { DO_NOT_USE } from "@/lib/demand";
+import { MOCK_PRESET_ID, mockPreset, mockPresetList } from "@/lib/mock-preset";
 import { MOCK_STREAM_ENABLED } from "@/lib/mock-stream";
 import { PLAN_CAVEAT, RAISES_MARK } from "@/lib/plan-copy";
-import { parsePreset, type Preset } from "@/lib/preset";
+import { parsePreset, parsePresetList, type Preset, type PresetSummary } from "@/lib/preset";
 import { decodeMoves, encodeMoves, fetchPlan, isSafeId, type Plan, type StackStep } from "@/lib/stack";
 import { cn } from "@/lib/utils";
 
+// ------------------------------------------------------------------------------------ the words
+
+/** Under "Tested moves" on a bare /brief, which opens on a festival day with nothing kept. */
+export const BARE_NO_MOVES = "No moves kept yet. Keep one on the timetable page and it appears here.";
+
+/** After "To decide": nothing on the page moves a set by itself. */
+export const TEAMS_AGREE = "Nothing moves until the acts’ teams agree.";
+
+/** The sign-off at the foot of the sheet, each label followed by a line to write on. */
+export const SIGN_OFF = ["Prepared by", "Reviewed by (head of programming)", "Date"] as const;
+
+/** A link that names a day this page cannot read, or carries moves with no day. */
+export const UNAVAILABLE = "This brief link is unavailable. Open the timetable and choose ‘Open as a one-page brief’.";
+
 // ------------------------------------------------------------------------------------ loading
 
-type Outcome =
-  | { status: "ready"; preset: Preset; plan: Plan | null; decision: Decision | null }
+export type Outcome =
+  | {
+      status: "ready";
+      preset: Preset;
+      plan: Plan | null;
+      decision: Decision | null;
+      /** True when the page was opened with no link: the server's first published day, nothing kept. */
+      bare?: boolean;
+    }
   | { status: "missing" }
   | { status: "error" };
+
+/**
+ * What the address asks for. No preset and no moves is a bare /brief, which opens on a festival day; moves with no
+ * preset, or a preset id this page would not send, is an unavailable link.
+ */
+export type BriefTarget = { kind: "bare" } | { kind: "link"; presetId: string } | { kind: "broken" };
+
+export function briefTarget(presetId: string | null, movesText: string | null): BriefTarget {
+  if (presetId === null) return movesText === null ? { kind: "bare" } : { kind: "broken" };
+  return isSafeId(presetId) ? { kind: "link", presetId } : { kind: "broken" };
+}
+
+/** The day a bare /brief opens on: the first published day the server lists, else its first (the invented day). */
+export function chooseBriefPreset(list: readonly Pick<PresetSummary, "id" | "synthetic">[]): string | null {
+  return (list.find((item) => item.synthetic !== true) ?? list[0])?.id ?? null;
+}
+
+/** The server's festival days, from `GET /api/presets`; in mock mode the synthetic day only. */
+async function loadList(signal: AbortSignal): Promise<PresetSummary[]> {
+  if (MOCK_STREAM_ENABLED) return mockPresetList();
+  const response = await fetch("/api/presets", { signal, headers: { Accept: "application/json" } });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return parsePresetList(await response.json());
+}
+
+/** A bare /brief: the chosen day with no plan and no comparison. Any failure is "could not load", never "unavailable". */
+async function loadBareBrief(signal: AbortSignal): Promise<Outcome> {
+  try {
+    const id = chooseBriefPreset(await loadList(signal));
+    if (id === null) return { status: "error" };
+    return { status: "ready", preset: await loadPreset(id, signal), plan: null, decision: null, bare: true };
+  } catch {
+    return { status: "error" };
+  }
+}
 
 class NotFound extends Error {}
 
@@ -105,26 +162,31 @@ async function loadBrief(
   }
 }
 
-/** Loads the brief's data once per preset and plan; a malformed preset id never reaches the network. */
+/** Loads the brief's data once per target and plan; a malformed preset id never reaches the network. */
 function useBrief(
-  presetId: string | null,
+  target: BriefTarget,
   dayText: string | null,
   moves: readonly StackStep[],
 ): Outcome | { status: "loading" } {
-  const key = `${presetId ?? ""}|${dayText ?? ""}|${encodeMoves(moves)}`;
-  const safe = isSafeId(presetId);
+  const kind = target.kind;
+  const presetId = target.kind === "link" ? target.presetId : null;
+  const key = `${kind}|${presetId ?? ""}|${dayText ?? ""}|${encodeMoves(moves)}`;
   const [result, setResult] = useState<{ key: string; outcome: Outcome } | null>(null);
 
   useEffect(() => {
-    if (!safe || presetId === null) return;
+    if (kind === "broken") return;
     const controller = new AbortController();
-    loadBrief(presetId, dayText, moves, controller.signal).then((outcome) => {
+    const work =
+      presetId === null
+        ? loadBareBrief(controller.signal)
+        : loadBrief(presetId, dayText, moves, controller.signal);
+    work.then((outcome) => {
       if (!controller.signal.aborted) setResult({ key, outcome });
     });
     return () => controller.abort();
-  }, [safe, presetId, dayText, moves, key]);
+  }, [kind, presetId, dayText, moves, key]);
 
-  if (!safe) return { status: "missing" };
+  if (kind === "broken") return { status: "missing" };
   return result && result.key === key ? result.outcome : { status: "loading" };
 }
 
@@ -155,17 +217,22 @@ function BackLink({ href }: { href: string }) {
   );
 }
 
-/** Loading, error and unknown-link states: one short line and the way back. */
+/**
+ * Loading, error and unknown-link states: the page's h1, one short line and the way back. The line's words sit in one
+ * element beside the spinner, so a sentence never splits into flex columns.
+ */
 function Notice({ children, href, busy = false }: { children: ReactNode; href: string; busy?: boolean }) {
   return (
     <div className="container-page max-w-[60rem] pt-8 pb-12">
-      <p className="type-kicker text-muted-foreground">Clash brief</p>
+      <h1 className="type-kicker text-muted-foreground">Clash brief</h1>
       <p
         role={busy ? "status" : "alert"}
         className="mt-2 flex max-w-prose items-center gap-2 text-lg leading-snug font-semibold sm:text-xl"
       >
-        {busy ? <LoaderCircle aria-hidden="true" className="size-5 animate-spin motion-reduce:animate-none" /> : null}
-        {children}
+        {busy ? (
+          <LoaderCircle aria-hidden="true" className="size-5 shrink-0 animate-spin motion-reduce:animate-none" />
+        ) : null}
+        <span>{children}</span>
       </p>
       {busy ? null : (
         <div className="mt-4">
@@ -187,8 +254,27 @@ export function BriefSheet() {
   const dayText = params.get("day");
   const movesText = params.get("moves");
   const moves = useMemo(() => decodeMoves(movesText), [movesText]);
-  const state = useBrief(presetId, dayText, moves);
-  const back = backHref(presetId);
+  const target = useMemo(() => briefTarget(presetId, movesText), [presetId, movesText]);
+  const state = useBrief(target, dayText, moves);
+  return <BriefScreen state={state} presetId={presetId} dayText={dayText} moves={moves} />;
+}
+
+/**
+ * The page for one loading state: the notice, or the sheet with its print button. A bare /brief's way back is the
+ * timetable of the day it shows. Kept apart from the loading so each state renders on its own.
+ */
+export function BriefScreen({
+  state,
+  presetId,
+  dayText,
+  moves,
+}: {
+  state: Outcome | { status: "loading" };
+  presetId: string | null;
+  dayText: string | null;
+  moves: readonly StackStep[];
+}) {
+  const back = backHref(state.status === "ready" && state.bare ? state.preset.id : presetId);
 
   if (state.status === "loading") {
     return (
@@ -199,6 +285,7 @@ export function BriefSheet() {
   }
   if (state.status === "error") return <Notice href={back}>Could not load this brief.</Notice>;
   if (state.status === "missing") {
+    // UNAVAILABLE, with "one-page" kept on one line.
     return (
       <Notice href="/">
         This brief link is unavailable. Open the timetable and choose ‘Open as a{" "}
@@ -226,6 +313,7 @@ export function BriefSheet() {
         day={day}
         plan={state.plan}
         tradeoff={briefTradeoff(state.preset, state.decision, moves, day)}
+        bare={state.bare === true}
         className="mt-4 print:mt-0"
       />
     </div>
@@ -421,6 +509,7 @@ export function BriefContent({
   day,
   plan,
   tradeoff = null,
+  bare = false,
   className,
 }: {
   preset: Preset;
@@ -428,6 +517,8 @@ export function BriefContent({
   plan: Plan | null;
   /** The decision card's two changes side by side, when the plan holds one of them. */
   tradeoff?: BriefTradeoff | null;
+  /** Opened with no link: says how a kept move gets here. */
+  bare?: boolean;
   className?: string;
 }) {
   const { festival, day: dayLabel } = briefTitle(preset, day);
@@ -503,6 +594,9 @@ export function BriefContent({
           <li key={line}>{line}</li>
         ))}
       </ul>
+      <p data-do-not-use className="mt-2 font-semibold print:mt-[2pt] print:text-[9pt]">
+        {DO_NOT_USE}
+      </p>
     </Block>
   );
 
@@ -597,11 +691,13 @@ export function BriefContent({
           )}
         </Block>
 
-        <p className="mt-5 font-semibold print:mt-[4pt]">{TO_DECIDE}</p>
+        <p className="mt-5 font-semibold print:mt-[4pt]">
+          {TO_DECIDE} {TEAMS_AGREE}
+        </p>
       </>
     ) : (
       <Block title="Tested moves">
-        <p className="text-muted-foreground">{NO_MOVES}</p>
+        <p className="text-muted-foreground">{bare ? BARE_NO_MOVES : NO_MOVES}</p>
       </Block>
     );
 
@@ -647,6 +743,27 @@ export function BriefContent({
         <p>{figuresAttribution(preset, festival)}</p>
         {hosts.length > 0 ? <p className="mt-1 print:mt-0">Timetable sources: {hosts.join(", ")}.</p> : null}
       </div>
+      {/* Sign-off: who prepared the sheet and who reviewed it, on paper and on screen. Each label is followed by a
+          line to write on, a 1px rule in the control-edge ink (a mark, never text). */}
+      <dl
+        data-sign-off
+        className="mt-6 flex flex-wrap gap-x-8 gap-y-4 text-sm print:mt-[10pt] print:gap-x-[18pt] print:text-[9pt]"
+      >
+        {SIGN_OFF.map((label) => (
+          // On a phone each label takes its own row and its line runs to the edge; from 640px and on paper the three
+          // share a row, each line a fixed length.
+          <div key={label} className="flex w-full min-w-0 items-end gap-2 sm:w-auto print:w-auto">
+            <dt className="font-semibold sm:whitespace-nowrap">{label}</dt>
+            <dd
+              aria-label="blank, to fill in"
+              className={cn(
+                "h-5 min-w-16 flex-1 border-b border-border-strong sm:flex-none print:h-[12pt] print:flex-none",
+                label === "Date" ? "sm:w-24 print:w-[64pt]" : "sm:w-36 print:w-[96pt]",
+              )}
+            />
+          </div>
+        ))}
+      </dl>
     </article>
   );
 }

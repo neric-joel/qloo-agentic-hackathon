@@ -32,11 +32,12 @@ test.describe("what Qloo changes", () => {
     expect(drawn[1]).toBe(tasted[1]);
     await expect(home.whatQloo).toContainText(`Place among the day’s ${tasted[1]} clashes, #1 at the left`);
 
-    // The hero says where taste moves this pair from and to: the draw rank, then the taste rank.
-    const line = await home.card.getByText(/^Taste moves this pair from #\d+ to #\d+\.$/).innerText();
-    const [, from, to] = /#(\d+) to #(\d+)/.exec(line) ?? [];
-    expect(Number(from)).toBe(drawn[0]);
-    expect(Number(to)).toBe(tasted[0]);
+    // The hero names the same three ranks on its own rank axis: time alone, time and draw, with taste.
+    const line = await home.card.getByText(/Time alone ranks this pair #\d+, time and draw \(Qloo popularity\) #\d+, with taste #\d+\./).innerText();
+    const [, alone, withDraw, withTaste] = /#(\d+), time and draw \(Qloo popularity\) #(\d+), with taste #(\d+)/.exec(line) ?? [];
+    expect(Number(alone)).toBe(timeOnly[0]);
+    expect(Number(withDraw)).toBe(drawn[0]);
+    expect(Number(withTaste)).toBe(tasted[0]);
     // And the "decision above" is the card's own clash.
     await expect(home.whatQloo).toContainText("Sprints and Katy J Pearson, the clash in the decision above, ranked three ways.");
   });
@@ -48,7 +49,10 @@ test.describe("what Qloo changes", () => {
     await expect(home.whatQloo).toContainText("Qloo changes which clash rises to the top. It does not prove #1 is the right clash to move.");
     await expect(home.whatQloo.getByRole("heading", { level: 3, name: "What the failed test taught us." })).toBeVisible();
     await expect(home.whatQloo).toContainText("Our test failed: taste overlap put 46.8% of complained-about clashes in the top quarter of their day, below our 60% bar.");
-    await expect(home.whatQloo).toContainText("So the taste reading is a second opinion beside time and draw, never folded into a verdict.");
+    await expect(home.whatQloo).toContainText("Popularity, also a Qloo field, did better.");
+    await expect(home.whatQloo).toContainText("So the taste reading is a second opinion beside time and draw");
+    await expect(home.whatQloo).toContainText(/It is nearly unrelated to popularity \(r = 0\.\d+\)/);
+    await expect(home.whatQloo).not.toContainText("never folded into a verdict");
     await expect(home.whatQloo.getByRole("link", { name: "How we know" })).toHaveAttribute("href", "/method#tested");
   });
 
@@ -59,21 +63,24 @@ test.describe("what Qloo changes", () => {
     const rivals = disclosure(home.whatQloo, /^Equal-popularity pairs/);
     await rivals.locator("summary").click();
     await expect(rivals).toContainText("Draw is Qloo popularity, a percentile among Qloo artists");
-    await expect(rivals).toContainText("Level on draw, 68 apart on taste overlap.");
+    await expect(rivals).toContainText(/Level on draw, \d+ apart on taste overlap\./);
 
     const rankings = disclosure(home.whatQloo, /^Two rankings of this day/);
     await rankings.locator("summary").click();
     await expect(rankings).toContainText("What taste overlap changes");
     await expect(rankings).toContainText("So this shows that taste overlap reorders the list, not that Qloo’s numbers pick the right clashes.");
     await expect(rankings).toContainText("The check we set before building did not pass (see How we know).");
-    await expect(rankings).toContainText("Sprints and Katy J Pearson · 1st of 68 with taste overlap, 18th of 68 on draw and time alone");
+    // The card's pair, with its two places (no saved-day figure is written into this test).
+    await expect(rankings).toContainText(/Sprints and Katy J Pearson · \d+(st|nd|rd|th) of \d+ with taste overlap, \d+(st|nd|rd|th) of \d+ on draw and time alone/);
   });
 
   test("the second day says when taste does not change the pair's place", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.riot.id);
 
-    await expect(home.whatQloo).toContainText("Taste does not change this pair’s place.");
+    await expect(home.whatQloo).toContainText(/Taste agrees with time and draw: #\d+ either way\./);
+    // The day's biggest taste mover is named from the two rankings, when they hold one.
+    await expect(home.whatQloo).toContainText(/In this day’s two rankings, taste moves .+ × .+ the most: from #\d+ to #\d+\./);
     await expect(home.whatQloo).toContainText("Same timetable, ranked three ways. This shows what taste changes; it does not prove the taste ranking is better.");
   });
 });

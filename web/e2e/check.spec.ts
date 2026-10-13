@@ -3,7 +3,7 @@ import fs from "node:fs";
 import type { Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures";
-import { luminance, pdfPages, rgbOf } from "./helpers";
+import { listDays, luminance, pdfPages, rgbOf } from "./helpers";
 import { CheckPage } from "./pages/check-page";
 
 /**
@@ -368,6 +368,103 @@ test.describe("check a draft grid", () => {
       expect(pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
       expect(pdfPages(pdf), `${format} pages`).toBe(1);
     }
+  });
+});
+
+test.describe("check a draft grid, round-31 paths", () => {
+  /** Six invented acts on three stages: a fresh grid that shares no act with the sample. */
+  const SIX_ACTS = [
+    "Aurora,Main,18:00,19:00",
+    "Borealis,Side,18:30,19:30",
+    "Cygnus,Main,19:20,20:20",
+    "Draco,Side,19:45,20:45",
+    "Eridanus,Tent,18:15,19:15",
+    "Fornax,Tent,19:30,20:30",
+  ].join("\n");
+
+  test("the first paste over the sample is checked, and the sample's pair rule it no longer fits is removed with a notice", async ({ page }) => {
+    const check = new CheckPage(page);
+    await check.goto();
+
+    // No Clear first: the visitor pastes straight over the invented sample.
+    await check.paste(SIX_ACTS);
+    await check.checkButton.click();
+
+    await expect(check.page.getByRole("alert").filter({ hasText: "The grid was not checked." })).toHaveCount(0);
+    await expect(check.checked).toContainText("0 rule breaks found");
+    await expect(check.page.getByText("Read 6 sets on 3 stages.", { exact: true })).toBeVisible();
+    const removed = "Removed the sample's rule \"Saffron Season | Ivory Lights\": neither act is in this grid.";
+    await expect(check.page.getByText(removed, { exact: true }).first()).toBeVisible();
+    await expect(check.page.getByRole("status").filter({ hasText: removed })).toContainText("Rule breaks: 0. Sets that share time: 7 pairs.");
+    await expect(check.rules).toContainText("0 pair rules");
+  });
+
+  test("a pair rule the visitor typed is never removed for them; Remove this rule is the first fix offered", async ({ page }) => {
+    const check = new CheckPage(page);
+    await check.goto();
+    await check.paste(SIX_ACTS);
+    await check.rules.locator("summary").click();
+    await check.rules.getByRole("textbox", { name: "Pairs that must never overlap" }).fill("Aurora | Nobody Here");
+    await check.checkButton.click();
+
+    const alert = check.page.getByRole("alert").filter({ hasText: "The grid was not checked." });
+    await expect(alert).toContainText("Pair line 1: “Nobody Here” matches no set in the grid.");
+    await expect(check.rules.getByRole("textbox", { name: "Pairs that must never overlap" })).toHaveValue("Aurora | Nobody Here");
+    const fixes = alert.getByRole("button");
+    await expect(fixes.first()).toHaveAccessibleName(/^Remove this rule/);
+
+    await fixes.first().click();
+    await expect(alert).toHaveCount(0);
+    await expect(check.checked).toContainText("0 rule breaks found");
+    await expect(check.page.getByRole("status").filter({ hasText: "Pair line 1 removed." })).toContainText("Rule breaks: 0.");
+    await expect(check.rules).toContainText("0 pair rules");
+  });
+
+  test("a found change that moves a set to another stage says it needs production sign-off; one that keeps the stage does not", async ({ page }) => {
+    const check = new CheckPage(page);
+    await check.goto();
+
+    await check.rulesSection.getByRole("button", { name: /^Find a change : Rustic Harbour/ }).click();
+    // Each found change is a list item of its own that starts with what it ends (the break's card holds them all).
+    const changes = check.page.getByRole("listitem").filter({ has: check.page.getByRole("button", { name: "Try it" }) }).filter({ hasText: /^Ends / });
+    await expect(changes.first()).toBeVisible();
+    const sameStage = changes.filter({ hasText: "Rustic Harbour → Night Tent 23:00–00:00 (was Night Tent 23:20–00:20)" });
+    const otherStage = changes.filter({ hasText: "Rustic Harbour → Riverside Stage 23:00–00:00 (was Night Tent 23:20–00:20)" });
+    await expect(sameStage).toHaveCount(1);
+    await expect(otherStage).toHaveCount(1);
+    await expect(otherStage).toContainText("Changes stage: needs production sign-off");
+    await expect(sameStage).not.toContainText("Changes stage");
+  });
+
+  test("the privacy line sits by the paste box, once, with no click", async ({ page, isPhone }) => {
+    const check = new CheckPage(page);
+    await check.goto();
+
+    await expect(check.privacy).toHaveCount(1);
+    await expect(check.privacy).toBeVisible();
+    await expect(check.privacy).toContainText("Decisions you mark stay in this tab and clear on reload.");
+    if (!isPhone) {
+      // On a 1440x900 screen it is on the first screen, above the grid.
+      const box = await check.privacy.boundingBox();
+      expect(box?.y ?? Infinity, "the privacy line starts on the first screen").toBeLessThan(900);
+      const grid = await check.table.boundingBox();
+      expect(box?.y ?? Infinity).toBeLessThan(grid?.y ?? 0);
+    }
+  });
+
+  test("Check a published day loads its timetable with its own rules and no pair rules, and says what it does not check", async ({ page }) => {
+    const days = await listDays(page);
+    test.skip(!days.some((day) => !day.synthetic), "The API serves no published day.");
+    const check = new CheckPage(page);
+    await check.goto();
+
+    await check.publishedButton.click();
+    await expect(check.page.getByText(/^Published timetable: /).first()).toBeVisible();
+    await expect(check.page.getByRole("status").filter({ hasText: "Published timetable loaded." })).toContainText(/Rule breaks: \d+\./);
+    await expect(check.rules).toContainText("0 pair rules");
+    await expect(check.page.getByText(/its billing rules and stage hours are not checked here\./).first()).toBeVisible();
+    // It is a published timetable, not the invented sample.
+    await expect(check.page.getByText("Invented sample: 25 sets with four planted rule breaks.")).toHaveCount(0);
   });
 });
 

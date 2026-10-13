@@ -7,11 +7,36 @@ import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
 import { parsePreset } from "@/lib/preset";
 import { parseRuleFixes, plannedNote, STAGE_FIT_GLOSS } from "@/lib/rule-fix";
 
-import { DecisionCard, DecisionCardSkeleton, indexDelta, timelineSpans } from "./decision-card";
+import {
+  builtDate,
+  DecisionCard,
+  DecisionCardSkeleton,
+  focusShown,
+  HIDDEN_CLASH_LINE,
+  INDEX_SCALE,
+  indexDelta,
+  isHiddenDecision,
+  isInventedDecision,
+  KEEP_MOVE,
+  KEPT_IN_PLAN,
+  PairRecheck,
+  RECHECK_PAIR,
+  savedReadingLine,
+  SEE_YOUR_PLAN,
+  seeYourPlan,
+  timelineSpans,
+} from "./decision-card";
 import { ChangeCard, KeepApart } from "./keep-apart";
 import { consequenceLine, TradeoffTable } from "./tradeoff-table";
 
 // Every name and figure below is invented for the test.
+
+/** Whether this server answers live pair checks, as the mocked health hook reports it. */
+const pairCheck = vi.hoisted(() => ({ enabled: false }));
+vi.mock("./use-agent-status", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./use-agent-status")>()),
+  usePairCheckEnabled: () => pairCheck.enabled,
+}));
 
 /** The text the markup itself holds: tags dropped and nothing put between them, as a reader gets it. */
 function realText(html: string): string {
@@ -103,7 +128,15 @@ const TWO_SET_FIX = {
 
 const RULE_RAW = { ...RULE, fixes_found: 1, fixes: [TWO_SET_FIX] };
 
-function copy(overrides: Record<string, unknown> = {}) {
+/** The tiny preset, on the invented day when asked, and with its one clash unlabelled when asked. */
+function tinyPreset({ synthetic = false, label = "hidden" as string | null } = {}) {
+  const raw = rawTinyPreset() as ReturnType<typeof rawTinyPreset> & { synthetic?: boolean };
+  const report = raw.report as unknown as { clashes: { label: string | null }[] };
+  report.clashes = report.clashes.map((clash) => ({ ...clash, label }));
+  return parsePreset(synthetic ? { ...raw, synthetic: true } : raw);
+}
+
+function copy(overrides: Record<string, unknown> = {}, preset = tinyPreset()) {
   const decision = parseDecision({
     kind: "decision",
     day: 0,
@@ -130,7 +163,7 @@ function copy(overrides: Record<string, unknown> = {}) {
     rule: RULE,
     ...overrides,
   });
-  const built = buildDecisionCopy(parsePreset(rawTinyPreset()), decision);
+  const built = buildDecisionCopy(preset, decision);
   if (!built) throw new Error("no card");
   return built;
 }
@@ -217,12 +250,13 @@ describe("DecisionCard", () => {
     const plain = text(html);
     expect(plain).toContain("Three readings here");
     expect(plain.indexOf("Three readings here")).toBeGreaterThan(plain.indexOf("Hatched: time shared."));
-    // Before the action row's "Open this move" (shown from 1024 px); the copy shown below 1024 px sits
+    // Before the action row's "Keep this move" (shown from 1024 px); the copy shown below 1024 px sits
     // above the drawing, so the taste line comes after it there.
-    expect(plain.indexOf("Three readings here")).toBeLessThan(plain.lastIndexOf("Open this move"));
-    expect(plain.indexOf("Open this move")).toBeLessThan(plain.indexOf("Three readings here"));
+    expect(plain.indexOf("Three readings here")).toBeLessThan(plain.lastIndexOf("Keep this move"));
+    expect(plain.indexOf("Keep this move")).toBeLessThan(plain.indexOf("Three readings here"));
     expect(text(working(html).outside)).toContain("Three readings here");
-    expect(html).toMatch(/<div class="mt-4"><p>Three readings here<\/p><\/div>/);
+    // The fixture's pair carries the Hidden label, so the hidden-clash sentence leads the taste line.
+    expect(html).toMatch(/<div class="mt-4 space-y-1"><p data-hidden-line=""[^>]*>[^<]*<\/p><p>Three readings here<\/p><\/div>/);
     expect(text(renderToStaticMarkup(createElement(DecisionCard, { copy: copy() })))).not.toContain("Three readings here");
   });
 
@@ -451,13 +485,13 @@ describe("DecisionCard", () => {
   });
 
   it("has no buttons the page cannot act on, and shows each only with its handler and its seed", () => {
-    expect(text(renderToStaticMarkup(createElement(DecisionCard, { copy: copy() })))).not.toContain("Open this move");
+    expect(text(renderToStaticMarkup(createElement(DecisionCard, { copy: copy() })))).not.toContain("Keep this move");
     const withHandlers = text(
       renderToStaticMarkup(
         createElement(DecisionCard, { copy: copy(), onOpenMove: () => {}, onTryRule: () => {}, onOpenHidden: () => {} }),
       ),
     );
-    expect(withHandlers).toContain("Open this move");
+    expect(withHandlers).toContain("Keep this move");
     expect(withHandlers).toContain("Try this rule yourself");
     expect(withHandlers).toContain("Open a hidden clash");
     // "Open a hidden clash" is a ruled line of type with its arrow, and the first line of the working: one
@@ -469,13 +503,13 @@ describe("DecisionCard", () => {
     const hiddenParts = working(hiddenHtml);
     expect(hiddenParts.region).toMatch(/^<div [^>]*hidden=""[^>]*><div class="mb-4"><button[^>]*data-variant="ruled"[^>]*>Open a hidden clash<svg/);
     expect(text(hiddenParts.outside)).not.toContain("Open a hidden clash");
-    // The button's row: "Open this move", then the "Show the working" toggle directly after it, left-aligned
+    // The button's row: "Keep this move", then the "Show the working" toggle directly after it, left-aligned
     // and wrapping below the button only when the row has no room.
     expect(hiddenHtml).toMatch(
-      /<div class="mt-5 min-w-0"><div class="flex w-full flex-wrap items-center justify-start gap-x-6 gap-y-2"><button[^>]*>Open this move<\/button><button type="button"[^>]*aria-controls=/,
+      /<div class="mt-5 min-w-0"><div class="flex w-full flex-wrap items-center justify-start gap-x-6 gap-y-2"><button[^>]*>Keep this move<\/button><button type="button"[^>]*aria-controls=/,
     );
     // At every width the card reads in source order: the dateline, the headline, the index with its caption
-    // directly after the readings, (below 1024 px) "Open this move", the drawing and its key, the taste
+    // directly after the readings, (below 1024 px) "Keep this move", the drawing and its key, the taste
     // line, the action row and the working, so a phone's first screen shows the action and the clash itself. Nothing carries an order class, so the tab order is
     // the order seen at every width; the figure holds nothing focusable.
     const ORDER = /(?:^|\s)(?:[a-z-]+:)*-?order-\d/;
@@ -490,19 +524,19 @@ describe("DecisionCard", () => {
     for (const pattern of [/<h2[^>]*class="[^"]*"/, /<p class="text-\[0\.8125rem\] leading-5 font-semibold text-muted-foreground">Tiny Fest/]) {
       expect(pattern.exec(hiddenHtml)?.[0]).not.toMatch(ORDER);
     }
-    // Source order: dateline, headline, index (readings, then the attribution), the early "Open this move",
-    // drawing, the action row (its own "Open this move"), working.
+    // Source order: dateline, headline, index (readings, then the attribution), the early "Keep this move",
+    // drawing, the action row (its own "Keep this move"), working.
     const at = (needle: string) => hiddenHtml.indexOf(needle);
     expect(at("Tiny Fest, Saturday")).toBeLessThan(at('id="decision-heading"'));
     expect(at('id="decision-heading"')).toBeLessThan(at("data-index-block"));
-    expect(at("data-index-block")).toBeLessThan(at(">Open this move<"));
-    expect(at(">Open this move<")).toBeLessThan(at("<figure"));
-    expect(at("<figure")).toBeLessThan(hiddenHtml.lastIndexOf(">Open this move<"));
-    expect(hiddenHtml.lastIndexOf(">Open this move<")).toBeLessThan(at("data-working"));
+    expect(at("data-index-block")).toBeLessThan(at(">Keep this move<"));
+    expect(at(">Keep this move<")).toBeLessThan(at("<figure"));
+    expect(at("<figure")).toBeLessThan(hiddenHtml.lastIndexOf(">Keep this move<"));
+    expect(hiddenHtml.lastIndexOf(">Keep this move<")).toBeLessThan(at("data-working"));
     // The attribution directly after the readings, inside the index block.
     const block = /<div data-index-block=""[\s\S]*?A reading, not a verdict\.<\/p><\/div>/.exec(hiddenHtml)?.[0] ?? "";
     expect(text(block)).toMatch(/104\.2 → 98\.4[\s\S]*Selected and scored by this app’s index\. A reading, not a verdict\.$/);
-    // One dominant action: "Open this move" is the only solid button, in the ink CTA fill; the rule search
+    // One dominant action: "Keep this move" is the only solid button, in the ink CTA fill; the rule search
     // is ruled text under it.
     const handlersHtml = renderToStaticMarkup(
       createElement(DecisionCard, { copy: copy(), onOpenMove: () => {}, onTryRule: () => {}, onOpenHidden: () => {} }),
@@ -510,15 +544,15 @@ describe("DecisionCard", () => {
     // Two copies of it in the markup, one per width class: under the reading below 1024 px (lg:hidden) and
     // in the action row from 1024 px (max-lg:hidden), so one is displayed at every width.
     expect(handlersHtml.match(/data-variant="default"/g)).toHaveLength(2);
-    expect(handlersHtml).toMatch(/<button[^>]*data-variant="default"[^>]*>Open this move</);
+    expect(handlersHtml).toMatch(/<button[^>]*data-variant="default"[^>]*>Keep this move</);
     expect(/<button[^>]*data-variant="default"[^>]*>/.exec(handlersHtml)?.[0]).toMatch(/\bbg-cta\b/);
     expect(handlersHtml).not.toMatch(/bg-primary|data-variant="(soft|link|destructive)"/);
     expect(handlersHtml).toMatch(/<button[^>]*data-variant="ruled"[^>]*>Try this rule yourself</);
     expect(handlersHtml).not.toMatch(/data-variant="(outline|ink)"/);
-    expect(handlersHtml.indexOf("Open this move")).toBeLessThan(handlersHtml.indexOf("Try this rule yourself"));
+    expect(handlersHtml.indexOf("Keep this move")).toBeLessThan(handlersHtml.indexOf("Try this rule yourself"));
     // The action row comes after the drawing, which spans the card (no width ceiling).
     expect(handlersHtml.lastIndexOf("</svg>", handlersHtml.indexOf("</figure>"))).toBeGreaterThan(-1);
-    expect(handlersHtml.indexOf("</figure>")).toBeLessThan(handlersHtml.lastIndexOf("Open this move"));
+    expect(handlersHtml.indexOf("</figure>")).toBeLessThan(handlersHtml.lastIndexOf("Keep this move"));
     expect(handlersHtml).toMatch(/<figure data-shared-time="" class="[^"]*w-full/);
     expect(handlersHtml).not.toMatch(/max-w-[(18|24)rem]/);
     // An open composition on the paper, not a box: one 1 px decorative rule along the top with 20/24 px
@@ -550,7 +584,7 @@ describe("DecisionCard", () => {
         createElement(DecisionCard, { copy: copy({ rule: null }), onOpenMove: () => {}, onTryRule: () => {} }),
       ),
     );
-    expect(noRule).toContain("Open this move");
+    expect(noRule).toContain("Keep this move");
     expect(noRule).not.toContain("Try this rule yourself");
     expect(noRule).not.toContain("Line 3");
     expect(noRule).not.toContain("Line 4");
@@ -568,9 +602,9 @@ describe("DecisionCard", () => {
     expect(noRuleOpen).toContain("Selected and scored by this app’s index. A reading, not a verdict.");
   });
 
-  it("puts a second Open this move under the reading below 1024 px: after the attribution line, before the figure, one copy per width", () => {
+  it("puts a second Keep this move under the reading below 1024 px: after the attribution line, before the figure, one copy per width", () => {
     const html = renderToStaticMarkup(createElement(DecisionCard, { copy: copy(), onOpenMove: () => {}, onOpenHidden: () => {} }));
-    const moves = [...html.matchAll(/<button[^>]*>Open this move<\/button>/g)].map((m) => ({ tag: m[0], at: m.index ?? -1 }));
+    const moves = [...html.matchAll(/<button[^>]*>Keep this move<\/button>/g)].map((m) => ({ tag: m[0], at: m.index ?? -1 }));
     expect(moves).toHaveLength(2);
     const [early, row] = moves;
     // The early copy: a sibling directly after the index block (never inside it), so "A reading, not a
@@ -578,7 +612,7 @@ describe("DecisionCard", () => {
     const blockEnd = html.indexOf("A reading, not a verdict.</p></div>");
     expect(blockEnd).toBeGreaterThan(-1);
     expect(html.slice(blockEnd)).toMatch(
-      /^A reading, not a verdict\.<\/p><\/div><div class="mt-4 lg:hidden max-sm:mt-3"><button[^>]*>Open this move<\/button><\/div><figure data-shared-time=""/,
+      /^A reading, not a verdict\.<\/p><\/div><div class="mt-4 lg:hidden max-sm:mt-3"><button[^>]*>Keep this move<\/button><div role="status" aria-live="polite" data-kept-notice=""><\/div><\/div><figure data-shared-time=""/,
     );
     expect(early.at).toBeGreaterThan(blockEnd);
     expect(early.at).toBeLessThan(html.indexOf("<figure"));
@@ -595,7 +629,7 @@ describe("DecisionCard", () => {
     expect(row.tag).not.toMatch(/(?:^|[\s"])lg:hidden\b/);
     // Without an index block, or without the handler or the seed, there is no early copy.
     const noIndex = renderToStaticMarkup(createElement(DecisionCard, { copy: { ...copy(), indexBefore: null }, onOpenMove: () => {} }));
-    expect(noIndex.match(/>Open this move<\/button>/g)).toHaveLength(1);
+    expect(noIndex.match(/>Keep this move<\/button>/g)).toHaveLength(1);
     expect(noIndex).not.toContain("lg:hidden");
     expect(renderToStaticMarkup(createElement(DecisionCard, { copy: copy() }))).not.toContain("lg:hidden");
     // The skeleton holds the same 44 px block in the same place, below 1024 px only.
@@ -621,7 +655,9 @@ describe("DecisionCard", () => {
   it("says under the index figure what its change means, from the same two readings", () => {
     const plain = text(renderToStaticMarkup(createElement(DecisionCard, { copy: copy() })));
     // 104.2 → 98.4: a fall of 5.8, with a real minus sign, before the attribution.
-    expect(plain).toContain("104.2 to 98.4. \u22125.8 index points · lower is better Selected and scored by this app’s index");
+    expect(plain).toContain(
+      "104.2 to 98.4. \u22125.8 index points · lower is better A score, not money: 100 = the average random valid timetable of this lineup. Lower is better. Selected and scored by this app’s index",
+    );
     // Mono for the figure only; "index points" and "lower is better" in the sans, muted.
     const html = renderToStaticMarkup(createElement(DecisionCard, { copy: copy() }));
     expect(html).toContain(
@@ -713,7 +749,7 @@ describe("DecisionCard", () => {
     );
     const plain = text(html);
     expect(plain).toContain("No legal place for either set lowers the index.");
-    expect(plain).not.toContain("Open this move");
+    expect(plain).not.toContain("Keep this move");
     // No figure: no index label, no attribution caption.
     expect(plain).not.toContain("Clash Budget Index");
     expect(plain).not.toContain("Selected and scored by this app’s index. ");
@@ -732,6 +768,198 @@ describe("DecisionCard", () => {
     for (const pattern of [/optimi[sz]/i, /improve/i, /recommend/i, /validated/i, /proven/i, /predicts/i, /\bfix/i, /crowd/i, /headcount/i, /revenue/i, /significant/i]) {
       expect(plain).not.toMatch(pattern);
     }
+  });
+});
+
+describe("Keep this move, confirmed in place", () => {
+  const card = (props: Record<string, unknown>) =>
+    renderToStaticMarkup(createElement(DecisionCard, { copy: copy(), onOpenMove: () => null, ...props }));
+
+  it("names the one filled action Keep this move at both widths", () => {
+    const html = card({});
+    expect(KEEP_MOVE).toBe("Keep this move");
+    expect(html.match(/<button[^>]*data-variant="default"[^>]*>Keep this move<\/button>/g)).toHaveLength(2);
+    expect(text(html)).not.toContain("Open this move");
+  });
+
+  it("says Kept in your plan. with a link to the plan, in ink, under each copy of the button once the plan holds the move", () => {
+    const html = card({ kept: { move: true, change: false } });
+    expect(KEPT_IN_PLAN).toBe("Kept in your plan.");
+    expect(SEE_YOUR_PLAN).toBe("See your plan");
+    // Two live regions, one per width: the early copy's inside its lg:hidden wrapper, the row's max-lg:hidden.
+    const notices = [
+      ...html.matchAll(/<div role="status" aria-live="polite" data-kept-notice=""[^>]*>[\s\S]*?<\/a><\/p><\/div>/g),
+    ].map((m) => m[0]);
+    expect(notices).toHaveLength(2);
+    for (const notice of notices) {
+      expect(text(notice)).toBe("Kept in your plan. See your plan");
+      expect(notice).toMatch(/<a href="#your-plan" class="[^"]*\bmin-h-11\b[^"]*">See your plan<\/a>/);
+      // Ink, never green or vermilion; no box, no pill, no id.
+      expect(notice).toContain("text-foreground");
+      expect(notice).not.toMatch(/text-(primary|index-lower|success|green|vermilion)|\bbg-|rounded-full|[\s"]border(-[trblxy])?[\s"]/);
+      expect(notice).not.toMatch(/\bid="/);
+    }
+    expect(html.indexOf(notices[0])).toBeLessThan(html.indexOf("<figure"));
+    expect(html.indexOf(notices[0])).toBeGreaterThan(html.indexOf(">Keep this move</button>"));
+    const classes = [...html.matchAll(/<div role="status" aria-live="polite" data-kept-notice="" class="([^"]*)">/g)].map(
+      (m) => m[1],
+    );
+    expect(classes[classes.length - 1]).toMatch(/\bmax-lg:hidden\b/);
+    // "A reading, not a verdict." is still the index block's last line, the early button directly after it.
+    expect(html).toMatch(/A reading, not a verdict\.<\/p><\/div><div class="mt-4 lg:hidden max-sm:mt-3"><button/);
+  });
+
+  it("leaves the live regions empty while the plan does not hold the move, and shows none without the button", () => {
+    const notHeld = card({ kept: { move: false, change: false } });
+    expect(notHeld).not.toContain(KEPT_IN_PLAN);
+    expect(notHeld.match(/data-kept-notice=""( class="max-lg:hidden")?><\/div>/g)).toHaveLength(2);
+    const server = renderToStaticMarkup(createElement(DecisionCard, { copy: copy(), kept: { move: true, change: false } }));
+    expect(server).not.toContain("data-kept-notice");
+  });
+
+  it("See your plan scrolls the plan heading into view, smoothly or at once under reduced motion, then focuses it without a second scroll", () => {
+    for (const reduce of [false, true]) {
+      const scrollIntoView = vi.fn();
+      const focus = vi.fn();
+      const target = { scrollIntoView, focus } as unknown as HTMLElement;
+      const getElementById = vi.fn(() => target);
+      const preventDefault = vi.fn();
+      expect(seeYourPlan({ preventDefault }, { getElementById }, reduce)).toBe(true);
+      expect(getElementById).toHaveBeenCalledWith("your-plan");
+      expect(preventDefault).toHaveBeenCalledTimes(1);
+      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: reduce ? "auto" : "smooth", block: "start" });
+      expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+    }
+    // No plan heading on the page: the link is left to the browser.
+    const preventDefault = vi.fn();
+    expect(seeYourPlan({ preventDefault }, { getElementById: () => null }, false)).toBe(false);
+    expect(preventDefault).not.toHaveBeenCalled();
+  });
+
+  it("after a press, focus goes to the displayed link (never the page), without scrolling", () => {
+    const hidden = { getClientRects: () => [], focus: vi.fn() } as unknown as HTMLElement;
+    const shown = { getClientRects: () => [{}], focus: vi.fn() } as unknown as HTMLElement;
+    expect(focusShown([hidden, shown])).toBe(shown);
+    expect(shown.focus).toHaveBeenCalledWith({ preventScroll: true });
+    expect(hidden.focus).not.toHaveBeenCalled();
+    expect(focusShown([null, hidden])).toBeNull();
+  });
+});
+
+describe("the index scale in the card", () => {
+  it("prints the scale inside the index block, before the attribution, which stays the block's last line, on a published and an invented day", () => {
+    expect(INDEX_SCALE).toBe("A score, not money: 100 = the average random valid timetable of this lineup. Lower is better.");
+    for (const preset of [tinyPreset(), tinyPreset({ synthetic: true })]) {
+      const html = renderToStaticMarkup(createElement(DecisionCard, { copy: copy({}, preset), onOpenMove: () => null }));
+      const block = /<div data-index-block=""[\s\S]*?A reading, not a verdict\.<\/p><\/div>/.exec(html)?.[0] ?? "";
+      expect(text(block)).toMatch(
+        /lower is better A score, not money: 100 = the average random valid timetable of this lineup\. Lower is better\. Selected and scored by this app’s index\. A reading, not a verdict\.$/,
+      );
+      expect(text(working(html).outside)).toContain(INDEX_SCALE);
+    }
+  });
+});
+
+describe("the hidden clash in the card", () => {
+  it("says the card's own clash is a hidden clash, in the Hidden wall's words, in ink, outside the working", () => {
+    expect(HIDDEN_CLASH_LINE).toBe(
+      "A hidden clash: the acts' main genre tags differ, but their taste overlap is among the day's highest.",
+    );
+    const card = copy();
+    expect(isHiddenDecision(card)).toBe(true);
+    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: card, onOpenMove: () => null }));
+    expect(text(working(html).outside)).toContain(HIDDEN_CLASH_LINE);
+    const line = /<p data-hidden-line="" class="([^"]*)">/.exec(html)?.[1] ?? "";
+    expect(line).not.toBe("");
+    expect(line).not.toMatch(/prov-qloo|text-primary|teal/);
+    // After the drawing, above the action row.
+    expect(html.indexOf("data-hidden-line")).toBeGreaterThan(html.indexOf("</figure>"));
+    expect(html.indexOf("data-hidden-line")).toBeLessThan(html.lastIndexOf(">Keep this move<"));
+  });
+
+  it("says nothing of the kind for a pair without the Hidden label", () => {
+    const card = copy({}, tinyPreset({ label: null }));
+    expect(isHiddenDecision(card)).toBe(false);
+    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: card, onOpenMove: () => null }));
+    expect(text(html)).not.toContain("A hidden clash");
+    expect(html).not.toContain("data-hidden-line");
+  });
+
+  it("says the same on the invented day, naming no source", () => {
+    const card = copy({}, tinyPreset({ synthetic: true }));
+    expect(isInventedDecision(card)).toBe(true);
+    expect(isInventedDecision(copy())).toBe(false);
+    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: card }));
+    expect(text(html)).toContain(HIDDEN_CLASH_LINE);
+    expect(HIDDEN_CLASH_LINE).not.toMatch(/qloo/i);
+  });
+});
+
+describe("the saved reading and the live re-check in the working", () => {
+  // An invented build date and count.
+  const saved = { builtAt: "2026-10-03T09:15:00+00:00", requests: 12 };
+  afterEach(() => {
+    pairCheck.enabled = false;
+  });
+
+  it("prints when and from how many saved responses the published day was built, with the Recorded stamp, inside the working", () => {
+    expect(builtDate("2026-10-03T09:15:00+00:00")).toBe("3 Oct 2026");
+    expect(builtDate("not a date")).toBeNull();
+    expect(savedReadingLine(saved)).toBe("Saved Qloo reading of this day: built 3 Oct 2026 from 12 saved Qloo responses.");
+    expect(savedReadingLine({ ...saved, requests: 1 })).toBe(
+      "Saved Qloo reading of this day: built 3 Oct 2026 from 1 saved Qloo response.",
+    );
+    expect(savedReadingLine({ ...saved, requests: 0 })).toBeNull();
+    expect(savedReadingLine({ ...saved, builtAt: "" })).toBeNull();
+    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: copy(), saved }));
+    const { region, outside } = working(html);
+    expect(text(region)).toContain("Recorded Saved Qloo reading of this day: built 3 Oct 2026 from 12 saved Qloo responses.");
+    expect(region).toMatch(/data-provenance="recorded"/);
+    expect(text(outside)).not.toContain("Saved Qloo reading");
+  });
+
+  it("prints no saved reading without the prop, and none on the invented day even when passed", () => {
+    expect(text(renderToStaticMarkup(createElement(DecisionCard, { copy: copy() })))).not.toContain("Saved Qloo reading");
+    expect(text(renderToStaticMarkup(createElement(DecisionCard, { copy: copy(), saved: null })))).not.toContain(
+      "Saved Qloo reading",
+    );
+    const invented = renderToStaticMarkup(
+      createElement(DecisionCard, { copy: copy({}, tinyPreset({ synthetic: true })), saved }),
+    );
+    expect(text(invented)).not.toContain("Saved Qloo reading");
+    expect(invented).not.toContain('data-provenance="recorded"');
+  });
+
+  it("offers the re-check only while the server answers live pair checks and the page passes the drawer's opener", () => {
+    const onOpenPair = vi.fn();
+    const render = (props: Record<string, unknown>) =>
+      renderToStaticMarkup(createElement(DecisionCard, { copy: copy(), saved, ...props }));
+    pairCheck.enabled = false;
+    expect(text(render({ onOpenPair }))).not.toContain(RECHECK_PAIR);
+    pairCheck.enabled = true;
+    expect(text(render({}))).not.toContain(RECHECK_PAIR);
+    const on = render({ onOpenPair });
+    expect(RECHECK_PAIR).toBe("Re-check this pair with Qloo (3 requests)");
+    expect(text(working(on).region)).toContain(RECHECK_PAIR);
+    expect(on).toMatch(/<button[^>]*data-variant="ruled"[^>]*>Re-check this pair with Qloo \(3 requests\)<svg/);
+    // Never on the invented day.
+    const invented = renderToStaticMarkup(
+      createElement(DecisionCard, { copy: copy({}, tinyPreset({ synthetic: true })), onOpenPair }),
+    );
+    expect(text(invented)).not.toContain(RECHECK_PAIR);
+    // The card sends nothing: rendering it called nothing.
+    expect(onOpenPair).not.toHaveBeenCalled();
+  });
+
+  it("only opens the pair's drawer, with the button as the place to return to", () => {
+    const onOpenPair = vi.fn();
+    const element = PairRecheck({ onOpenPair }) as unknown as {
+      props: { onClick: (event: { currentTarget: unknown }) => void };
+    };
+    const trigger = { tagName: "BUTTON" };
+    element.props.onClick({ currentTarget: trigger });
+    expect(onOpenPair).toHaveBeenCalledTimes(1);
+    expect(onOpenPair).toHaveBeenCalledWith(trigger);
   });
 });
 
@@ -820,7 +1048,7 @@ describe("the side-by-side comparison in the card", () => {
     expect(text(fullTable())).not.toContain(consequence);
   });
 
-  it("leaves Open this move as the one action in view and opens on the other actions, above the comparison", () => {
+  it("leaves Keep this move as the one action in view and opens on the other actions, above the comparison", () => {
     const readings = createElement("p", null, "Taste moves this pair from #3 to #1.");
     const html = renderToStaticMarkup(
       createElement(DecisionCard, {
@@ -840,18 +1068,18 @@ describe("the side-by-side comparison in the card", () => {
       expect(inside.indexOf(part), part).toBeGreaterThan(inside.indexOf("Sets moved"));
       expect(inside.indexOf(part), part).toBeLessThan(inside.indexOf("How this was chosen"));
     }
-    // Outside the working only "Open this move" is left to press, beside the toggle that opens it. The
+    // Outside the working only "Keep this move" is left to press, beside the toggle that opens it. The
     // pointer to the three readings stays in view, above the actions, in the tucked state too.
     const open = outside;
-    expect(text(open)).toContain("Open this move");
+    expect(text(open)).toContain("Keep this move");
     expect(text(open)).not.toContain("Try this rule yourself");
     expect(text(open)).toContain("Taste moves this pair");
     expect(inside).not.toContain("Taste moves this pair");
-    expect(text(open).indexOf("Taste moves this pair")).toBeLessThan(text(open).lastIndexOf("Open this move"));
-    // Three buttons in the markup: "Open this move" under the reading (below 1024 px), the action row's
+    expect(text(open).indexOf("Taste moves this pair")).toBeLessThan(text(open).lastIndexOf("Keep this move"));
+    // Three buttons in the markup: "Keep this move" under the reading (below 1024 px), the action row's
     // copy (from 1024 px), the toggle; two are displayed at any width.
     expect(open.match(/<button/g)).toHaveLength(3);
-    expect(open.match(/>Open this move<\/button>/g)).toHaveLength(2);
+    expect(open.match(/>Keep this move<\/button>/g)).toHaveLength(2);
     expect(open).toMatch(/<button type="button"[^>]*aria-expanded="false"[^>]*><svg[\s\S]*?<\/svg><span>Show the working<\/span>/);
     // "{ATTRIBUTION}. A reading, not a verdict." stays in view in this tucked state as well.
     expect(text(open)).toContain("Selected and scored by this app’s index. A reading, not a verdict.");
@@ -1149,7 +1377,7 @@ describe("the hero", () => {
     expect(plain).toContain("Paste your own draft grid");
     expect(plain).toContain("About a minute. Nothing leaves your browser unless you ask for prices.");
     // The secondary button: outline (a 1.5 px ink edge, no fill), 44 px (the default size, the same height as
-    // "Open this move"), with a trailing arrow and no fill, so the card's "Open this move" stays the one solid button.
+    // "Keep this move"), with a trailing arrow and no fill, so the card's "Keep this move" stays the one solid button.
     expect(html).toMatch(/<a(?=[^>]*data-variant="outline")(?=[^>]*data-size="default")(?=[^>]*href="\/check")[^>]*>Paste your own draft grid<svg/);
     expect(html).not.toMatch(/<a(?=[^>]*data-variant="(default|ruled|soft)")(?=[^>]*href="\/check")/);
   });

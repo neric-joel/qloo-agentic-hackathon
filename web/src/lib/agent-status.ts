@@ -27,6 +27,16 @@ export function pairCheckEnabled(json: unknown): boolean {
 }
 
 /**
+ * Whether this server prices a pasted grid live with Qloo (`POST /api/price-grid` with mode "live"). True
+ * only for `price_grid_live: true` in the health answer; a missing field, any other value or no answer at
+ * all means off, so the check page never offers to ask Qloo when the server would refuse. Reading the
+ * health check calls nothing else.
+ */
+export function isPriceGridLive(json: unknown): boolean {
+  return isRecord(json) && json.price_grid_live === true;
+}
+
+/**
  * What the agent panel shows:
  * - "checking": a placeholder while the health check is in flight (no question box yet);
  * - "live": the question box, for "on" and for "unknown" (a failed check must not hide the agent);

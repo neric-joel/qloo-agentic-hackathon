@@ -2,6 +2,7 @@ import { HONESTY } from "./helpers";
 import { expect, test } from "./fixtures";
 import { serveInventedDay } from "./invented-day";
 import { HomePage } from "./pages/home-page";
+import { TryAMove } from "./pages/try-a-move";
 
 /**
  * The invented example day (Lanternfield): what a clone with no built festival day serves. The local API has
@@ -32,6 +33,14 @@ test.describe("invented example day", () => {
     await expect(home.cardHeading).toHaveAccessibleName(/ \d+ to \d+ minutes shared$/);
     await expect(home.card).toContainText(HONESTY.reading);
     await expect(home.card).toContainText("invented");
+    // The index scale reads the same on the invented day; "draw" is glossed as invented popularity, and the card
+    // names no saved Qloo reading.
+    await expect(home.card).toContainText("A score, not money: 100 = the average random valid timetable of this lineup. Lower is better.");
+    await expect(home.card).not.toContainText("Qloo popularity");
+    await home.showWorking.click();
+    await expect(home.working).toBeVisible();
+    await expect(home.card).not.toContainText("Saved Qloo reading");
+    await expect(home.card.getByRole("button", { name: /^Re-check this pair with Qloo/ })).toHaveCount(0);
     await expect(home.board.getByRole("button")).toHaveCount(24);
     expect(day.served.some((line) => line.endsWith("/decision"))).toBe(true);
   });
@@ -41,7 +50,8 @@ test.describe("invented example day", () => {
     const home = new HomePage(page);
     await home.goto();
 
-    await home.openMove.click();
+    await home.keepMove.click();
+    await expect(home.keptNotice).toBeVisible();
     const plan = home.tryAMove.getByRole("region", { name: "Your tested moves" });
     await expect(plan).toBeVisible();
     await expect(plan.getByRole("list", { name: "Kept moves" })).toContainText("Neon Garden");
@@ -56,9 +66,14 @@ test.describe("invented example day", () => {
     const home = new HomePage(page);
     await home.goto();
 
-    // Pick the first set the page suggests to start with.
-    await home.tryAMove.getByRole("list", { name: "Start with" }).getByRole("button").first().click();
-    const places = home.tryAMove.getByRole("list", { name: "Legal places" });
+    // Pick the first set the page suggests to start with. From 1024 px its best tested place comes first and the
+    // full list opens from it; below 1024 px the list shows at once.
+    const move = new TryAMove(page);
+    await move.starters.getByRole("button").first().click();
+    const places = move.places;
+    const show = move.bestPlace.getByRole("button", { name: "Show every legal place" });
+    await expect(places.or(show).first()).toBeVisible();
+    if (await show.isVisible()) await show.click();
     await expect(places).toBeVisible();
     await expect(places.getByRole("button").first()).toHaveAttribute("aria-pressed", "true");
     await expect(places.getByRole("button").first()).toHaveAccessibleName(/Clash Budget Index \d+\.\d/);

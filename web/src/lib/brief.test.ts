@@ -38,7 +38,7 @@ import {
   tableOnPaper,
   type BriefStep,
 } from "./brief";
-import { parseDecision } from "./decision";
+import { buildDecisionCopy, parseDecision } from "./decision";
 import { PLAN_CAVEAT } from "./plan-copy";
 import type { PairClash, Preset, SetSlot } from "./preset";
 import type { Plan, PlanRuleStep, PlanStep, StackStep } from "./stack";
@@ -823,6 +823,19 @@ describe("the brief's trade-off", () => {
     // Two steps: the figure belongs to the move alone, so there is no receipt line.
     const two = { ...cardPlan, steps: [...cardPlan.steps, PLAN.steps[1]] };
     expect(briefSteps(preset, two, one.moveReceipt)[0]).toMatchObject({ receipt: null });
+  });
+
+  it("prints no stage-fit row, since the brief does not weigh stage fit; the card's own table keeps it (round 31)", () => {
+    const preset = makePreset();
+    const decision = parseDecision(decisionRaw());
+    const card = buildDecisionCopy(preset, decision)?.tradeoff;
+    expect(card?.rows.map((row) => row.id)).toContain("flags");
+    const brief = briefTradeoff(preset, decision, [CARD_MOVE], 0)!;
+    expect(brief.tradeoff.rows.map((row) => row.id)).toEqual(card!.rows.map((row) => row.id).filter((id) => id !== "flags"));
+    const html = renderToStaticMarkup(createElement(BriefContent, { preset, day: 0, plan: PLAN, tradeoff: brief }));
+    expect(html).not.toMatch(/stage-fit flags/i);
+    // What the page says it does not weigh stays word for word.
+    expect(html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")).toContain(TO_DECIDE);
   });
 
   it("is absent without a decision, for another day's decision, and when the card has nothing to compare", () => {

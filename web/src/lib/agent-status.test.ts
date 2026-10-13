@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { pairCheckEnabled, panelMode, parseHealth } from "./agent-status";
+import { isPriceGridLive, pairCheckEnabled, panelMode, parseHealth } from "./agent-status";
 
 describe("parseHealth", () => {
   it("reads whether the language model is configured", () => {
@@ -64,5 +64,30 @@ describe("pairCheckEnabled", () => {
   it("leaves the agent status as it was", () => {
     expect(parseHealth({ llm_configured: false, pair_check: true })).toBe("off");
     expect(parseHealth({ llm_configured: true, pair_check: false })).toBe("on");
+  });
+});
+
+describe("isPriceGridLive", () => {
+  it("is true only when the health answer says price_grid_live is true", () => {
+    expect(isPriceGridLive({ status: "ok", llm_configured: false, pair_check: false, price_grid_live: true })).toBe(true);
+  });
+
+  it("is false when the server says it is off", () => {
+    expect(isPriceGridLive({ status: "ok", price_grid_live: false })).toBe(false);
+  });
+
+  it("counts an unknown answer as off: a missing flag, any other value or no answer", () => {
+    expect(isPriceGridLive({ status: "ok", llm_configured: true, pair_check: true })).toBe(false);
+    expect(isPriceGridLive({ price_grid_live: "true" })).toBe(false);
+    expect(isPriceGridLive({ price_grid_live: 1 })).toBe(false);
+    expect(isPriceGridLive({ price_grid_live: null })).toBe(false);
+    expect(isPriceGridLive(null)).toBe(false);
+    expect(isPriceGridLive(undefined)).toBe(false);
+    expect(isPriceGridLive([{ price_grid_live: true }])).toBe(false);
+  });
+
+  it("leaves the other readers of the same answer as they were", () => {
+    expect(pairCheckEnabled({ pair_check: false, price_grid_live: true })).toBe(false);
+    expect(parseHealth({ llm_configured: false, price_grid_live: true })).toBe("off");
   });
 });

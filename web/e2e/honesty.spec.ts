@@ -40,7 +40,7 @@ test.describe("honesty lines", () => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
-    await home.openMove.click();
+    await home.keepMove.click();
     await expect(new TryAMove(page).plan).toBeVisible();
     await expect(home.card).toContainText(HONESTY.reading);
     await expect(home.hero).toContainText(HONESTY.neither);
@@ -65,7 +65,7 @@ test.describe("honesty lines", () => {
     const dial = page.getByRole("figure").filter({ hasText: "Clash Budget Index" });
     await expect(dial).toContainText("lower is better");
     await expect(dial).toContainText("It counts only what clashes cost: taste overlap, time shared, draw and a rarity factor.");
-    await home.openMove.click();
+    await home.keepMove.click();
     await expect(new TryAMove(page).planRegion).toContainText("Scored by the same measure the places are found with, so a lower number shows what that measure rewards, not that audiences would be better served.");
   });
 
@@ -87,10 +87,15 @@ test.describe("honesty lines", () => {
     await expect(article).toContainText("not endorsed by Qloo or Glastonbury Festival 2025");
   });
 
-  test("the footer on every page says the festivals shown do not use Clash Control", async ({ page }) => {
-    for (const url of ["/", "/method", "/check"]) {
+  test("the footer on every page says the festivals shown do not use Clash Control, with its licence line", async ({ page }) => {
+    for (const url of ["/", "/method", "/check", "/brief"]) {
       await page.goto(url, { waitUntil: "domcontentloaded" });
       await expect(page.getByRole("contentinfo"), url).toContainText("The festivals shown do not use Clash Control");
+      // One line with the licence, the source code and who the entry is not.
+      const legal = page.getByRole("contentinfo").getByText(/^Independent entry: not endorsed by Qloo/);
+      await expect(legal, url).toHaveText("Independent entry: not endorsed by Qloo, Glastonbury Festival or Riot Fest, and not affiliated with any of them.");
+      await expect(page.getByRole("contentinfo").getByRole("link", { name: "MIT licence" }), url).toBeVisible();
+      await expect(page.getByRole("contentinfo").getByRole("link", { name: "Source code" }), url).toBeVisible();
     }
   });
 });

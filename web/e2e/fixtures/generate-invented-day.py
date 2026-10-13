@@ -63,7 +63,7 @@ for act in preset["festival"]["acts"]:
     moves[act["id"]] = get(f"/api/presets/{pid}/moves?act={act['id']}&limit=8")
 write("moves.json", moves)
 
-# What "Open this move" asks: the card's one move, priced with no set picked.
+# What "Keep this move" asks: the card's one move, priced with no set picked.
 move = decision["move"]
 step = {"act": move["act_id"], "stage_id": move["stage_id"], "day": move["day"], "start": move["start"]}
 response = client.post(f"/api/presets/{pid}/whatif", json={"moves": [step], "act": None, "limit": 8})

@@ -170,6 +170,43 @@
   --prov-qloo-border: oklch(0.58 0.08 192);
 }
 
+/*
+ * Paper is light whatever the screen theme: a browser prints without background graphics by default, so the dark
+ * theme's near-white ink would land on white paper. In print, every token the dark theme changes takes its light
+ * value again, on every page (/brief and /check also set their own print palettes). No screen value changes.
+ */
+@media print {
+  :root.dark {
+    color-scheme: light;
+
+    --background: oklch(0.965 0.005 255);
+    --foreground: oklch(0.21 0.018 262);
+    --card: oklch(1 0 0);
+    --popover: oklch(1 0 0);
+    --primary: oklch(0.545 0.2 33);
+    --primary-hover: oklch(0.49 0.18 33);
+    --primary-foreground: oklch(1 0 0);
+    --cta: var(--foreground);
+    --cta-hover: oklch(0.33 0.03 262);
+    --cta-foreground: var(--card);
+    --muted: oklch(0.93 0.006 258);
+    --muted-foreground: oklch(0.46 0.02 260);
+    --accent: oklch(0.945 0.007 258);
+    --ink-3: oklch(0.6 0.016 260);
+    --border: oklch(0.885 0.008 258);
+    --border-strong: oklch(0.6 0.016 260);
+    --surface-edge: oklch(0.8 0.008 258);
+    --ring: oklch(0.52 0.19 260);
+
+    --highlight: oklch(0.89 0.05 258);
+
+    --success: oklch(0.47 0.12 150);
+
+    --prov-qloo: oklch(0.45 0.075 195);
+    --prov-qloo-border: oklch(0.62 0.08 195);
+  }
+}
+
 @theme inline {
   --font-sans: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

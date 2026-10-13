@@ -17,13 +17,22 @@ test.describe("recorded agent runs", () => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
-    await expect(home.agent.getByRole("heading", { level: 2 })).toHaveText("Or describe the change in plain words");
+    // Named for what it holds while the agent is off; the invitation to type is gone from the page.
+    await expect(home.agent.getByRole("heading", { level: 2 })).toHaveText("Recorded agent runs");
+    await expect(page.getByRole("heading", { name: "Or describe the change in plain words" })).toHaveCount(0);
     await expect(home.agent).toContainText("The live agent is off here to keep this demo free to run");
     await expect(home.agent).toContainText("Saved runs on this day replay with no live Qloo or model call.");
     await expect(home.agent).toContainText("Prices, clashes and receipts above work without it.");
     await expect(home.agent.getByRole("textbox")).toHaveCount(0);
     await expect(home.agent.getByRole("button", { name: /^(Ask|Send|Run)/ })).toHaveCount(0);
     await expect(home.agent).toContainText("It never changes the real festival, which does not use Clash Control.");
+
+    // What the agent can and cannot do, open with no click, with the run's caps.
+    await expect(home.agent.getByRole("heading", { level: 3, name: "What the agent can and cannot do" })).toBeVisible();
+    await expect(home.agent).toContainText("It can test a move, but it never changes your timetable unless you press Keep this place.");
+    await expect(home.agent).toContainText("At most 12 Qloo requests and 6 model turns per run.");
+    // The recordings on this day made no Qloo request, and the section says so.
+    await expect(home.agent).toContainText("None of these three recorded runs asked Qloo");
     expect(guard.requested.filter((url) => url.includes("/api/runs"))).toEqual([]);
   });
 
@@ -94,6 +103,42 @@ test.describe("recorded agent runs", () => {
     const same = listed.find((place) => place.start === best?.[2]);
     expect(same, `Try a move lists Parcels at ${best?.[2]}`).toBeDefined();
     expect(same?.index.toFixed(1)).toBe(bestIndex?.[2]);
+  });
+
+  test("Keep this place hands the replayed run's tested place to the plan, and the brief lists it", async ({ page, guard }) => {
+    const home = new HomePage(page);
+    await home.goto(DAYS.glastonbury.id);
+
+    await home.agent.getByRole("button", { name: /^Replay the recorded run: Set two rules, then move one set/ }).click();
+    await home.agent.getByRole("button", { name: "Skip to the answer" }).click();
+    await expect(home.agent.getByRole("status").filter({ hasText: /\S/ })).toHaveText("The recorded run has finished.", { timeout: 15_000 });
+
+    // The place comes from the run's own tool result, and nothing is kept until it is pressed.
+    const tested = home.agent.getByText(/^Parcels → .+ \d{2}:\d{2}–\d{2}:\d{2}$/);
+    await expect(tested).toBeVisible();
+    const [, stage = "", start = "", end = ""] = /^Parcels → (.+) (\d{2}:\d{2})–(\d{2}:\d{2})$/.exec((await tested.innerText()).trim()) ?? [];
+    await expect(home.plan).toHaveCount(0);
+
+    await home.agent.getByRole("button", { name: "Keep this place" }).click();
+    const kept = home.agent.getByRole("status").filter({ hasText: "Kept in your plan." });
+    await expect(kept).toBeVisible();
+    await expect(kept.getByRole("link", { name: "See your plan" })).toBeFocused();
+    const items = home.plan.getByRole("list", { name: "Kept moves" }).getByRole("listitem");
+    await expect(items).toHaveCount(1);
+    await expect(items.first()).toContainText(`1. Parcels · ${stage} ${start}–${end}`);
+
+    // "See your plan" takes focus to the plan.
+    await kept.getByRole("link", { name: "See your plan" }).click();
+    await expect(home.plan).toBeFocused();
+
+    // The brief made from this plan lists the same move.
+    const href = await home.plan.getByRole("link", { name: "Open as a one-page brief" }).getAttribute("href");
+    expect(href).toMatch(/^\/brief\?preset=glastonbury-2025-sun&day=0&moves=/);
+    await page.goto(href as string, { waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(page.getByRole("main")).toContainText("Parcels");
+    await expect(page.getByRole("main")).toContainText(`${start}–${end}`);
+    expect(guard.requested.filter((url) => url.includes("/api/runs"))).toEqual([]);
   });
 
   test("Start over clears the conversation", async ({ page }) => {

@@ -25,7 +25,7 @@ test.describe("the browser only talks to this site", () => {
     // Home on both days: the day, its decision, lenses, recordings, health, and every move list.
     await home.goto(DAYS.glastonbury.id);
     await scrollThrough(page);
-    await home.openMove.click();
+    await home.keepMove.click();
     await expect(move.plan).toBeVisible();
     await move.choose("Gurriers");
     await move.keepButton.click();

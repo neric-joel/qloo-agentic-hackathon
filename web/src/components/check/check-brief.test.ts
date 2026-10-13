@@ -3,11 +3,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { runCheck } from "@/lib/check";
+import { decisionLine, pairDecisionId, pairLabel, type Decision } from "@/lib/check-decisions";
 import { parsePriceAnswer, priceRequest, type PriceRequest } from "@/lib/check-price";
-import { SAMPLE_GRID, SAMPLE_SETTINGS } from "@/lib/check-sample";
+import { SAMPLE_GRID, SAMPLE_SETTINGS, publishedLabel } from "@/lib/check-sample";
 import { findChange, targetOfBreak } from "@/lib/check-trial";
 
-import { BRIEF_FOOTER, BRIEF_ROWS, CheckBrief, briefFooter } from "./check-brief";
+import { BRIEF_FOOTER, BRIEF_ROWS, CheckBrief, briefFooter, snapshotLine } from "./check-brief";
 
 // Every name below is invented for the test.
 
@@ -52,11 +53,12 @@ describe("the one-page brief", () => {
     expect(page).toContain("Rule breaks (4)");
     expect(page).toContain("Your decisions (1) Saffron Season and Ivory Lights share 20 minutes: Kept on purpose. Contract.");
     expect(page).toContain("Compared using the invented example day: its acts and affinities are invented, not Qloo data. No Qloo request was sent. 24 of 24 acts with a usable signal.");
-    expect(page).toContain("Audience overlap 0.90, ranked 1 of 5.");
-    expect(page).toContain("Audience overlap compared (5 longest overlaps)");
+    expect(page).toContain("Taste overlap 90 / 100, ranked 1 of 5.");
+    expect(page).toContain("Taste overlap compared (5 longest overlaps)");
     expect(page).toContain(
-      `${BRIEF_FOOTER} Audience overlap: Values come from the invented example day: ranks among its invented lineup, not Qloo data and not attendance.`,
+      `${BRIEF_FOOTER} Taste overlap: Values come from the invented example day: ranks among its invented lineup, not Qloo data and not attendance.`,
     );
+    expect(page).not.toMatch(/Audience overlap \d|Audience overlap:|0\.\d\d,/);
     expect(page).not.toMatch(/rank among the pasted acts/);
   });
 
@@ -92,8 +94,36 @@ describe("the one-page brief", () => {
     expect(live).not.toBeNull();
     const page = text(renderToStaticMarkup(createElement(CheckBrief, { report: big.report, applied: [], decisions: [], price: live })));
     expect(page).toContain(
-      "Computed in your browser from the pasted grid. Audience overlap: A rank among the 25 acts sent to Qloo just now, not attendance, and not comparable with a published day’s figures. This grid has 30 different acts and at most 25 are sent, so 5 acts are not sent and not compared.",
+      "Computed in your browser from the pasted grid. Taste overlap: A rank among the 25 acts sent to Qloo just now, not attendance, and not comparable with a published day’s figures. This grid has 30 different acts and at most 25 are sent, so 5 acts are not sent and not compared.",
     );
     expect(briefFooter(null)).toBe(BRIEF_FOOTER);
+  });
+
+  it("prints a pair the person kept on purpose under Your decisions: the only place a clash is called on purpose", () => {
+    const pair = report.shared.find((item) => item.a.locked || item.b.locked) ?? report.shared[0];
+    const decision: Decision = {
+      id: pairDecisionId(pair),
+      label: pairLabel(pair),
+      status: "kept",
+      reason: null,
+      note: "",
+      change: null,
+    };
+    const page = text(renderToStaticMarkup(createElement(CheckBrief, { report, applied: [], decisions: [decision], price: null })));
+    expect(page).toContain(`Your decisions (1) ${decisionLine(decision)}`);
+    expect(decisionLine(decision)).toContain("Kept on purpose");
+    // A lock alone is never worded as on purpose.
+    const undecided = text(renderToStaticMarkup(createElement(CheckBrief, { report, applied: [], decisions: [], price: null })));
+    expect(undecided).not.toMatch(/on purpose|deliberate|intended/i);
+  });
+
+  it("labels a published day's snapshot as the published timetable, under the title", () => {
+    const label = publishedLabel("Brookfield 2030, Saturday");
+    const page = text(
+      renderToStaticMarkup(createElement(CheckBrief, { report, applied: [], decisions: [], price: null, published: label })),
+    );
+    expect(page).toContain(`Draft check, not a verdict ${label} Snapshot: the published timetable as checked.`);
+    expect(snapshotLine({ sample: false, checkedAt: null, applied: 0, published: true })).toBe("Snapshot: the published timetable as checked.");
+    expect(snapshotLine({ sample: false, checkedAt: null, applied: 0 })).toBe("Snapshot: the pasted grid as checked.");
   });
 });

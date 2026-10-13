@@ -21,7 +21,7 @@ type Step = { act: string; stage_id: string; day: number; start: string };
 export type InventedDay = {
   id: string;
   title: string;
-  /** The card's own move, as "Open this move" sends it. */
+  /** The card's own move, as "Keep this move" sends it. */
   cardStep: Step;
   /** Every request answered, as "METHOD path", in order. */
   served: string[];

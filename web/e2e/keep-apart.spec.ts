@@ -41,14 +41,25 @@ test.describe("keep two sets apart", () => {
     for (const change of await keep.changes.all()) {
       await expect(change).toContainText("Adds no rule break; ends this overlap.");
       await expect(change).toContainText(/\d+ sets? · \d+ minutes start-time shift · Index \d+\.\d → \d+\.\d/);
-      await expect(change.getByRole("list").getByRole("listitem").first()).toContainText(/ → .+ \d{2}:\d{2}–\d{2}:\d{2} \(moves to /);
+      await expect(change.getByRole("list").getByRole("listitem").first()).toContainText(/ → .+ \d{2}:\d{2}–\d{2}:\d{2} \((moves to |\d+ minutes (earlier|later), same stage)/);
     }
-    // Smallest change first: fewest sets, then the fewest minutes moved.
     const shifts = await keep.changes.evaluateAll((all) => all.map((item) => {
       const [, sets, minutes] = /(\d+) sets? · (\d+) minutes start-time shift/.exec(item.textContent ?? "") ?? [];
       return [Number(sets), Number(minutes)];
     }));
-    expect(shifts).toEqual([...shifts].sort((a, b) => a[0] - b[0] || a[1] - b[1]));
+    // A change that moves a set to another stage says it needs production sign-off; one that keeps every set on
+    // its stage does not, and those come first.
+    const signOff = await keep.changes.evaluateAll((all) => all.map((item) => {
+      const text = item.textContent ?? "";
+      return { movesStage: /\(moves to /.test(text), says: text.includes("Changes stage: needs production sign-off") };
+    }));
+    for (const change of signOff) expect(change.says, "a stage-changing change asks for sign-off, and only it").toBe(change.movesStage);
+    const firstStageChange = signOff.findIndex((change) => change.movesStage);
+    if (firstStageChange >= 0) expect(signOff.slice(firstStageChange).every((change) => change.movesStage), "same-stage changes first").toBe(true);
+    // Within each group, smallest change first: fewest sets, then the fewest minutes moved.
+    const sameStage = shifts.filter((_, i) => !signOff[i].movesStage);
+    const otherStage = shifts.filter((_, i) => signOff[i].movesStage);
+    for (const group of [sameStage, otherStage]) expect(group).toEqual([...group].sort((a, b) => a[0] - b[0] || a[1] - b[1]));
     // It says how many it found, and that the index does not rank the list.
     await expect(keep.area.getByRole("status")).toContainText(/^\d+ changes found for Sprints and Katy J Pearson\.$/);
     await expect(keep.area).toContainText("The index is shown for information: it is this app’s own measure, not a verdict, and it does not rank this list.");
@@ -124,7 +135,7 @@ test.describe("keep two sets apart", () => {
     // The card says it is in the plan, and pressing again says so.
     await expect(home.working.getByRole("button", { name: /^In your plan/ })).toBeVisible();
     await home.working.getByRole("button", { name: /^In your plan/ }).click();
-    await expect(home.card.getByRole("status")).toHaveText("Already in your plan.");
+    await expect(home.cardAnnouncement).toHaveText("Already in your plan.");
     await expect(move.kept).toHaveCount(1);
   });
 });

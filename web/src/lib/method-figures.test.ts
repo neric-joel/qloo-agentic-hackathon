@@ -41,6 +41,8 @@ function pageText(): string {
     .trim();
 }
 
+// The complaint set lives in the entry's private backtest folder (not in this repository). The test that reads it
+// skips when the file is absent, as it is on a clean clone.
 const COMPLAINTS = fileURLToPath(new URL("../../../_private/backtest/complaints.json", import.meta.url));
 
 /** A printed numeral: "18,762", "0.634", "3". */
@@ -433,16 +435,18 @@ describe("/method page", () => {
     expect(section).toContain(
       "The brief page prints this day's costliest clashes, the day's Clash Budget Index and any moves you kept, using only figures the timetable page already shows.",
     );
+    // It agrees with the home page's pilot offer: one brief back, free, with the same limits.
     expect(section).toContain(
-      "It is for evaluating this entry, it is not offered to festivals, and it leaves out Qloo's tags and identifiers.",
+      "It is for evaluating this entry. The pilot on the home page sends one back, free, to a festival that sends its bill, with the same limits: no Qloo tags or identifiers, and not for redistribution.",
     );
+    expect(section).not.toContain("it is not offered to festivals");
     expect(section.match(/\d/g)).toBeNull();
   });
 
-  it("opens with four short-version rows (popularity and the moves check share one), the third saying what the measure is good for", () => {
+  it("opens with five short-version rows (popularity and the moves check share one), the fourth saying what the measure is good for", () => {
     const html = renderToStaticMarkup(createElement(MethodPage));
     const box = html.match(/<section aria-labelledby="short-heading"[\s\S]*?<\/section>/)?.[0] ?? "";
-    expect(box.match(/<li/g)).toHaveLength(4);
+    expect(box.match(/<li/g)).toHaveLength(5);
     const text = pageText();
     expect(text).toContain(
       "It ranks a day's clashes and tests moves against timetable rules. Taste overlap is a rank, not attendance; our check did not find complained-about clashes better than popularity.",
@@ -462,8 +466,14 @@ describe("/method page", () => {
     );
     // AUC can fall below 0.5, so the page never calls 0.5 its floor.
     expect(text).not.toMatch(/from 0\.5/);
-    // Each term's plain words come before (or with) its first bare use.
-    expect(text.indexOf("AUC")).toBe(text.indexOf("AUC (0.5 means"));
+    // Each term's plain words come before (or with) its first bare use. The one exception is the short version's line
+    // on what the same test showed (round 31), which states the AUC figures right under the failed test; outside it,
+    // AUC's first use carries its plain words.
+    const held = text.indexOf("In the same test, taste overlap ranked");
+    expect(held).toBeGreaterThan(-1);
+    const afterHeld = text.slice(text.indexOf("Taste overlap is nearly unrelated to popularity (correlation", held));
+    expect(afterHeld.indexOf("AUC")).toBe(afterHeld.indexOf("AUC (0.5 means"));
+    expect(text.slice(0, held)).not.toContain("AUC");
     expect(text.indexOf("25% highest-ranked")).toBeLessThan(text.indexOf("top quarter"));
     expect(text).not.toMatch(/pre-set bar|re-ordering|top quartile/i);
   });
@@ -545,8 +555,12 @@ describe("/method exploratory result", () => {
     expect(text.indexOf("The test we set before building failed.")).toBeLessThan(
       text.indexOf("An exploratory follow-up"),
     );
-    // The figures are stated once, in the test section below, not repeated here.
-    expect(text).not.toContain("AUC");
+    // The test section below holds the full table; here AUC appears only in the line on what the same test showed,
+    // directly after the failed test (round 31).
+    const held = text.indexOf("In the same test, taste overlap ranked");
+    expect(held).toBeGreaterThan(text.indexOf("The test we set before building failed."));
+    expect(text.slice(0, held)).not.toContain("AUC");
+    expect(text.slice(text.indexOf("(correlation", held))).not.toContain("AUC");
   });
 
   it("uses none of the words the page must not use about this result", () => {

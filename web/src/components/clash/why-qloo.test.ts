@@ -9,8 +9,10 @@ import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
 
 import { placeText } from "./taste-lens";
 import {
+  biggestTasteMover,
   changesLine,
   concurrentPairs,
+  drawGloss,
   figureScale,
   NOT_AVAILABLE,
   QLOO_CHANGES_LINE,
@@ -25,6 +27,7 @@ import {
   WHAT_QLOO_ID,
   WhatQlooChanges,
   WhatQlooPointer,
+  moverLine,
   type SharedPair,
 } from "./why-qloo";
 
@@ -90,21 +93,42 @@ describe("threeReadings", () => {
 
   it("says when taste changes this pair's place", () => {
     const readings = threeReadings(lenses(), PAIRS, "one", "two");
-    expect(tasteVerdict(readings)).toBe("Taste moves this pair from #7 to #1.");
+    // The rank axis in the card's own words: minutes alone, time and draw, then with taste.
+    expect(tasteVerdict(readings)).toBe("Time alone ranks this pair #3, time and draw #7, with taste #1.");
+    // Without a minutes reading the time clause is dropped, never guessed.
+    expect(tasteVerdict({ ...readings, time: undefined })).toBe("Time and draw rank this pair #7, with taste #1.");
+    expect(tasteVerdict({ draw: readings.draw, taste: readings.taste })).toBe("Time and draw rank this pair #7, with taste #1.");
   });
 
   it("says when taste changes nothing", () => {
     const readings = threeReadings(lenses(), PAIRS, "four", "three");
     expect(readings.taste).toEqual({ rank: 2, of: 40 });
     expect(readings.draw).toEqual({ rank: 2, of: 40 });
-    expect(tasteVerdict(readings)).toBe("Taste does not change this pair’s place.");
+    // A finding, not a shrug: taste agrees with time and draw, at the shared place.
+    expect(tasteVerdict(readings)).toBe("Taste agrees with time and draw: #2 either way.");
+  });
+
+  it("glosses draw once where the card first says it: Qloo popularity, or invented popularity on the invented day", () => {
+    expect(drawGloss(false)).toBe("Qloo popularity");
+    expect(drawGloss(true)).toBe("invented popularity");
+    const moved = threeReadings(lenses(), PAIRS, "one", "two");
+    const same = threeReadings(lenses(), PAIRS, "three", "four");
+    expect(tasteVerdict(moved, drawGloss(false))).toBe(
+      "Time alone ranks this pair #3, time and draw (Qloo popularity) #7, with taste #1.",
+    );
+    expect(tasteVerdict(moved, drawGloss(true))).toBe(
+      "Time alone ranks this pair #3, time and draw (invented popularity) #7, with taste #1.",
+    );
+    expect(tasteVerdict(same, drawGloss(false))).toBe("Taste agrees with time and draw (Qloo popularity): #2 either way.");
+    expect(tasteVerdict(same, drawGloss(true))).toBe("Taste agrees with time and draw (invented popularity): #2 either way.");
+    expect(tasteVerdict(same, drawGloss(true))).not.toMatch(/Qloo/);
   });
 
   it("finds a pair listed only in the draw-and-time list", () => {
     const readings = threeReadings(lenses(), PAIRS, "seven", "eight");
     expect(readings.draw).toEqual({ rank: 1, of: 40 });
     expect(readings.taste).toEqual({ rank: 19, of: 40 });
-    expect(tasteVerdict(readings)).toBe("Taste moves this pair from #1 to #19.");
+    expect(tasteVerdict(readings)).toBe("Time alone ranks this pair #1, time and draw #1, with taste #19.");
   });
 
   it("ranks minutes alone with ties sharing a place, over the day's concurrent pairs", () => {
@@ -321,10 +345,10 @@ describe("WhatQlooChanges", () => {
   it("makes no claim when taste does not move the pair, and keeps the caption then", () => {
     const plain = text(render({ aId: "three", bId: "four" }));
     expect(plain).toContain("Same 60-minute clash.");
-    expect(plain).toContain("Taste does not change this pair’s place.");
+    expect(plain).toContain("Taste agrees with time and draw: #2 either way.");
     expect(plain).not.toContain(QLOO_CHANGES_LINE);
     expect(plain).toContain(READINGS_CAPTION);
-    expect(changesLine(threeReadings(lenses(), PAIRS, "three", "four"))).toBe("Taste does not change this pair’s place.");
+    expect(changesLine(threeReadings(lenses(), PAIRS, "three", "four"))).toBe("Taste agrees with time and draw: #2 either way.");
   });
 
   it("labels the invented day everywhere and never credits Qloo for it", () => {
@@ -351,12 +375,20 @@ describe("WhatQlooPointer", () => {
     const html = renderToStaticMarkup(
       createElement(WhatQlooPointer, { lenses: lenses(), pairs: PAIRS, aId: "one", bId: "two" }),
     );
-    expect(text(html)).toBe("Taste moves this pair from #7 to #1. See what Qloo changes");
+    expect(text(html)).toBe(
+      "Time alone ranks this pair #3, time and draw (Qloo popularity) #7, with taste #1. See what Qloo changes",
+    );
     expect(html).toContain(`href="#${WHAT_QLOO_ID}"`);
     const synthetic = renderToStaticMarkup(
       createElement(WhatQlooPointer, { lenses: lenses(), pairs: PAIRS, aId: "one", bId: "two", synthetic: true }),
     );
-    expect(text(synthetic)).toBe("Taste moves this pair from #7 to #1. See what taste changes");
+    expect(text(synthetic)).toBe(
+      "Time alone ranks this pair #3, time and draw (invented popularity) #7, with taste #1. See what taste changes",
+    );
+    const same = renderToStaticMarkup(
+      createElement(WhatQlooPointer, { lenses: lenses(), pairs: PAIRS, aId: "three", bId: "four" }),
+    );
+    expect(text(same)).toBe("Taste agrees with time and draw (Qloo popularity): #2 either way. See what Qloo changes");
   });
 });
 
@@ -441,7 +473,10 @@ describe("TasteSection", () => {
     const visible = text(withoutDisclosures(html));
     expect(visible).toContain(QLOO_CHANGES_LINE);
     expect(visible).toContain(FAILED);
-    expect(visible).toContain("second opinion beside time and draw, never folded into a verdict");
+    expect(visible).toContain(
+      "So the taste reading is a second opinion beside time and draw: it is one of the four parts of the price of each clash, the part Qloo adds, and never the verdict on its own.",
+    );
+    expect(visible).not.toContain("never folded into a verdict");
     expect(withoutDisclosures(html)).toContain('href="/method#tested"');
     expect(visible).not.toContain("Two rivals for");
     expect(visible).not.toContain("Costliest with taste overlap, lower without");
@@ -457,7 +492,7 @@ describe("TasteSection", () => {
     // The figure's axis caption, then the changes line, then the readings caption: nothing between them.
     const after = html.slice(html.indexOf("data-axis-caption"));
     expect(after).toMatch(
-      /^data-axis-caption=""[^>]*>[\s\S]*?<\/p><\/div><\/div><p class="mt-4 max-w-prose font-semibold">Taste does not change this pair’s place\.<\/p><p class="mt-1\.5 max-w-prose text-\[0\.8125rem\] leading-snug">/,
+      /^data-axis-caption=""[^>]*>[\s\S]*?<\/p><\/div><\/div><p class="mt-4 max-w-prose font-semibold">Taste agrees with time and draw: #2 either way\.<\/p><p class="mt-1\.5 max-w-prose text-\[0\.8125rem\] leading-snug">/,
     );
     expect(text(after)).toContain(READINGS_CAPTION);
     // The failed test is the last block, outside every disclosure.
@@ -469,8 +504,46 @@ describe("TasteSection", () => {
 
   it("keeps the caption visible when taste does not move the pair", () => {
     const visible = text(withoutDisclosures(render({ clash: { ...CLASH, aId: "three", bId: "four" } })));
-    expect(visible).toContain("Taste does not change this pair’s place.");
+    expect(visible).toContain("Taste agrees with time and draw: #2 either way.");
     expect(visible).toContain(READINGS_CAPTION);
+  });
+
+  it("names the day's biggest taste mover from the same lens lists when taste leaves the card's pair where it was", () => {
+    // In the fixture, Act Seven and Act Eight move furthest: #1 on time and draw, #19 with taste.
+    expect(biggestTasteMover(lenses())).toEqual({ a: "Act Seven", b: "Act Eight", from: 1, to: 19 });
+    expect(moverLine({ a: "Act Seven", b: "Act Eight", from: 1, to: 19 })).toBe(
+      "In this day’s two rankings, taste moves Act Seven × Act Eight the most: from #1 to #19.",
+    );
+    const line = "In this day’s two rankings, taste moves Act Seven × Act Eight the most: from #1 to #19.";
+    const unchanged = withoutDisclosures(render({ clash: { ...CLASH, aId: "three", bId: "four" } }));
+    expect(text(unchanged)).toContain(line);
+    expect(unchanged).toMatch(/<p data-taste-mover="" class="[^"]*">/);
+    expect(unchanged).not.toMatch(/data-taste-mover=""[^>]*class="[^"]*(prov-qloo|text-primary)/);
+    // Visible, after the readings caption and before the disclosures.
+    expect(text(unchanged).indexOf(line)).toBeGreaterThan(text(unchanged).indexOf(READINGS_CAPTION));
+    // Not when taste moves the card's own pair: the bold line already says what taste changes.
+    expect(text(render())).not.toContain("taste moves Act Seven");
+    // Not without a pair that changes place.
+    const still = lenses({
+      with_taste: [{ a: "Act Three", b: "Act Four", a_id: "three", b_id: "four", rank: 2, rank_without_taste: 2 }],
+      without_taste: [{ a: "Act Three", b: "Act Four", a_id: "three", b_id: "four", rank: 2, rank_with_taste: 2 }],
+    });
+    expect(biggestTasteMover(still)).toBeNull();
+    expect(text(render({ clash: { ...CLASH, aId: "three", bId: "four" }, lenses: still }))).not.toContain("the most:");
+    // Ties go to the pair placed higher with taste.
+    expect(
+      biggestTasteMover({
+        with_taste: [
+          { a: "A", b: "B", a_id: "a", b_id: "b", rank: 5, rank_without_taste: 9 },
+          { a: "C", b: "D", a_id: "c", b_id: "d", rank: 2, rank_without_taste: 6 },
+        ],
+        without_taste: [],
+      }),
+    ).toEqual({ a: "C", b: "D", from: 6, to: 2 });
+    // On the invented day the line names no source.
+    const invented = text(render({ clash: { ...CLASH, aId: "three", bId: "four" }, synthetic: true }));
+    expect(invented).toContain(line);
+    expect(qlooCredits(line)).toEqual([]);
   });
 
   it("still renders its heading and the failed test, visible, with no clash and no lens data", () => {

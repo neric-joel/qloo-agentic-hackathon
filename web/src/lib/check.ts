@@ -627,6 +627,32 @@ export function suggestName(typed: string, acts: ReadonlyMap<string, string>): {
   return { match: null, nearest: scored.slice(0, NEAREST_SHOWN).map((item) => item.act) };
 }
 
+/**
+ * Whether a listed name is close enough to what was typed to offer it as the same act: a typo of the whole
+ * name, of its start or of one of its words (about one edit in four letters). "Marlwe" is close to
+ * "Marlowe & The Tides"; "Saffron Season" is not close to an unrelated act, so the page never offers to
+ * swap a pair rule onto an act the person did not mean.
+ */
+export function isCloseName(typed: string, name: string): boolean {
+  const key = normalizeName(typed);
+  const other = normalizeName(name);
+  const length = Array.from(key).length;
+  if (length === 0) return false;
+  const allowed = Math.max(1, Math.floor(length / 4));
+  const prefix = Array.from(other).slice(0, length).join("");
+  const words = wordsOf(other).map((word) => editDistance(key, word));
+  return Math.min(editDistance(key, other), editDistance(key, prefix), ...words) <= allowed;
+}
+
+/** The pair rules with one line (counting from 1) taken out, as "Remove this rule" asks; other lines exactly as typed. */
+export function removePairLine(pairs: string, line: number): string {
+  const lines = pairs.split(/\r\n|\r|\n/);
+  const at = line - 1;
+  if (at < 0 || at >= lines.length) return pairs;
+  const next = lines.filter((_, index) => index !== at).join("\n");
+  return next.trim() === "" ? "" : next;
+}
+
 /** Changeover, curfew and pair rules, checked against the sets they name. */
 export function parseSettings(input: Omit<CheckInput, "grid">, sets: readonly CheckSet[]): SettingsResult {
   const problems = new Problems();

@@ -32,13 +32,13 @@ test.describe("keyboard", () => {
       /^Color theme: /,
       /^Paste your own draft grid$/,
       /^See what Qloo changes$/,
-      /^Open this move$/,
+      /^Keep this move$/,
       /^Show the working$/,
       /^Sources$/,
       /^1 What Qloo changes$/,
-      /^2 Why this matters$/,
-      /^3 Timetable$/,
-      /^4 Hidden clashes$/,
+      /^2 Hidden clashes$/,
+      /^3 Why this matters$/,
+      /^4 Timetable$/,
       /^5 Try a move$/,
       /^6 Recorded runs$/,
       /^7 Sources$/,
@@ -58,20 +58,27 @@ test.describe("keyboard", () => {
     await home.showWorking.focus();
     expect((await stop(page)).name).toBe("Show the working");
     await page.keyboard.press("Shift+Tab");
-    expect((await stop(page)).name).toBe("Open this move");
+    expect((await stop(page)).name).toBe("Keep this move");
     await page.keyboard.press("Shift+Tab");
     expect((await stop(page)).name).toBe("See what Qloo changes");
   });
 
-  test("Enter on Open this move tests the move, and focus lands on the answer", async ({ page }) => {
+  test("Enter on Keep this move keeps the move with focus on See your plan, and Enter there lands on the plan", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
-    await home.openMove.focus();
+    await home.keepMove.focus();
+    const scrolled = await page.evaluate(() => window.scrollY);
     await page.keyboard.press("Enter");
-    const plan = home.tryAMove.getByRole("group", { name: "Your tested moves" });
-    await expect(plan).toBeFocused();
-    await expect(plan.getByRole("list", { name: "Kept moves" }).getByRole("listitem")).toHaveCount(1);
+    // Focus never drops to the page: it moves to the way to the plan, and the page does not scroll.
+    await expect(home.seeYourPlan).toBeFocused();
+    expect((await stop(page)).ring, "See your plan shows a focus ring").toBeGreaterThanOrEqual(2);
+    expect(await page.evaluate(() => window.scrollY)).toBe(scrolled);
+    await expect(home.plan.getByRole("list", { name: "Kept moves" }).getByRole("listitem")).toHaveCount(1);
+
+    await page.keyboard.press("Enter");
+    await expect(home.plan).toBeFocused();
+    await expect(home.plan).toBeInViewport();
   });
 
   test("a rail link opens its section on Enter", async ({ page }) => {
@@ -120,11 +127,7 @@ test.describe("keyboard", () => {
   });
 
   test("focus stays on the day tabs after the day changes, so the next arrow key works", async ({ page }) => {
-    // DEFECT (app): choosing a day remounts the whole day view (PresetView is keyed by the preset id, and the
-    // tabs live inside it), so keyboard focus drops to <body>. After ArrowRight on the tabs the next
-    // ArrowLeft goes nowhere and a keyboard visitor has to Tab in from the top of the page again.
-    // Repro: open /, focus the "Glastonbury 2025, Sunday" tab, press ArrowRight, read document.activeElement.
-    test.fail(true, "Focus is lost to <body> when a day is chosen with the keyboard (see comment)");
+    // Was defect D2 (round 31): choosing a day remounted the day view and dropped focus to <body>.
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
@@ -132,6 +135,11 @@ test.describe("keyboard", () => {
     await page.keyboard.press("ArrowRight");
     await expect(home.page.getByText(`Published timetable · ${DAYS.riot.title}`)).toBeVisible();
     await expect(home.dayPicker.getByRole("radio", { name: DAYS.riot.title })).toBeFocused({ timeout: 3_000 });
+
+    // The next arrow works from there.
+    await page.keyboard.press("ArrowLeft");
+    await expect(home.page.getByText(`Published timetable · ${DAYS.glastonbury.title}`)).toBeVisible();
+    await expect(home.dayPicker.getByRole("radio", { name: DAYS.glastonbury.title })).toBeFocused({ timeout: 3_000 });
   });
 
   test("disclosures open and close with Enter and Space", async ({ page }) => {

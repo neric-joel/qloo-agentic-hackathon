@@ -5,7 +5,17 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { INTRO_FALLBACK_MS, INTRO_LINE, INTRO_MARKS, INTRO_TIMELINE, INTRO_WORDS, IntroReveal } from "./intro-reveal";
+import {
+  INTRO_FALLBACK_MS,
+  INTRO_LINE,
+  INTRO_MARKS,
+  INTRO_ONCE_SCRIPT,
+  INTRO_SEEN_KEY,
+  INTRO_TIMELINE,
+  INTRO_TIMING_CSS,
+  INTRO_WORDS,
+  IntroReveal,
+} from "./intro-reveal";
 
 vi.mock("next/font/google", () => ({
   Archivo: () => ({ variable: "font-archivo" }),
@@ -32,7 +42,16 @@ async function introScript(): Promise<string> {
   return script ?? "";
 }
 
-type Visit = { path?: string; hash?: string; seen?: boolean; reduce?: boolean; storageFails?: boolean };
+type Visit = {
+  path?: string;
+  hash?: string;
+  seen?: boolean;
+  reduce?: boolean;
+  storageFails?: boolean;
+  /** This visitor saw the curtain on an earlier visit (localStorage). */
+  seenBefore?: boolean;
+  localFails?: boolean;
+};
 
 type StandInEvent = {
   type: string;
@@ -77,8 +96,27 @@ class StandInNode {
 }
 
 /** Runs the head script in a stand-in browser and reports what it left behind. */
-async function run({ path = "/", hash = "", seen = false, reduce = false, storageFails = false }: Visit) {
+async function run({
+  path = "/",
+  hash = "",
+  seen = false,
+  reduce = false,
+  storageFails = false,
+  seenBefore = false,
+  localFails = false,
+}: Visit) {
   const store = new Map<string, string>(seen ? [["cc.intro.v2", "1"]] : []);
+  const local = new Map<string, string>(seenBefore ? [[INTRO_SEEN_KEY, "1"]] : []);
+  const localStorage = {
+    getItem: (key: string) => {
+      if (localFails) throw new Error("blocked");
+      return local.get(key) ?? null;
+    },
+    setItem: (key: string, value: string) => {
+      if (localFails) throw new Error("blocked");
+      local.set(key, value);
+    },
+  };
   const attributes = new Map<string, string>();
   const sessionStorage = {
     getItem: (key: string) => {
@@ -95,6 +133,7 @@ async function run({ path = "/", hash = "", seen = false, reduce = false, storag
   const dispatched: string[] = [];
   const window = {
     sessionStorage,
+    localStorage,
     matchMedia,
     addEventListener: (type: string, handler: (e: StandInEvent) => void, options: boolean | { capture?: boolean }) => {
       const capture = options === true || (typeof options === "object" && options.capture === true);
@@ -116,6 +155,7 @@ async function run({ path = "/", hash = "", seen = false, reduce = false, storag
     documentElement: {
       setAttribute: (name: string, value: string) => attributes.set(name, value),
       getAttribute: (name: string) => attributes.get(name) ?? null,
+      removeAttribute: (name: string) => attributes.delete(name),
     },
     querySelector: (selector: string) => (selector === ".cc-intro" ? overlay : null),
   };
@@ -125,6 +165,8 @@ async function run({ path = "/", hash = "", seen = false, reduce = false, storag
   }
   const args = { window, location, document, matchMedia, getComputedStyle, Node: StandInNode, Event };
   new Function(...Object.keys(args), await introScript())(...Object.values(args));
+  // Then the overlay's own script, as the parser reaches it at the top of the body.
+  new Function(...Object.keys(args), INTRO_ONCE_SCRIPT)(...Object.values(args));
   /** Fires one event at the window's listener for it, as the browser does first, in the capture phase. */
   const fire = (e: StandInEvent) => {
     listeners.get(e.type)?.handler(e);
@@ -133,6 +175,7 @@ async function run({ path = "/", hash = "", seen = false, reduce = false, storag
   return {
     intro: attributes.get("data-intro") ?? null,
     key: store.get("cc.intro.v2") ?? null,
+    seenKey: local.get(INTRO_SEEN_KEY) ?? null,
     state: () => attributes.get("data-intro") ?? null,
     listeners,
     dispatched,
@@ -160,6 +203,36 @@ describe("the head script", () => {
   it("skips it when session storage cannot be used", async () => {
     const { intro, key } = await run({ storageFails: true });
     expect({ intro, key }).toEqual({ intro: null, key: null });
+  });
+});
+
+describe("once per visitor", () => {
+  it("remembers a first showing in localStorage", async () => {
+    const { intro, key, seenKey } = await run({});
+    expect({ intro, key, seenKey }).toEqual({ intro: "play", key: "1", seenKey: "1" });
+  });
+
+  it("does not play again for a visitor who has seen it, in a new tab or on a later visit", async () => {
+    const { intro, key, seenKey } = await run({ seenBefore: true });
+    expect({ intro, key, seenKey }).toEqual({ intro: null, key: "1", seenKey: "1" });
+  });
+
+  it("still honours the tab's own key first, and remembers nothing when the curtain did not play", async () => {
+    for (const visit of [{ seen: true }, { path: "/method" }, { reduce: true }, { hash: "#agent" }]) {
+      const { intro, seenKey } = await run(visit);
+      expect({ intro, seenKey }).toEqual({ intro: null, seenKey: null });
+    }
+  });
+
+  it("leaves the tab's decision alone when localStorage cannot be used", async () => {
+    const { intro, key } = await run({ localFails: true });
+    expect({ intro, key }).toEqual({ intro: "play", key: "1" });
+  });
+
+  it("runs as the overlay is parsed, after the head script and before anything else in the body", async () => {
+    const html = await layoutHtml();
+    expect(html.indexOf("cc.intro.v2")).toBeLessThan(html.indexOf(INTRO_SEEN_KEY));
+    expect(html).toMatch(/<body[^>]*><div class="cc-intro" aria-hidden="true"><script>/);
   });
 });
 
@@ -232,8 +305,10 @@ describe("the overlay", () => {
   it("keeps its words out of the page's text, hidden from assistive technology", () => {
     const html = renderToStaticMarkup(createElement(IntroReveal));
     expect(html).toContain('aria-hidden="true"');
-    // The words are generated content (`content: attr(...)`), so the DOM has no text nodes to read.
-    expect(html.replace(/<[^>]+>/g, "").trim()).toBe("");
+    // The words are generated content (`content: attr(...)`), so the DOM has no text nodes to read (the
+    // overlay's own script and style are not text).
+    const visible = html.replace(/<script>[\s\S]*?<\/script>|<style>[\s\S]*?<\/style>/g, "");
+    expect(visible.replace(/<[^>]+>/g, "").trim()).toBe("");
     expect(html).not.toMatch(/<text|<title|<img/);
     for (const { word } of INTRO_WORDS) expect(html).toContain(`data-w="${word}"`);
     expect(html).toContain(`data-a="${INTRO_LINE[0]}"`);
@@ -252,21 +327,28 @@ describe("the overlay", () => {
     }
   });
 
+  it("asks the home page's own question", () => {
+    expect(INTRO_LINE.join(" ")).toBe("Which clash is worth moving?");
+  });
+
   it("rolls the words back to back, each held long enough to read, before the line draws", () => {
     INTRO_WORDS.forEach(({ from, to }, i) => {
-      expect(to - from).toBeGreaterThanOrEqual(450);
+      expect(to - from).toBeGreaterThanOrEqual(200);
       if (i > 0) expect(from).toBe(INTRO_WORDS[i - 1].to);
     });
     const html = renderToStaticMarkup(createElement(IntroReveal));
-    for (const { from, to } of INTRO_WORDS) expect(html).toContain(`--d:${from}ms;--t:${to - from}ms`);
+    for (const { word, from, to } of INTRO_WORDS) {
+      // Each word's motion (`--t`) runs past its window by the time it takes to leave as the next arrives.
+      const [, duration] = html.match(new RegExp(`--d:${from}ms;--t:(\\d+)ms`)) ?? [];
+      expect(Number(duration), word).toBeGreaterThanOrEqual(to - from);
+    }
     expect(INTRO_WORDS[INTRO_WORDS.length - 1].to).toBeLessThanOrEqual(INTRO_TIMELINE.line + 40);
   });
 });
 
 describe("the intro's CSS", () => {
   const css = readFileSync(fileURLToPath(new URL("../../app/globals.css", import.meta.url)), "utf8");
-  const block = (start: string) => {
-    const from = css.indexOf(start);
+  const block = (start: string, from = css.indexOf(start)) => {
     let depth = 0;
     for (let i = css.indexOf("{", from); i < css.length; i++) {
       if (css[i] === "{") depth++;
@@ -274,11 +356,17 @@ describe("the intro's CSS", () => {
     }
     return "";
   };
+  /** Every block that opens with `start` (a stylesheet may hold several `@media print` blocks). */
+  const blocks = (start: string) => {
+    const found: string[] = [];
+    for (let at = css.indexOf(start); at !== -1; at = css.indexOf(start, at + start.length)) found.push(block(start, at));
+    return found;
+  };
 
   it("shows nothing unless the head script armed it, and nothing in print or under reduced motion", () => {
     expect(block(".cc-intro {")).toMatch(/display:\s*none/);
     for (const media of ["@media print", "@media (prefers-reduced-motion: reduce)"]) {
-      expect(block(media)).toMatch(/\.cc-intro\s*\{\s*display:\s*none !important;/);
+      expect(blocks(media).some((body) => /\.cc-intro\s*\{\s*display:\s*none !important;/.test(body)), media).toBe(true);
     }
     const playing = block('html[data-intro="play"] .cc-intro {');
     expect(playing).toMatch(/position:\s*fixed/);
@@ -294,27 +382,23 @@ describe("the intro's CSS", () => {
     expect(lift).toMatch(/99%\s*\{\s*pointer-events:\s*auto;/);
   });
 
-  it("draws the line, opens the question, holds it, lifts at 3.25 s and ends hidden by 3.85 s, with no script", () => {
-    const playing = block('html[data-intro="play"] .cc-intro {');
-    const [, duration, delay] = playing.match(/cc-intro-lift (\d+)ms [^;]*? (\d+)ms both/) ?? [];
-    expect(Number(delay)).toBe(INTRO_TIMELINE.lift);
-    expect(Number(delay) + Number(duration)).toBe(INTRO_TIMELINE.end);
-    expect(INTRO_TIMELINE.end).toBeLessThanOrEqual(4000);
-    expect(INTRO_FALLBACK_MS).toBeGreaterThan(INTRO_TIMELINE.end);
-    expect(INTRO_FALLBACK_MS).toBeLessThanOrEqual(4500);
+  it("draws every piece the overlay's clock sets, and ends hidden with no script", () => {
     expect(block("@keyframes cc-intro-lift")).toMatch(/visibility:\s*hidden/);
-    expect(block(".cc-if-edges {")).toMatch(new RegExp(`cc-i-draw \\d+ms [^;]*? ${INTRO_TIMELINE.line}ms both`));
-    const open = block(".cc-if-text {").match(new RegExp(`cc-i-open (\\d+)ms [^;]*? ${INTRO_TIMELINE.open}ms both`));
-    expect(open).not.toBeNull();
-    // The question is fully open and readable for at least a quarter second before the sheet lifts.
-    expect(INTRO_TIMELINE.lift - (INTRO_TIMELINE.open + Number(open?.[1]))).toBeGreaterThanOrEqual(250);
-    expect(block(".cc-if-rule {")).toMatch(new RegExp(`cc-i-swipe \\d+ms [^;]*? ${INTRO_TIMELINE.rule}ms both`));
-    // The progress rule runs until the lift, then hands over to the curved edge.
-    expect(block(".cc-intro-progress {")).toMatch(new RegExp(`cc-i-grow ${INTRO_TIMELINE.lift}ms`));
-    // The curved edge flattens while the sheet lifts and is flat by the time it has gone.
-    const [, bendFor, bendAt] = block(".cc-ie-bend {").match(/cc-intro-flatten (\d+)ms [^;]*? (\d+)ms both/) ?? [];
-    expect(Number(bendAt)).toBeGreaterThanOrEqual(INTRO_TIMELINE.lift);
-    expect(Number(bendAt) + Number(bendFor)).toBe(INTRO_TIMELINE.end);
+    for (const part of [
+      'html[data-intro="play"] .cc-intro {',
+      ".cc-intro-stage {",
+      ".cc-intro-dot {",
+      ".cc-iw {",
+      ".cc-iw-last::before {",
+      ".cc-if-text {",
+      ".cc-if-edges {",
+      ".cc-if-rule {",
+      ".cc-intro-progress {",
+      ".cc-ie-bend {",
+      'html[data-intro="play"] #main {',
+    ]) {
+      expect(block(part), part).toMatch(/animation/);
+    }
   });
 
   it("is the same cool ink-blue sheet in both themes, with a vermilion line on its curved edge", () => {
@@ -327,11 +411,8 @@ describe("the intro's CSS", () => {
     expect(block(".cc-ie-line {")).toMatch(/vector-effect:\s*non-scaling-stroke/);
   });
 
-  it("raises the page under it into place as the curtain lifts, by transform only, ending with it", () => {
-    const rise = block('html[data-intro="play"] #main {');
-    const [, duration, delay] = rise.match(/cc-intro-rise (\d+)ms [^;]*? (\d+)ms backwards/) ?? [];
-    expect(Number(delay)).toBe(INTRO_TIMELINE.lift);
-    expect(Number(delay) + Number(duration)).toBeLessThanOrEqual(INTRO_TIMELINE.end);
+  it("raises the page under it into place as the curtain lifts, by transform only (the clock below times it)", () => {
+    expect(block('html[data-intro="play"] #main {')).toMatch(/cc-intro-rise \d+ms [^;]*? \d+ms backwards/);
     expect(block("@keyframes cc-intro-rise")).not.toMatch(/opacity/);
   });
 
@@ -344,4 +425,68 @@ describe("the intro's CSS", () => {
       for (const property of properties) expect(property, `${name}: ${property}`).toMatch(allowed);
     }
   });
+});
+
+describe("the curtain's clock (INTRO_TIMING_CSS)", () => {
+  const P = 'html[data-intro="play"]';
+  /** The delay and duration the clock sets for one selector, in ms. */
+  const timing = (selector: string) => {
+    const rule = INTRO_TIMING_CSS.split("}").find((item) =>
+      item
+        .split("{")[0]
+        .split(",")
+        .some((part) => part.trim() === selector),
+    );
+    const [, duration] = rule?.match(/animation-duration:(\d+)ms/) ?? [];
+    const [, delay] = rule?.match(/animation-delay:(\d+)ms/) ?? [];
+    return { duration: Number(duration), delay: Number(delay) };
+  };
+
+  it("lifts the sheet and has it gone in under 1.5 s, the page rising under it and ending with it", () => {
+    expect(INTRO_TIMELINE.end).toBeLessThanOrEqual(1500);
+    for (const selector of [`${P} .cc-intro`, `${P} .cc-intro-stage`, `${P} #main`]) {
+      const { duration, delay } = timing(selector);
+      expect(delay, selector).toBe(INTRO_TIMELINE.lift);
+      expect(delay + duration, selector).toBe(INTRO_TIMELINE.end);
+    }
+    expect(INTRO_FALLBACK_MS).toBeGreaterThan(INTRO_TIMELINE.end);
+    expect(INTRO_FALLBACK_MS).toBeLessThanOrEqual(2000);
+  });
+
+  it("draws the line, opens the question and holds it open before the sheet lifts", () => {
+    expect(timing(`${P} .cc-if-edges`).delay).toBe(INTRO_TIMELINE.line);
+    const open = timing(`${P} .cc-if-text`);
+    expect(open.delay).toBe(INTRO_TIMELINE.open);
+    expect(timing(`${P} .cc-if-l`)).toEqual(open);
+    expect(timing(`${P} .cc-if-r`)).toEqual(open);
+    // Fully open for at least an eighth of a second before the sheet starts to lift, and readable as it lifts.
+    expect(INTRO_TIMELINE.lift - (open.delay + open.duration)).toBeGreaterThanOrEqual(120);
+    expect(timing(`${P} .cc-if-rule`).delay).toBe(INTRO_TIMELINE.rule);
+    expect(INTRO_TIMELINE.line).toBeLessThan(INTRO_TIMELINE.open);
+    expect(INTRO_TIMELINE.open).toBeLessThan(INTRO_TIMELINE.rule);
+    expect(INTRO_TIMELINE.rule).toBeLessThan(INTRO_TIMELINE.lift);
+  });
+
+  it("shows how to skip from the first frame", () => {
+    expect(INTRO_TIMING_CSS).toContain(`${P} .cc-intro-mark,${P} .cc-intro-skip{animation:none}`);
+  });
+
+  it("runs the progress rule until the lift and has the curved edge flat by the time the sheet has gone", () => {
+    expect(INTRO_TIMING_CSS).toContain(`.cc-intro-progress{animation-duration:${INTRO_TIMELINE.lift}ms,`);
+    const bend = timing(`${P} .cc-ie-bend`);
+    expect(bend.delay).toBeGreaterThanOrEqual(INTRO_TIMELINE.lift);
+    expect(bend.delay + bend.duration).toBe(INTRO_TIMELINE.end);
+  });
+
+  it("beats the dot on each new word and lets it go as the line draws", () => {
+    const dot = INTRO_TIMING_CSS.split("}").find((rule) => rule.includes(".cc-intro-dot{")) ?? "";
+    for (const { from } of INTRO_WORDS.slice(1)) expect(dot).toContain(`cc-i-beat 160ms cubic-bezier(0.22,1,0.36,1) ${from}ms`);
+    expect(dot).toContain(`cc-i-out 160ms cubic-bezier(0.65,0,0.35,1) ${INTRO_TIMELINE.line}ms forwards`);
+  });
+
+  it("sits in the overlay itself, so it applies from first paint with no script", () => {
+    const html = renderToStaticMarkup(createElement(IntroReveal));
+    expect(html).toMatch(/<style>[^<]*\.cc-intro-progress\{animation-duration:/);
+  });
+
 });

@@ -2,9 +2,10 @@ import Link from "next/link";
 import { ArrowRight, ChevronDown } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 
+import { BySyntheticDay } from "@/components/site/synthetic-context";
 import { CHECK_LIVE } from "@/lib/check-flag";
 
-import { DEMAND, PILOT, PILOT_CONTACT, type Demand } from "@/lib/demand";
+import { DEMAND, PAYER_GUESS, PILOT, PILOT_CONTACT, PILOT_TERMS, type Demand } from "@/lib/demand";
 import { METHOD_FIGURES, formatCount, formatPct, methodRow, numberWord, type MethodId } from "@/lib/method-figures";
 import { PUBLIC_VOICES, type PublicVoice } from "@/lib/public-voices";
 import { cn } from "@/lib/utils";
@@ -118,7 +119,7 @@ function contactHref(contact: string): string {
  * heavier than "Who would pay is not known." above it. No card, fill, stat or button. It names no customer, count or
  * reply: it says what would count as success and that one answer is not a market.
  */
-function PilotOffer({ contact }: { contact: string | null }) {
+function PilotOffer({ contact, terms }: { contact: string | null; terms: string | null }) {
   const { bills, requestsPerBill, monthlyRequests } = PILOT;
   return (
     <div data-pilot className="border-t border-border pt-8">
@@ -173,6 +174,12 @@ function PilotOffer({ contact }: { contact: string | null }) {
           </Fold>
         </div>
       </div>
+      {/* The terms, once the owner has confirmed them: in the open under the offer, body size, muted on paper. */}
+      {terms ? (
+        <p data-pilot-terms className="mt-4 max-w-[68ch] text-muted-foreground">
+          {terms}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -186,6 +193,12 @@ const COMPLAINT_AXIS = 120;
 function minutesAt(minutes: number): string {
   return `${Math.round((minutes / COMPLAINT_AXIS) * 100000) / 1000}%`;
 }
+
+/**
+ * Said under the complaint finding, so no reader takes the complaints for a verdict on the day above: most are about
+ * other festivals and days (a few name sets on the two published days, so "none" would not be true).
+ */
+export const COMPLAINTS_ELSEWHERE = "Most of these complaints are about other festivals and days, not the days this app shows.";
 
 /** The complaint figure's caption, built from the pair count. */
 export function complaintCaption(pairsVerified: number): string {
@@ -581,15 +594,35 @@ function PublicVoices() {
   );
 }
 
+/** The taste reading's place in the price, on a published day and on the invented one. */
+export const QLOO_PART = "the part Qloo adds";
+export const QLOO_PART_INVENTED = "the taste-overlap part";
+
 /**
  * What the failed pre-set test taught us, in its own block: the figure against the bar, that popularity
  * did better, and what that makes the taste reading. It is the last block of the taste section on the
  * home page, always rendered and never inside a disclosure. The AUC figures stay on /method, where AUC
  * is defined; this block links there. Server-rendered.
  */
-export function FailedTestNote({ className }: { className?: string }) {
+export function FailedTestNote({
+  className,
+  synthetic,
+}: {
+  className?: string;
+  /** The invented day, when the caller knows it; without it the page's shared flag decides. */
+  synthetic?: boolean;
+}) {
   const { backtest } = METHOD_FIGURES;
   const taste = methodRow("taste");
+  // Nothing on the invented day credits Qloo, so there the price's fourth part is named for what it is.
+  const part =
+    synthetic === undefined ? (
+      <BySyntheticDay real={QLOO_PART} invented={QLOO_PART_INVENTED} />
+    ) : synthetic ? (
+      QLOO_PART_INVENTED
+    ) : (
+      QLOO_PART
+    );
   return (
     <div className={cn("text-sm leading-relaxed", className)}>
       <h3 className="text-base font-semibold">What the failed test taught us.</h3>
@@ -600,8 +633,10 @@ export function FailedTestNote({ className }: { className?: string }) {
           better. The exploratory follow-up did not establish an advantage over popularity.
         </p>
         <p className="max-w-prose">
-          So the taste reading is a second opinion beside time and draw, never folded into a verdict. Where it
-          disagrees with them is where we ask you to look.{" "}
+          So the taste reading is a second opinion beside time and draw: it is one of the four parts of the price of
+          each clash, {part}, and never the verdict on its own. It is nearly unrelated to popularity (r ={" "}
+          {backtest.popularityCorrelation}), so it orders a day differently from draw alone. Where it disagrees with
+          time and draw is where we ask you to look.{" "}
           <Link href="/method#tested" className={LINK}>
             How we know
           </Link>
@@ -629,10 +664,13 @@ export function FailedTestNote({ className }: { className?: string }) {
 export function WhyThisMatters({
   demand = DEMAND,
   contact = PILOT_CONTACT,
+  terms = PILOT_TERMS,
 }: {
   demand?: Demand;
   /** Where to send a bill for the pilot; null points at the Devpost page. */
   contact?: string | null;
+  /** The pilot's terms as the owner confirmed them; null prints nothing. */
+  terms?: string | null;
 }) {
   const { complaints } = METHOD_FIGURES;
   return (
@@ -647,6 +685,9 @@ export function WhyThisMatters({
             <p data-why-finding className="mt-3 text-xl leading-snug font-medium text-foreground">
               {complaints.clustersVerified} clashes that fans or the press complained about at {complaints.festivals}{" "}
               festivals had a verified overlap in time.
+            </p>
+            <p data-why-elsewhere className="mt-2 text-muted-foreground">
+              {COMPLAINTS_ELSEWHERE}
             </p>
             <ComplaintFigure />
             <Fold
@@ -672,6 +713,9 @@ export function WhyThisMatters({
             <p className="mt-2">
               Our search, October 2026: absence of evidence only. Who would pay is not known.
             </p>
+            <p data-payer-guess className="mt-2">
+              {PAYER_GUESS}
+            </p>
             <Fold className="mt-2" summary="Festival Pro and Lineup Ninja">
               <p className="pb-3">
                 Festival schedulers such as Festival Pro and Lineup Ninja check double bookings and changeovers. We
@@ -682,7 +726,7 @@ export function WhyThisMatters({
           </div>
         </div>
         <div className="mt-12 text-[0.9375rem] leading-[1.55]">
-          <PilotOffer contact={contact} />
+          <PilotOffer contact={contact} terms={terms} />
         </div>
       </div>
     </section>

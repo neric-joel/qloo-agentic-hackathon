@@ -12,7 +12,12 @@ export class HomePage {
   readonly hero: Locator;
   readonly card: Locator;
   readonly cardHeading: Locator;
-  readonly openMove: Locator;
+  readonly keepMove: Locator;
+  /** "Kept in your plan." with its "See your plan" link, in place under the button that was pressed. */
+  readonly keptNotice: Locator;
+  readonly seeYourPlan: Locator;
+  /** What the card says to a screen reader after a press ("Testing Sprints at 14:15.", "Already in your plan."). */
+  readonly cardAnnouncement: Locator;
   readonly showWorking: Locator;
   readonly working: Locator;
   readonly pasteLink: Locator;
@@ -36,6 +41,8 @@ export class HomePage {
   readonly keepApart: Locator;
   readonly agent: Locator;
   readonly sources: Locator;
+  /** The kept plan in "Try a move" (`#your-plan`), where "See your plan" lands. */
+  readonly plan: Locator;
 
   readonly drawer: Locator;
 
@@ -47,8 +54,13 @@ export class HomePage {
     // The card is the one region in the hero whose name ends in the minutes it shares.
     this.card = this.hero.getByRole("region", { name: /minutes? shared$/ });
     this.cardHeading = this.card.getByRole("heading", { level: 2 });
-    // "Open this move" is drawn twice (one per width) and only one is displayed, so this finds one.
-    this.openMove = this.card.getByRole("button", { name: "Open this move" });
+    // "Keep this move" is drawn twice (one per width) and only one is displayed, so this finds one. The
+    // same holds for the notice under it.
+    this.keepMove = this.card.getByRole("button", { name: "Keep this move" });
+    this.keptNotice = this.card.getByRole("status").filter({ hasText: "Kept in your plan." });
+    this.seeYourPlan = this.keptNotice.getByRole("link", { name: "See your plan" });
+    // The card's own spoken line is its last status region (the kept notice comes before it).
+    this.cardAnnouncement = this.card.getByRole("status").last();
     this.showWorking = this.card.getByRole("button", { name: "Show the working" });
     this.working = this.card.getByRole("region", { name: "Show the working" });
     this.pasteLink = this.hero.getByRole("link", { name: "Paste your own draft grid" });
@@ -67,8 +79,11 @@ export class HomePage {
     this.hiddenWall = page.getByRole("region", { name: /^Hidden clashes: / });
     this.tryAMove = page.getByRole("region", { name: "Move a set and see what it costs" });
     this.keepApart = page.getByRole("region", { name: "Keep two sets apart" });
-    this.agent = page.getByRole("region", { name: "Or describe the change in plain words" });
+    // While the live agent is off the section is named for what it holds; with it on, it invites a question.
+    this.agent = page.getByRole("region", { name: /^(Recorded agent runs|The agent|Or describe the change in plain words)$/ });
     this.sources = page.getByRole("region", { name: "Where the numbers come from" });
+
+    this.plan = page.getByRole("group", { name: "Your tested moves" });
 
     this.drawer = page.getByRole("dialog");
   }

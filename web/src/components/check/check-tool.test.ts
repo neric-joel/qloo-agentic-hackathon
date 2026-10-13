@@ -1,14 +1,28 @@
-import { createElement } from "react";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+import { createElement, isValidElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { parseGrid, runCheck } from "@/lib/check";
+import { parseGrid, removePairLine, runCheck, type PairSuggestion } from "@/lib/check";
 import { breakDecisionId } from "@/lib/check-decisions";
-import { SAMPLE_GRID, SAMPLE_SETTINGS } from "@/lib/check-sample";
+import { PRICE_COPY, priceBody, priceRequest, thirdParty } from "@/lib/check-price";
+import {
+  SAMPLE_GRID,
+  SAMPLE_RULES,
+  SAMPLE_SETTINGS,
+  dropSampleRules,
+  isPublishedInput,
+  keepSampleRules,
+  publishedDayInput,
+} from "@/lib/check-sample";
 
 import { RULE_LABELS } from "@/lib/check";
 
-import { CheckResults, breakMarks, nextStep } from "./check-results";
+import { BOTH_LOCKED, CheckResults, RESULT_IDS, breakMarks, lockNote, nextStep } from "./check-results";
+import { CheckPrice } from "./check-price";
+import { CheckReview } from "./check-review";
 import { BreakStrip } from "./check-break-strip";
 import {
   BreakItem,
@@ -18,7 +32,10 @@ import {
   SharedPreview,
   escapeClears,
   foldedLines,
+  pairFixes,
+  pairLineOf,
   remedyAnchor,
+  typedName,
   stageStartRows,
   type Remedy,
 } from "./check-tool";
@@ -33,6 +50,7 @@ const sample = runCheck({
 });
 if (!sample.ok) throw new Error("the sample should read");
 const shared = sample.report.shared;
+const SAMPLE_INPUT_FOR_TEST = { grid: SAMPLE_GRID, ...SAMPLE_SETTINGS };
 const more = shared.length - PREVIEW_PAIRS;
 
 describe("Show all N pairs", () => {
@@ -269,7 +287,7 @@ describe("the sheet's header row", () => {
     const outer = html.match(/<div class="([^"]*)"><div class="flex min-w-0 flex-wrap items-baseline gap-x-2\.5 gap-y-0\.5"><label/)?.[1] ?? "";
     // The pair wraps whole under the name where the row is too narrow, 10px under it so no hit area reaches its text.
     expect(outer.split(" ")).toEqual(expect.arrayContaining(["flex", "flex-wrap", "items-start", "gap-x-6", "sm:gap-y-2.5"]));
-    expect(html).toMatch(/<div class="min-w-0 pb-2 sm:pb-3 lg:col-start-1 lg:row-start-1"><div class="flex min-w-0 flex-wrap/);
+    expect(html).toMatch(/<div class="min-w-0 pb-2 sm:pb-3 lg:col-span-2 lg:col-start-1 lg:row-start-1"><div class="flex min-w-0 flex-wrap/);
     // On a phone each utility's words start on the name's left edge.
     for (const label of ["Download a template", "Check an invented sample"]) expect(buttonOf(nameRow, label).classes).toContain("max-sm:-ml-2");
   });
@@ -1015,7 +1033,7 @@ describe("a figure under each rule break of the invented sample", () => {
 
   it("keeps each action's words, type and call-site classes: the utilities in the name row, then the switch and Check the grid in the bar", () => {
     const page = renderToStaticMarkup(createElement(CheckTool, { startWithSample: true }));
-    const start = page.indexOf('<div class="min-w-0 pb-2 sm:pb-3 lg:col-start-1 lg:row-start-1">');
+    const start = page.indexOf('<div class="min-w-0 pb-2 sm:pb-3 lg:col-span-2 lg:col-start-1 lg:row-start-1">');
     expect(start).toBeGreaterThan(0);
     const barStart = page.indexOf(
       '<div class="relative flex flex-wrap items-center justify-between gap-3 py-2 pr-4 pl-1 lg:gap-2 after:pointer-events-none after:absolute after:inset-x-4 after:bottom-0 after:h-px after:bg-border after:content-[&#x27;&#x27;]"><div role="radiogroup" aria-label="Show the draft grid as"',
@@ -1112,5 +1130,336 @@ describe("the first screen draws each finding under its rows", () => {
     const missing = renderToStaticMarkup(createElement(BreakItem, { ...base, figure: lost, rows, pressed: false }));
     expect(missing).not.toContain("data-break-strip");
     expect(missing.endsWith("</ul></li>")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------
+// Round 31: the judge's own-data path (every name and number below is invented for the test)
+
+/** A fresh six-act grid that shares no name with the sample. */
+const FRESH = [
+  "act,stage,start,end",
+  "Amber Kite,Hill,18:00,19:00",
+  "Basalt Choir,Valley,18:30,19:30",
+  "Copper Field,Hill,19:20,20:20",
+  "Dune Signal,Valley,19:45,20:45",
+  "Ember Coast,Barn,18:15,19:15",
+  "Flint Arcade,Barn,19:40,20:30",
+].join("\n");
+
+describe("round 31: the first paste works (C1)", () => {
+  it("drops the sample's rule when a fresh grid replaces the sample, and the grid is checked with no refusal", () => {
+    // Before: the sample's rule against the fresh grid refuses, as the judges saw.
+    expect(runCheck({ ...SAMPLE_INPUT_FOR_TEST, grid: FRESH }).ok).toBe(false);
+    const drop = dropSampleRules(SAMPLE_SETTINGS.pairs, SAMPLE_RULES, FRESH);
+    expect(drop.removed).toEqual(['Removed the sample\'s rule "Saffron Season | Ivory Lights": neither act is in this grid.']);
+    expect(drop.pairs).toBe("");
+    expect(drop.sampleRules).toEqual([]);
+    const outcome = runCheck({ ...SAMPLE_INPUT_FOR_TEST, grid: FRESH, pairs: drop.pairs });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.report.sets).toHaveLength(6);
+    expect(outcome.report.settings.pairs).toEqual([]);
+  });
+
+  it("says \"one of these acts is not\" when only one act of the sample's rule is gone", () => {
+    const grid = `${FRESH}\nSaffron Season,Barn,21:00,22:00`;
+    const drop = dropSampleRules(SAMPLE_SETTINGS.pairs, SAMPLE_RULES, grid);
+    expect(drop.removed).toEqual([
+      'Removed the sample\'s rule "Saffron Season | Ivory Lights": one of these acts is not in this grid.',
+    ]);
+  });
+
+  it("keeps the sample's rule when its acts are still in the new grid, and while the sample is only edited", () => {
+    const both = `${FRESH}\nSaffron Season,Barn,21:00,22:00\nIvory Lights,Hill,21:00,22:00`;
+    expect(dropSampleRules(SAMPLE_SETTINGS.pairs, SAMPLE_RULES, both).removed).toEqual([]);
+    // Renaming one act of the sample is an edit: the rule stays and refuses as before, with its fixes.
+    const renamed = SAMPLE_GRID.replace("Saffron Season,", "Saffron Seasons,");
+    expect(dropSampleRules(SAMPLE_SETTINGS.pairs, SAMPLE_RULES, renamed)).toMatchObject({ pairs: SAMPLE_SETTINGS.pairs, removed: [] });
+    // A grid with a problem drops nothing.
+    expect(dropSampleRules(SAMPLE_SETTINGS.pairs, SAMPLE_RULES, "Amber Kite,Hill,18:00").removed).toEqual([]);
+  });
+
+  it("never removes a rule the person typed, even when its acts are absent", () => {
+    const typed = "Amber Kite | Basalt Choir\nNobody Here | Amber Kite";
+    // Nothing of it came from the sample.
+    expect(keepSampleRules(typed, SAMPLE_RULES)).toEqual([]);
+    expect(dropSampleRules(typed, [], SAMPLE_GRID)).toMatchObject({ pairs: typed, removed: [] });
+    expect(dropSampleRules(typed, keepSampleRules(typed, SAMPLE_RULES), FRESH)).toMatchObject({ pairs: typed, removed: [] });
+    // A sample line the person edited is theirs: it is not removed either.
+    const edited = "Saffron Season | Ivory Light";
+    expect(dropSampleRules(edited, keepSampleRules(edited, SAMPLE_RULES), FRESH)).toMatchObject({ pairs: edited, removed: [] });
+    // An untouched sample line beside the person's own: only the sample's goes.
+    const mixed = `Amber Kite | Basalt Choir\n${SAMPLE_SETTINGS.pairs}`;
+    const drop = dropSampleRules(mixed, keepSampleRules(mixed, SAMPLE_RULES), FRESH);
+    expect(drop.pairs).toBe("Amber Kite | Basalt Choir");
+    expect(drop.removed).toHaveLength(1);
+  });
+
+  it("keeps a typed rule whose acts are present, and checks it", () => {
+    const outcome = runCheck({ grid: FRESH, changeover: "", curfew: "", pairs: "Amber Kite | Basalt Choir" });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.report.settings.pairs.map((pair) => `${pair.a.act} | ${pair.b.act}`)).toEqual(["Amber Kite | Basalt Choir"]);
+    expect(outcome.report.breaks.some((item) => item.rule === 5)).toBe(true);
+  });
+
+  it("refuses a typed rule whose acts are absent and offers Remove this rule first, never an unrelated act", () => {
+    const pairs = "Amber Kite | Basalt Choir\nSaffron Season | Ivory Lights";
+    const html = renderToStaticMarkup(
+      createElement(CheckTool, { initial: { grid: FRESH, changeover: "", curfew: "", pairs }, checkOnLoad: true }),
+    );
+    const alert = html.slice(html.indexOf('role="alert"'), html.indexOf("</ul>", html.indexOf('role="alert"')));
+    expect(text(alert)).toContain("The grid was not checked.");
+    expect(text(alert)).toContain("Pair line 2:");
+    const buttons = [...alert.matchAll(/<button[^>]*>([\s\S]*?)<\/button>/g)].map((match) => text(match[1]));
+    expect(buttons[0]).toBe("Remove this rule : pair line 2");
+    // One Remove per line, and no offer to swap the rule onto one of the fresh grid's acts.
+    expect(buttons.filter((label) => label.startsWith("Remove this rule"))).toHaveLength(1);
+    for (const act of ["Amber Kite", "Basalt Choir", "Copper Field", "Dune Signal", "Ember Coast", "Flint Arcade"]) {
+      expect(buttons.some((label) => label.includes(act))).toBe(false);
+    }
+  });
+
+  it("pressing Remove this rule takes out only that line, and the grid then checks", () => {
+    const pairs = "Amber Kite | Basalt Choir\nSaffron Season | Ivory Lights";
+    const refused = runCheck({ grid: FRESH, changeover: "", curfew: "", pairs });
+    if (refused.ok) throw new Error("should refuse");
+    const line = pairLineOf(refused.errors[0]);
+    expect(line).toBe(2);
+    const next = removePairLine(pairs, line as number);
+    expect(next).toBe("Amber Kite | Basalt Choir");
+    expect(runCheck({ grid: FRESH, changeover: "", curfew: "", pairs: next }).ok).toBe(true);
+  });
+
+  it("puts Remove this rule before Use it, and offers a nearest name only when it is a typo of what was typed", () => {
+    const suggestion: PairSuggestion = { message: "Pair line 1: x", line: 1, side: 0, match: null, nearest: ["Amber Kite", "Basalt Choir", "Ember Coast"] };
+    expect(pairFixes(suggestion.message, suggestion, "Amber Kyte", true)).toEqual({ remove: 1, names: ["Amber Kite"] });
+    expect(pairFixes(suggestion.message, suggestion, "Saffron Season", true)).toEqual({ remove: 1, names: [] });
+    expect(pairFixes(suggestion.message, { ...suggestion, match: "Amber Kite" }, "Amber", true)).toEqual({ remove: 1, names: ["Amber Kite"] });
+    // The second error of the same line carries no second Remove.
+    expect(pairFixes(suggestion.message, suggestion, "Amber Kyte", false).remove).toBeNull();
+    expect(pairFixes("Changeover should be a whole number of minutes from 0 to 240.", undefined, null, true)).toEqual({ remove: null, names: [] });
+    expect(typedName("A | B\nC | D", 2, 1)).toBe(" D");
+  });
+});
+
+describe("round 31: pairs whose two sets are both locked (C5)", () => {
+  const grid = [
+    "act,stage,start,end,locked",
+    "Pine Lantern,North,18:00,20:00,yes",
+    "Quill Harbor,South,18:00,19:50,yes",
+    "Rook Meadow,East,18:00,19:00,",
+    "Sable Comet,West,18:30,19:20,",
+  ].join("\n");
+  const outcome = runCheck({ grid, changeover: "", curfew: "", pairs: "" });
+  if (!outcome.ok) throw new Error("refused");
+  const html = renderToStaticMarkup(
+    createElement(CheckResults, {
+      report: outcome.report,
+      decisions: new Map(),
+      onDecide: () => {},
+      showAll: false,
+      onShowAll: () => {},
+      nonce: 1,
+      trial: { state: null, onFind: () => {}, onApply: () => {}, onClose: () => {} },
+    }),
+  );
+  const rows = html.slice(html.indexOf(`id="${RESULT_IDS.shared}"`)).split("<li ").slice(1);
+
+  it("says both are locked, offers no Find a change and says why, and keeps one locked as before", () => {
+    const both = rows.find((row) => row.includes("Pine Lantern") && row.includes("Quill Harbor")) ?? "";
+    expect(text(both)).toContain("(both are locked).");
+    expect(text(both)).toContain(BOTH_LOCKED);
+    expect(both).not.toContain("data-find-change");
+    const one = rows.find((row) => row.includes("Pine Lantern") && row.includes("Rook Meadow")) ?? "";
+    expect(text(one)).toContain("(one is locked).");
+    expect(one).toContain("data-find-change");
+    expect(text(one)).not.toContain(BOTH_LOCKED);
+  });
+
+  it("never words a lock as wanted", () => {
+    expect(lockNote({ a: { locked: true }, b: { locked: true } } as never)).toBe(" (both are locked).");
+    expect(text(html)).not.toMatch(/clashed on purpose|deliberate|intended/i);
+    expect(BOTH_LOCKED).not.toMatch(/on purpose/i);
+  });
+});
+
+describe("round 31: a review with nothing to review (C7)", () => {
+  const counts = { sets: 6, stages: 3, breaks: 0, breaksReviewed: 0, pairs: 4, pairsDecided: 0, kept: 0, notChanging: 0, changed: 0, openBreaks: 0, openPairs: 4 };
+  const props = {
+    counts,
+    sample: false,
+    price: { phase: "idle" } as const,
+    searched: 0,
+    applied: 0,
+    stale: false,
+    onPrint: () => {},
+    onCopy: () => {},
+    onDownload: () => {},
+    canShare: true,
+    share: null,
+  };
+
+  it("says No rule breaks to review. and draws no bar, never a full green one", () => {
+    const html = renderToStaticMarkup(createElement(CheckReview, props));
+    expect(text(html)).toContain("No rule breaks to review.");
+    expect(html).not.toContain("data-review-bar");
+    expect(html).not.toContain("bg-success");
+    expect(text(html)).not.toContain("0 / 0");
+  });
+
+  it("keeps the count and the bar when there are breaks", () => {
+    const html = renderToStaticMarkup(createElement(CheckReview, { ...props, counts: { ...counts, breaks: 3, breaksReviewed: 1, openBreaks: 2 } }));
+    expect(text(html)).toContain("1 / 3 rule breaks reviewed");
+    expect(html.match(/data-review-bar=""[\s\S]*?<\/div>/)?.[0].match(/rounded-bar/g)).toHaveLength(3);
+    expect(text(html)).not.toContain("No rule breaks to review.");
+  });
+});
+
+describe("round 31: the live offer only when the server prices live (C2, C3)", () => {
+  const report = runCheck(SAMPLE_INPUT_FOR_TEST);
+  if (!report.ok) throw new Error("refused");
+  const request = priceRequest(report.report);
+  const base = { request, noOverlap: false, order: "minutes" as const, onOrder: () => {}, onPrice: () => {}, stale: false };
+  const notSaved = { phase: "not_saved" } as const;
+
+  it("off or unknown: no Ask Qloo button and no We can ask Qloo now, the off sentence instead", () => {
+    for (const live of [false, undefined]) {
+      const page = text(renderToStaticMarkup(createElement(CheckPrice, { ...base, state: notSaved, live })));
+      expect(page).not.toContain("Ask Qloo for these");
+      expect(page).not.toContain("We can ask Qloo now");
+      expect(page).toContain(PRICE_COPY.liveOff);
+    }
+  });
+
+  it("on: the consent names Qloo as a third party, then the button", () => {
+    const html = renderToStaticMarkup(createElement(CheckPrice, { ...base, state: notSaved, live: true }));
+    const page = text(html).replace(/&#x27;/g, "'");
+    expect(page).toContain(thirdParty(request?.acts.length ?? 0));
+    expect(page).toContain(`Ask Qloo for these ${request?.acts.length} acts`);
+    expect(page.indexOf("a third party")).toBeLessThan(page.indexOf("Ask Qloo for these"));
+  });
+});
+
+/** The buttons of a server-free element tree, with their words and their press. */
+function buttonsOf(node: unknown): { words: string; press: () => void }[] {
+  if (Array.isArray(node)) return node.flatMap(buttonsOf);
+  if (!isValidElement(node)) return [];
+  const props = node.props as { children?: unknown; onClick?: () => void };
+  const own = typeof props.onClick === "function" ? [{ words: text(renderToStaticMarkup(node)), press: props.onClick }] : [];
+  return [...own, ...buttonsOf(props.children)];
+}
+
+describe("round 31: Check a published day (C8)", () => {
+  // An invented published day in the route's shape: two stages, one locked set, its own rules.
+  const day = {
+    id: "brookfield-2030-sat",
+    title: "Brookfield 2030, Saturday",
+    synthetic: false,
+    festival: {
+      stages: [
+        { id: "big", name: "Big Top" },
+        { id: "barn", name: "Barn" },
+      ],
+      acts: [
+        { id: "a", name: "Amber Kite" },
+        { id: "b", name: "Basalt Choir" },
+        { id: "c", name: "Copper Field, Jr." },
+        { id: "d", name: "Dune Signal" },
+        { id: "e", name: "Ember Coast" },
+      ],
+      timetable: [
+        { act_id: "b", day: 0, stage_id: "big", start: 1260, end: 1350, locked: true },
+        { act_id: "a", day: 0, stage_id: "big", start: 1110, end: 1200, locked: false },
+        { act_id: "c", day: 0, stage_id: "barn", start: 1140, end: 1230, locked: false },
+        { act_id: "d", day: 0, stage_id: "barn", start: 1290, end: 1460, locked: false },
+        { act_id: "e", day: 1, stage_id: "barn", start: 1200, end: 1260, locked: false },
+      ],
+      constraints: { changeover_minutes: 20, curfew: { "0": 1425 }, no_clash_with: [["a", "d"], ["a", "e"]], billing_rules: [] },
+    },
+  };
+
+  it("builds the sheet from the timetable with that day's own changeover, curfew and pair rules, never the sample's", () => {
+    const built = publishedDayInput(day);
+    expect(built).not.toBeNull();
+    if (!built) return;
+    expect(built.title).toBe("Brookfield 2030, Saturday");
+    expect(built.label).toBe(
+      "Published timetable: Brookfield 2030, Saturday. Curfew and changeover from that day; its billing rules and stage hours are not checked here. Its taste overlap compares from the saved day; nothing is sent to Qloo.",
+    );
+    expect(built.input.changeover).toBe("20");
+    expect(built.input.curfew).toBe("23:45");
+    // The pair whose second act plays another day is left out.
+    expect(built.input.pairs).toBe("Amber Kite | Dune Signal");
+    expect(built.input.grid.split("\n")).toEqual([
+      "act,stage,start,end,locked",
+      "Amber Kite,Big Top,18:30,20:00,",
+      "Basalt Choir,Big Top,21:00,22:30,yes",
+      '"Copper Field, Jr.",Barn,19:00,20:30,',
+      "Dune Signal,Barn,21:30,24:20,",
+      "",
+    ]);
+    expect(built.input).not.toMatchObject({ changeover: SAMPLE_SETTINGS.changeover });
+    expect(built.input.pairs).not.toContain(SAMPLE_SETTINGS.pairs);
+    const outcome = runCheck(built.input);
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.report.sets).toHaveLength(4);
+    expect(outcome.report.lockedCount).toBe(1);
+    // Dune Signal ends after the day's own 23:45 curfew.
+    expect(outcome.report.breaks.map((item) => item.rule)).toContain(4);
+    expect(isPublishedInput(built.input, built)).toBe(true);
+    expect(isPublishedInput({ ...built.input, curfew: "" }, built)).toBe(false);
+  });
+
+  it("reads nothing from an invented day or a shape it does not know", () => {
+    expect(publishedDayInput({ ...day, synthetic: true })).toBeNull();
+    expect(publishedDayInput({ title: "x" })).toBeNull();
+    expect(publishedDayInput(null)).toBeNull();
+    expect(publishedDayInput({ ...day, festival: { ...day.festival, timetable: [] } })).toBeNull();
+    // No constraints: blank changeover and curfew (the page's own defaults), no pair rules.
+    const bare = publishedDayInput({ ...day, festival: { ...day.festival, constraints: undefined } });
+    expect(bare?.input).toMatchObject({ changeover: "", curfew: "", pairs: "" });
+  });
+
+  it("with live pricing on, the published day's Compare press asks in saved mode, and no live offer follows", () => {
+    const built = publishedDayInput(day);
+    if (!built) throw new Error("not built");
+    const outcome = runCheck(built.input);
+    if (!outcome.ok) throw new Error("refused");
+    const request = priceRequest(outcome.report);
+    const presses: string[] = [];
+    const props = {
+      request,
+      noOverlap: false,
+      order: "minutes" as const,
+      onOrder: () => {},
+      onPrice: (mode: string) => presses.push(mode),
+      stale: false,
+      live: true,
+      published: true,
+    };
+    const idle = buttonsOf(CheckPrice({ ...props, state: { phase: "idle" } }));
+    expect(idle.map((button) => button.words)).toEqual([PRICE_COPY.button]);
+    idle[0].press();
+    expect(presses).toEqual(["saved"]);
+    expect(JSON.parse(priceBody(request as NonNullable<typeof request>, "saved")).mode).toBe("saved");
+    // Even if no saved day matched, a published day is never offered to Qloo.
+    const after = buttonsOf(CheckPrice({ ...props, state: { phase: "not_saved" } }));
+    expect(after).toEqual([]);
+    expect(text(renderToStaticMarkup(createElement(CheckPrice, { ...props, state: { phase: "not_saved" } })))).toContain(
+      PRICE_COPY.publishedNotSaved,
+    );
+  });
+
+  it("offers the action only once this app's API names a published day: none in the server render", () => {
+    const html = renderToStaticMarkup(createElement(CheckTool, { startWithSample: true }));
+    expect(html).not.toContain("Check a published day");
+    const source = readFileSync(fileURLToPath(new URL("./check-tool.tsx", import.meta.url)), "utf8");
+    expect(source).toMatch(/\{publishedDay \? \(/);
+    expect(source).toContain("Check a published day: {publishedDay.title}");
+    // The published label is shown above the results and printed on the brief.
+    expect(source).toMatch(/published: run\.published \?\? null/);
   });
 });

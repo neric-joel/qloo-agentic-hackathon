@@ -21,7 +21,7 @@ for (const day of Object.values(DAYS)) {
       await expect(home.card).toContainText(`${day.title} · published timetable`);
       await expect(home.cardHeading).toHaveAccessibleName(/ \d+ to \d+ minutes shared$/);
       await expect(home.card.getByText("Clash Budget Index", { exact: true })).toBeVisible();
-      await expect(home.openMove).toBeVisible();
+      await expect(home.keepMove).toBeVisible();
       await expect(home.showWorking).toHaveAttribute("aria-expanded", "false");
 
       // The board names the day it shows, and draws as many sets as its heading counts.

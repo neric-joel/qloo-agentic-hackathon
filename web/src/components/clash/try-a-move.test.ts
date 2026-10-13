@@ -10,12 +10,15 @@ import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
 import { mockPreset } from "@/lib/mock-preset";
 import { startingSets, type MovesResult, type PlacedOption } from "@/lib/moves";
 import { parsePreset, type Preset } from "@/lib/preset";
+import type { RuleFix } from "@/lib/rule-fix";
 import { applyMoves, encodeMoves, planStorageKey, type StackMove } from "@/lib/stack";
 import { formatClock } from "@/lib/timetable";
 
 import {
+  BestPlaceColumn,
   TestedPlace,
   TryAMove,
+  bestPlace,
   placeChanges,
   starterPairsOf,
   stripDomain,
@@ -24,6 +27,7 @@ import {
   type PlaceChanges,
 } from "./try-a-move";
 import { clashParts, clashWords, listedPlace, moveCheck, sharedMinutesByName, splitKept, type MoveCheck } from "./use-moves";
+import { ChangeCard, SAME_STAGE_FIRST, STAGE_SIGN_OFF, sameStageFirst } from "./keep-apart";
 
 /** The visible words. */
 const text = (html: string) =>
@@ -729,5 +733,218 @@ describe("Start with names the partner of every row, from the one map the card r
       partnerName: "C",
       minutes: 60,
     });
+  });
+});
+
+describe("after a set is picked, the right column is never empty from 1024 px", () => {
+  // Every name and figure here is invented (the tiny fixture festival).
+  const tiny = parsePreset(rawTinyPreset())!;
+  const place = (start: string, end: string, after: number): PlacedOption => ({
+    move: `Bo Diddly Squat: Side 20:30-22:00 -> Side ${start}-${end}`,
+    stage: "Side",
+    start,
+    after,
+    stageId: "side",
+    end,
+    day: 0,
+    clashesAfter: [],
+  });
+  const picked: MovesResult = {
+    act: "Bo Diddly Squat",
+    actId: "bo",
+    from: "Side 20:30-22:00",
+    movable: true,
+    why: null,
+    before: 104.2,
+    legalPlaces: 2,
+    priced: true,
+    clashesNow: [{ name: "Ann Arbor", points: 3 }],
+    options: [place("22:05", "23:35", 100.1), place("22:10", "23:40", 101)],
+  };
+  const pairs = [{ aId: "ann", bId: "bo" }];
+
+  function column(props: Record<string, unknown> = {}) {
+    return renderToStaticMarkup(
+      createElement(BestPlaceColumn, {
+        status: "ready",
+        result: picked,
+        best: bestPlace(picked, tiny, tiny.festival.timetable, pairs),
+        pickedName: "Bo Diddly Squat",
+        synthetic: false,
+        keepFull: false,
+        onKeep: () => {},
+        open: false,
+        controls: "every-place",
+        onToggle: () => {},
+        ...props,
+      }),
+    );
+  }
+
+  it("takes the engine's first listed place as its best tested place, with its minutes and clashes", () => {
+    const best = bestPlace(picked, tiny, tiny.festival.timetable, pairs)!;
+    expect(best.option).toBe(picked.options[0]);
+    expect(best.move).toEqual({ actId: "bo", stageId: "side", day: 0, start: "22:05" });
+    expect(best.figures?.minutes).toEqual({ partner: "Ann Arbor", before: 60, after: 0 });
+    expect(bestPlace({ ...picked, movable: false, options: [] }, tiny, tiny.festival.timetable, pairs)).toBeNull();
+    expect(bestPlace(null, tiny, tiny.festival.timetable, pairs)).toBeNull();
+  });
+
+  it("shows its best tested place with Keep this move and the way to every legal place, in the right column", () => {
+    const html = column();
+    const words = text(html);
+    expect(words).toContain("Best tested place");
+    expect(words).toContain("Bo Diddly Squat at Side · 22:05–23:35");
+    expect(words).toContain("60 → 0 min shared with Ann Arbor");
+    expect(words).toContain("Index 104.2 → 100.1");
+    expect(words).toContain("Adds no rule break.");
+    expect(words).toContain("Keep this move");
+    expect(words).toContain("Show every legal place");
+    expect(html).toMatch(/aria-expanded="false" aria-controls="every-place"/);
+    // The right seven columns of the picker's row from 1024 px, and not shown below it (one copy per width).
+    const shell = /^<div[^>]*>/.exec(html)?.[0] ?? "";
+    expect(shell).toContain("max-lg:hidden");
+    expect(shell).toContain("lg:col-start-6");
+    expect(shell).toContain("lg:row-start-2");
+    // The full list is open: the button says how to close it.
+    expect(column({ open: true })).toMatch(/aria-expanded="true"[^>]*>Hide every legal place/);
+  });
+
+  it("is not empty while the places load, nor for a set that cannot move", () => {
+    expect(text(column({ status: "loading", result: null, best: null }))).toContain(
+      "Pricing every legal place for Bo Diddly Squat",
+    );
+    const locked = { ...picked, movable: false, why: "locked in place", options: [] };
+    expect(text(column({ result: locked, best: null }))).toContain("It cannot move: locked in place.");
+  });
+
+  it("from 1024 px keeps the full list closed under it until asked, and below 1024 px shows it as before", () => {
+    const source = readFileSync(join(__dirname, "try-a-move.tsx"), "utf8");
+    expect(source).toContain('<div className={cn("mt-6", !allOpen && "lg:hidden")}>');
+    // The loading box under the columns is the phone's copy only; the column says it from 1024 px.
+    expect(source).toMatch(/rounded-md border border-border bg-card p-6 text-sm text-muted-foreground lg:hidden"/);
+  });
+});
+
+describe("the kept plan's anchor and the seeds from outside the section", () => {
+  const tiny = parsePreset(rawTinyPreset())!;
+  const ranked = topClashes(tiny.report.clashes, 0, Number.POSITIVE_INFINITY);
+  const kept: StackMove = { actId: "bo", stageId: "side", day: 0, start: "22:05" };
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("gives the plan id your-plan, focusable, with a scroll margin under the sticky header and nav", () => {
+    const store = new Map([[planStorageKey(tiny.id), encodeMoves([kept])]]);
+    vi.stubGlobal("window", {
+      sessionStorage: { getItem: (key: string) => store.get(key) ?? null, setItem: () => {}, removeItem: () => {} },
+    });
+    const html = renderToStaticMarkup(createElement(TryAMove, { preset: tiny, day: 0, ranked, isLocked: (id: string) => id === "ann" }));
+    const plan = /<div[^>]*id="your-plan"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(plan).toContain('tabindex="-1"');
+    expect(plan).toContain("scroll-mt-12");
+    expect(html.match(/id="your-plan"/g)).toHaveLength(1);
+  });
+
+  it("keeps a step seeded by an agent run as the plan, as the card's keep does", () => {
+    const html = renderToStaticMarkup(
+      createElement(TryAMove, {
+        preset: tiny,
+        day: 0,
+        ranked,
+        isLocked: (id: string) => id === "ann",
+        seedStep: { nonce: 1, step: kept, from: "agent" },
+      }),
+    );
+    expect(html).toContain('id="your-plan"');
+  });
+
+  it("neither scrolls nor moves focus for a card's or an agent's seed", () => {
+    const source = readFileSync(join(__dirname, "try-a-move.tsx"), "utf8");
+    const seeded = source.slice(source.indexOf("const seedFrom ="), source.indexOf("// Keep the tab's plan in step"));
+    expect(seeded).not.toContain("focusOn(");
+    expect(seeded).toContain('setFromCard(seedFrom === "card")');
+  });
+
+  it("tells the page only the steps the engine has priced, never a step it refused", () => {
+    const source = readFileSync(join(__dirname, "try-a-move.tsx"), "utf8");
+    expect(source).toContain("const held = state.plan ? moves : NO_STEPS;");
+    expect(source).toMatch(/keptOut\.current\?\.\(heldNow\.current\);\s*\}, \[heldKey\]\);/);
+  });
+});
+
+describe("Keep two sets apart: a stage change says it needs sign-off", () => {
+  // Invented changes for the tiny fixture's two sets.
+  const fix = (stageChanges: number, start: string, stage = "Side"): RuleFix => ({
+    setsMoved: 1,
+    minutesMoved: 30,
+    stageChanges,
+    budgetAfter: 100,
+    flagsNow: 0,
+    flagsAfter: 0,
+    moves: [
+      {
+        actId: "bo",
+        act: "Bo Diddly Squat",
+        from: "Side 20:30-22:00",
+        stageId: stage.toLowerCase(),
+        stage,
+        day: 0,
+        start,
+        end: "23:30",
+        minutesMoved: 30,
+      },
+    ],
+  });
+  const row = (change: RuleFix) =>
+    text(
+      renderToStaticMarkup(
+        createElement(ChangeCard, {
+          fix: change,
+          n: 1,
+          before: 104.2,
+          dayLabel: () => null,
+          pressed: false,
+          keepState: "ready",
+          roomText: null,
+          note: null,
+          onPreview: () => {},
+          onKeep: () => {},
+          buttonRef: () => {},
+        }),
+      ),
+    );
+
+  it("labels a change that moves a set to another stage, and only that one", () => {
+    expect(STAGE_SIGN_OFF).toBe("Changes stage: needs production sign-off");
+    expect(row(fix(1, "21:00", "Main"))).toContain(STAGE_SIGN_OFF);
+    expect(row(fix(0, "21:00"))).not.toContain("Changes stage");
+    // Muted words on the row's paper, with no chip.
+    const html = renderToStaticMarkup(
+      createElement(ChangeCard, {
+        fix: fix(1, "21:00", "Main"),
+        n: 1,
+        before: 104.2,
+        dayLabel: () => null,
+        pressed: false,
+        keepState: null,
+        roomText: null,
+        note: null,
+        onPreview: () => {},
+        onKeep: () => {},
+        buttonRef: () => {},
+      }),
+    );
+    expect(html).toContain(`<p class="mt-0.5 text-sm text-muted-foreground">${STAGE_SIGN_OFF}</p>`);
+  });
+
+  it("lists same-stage changes before stage changes, each group in the route's own order", () => {
+    const a = fix(1, "21:00", "Main");
+    const b = fix(0, "21:05");
+    const c = fix(1, "21:10", "Main");
+    const d = fix(0, "21:15");
+    expect(sameStageFirst([a, b, c, d])).toEqual([b, d, a, c]);
+    expect(sameStageFirst([b, d])).toEqual([b, d]);
+    expect(SAME_STAGE_FIRST).toContain("smallest changes first: fewest sets, then fewest minutes moved.");
   });
 });

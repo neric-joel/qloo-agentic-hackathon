@@ -1,4 +1,4 @@
-import { DAYS, requireSavedDays } from "./helpers";
+import { DAYS, literal, requireSavedDays } from "./helpers";
 import { expect, test } from "./fixtures";
 import { HomePage } from "./pages/home-page";
 import { minutes, parsePlace, TryAMove } from "./pages/try-a-move";
@@ -7,6 +7,12 @@ import { minutes, parsePlace, TryAMove } from "./pages/try-a-move";
  * Try a move: pick a set, see every legal place on the 5-minute grid with its price, keep a move, stack
  * another, undo, start over. Every price comes from the engine through /api, with no language model.
  */
+
+/** The day's published Clash Budget Index: the first figure of the decision card's receipt ("A to B."). */
+async function publishedIndex(home: HomePage): Promise<string> {
+  const receipt = await home.card.getByText(/^\d+\.\d to \d+\.\d\.$/).innerText();
+  return /^(\d+\.\d)/.exec(receipt)?.[1] ?? "";
+}
 
 test.describe("try a move", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
@@ -58,6 +64,31 @@ test.describe("try a move", () => {
     await expect(move.card.getByRole("heading", { name: "Clashes it keeps" })).toBeVisible();
   });
 
+  test("from 1024 px a picked set fills the right column with its best tested place, and keeps it", async ({ page, isPhone }) => {
+    test.skip(isPhone, "Below 1024 px the full list shows at once and this column is not drawn.");
+    const home = new HomePage(page);
+    const move = new TryAMove(page);
+    await home.goto(DAYS.glastonbury.id);
+
+    await move.choose("Gurriers", { every: false });
+    await expect(move.bestPlace).toBeVisible();
+    await expect(move.bestPlace).toContainText("Best tested place");
+    await expect(move.bestPlace).toContainText(/Gurriers at .+ · \d{2}:\d{2}–\d{2}:\d{2}/);
+    // The full list waits behind its toggle, so the column is never empty and never doubled.
+    await expect(move.showEvery).toHaveAttribute("aria-expanded", "false");
+    await expect(move.places).toBeHidden();
+
+    // The best place is the list's first (lowest index): opening the list shows the same place chosen.
+    await move.showEvery.click();
+    await expect(move.showEvery).toHaveAttribute("aria-expanded", "true");
+    const first = parsePlace((await move.places.getByRole("button").first().getAttribute("aria-label")) as string);
+    await expect(move.bestPlace).toContainText(`Gurriers at ${first.stage} · ${first.start}–${first.end}`);
+
+    await move.bestPlace.getByRole("button", { name: "Keep this move" }).click();
+    await expect(move.kept).toHaveCount(1);
+    await expect(move.kept.first()).toContainText(`1. Gurriers · ${first.stage} ${first.start}–${first.end}`);
+  });
+
   test("choosing another place re-prices the detail, and nothing on the timetable moves", async ({ page }) => {
     const home = new HomePage(page);
     const move = new TryAMove(page);
@@ -93,9 +124,10 @@ test.describe("try a move", () => {
     await expect(move.announcement.last()).toHaveText(/^Plan: 1 kept move\. Clash Budget Index \d+\.\d to \d+\.\d, \d+\.\d lower\.$/);
     // The plan is previewed on the board, and the key says what a dashed slot is.
     await expect(page.getByRole("list", { name: "Timetable key" }).filter({ visible: true }).filter({ hasText: "Tested place" })).toHaveCount(1);
-    // The published index above the board is still the published one.
+    // The published index above the board is still the published one (the card's starting figure).
+    const published = await publishedIndex(home);
     const dial = page.getByRole("figure").filter({ hasText: "Clash Budget Index" });
-    await expect(dial.getByText("116.7", { exact: true }).first()).toBeVisible();
+    await expect(dial.getByText(published, { exact: true }).first()).toBeVisible();
     await expect(move.planRegion).toContainText("Scored by the same measure the places are found with");
   });
 
@@ -116,9 +148,10 @@ test.describe("try a move", () => {
     const [firstFrom, firstTo] = arrow(first);
     const [secondFrom, secondTo] = arrow(second);
     expect(secondFrom, "the second move is priced on top of the first").toBe(firstTo);
-    expect(firstFrom).toBe(116.7);
+    const published = await publishedIndex(home);
+    expect(firstFrom.toFixed(1), "the first move starts from the published index").toBe(published);
     expect(secondTo).toBeLessThanOrEqual(secondFrom);
-    await expect(move.announcement.last()).toHaveText(new RegExp(`^Plan: 2 kept moves\\. Clash Budget Index 116\\.7 to ${secondTo.toFixed(1)}`));
+    await expect(move.announcement.last()).toHaveText(new RegExp(`^Plan: 2 kept moves\\. Clash Budget Index ${literal(published)} to ${secondTo.toFixed(1)}`));
     // A set already moved cannot be picked a second time.
     await expect(move.select.locator("option").filter({ hasText: /Gurriers.*already moved/ })).toBeDisabled();
   });
@@ -181,8 +214,13 @@ test.describe("try a move", () => {
 
     await move.starter("Katy J Pearson").focus();
     await page.keyboard.press("Enter");
-    await expect(move.heading("Katy J Pearson")).toBeVisible();
     await expect(move.starter("Katy J Pearson")).toHaveAttribute("aria-pressed", "true");
+    // From 1024 px the best tested place comes first; its "Show every legal place" opens the list.
+    await expect(move.bestPlace).toContainText("Best tested place");
+    await move.showEvery.focus();
+    await page.keyboard.press("Enter");
+    await expect(move.showEvery).toHaveAttribute("aria-expanded", "true");
+    await expect(move.heading("Katy J Pearson")).toBeVisible();
 
     const buttons = move.places.getByRole("button");
     await buttons.nth(1).focus();

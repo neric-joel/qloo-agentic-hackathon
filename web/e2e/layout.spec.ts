@@ -54,7 +54,7 @@ test.describe("no horizontal scroll", () => {
     const move = new TryAMove(page);
     await home.goto(DAYS.glastonbury.id);
     await home.showWorking.click();
-    await home.openMove.click();
+    await home.keepMove.click();
     await expect(move.plan).toBeVisible();
     await home.hiddenWall.getByRole("button", { name: "Next pair" }).click();
     await expectNoHorizontalScroll(page);

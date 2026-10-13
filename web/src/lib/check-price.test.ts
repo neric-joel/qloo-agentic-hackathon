@@ -1,9 +1,20 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { runCheck, type CheckReport } from "@/lib/check";
 import {
   PRICE_COPY,
   PRICE_LIMITS,
+  firstPublishedDay,
+  loadPublishedDay,
+  loadPublishedTimetable,
+  lockedLine,
+  priceGridLive,
+  tasteScore,
+  thirdParty,
+  unpricedReason,
   coverageLine,
   orderLine,
   pairLine,
@@ -154,7 +165,7 @@ describe("the one request", () => {
     expect(sourceBanner(answer)).toBe(PRICE_COPY.inventedBanner);
     expect(coverageLine(answer)).toBe("23 of 24 acts with a usable signal");
     expect(orderLine(answer)).toBe(
-      "Audience overlap changes the order of the 5 compared overlaps: Glass Mirror × Hollow Meadow moves from 3rd to 1st.",
+      "Taste overlap changes the order of the 5 compared overlaps: Glass Mirror × Hollow Meadow moves from 3rd to 1st.",
     );
   });
 
@@ -212,14 +223,18 @@ describe("the words of an answer", () => {
 
   it("words a priced row, an unpriced row and the coverage", () => {
     const [first] = answer.pairs;
-    expect(pairLine(first, answer)).toBe(`${first.a} × ${first.b}: ${first.minutes} min shared. Audience overlap 0.40, ranked 2 of 4.`);
+    expect(pairLine(first, answer)).toBe(`${first.a} × ${first.b}: ${first.minutes} min shared. Taste overlap 40 / 100, ranked 2 of 4.`);
     const last = answer.pairs[4];
+    // The invented day is not Qloo data, so its reason never names Qloo.
     expect(pairLine(last, answer)).toBe(
-      `${last.a} × ${last.b}: ${last.minutes} min shared. Not compared: no usable Qloo signal for ${last.b}. Shown by minutes only.`,
+      `${last.a} × ${last.b}: ${last.minutes} min shared. Not compared: ${last.b} has no usable signal. Shown by minutes only.`,
     );
+    expect(pairLine(last, { ...answer, source: "saved_day" })).toContain(`Not compared: ${last.b} has no usable Qloo signal.`);
     expect(coverageLine(answer)).toBe("23 of 24 acts with a usable signal");
     const notRanked = { ...last, reason: "not_ranked_on_saved_day" as const };
-    expect(pairLine(notRanked, answer)).toContain("Not compared: not ranked on the saved day. Shown by minutes only.");
+    expect(pairLine(notRanked, answer)).toContain(
+      "Not compared: both acts are on the saved day, but it holds no reading for these two together. Shown by minutes only.",
+    );
   });
 
   it("sorts by audience overlap with unpriced pairs last, and says how the order changes", () => {
@@ -228,17 +243,17 @@ describe("the words of an answer", () => {
     expect(sortedPairs(answer, "minutes")).toEqual(answer.pairs);
     const fourth = answer.pairs[3];
     expect(orderLine(answer)).toBe(
-      `Audience overlap changes the order of the 4 compared overlaps: ${fourth.a} × ${fourth.b} moves from 4th to 1st. The overlap without a reading is listed last, by minutes only.`,
+      `Taste overlap changes the order of the 4 compared overlaps: ${fourth.a} × ${fourth.b} moves from 4th to 1st. The overlap without a reading is listed last, by minutes only.`,
     );
     const same = parsePriceAnswer(answerFor(request, "invented_day", [0.9, 0.8, 0.7, 0.6, 0.5]), request, "saved") as PriceAnswer;
-    expect(orderLine(same)).toBe("Audience overlap does not change the order of the 5 compared overlaps.");
+    expect(orderLine(same)).toBe("Taste overlap does not change the order of the 5 compared overlaps.");
     const one = parsePriceAnswer(answerFor(request, "invented_day", [0.9, null, null, null, null]), request, "saved") as PriceAnswer;
     expect(orderLine(one)).toBeNull();
   });
 
   it("says what live costs before it is pressed, and claims nothing the reading cannot show", () => {
     expect(PRICE_COPY.notSaved(21, 31)).toBe(
-      "These acts are not on a saved day. We can ask Qloo now. This sends 21 names to Qloo and uses about 31 of its requests; live pricing is capped per day on this server.",
+      "These acts are not on a saved day. We can ask Qloo now. This sends 21 act names to Qloo, a third party; Qloo's terms govern what it keeps. Do not send acts you have not announced. A live answer uses about 31 Qloo requests; live pricing is capped per day on this server.",
     );
     expect(PRICE_COPY.askButton(21)).toBe("Ask Qloo for these 21 acts");
     expect(PRICE_COPY.button).toBe("Compare audience overlap");
@@ -263,17 +278,17 @@ describe("round-9 regressions: order, rank scope and recovery", () => {
     expect(sortedPairs(answer, "overlap").map((p) => p.overlap)).toEqual([0.6, 0.3, null, null, null]);
     const line = orderLine(answer) as string;
     expect(line).toBe(
-      "Audience overlap does not change the order of the 2 compared overlaps. The 3 overlaps without a reading are listed last, by minutes only.",
+      "Taste overlap does not change the order of the 2 compared overlaps. The 3 overlaps without a reading are listed last, by minutes only.",
     );
     expect(line).not.toMatch(/moves from/);
     // A real swap among the priced pairs is still named, by its place among the priced pairs only.
     const swapped = parsePriceAnswer(answerFor(request, "invented_day", [null, 0.3, 0.6, null, null]), request, "saved") as PriceAnswer;
     expect(orderLine(swapped)).toBe(
-      `Audience overlap changes the order of the 2 compared overlaps: ${request.overlaps[2].a} × ${request.overlaps[2].b} moves from 2nd to 1st. The 3 overlaps without a reading are listed last, by minutes only.`,
+      `Taste overlap changes the order of the 2 compared overlaps: ${request.overlaps[2].a} × ${request.overlaps[2].b} moves from 2nd to 1st. The 3 overlaps without a reading are listed last, by minutes only.`,
     );
     // Equal values keep the minutes order: no move is claimed.
     const tied = parsePriceAnswer(answerFor(request, "invented_day", [0.5, 0.5, 0.5, 0.5, 0.5]), request, "saved") as PriceAnswer;
-    expect(orderLine(tied)).toBe("Audience overlap does not change the order of the 5 compared overlaps.");
+    expect(orderLine(tied)).toBe("Taste overlap does not change the order of the 5 compared overlaps.");
   });
 
   it("states the comparator population: the saved day's lineup, the invented lineup, or the acts sent live", () => {
@@ -372,7 +387,7 @@ describe("round-9b coverage: matched, priced, no signal, ambiguous, and the comp
     expect(pairLine(answer.pairs[3], answer)).toBe(
       `${p3.a} × ${p3.b}: ${p3.minutes} min shared. Not compared: ${p3.b} matched more than one act of that name, so none was picked. Shown by minutes only.`,
     );
-    expect(pairLine(answer.pairs[4], answer)).toContain(`Not compared: no usable Qloo signal for ${p4.b}.`);
+    expect(pairLine(answer.pairs[4], answer)).toContain(`Not compared: ${p4.b} has no usable Qloo signal.`);
     // The rank scope names the population the route ranked within.
     expect(rankScope(answer)).toBe(
       "A rank among the 22 acts Qloo matched of the 24 sent just now, not attendance, and not comparable with a published day’s figures.",
@@ -404,5 +419,182 @@ describe("round-9b coverage: matched, priced, no signal, ambiguous, and the comp
     expect(odd.comparator).toBeNull();
     expect(odd.coverage.noSignal).toBeNull();
     expect(coverageParts(odd)).toBeNull();
+  });
+});
+
+describe("round 31: one name and one scale (C4)", () => {
+  const request = priceRequest(sample()) as PriceRequest;
+
+  it("prints every value as taste overlap NN / 100, never as a 0 to 1 decimal", () => {
+    expect(tasteScore(0.91)).toBe(91);
+    expect(tasteScore(0.004)).toBe(0);
+    expect(tasteScore(0.995)).toBe(100);
+    const answer = parsePriceAnswer(answerFor(request, "invented_day", [0.91, 0.4, 0.62, 0.2, 0.05]), request, "saved") as PriceAnswer;
+    const lines = answer.pairs.map((pair) => pairLine(pair, answer));
+    expect(lines[0]).toBe(`${request.overlaps[0].a} × ${request.overlaps[0].b}: ${request.overlaps[0].minutes} min shared. Taste overlap 91 / 100, ranked 1 of 5.`);
+    expect(lines[4]).toContain("Taste overlap 5 / 100, ranked 5 of 5.");
+    for (const line of [...lines, orderLine(answer) ?? ""]) {
+      expect(line).not.toMatch(/Audience overlap \d|0\.\d\d|%/);
+    }
+  });
+
+  it("says \"the only pair compared\" when one pair has a value, never \"ranked 1 of 1\"", () => {
+    const answer = parsePriceAnswer(answerFor(request, "invented_day", [0.73, null, null, null, null]), request, "saved") as PriceAnswer;
+    const line = pairLine(answer.pairs[0], answer);
+    expect(line).toBe(`${request.overlaps[0].a} × ${request.overlaps[0].b}: ${request.overlaps[0].minutes} min shared. Taste overlap 73 / 100, the only pair compared.`);
+    expect(line).not.toContain("ranked 1 of 1");
+  });
+
+  it("keeps the action's name and the rank-scope sentences word for word", () => {
+    expect(PRICE_COPY.button).toBe("Compare audience overlap");
+    expect(PRICE_COPY.heading).toBe("Compare audience overlap (optional)");
+    expect(PRICE_COPY.overlapFirst).toBe("Highest taste overlap first");
+    expect(PRICE_COPY.briefHeading(5)).toBe("Taste overlap compared (5 longest overlaps)");
+    const live = parsePriceAnswer(answerFor(request, "qloo_live", [0.5, 0.4, 0.3, 0.2, 0.1]), request, "live") as PriceAnswer;
+    expect(rankScope(live)).toContain("not attendance, and not comparable with a published day’s figures");
+    expect(PRICE_COPY.scopeBefore).toContain("a rank within a lineup, not attendance");
+  });
+
+  it("holds no toFixed in the module: no value prints as a decimal", () => {
+    const source = readFileSync(fileURLToPath(new URL("./check-price.ts", import.meta.url)), "utf8");
+    expect(source).not.toContain("toFixed(2)");
+  });
+});
+
+describe("round 31: the live offer reads the server first (C2, C3)", () => {
+  it("reads price_grid_live from the health answer: on, off and unknown (unknown is off)", async () => {
+    vi.stubGlobal("fetch", respond(200, { status: "ok", price_grid_live: true }));
+    expect(await priceGridLive()).toBe(true);
+    vi.stubGlobal("fetch", respond(200, { status: "ok", price_grid_live: false }));
+    expect(await priceGridLive()).toBe(false);
+    vi.stubGlobal("fetch", respond(200, { status: "ok" }));
+    expect(await priceGridLive()).toBe(false);
+    vi.stubGlobal("fetch", respond(503, { detail: "down" }));
+    expect(await priceGridLive()).toBe(false);
+    vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new TypeError("offline"))));
+    expect(await priceGridLive()).toBe(false);
+  });
+
+  it("reads the health check with a bodiless GET of this app's own API", async () => {
+    const fetch = respond(200, { price_grid_live: false });
+    vi.stubGlobal("fetch", fetch);
+    await priceGridLive();
+    const [url, init] = fetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/health");
+    expect(init).toMatchObject({ method: "GET", cache: "no-store", referrerPolicy: "no-referrer" });
+    expect(init.body).toBeUndefined();
+  });
+
+  it("words the off state with no offer to ask Qloo, and the intro to match", () => {
+    expect(PRICE_COPY.liveOff).toBe(
+      "These acts are not on a saved day, and live Qloo pricing is off on this server, so they are not compared. Acts on a saved day still compare.",
+    );
+    expect(PRICE_COPY.liveOff).not.toMatch(/We can ask Qloo now|Ask Qloo for/);
+    expect(PRICE_COPY.intro(5, 24)).toMatch(/If no saved day matches, nothing is compared: live Qloo pricing is off on this server\.$/);
+    expect(PRICE_COPY.intro(5, 24, 0, false)).not.toContain("you can choose to ask Qloo");
+    expect(PRICE_COPY.intro(5, 24, 0, true)).toMatch(/If no saved day matches, you can choose to ask Qloo instead\.$/);
+  });
+
+  it("adds the third-party sentence to the live consent, with the count already computed", () => {
+    expect(thirdParty(21)).toBe(
+      "This sends 21 act names to Qloo, a third party; Qloo's terms govern what it keeps. Do not send acts you have not announced.",
+    );
+    expect(thirdParty(1)).toContain("This sends 1 act name to Qloo");
+    expect(PRICE_COPY.notSaved(21, 31)).toContain(thirdParty(21));
+  });
+});
+
+describe("round 31: pairs a programmer could move (C5) and reasons in words (C9)", () => {
+  const grid = [
+    "act,stage,start,end,locked",
+    "Pine Lantern,North,18:00,20:00,yes",
+    "Quill Harbor,South,18:00,19:50,yes",
+    "Rook Meadow,East,18:00,19:00,",
+    "Sable Comet,West,18:30,19:20,",
+    "Tin Orchard,Club,19:00,19:30,",
+  ].join("\n");
+
+  it("passes over a pair whose two sets are both locked and fills from the next-longest", () => {
+    const report = reportOf(grid);
+    const both = report.shared.find((pair) => pair.a.locked && pair.b.locked);
+    expect(both).toBeDefined();
+    expect(report.shared[0]).toBe(both);
+    const request = priceRequest(report) as PriceRequest;
+    expect(request.overlaps).toHaveLength(PRICE_LIMITS.pairs);
+    expect(request.overlaps.some((o) => [o.a, o.b].sort().join("|") === "Pine Lantern|Quill Harbor")).toBe(false);
+    expect(request.skipped).toEqual([{ a: both?.a.act, b: both?.b.act, minutes: both?.minutes }]);
+    // A pair with one locked set is still sent.
+    expect(request.overlaps.some((o) => o.a === "Pine Lantern" || o.b === "Pine Lantern")).toBe(true);
+  });
+
+  it("words a passed-over pair with its reason, and never as wanted", () => {
+    const line = lockedLine({ a: "Pine Lantern", b: "Quill Harbor", minutes: 110 });
+    expect(line).toBe(
+      "Pine Lantern × Quill Harbor: 110 min shared. Not compared: both sets are locked, so neither can move; the next-longest overlap is compared instead.",
+    );
+    expect(line).not.toMatch(/on purpose|deliberate|intended/i);
+  });
+
+  it("sends nothing new for the invented sample: none of its overlaps has two locked sets", () => {
+    expect((priceRequest(sample()) as PriceRequest).skipped).toEqual([]);
+  });
+
+  it("gives every unpriced pair its reason in words, from the reasons and lists the route returns", () => {
+    const coverage = { acts: 6, priced: 3, unpriced: ["Rook Meadow", "Sable Comet", "Tin Orchard"], matched: 5, noSignal: ["Rook Meadow"], ambiguous: ["Tin Orchard"] };
+    const pairs = [] as PriceAnswer["pairs"];
+    const saved = { pairs, coverage, source: "saved_day" as const };
+    expect(unpricedReason({ a: "Pine Lantern", b: "Rook Meadow", reason: "no_signal" }, saved)).toBe("Rook Meadow has no usable Qloo signal");
+    expect(unpricedReason({ a: "Pine Lantern", b: "Sable Comet", reason: "no_signal" }, saved)).toBe(
+      "these two acts are not both on one saved day (Sable Comet is not on it)",
+    );
+    expect(unpricedReason({ a: "Rook Meadow", b: "Sable Comet", reason: "no_signal" }, saved)).toBe(
+      "Rook Meadow has no usable Qloo signal; these two acts are not both on one saved day (Sable Comet is not on it)",
+    );
+    expect(unpricedReason({ a: "Pine Lantern", b: "Sable Comet", reason: "no_signal" }, { ...saved, source: "qloo_live" })).toBe(
+      "Qloo found no act named Sable Comet",
+    );
+    expect(unpricedReason({ a: "Pine Lantern", b: "Tin Orchard", reason: "ambiguous" }, saved)).toBe(
+      "Tin Orchard matched more than one act of that name, so none was picked",
+    );
+    expect(unpricedReason({ a: "Pine Lantern", b: "Quill Harbor", reason: "not_ranked_on_saved_day" }, saved)).toBe(
+      "both acts are on the saved day, but it holds no reading for these two together",
+    );
+    for (const reason of ["no_signal", "ambiguous", "not_ranked_on_saved_day"] as const) {
+      expect(unpricedReason({ a: "Pine Lantern", b: "Sable Comet", reason }, saved)).not.toMatch(/not ranked on the saved day/);
+    }
+  });
+});
+
+describe("round 31: a published day to check (C8)", () => {
+  // An invented list in the route's shape.
+  const list = [
+    { id: "synthetic-day", title: "Invented day", sets: 25, stages: 4, synthetic: true },
+    { id: "brookfield-2030-sat", title: "Brookfield 2030, Saturday", sets: 12, stages: 3, synthetic: false },
+    { id: "other-2030-sun", title: "Other 2030, Sunday", sets: 9, stages: 2 },
+  ];
+
+  it("offers the first day that is not the invented one, and none when there is none", () => {
+    expect(firstPublishedDay(list)).toEqual({ id: "brookfield-2030-sat", title: "Brookfield 2030, Saturday" });
+    expect(firstPublishedDay([list[0]])).toBeNull();
+    expect(firstPublishedDay([])).toBeNull();
+    expect(firstPublishedDay(null)).toBeNull();
+    expect(firstPublishedDay({ presets: list })).toBeNull();
+    expect(firstPublishedDay([{ id: "../x", title: "Odd" }])).toBeNull();
+  });
+
+  it("reads the list and the day with bodiless GETs of this app's own API, never Qloo", async () => {
+    const fetch = respond(200, list);
+    vi.stubGlobal("fetch", fetch);
+    expect(await loadPublishedDay()).toEqual({ id: "brookfield-2030-sat", title: "Brookfield 2030, Saturday" });
+    await loadPublishedTimetable("brookfield-2030-sat");
+    const calls = fetch.mock.calls as [string, RequestInit][];
+    expect(calls.map(([url]) => url)).toEqual(["/api/presets", "/api/presets/brookfield-2030-sat"]);
+    for (const [url, init] of calls) {
+      expect(url).not.toMatch(/qloo/i);
+      expect(init).toMatchObject({ method: "GET" });
+      expect(init.body).toBeUndefined();
+    }
+    vi.stubGlobal("fetch", respond(500, {}));
+    expect(await loadPublishedDay()).toBeNull();
   });
 });

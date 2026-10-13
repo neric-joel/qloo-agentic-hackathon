@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type Ref } from "react";
 import { ArrowDown, ArrowRight, ArrowUp, Check, Equal, LoaderCircle, Minus, Plus, RotateCcw, TriangleAlert } from "lucide-react";
 
 import { ProvenanceChip } from "@/components/kernel";
@@ -61,6 +61,21 @@ export { stripDomain };
 
 /** Where the section sits on the page, for links that point at it. */
 export const TRY_A_MOVE_ID = "try-a-move";
+
+/**
+ * The kept plan's anchor ("See your plan" links here). It takes focus (tabIndex -1), and its scroll margin
+ * clears the sticky site header (64 px) plus, from 768 px, the sticky section nav (44 px), with room to spare.
+ */
+export const YOUR_PLAN_ID = "your-plan";
+
+/** Who handed "Try a move" a step to keep: the decision card or a tested place from an agent run. */
+export type SeedSource = "card" | "agent";
+
+/** A step handed in from outside the section; a new `nonce` keeps it, the same one does nothing. */
+export type SeedStep = { nonce: number; step: StackStep; from?: SeedSource };
+
+/** No step held: shared so its identity never changes. */
+const NO_STEPS: readonly StackStep[] = [];
 
 /** "15:45-16:30" -> "15:45–16:30", as the rest of the page prints a time range. */
 function dashRanges(text: string): string {
@@ -244,6 +259,7 @@ function MovesCard({
   chosen,
   keep,
   onChoose,
+  headingRef,
 }: {
   result: MovesResult;
   preset: Preset;
@@ -253,6 +269,8 @@ function MovesCard({
   chosen: PlacedOption | null;
   keep: KeepControl;
   onChoose: (index: number) => void;
+  /** The heading takes focus when "Show every legal place" opened this list. */
+  headingRef?: Ref<HTMLHeadingElement>;
 }) {
   const detailId = useId();
   const fullHelpId = useId();
@@ -294,7 +312,9 @@ function MovesCard({
     <div data-moves-card className="border-t border-border pt-5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="type-title break-words">Where {result.act} could go</h3>
+          <h3 ref={headingRef} tabIndex={-1} className="type-title break-words outline-none">
+            Where {result.act} could go
+          </h3>
           <p className="mt-1.5 text-sm text-muted-foreground">Now: {dashRanges(result.from)}</p>
         </div>
         <ProvenanceChip provenance="derived" size="sm" className="mt-1" synthetic={preset.synthetic === true} />
@@ -440,6 +460,40 @@ export function cardSharedMinutes(
 type Span = { start: number; end: number };
 
 /**
+ * The minutes a move's set shares with `partnerId` before and after the move, and the receipt's strip of the
+ * three sets, read from `timetable` (the published one, or the plan's). Null when the minutes do not read.
+ */
+function moveFigures(
+  festival: Preset["festival"],
+  timetable: readonly SetSlot[],
+  move: StackMove,
+  partnerId: string,
+  partnerName: string,
+): { minutes: SharedMinutes; strip: MoveStripData | null } | null {
+  const minutes = cardSharedMinutes(timetable, move, partnerId, partnerName);
+  if (!minutes) return null;
+  const nameOf = (id: string) => festival.acts.find((act) => act.id === id)?.name ?? null;
+  const slot = timetable.find((candidate) => candidate.act_id === move.actId);
+  const other = timetable.find((candidate) => candidate.act_id === partnerId);
+  const start = clockMinutes(move.start);
+  const stageOf = (id: string) => festival.stages.find((stage) => stage.id === id)?.name ?? null;
+  const strip: MoveStripData | null =
+    slot && other && start !== null
+      ? {
+          now: { start: slot.start, end: slot.end },
+          tested: { start, end: start + (slot.end - slot.start) },
+          partner: { start: other.start, end: other.end },
+          moverName: nameOf(move.actId) ?? move.actId,
+          partnerName,
+          nowStage: stageOf(slot.stage_id),
+          testedStage: stageOf(move.stageId),
+          partnerStage: stageOf(other.stage_id),
+        }
+      : null;
+  return { minutes, strip };
+}
+
+/**
  * The moved set now and at the tested place, and the set it shares time with, for the receipt's strip,
  * with each one's stage when the timetable names it.
  */
@@ -551,6 +605,8 @@ export function TestedPlace({
   keepFull,
   onKeep,
   onShowAll,
+  label = "Tested place",
+  showAll = null,
 }: {
   card: CardMove;
   /** The moved set's name, for "Listed clashes of {mover}:". */
@@ -564,6 +620,10 @@ export function TestedPlace({
   keepFull: boolean;
   onKeep: () => void;
   onShowAll: () => void;
+  /** The label over the result: "Tested place" for the card's move, "Best tested place" for a picked set's first. */
+  label?: string;
+  /** When "Show every legal place" opens a list on this page rather than asking for one: whether it is open. */
+  showAll?: { expanded: boolean; controls: string } | null;
 }) {
   const fullHelpId = useId();
   const cardBefore = card.indexBefore ? Number(card.indexBefore) : Number.NaN;
@@ -584,7 +644,7 @@ export function TestedPlace({
     // A result, not a control group: it sits open on paper under one 1px decorative top rule, as the
     // hero receipt does, with no other edge, no fill and no side padding.
     <div data-tested-card className="border-t border-border pt-5 sm:pt-6">
-      <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Tested place</p>
+      <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">{label}</p>
       {/* The dateline names the set it tested, then its stage and times: "Sprints at Woodsies · 14:15–15:15".
           The one place the tested time is printed. With no mover name it reads as before: "Woodsies · …". */}
       <p data-dateline className="mt-1 text-[0.9375rem] leading-snug">
@@ -665,7 +725,7 @@ export function TestedPlace({
         {strip ? <MoveStrip data={strip} /> : null}
       </div>
       {/* The receipt says the minutes in words; it shows only when the fact list has no minutes row. */}
-      {hasMinutes ? null : <p className="mt-3 text-sm leading-relaxed">{card.receipt}</p>}
+      {hasMinutes || !card.receipt ? null : <p className="mt-3 text-sm leading-relaxed">{card.receipt}</p>}
       {/* The result's one inner separator: a decorative 1px hairline above the actions, the column's width. */}
       <div aria-hidden="true" data-actions-rule className="mt-6 border-t border-border" />
       <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2">
@@ -678,15 +738,128 @@ export function TestedPlace({
         >
           {keepFull ? "Plan is full" : "Keep this move"}
         </Button>
-        <Button type="button" variant="ruled" onClick={onShowAll}>
-          Show every legal place
-          <ArrowRight aria-hidden="true" />
+        <Button
+          type="button"
+          variant="ruled"
+          aria-expanded={showAll ? showAll.expanded : undefined}
+          aria-controls={showAll ? showAll.controls : undefined}
+          onClick={onShowAll}
+        >
+          {showAll?.expanded ? "Hide every legal place" : "Show every legal place"}
+          <ArrowRight
+            aria-hidden="true"
+            className={showAll ? (showAll.expanded ? "-rotate-90" : "rotate-90") : undefined}
+          />
         </Button>
       </div>
       {keepFull ? (
         <p id={fullHelpId} className="mt-2 text-sm text-muted-foreground">
           Eight moves is the most a plan holds here. Undo one or start over.
         </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** A picked set's best tested place: the engine's first legal place, with what the tested-place card prints. */
+export type BestPlace = {
+  option: PlacedOption;
+  move: StackMove;
+  figures: { minutes: SharedMinutes; strip: MoveStripData | null } | null;
+  changes: PlaceChanges;
+};
+
+/**
+ * A picked set's best tested place, read as the card's tested place is: the first place the engine
+ * lists (lowest Clash Budget first), the minutes the set shares with its partner before and after (on
+ * `timetable`, the plan's) and the clashes the engine lists for it there. Null with no legal place.
+ */
+export function bestPlace(
+  result: MovesResult | null,
+  preset: Preset,
+  timetable: readonly SetSlot[],
+  clashes: readonly { aId: string; bId: string }[],
+): BestPlace | null {
+  const option = result && result.movable ? (result.options[0] ?? null) : null;
+  if (!result || !option) return null;
+  const move: StackMove = { actId: result.actId, stageId: option.stageId, day: option.day, start: option.start };
+  const partner =
+    starterPairsOf({ actIds: [result.actId], timetable, acts: preset.festival.acts, clashes, seed: null }).get(result.actId) ??
+    null;
+  return {
+    option,
+    move,
+    figures: partner ? moveFigures(preset.festival, timetable, move, partner.partnerId, partner.partnerName) : null,
+    changes: placeChanges(preset.festival, timetable, result, option),
+  };
+}
+
+/**
+ * The right column once a set is picked, from 1024 px (display:none below, where the full list follows the
+ * picker as before, so one copy shows at each width): its best tested place with Keep this move, and "Show
+ * every legal place", which opens the full list under the two columns (`controls`). While the places load
+ * it says so; a set that cannot move, or has no legal place, says that.
+ */
+export function BestPlaceColumn({
+  status,
+  result,
+  best,
+  pickedName,
+  synthetic,
+  keepFull,
+  onKeep,
+  open,
+  controls,
+  onToggle,
+}: {
+  status: "idle" | "loading" | "error" | "ready" | "invalid";
+  result: MovesResult | null;
+  best: BestPlace | null;
+  pickedName: string | null;
+  synthetic: boolean;
+  keepFull: boolean;
+  onKeep: (option: PlacedOption) => void;
+  open: boolean;
+  controls: string;
+  onToggle: () => void;
+}) {
+  return (
+    <div
+      data-best-place
+      className="mt-8 min-w-0 max-lg:hidden lg:col-span-7 lg:col-start-6 lg:row-start-2"
+      aria-busy={status === "loading"}
+    >
+      {status === "loading" ? (
+        <p className="flex min-h-32 items-start gap-2 border-t border-border pt-5 text-sm text-muted-foreground sm:pt-6">
+          <LoaderCircle aria-hidden="true" className="mt-0.5 size-4 motion-safe:animate-spin" />
+          Pricing every legal place for {pickedName ?? "this set"}
+        </p>
+      ) : result && best ? (
+        <>
+          {!result.priced ? <p className="mb-4 text-sm">{noSignalMove(synthetic, result.act)}</p> : null}
+          <TestedPlace
+            card={{ move: best.move, receipt: "" }}
+            mover={result.act}
+            stage={best.option.stage}
+            end={best.option.end}
+            minutes={best.figures?.minutes ?? null}
+            strip={best.figures?.strip ?? null}
+            check={{ status: "ready", result, option: best.option }}
+            changes={best.changes}
+            keepFull={keepFull}
+            onKeep={() => onKeep(best.option)}
+            onShowAll={onToggle}
+            label="Best tested place"
+            showAll={{ expanded: open, controls }}
+          />
+        </>
+      ) : result ? (
+        <div className="border-t border-border pt-5 sm:pt-6">
+          <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Where {result.act} could go</p>
+          <p className="mt-1 text-[0.9375rem] font-semibold">
+            {result.movable ? "No free slot it may use breaks no rule." : `It cannot move: ${result.why ?? "it is fixed in place"}.`}
+          </p>
+        </div>
       ) : null}
     </div>
   );
@@ -830,13 +1003,18 @@ export function TryAMove({
   /** A change previewed from "Keep two sets apart": two ghost slots, never part of the kept plan. */
   onRulePreview?: (preview: RulePreview | null) => void;
   /**
-   * The decision card's move or change: a new `nonce` makes it the kept plan; the same one does
-   * nothing.
+   * The decision card's move or change, or an agent run's tested place: a new `nonce` makes it the kept
+   * plan; the same one does nothing. Neither source scrolls the page or moves focus: the source says
+   * "Kept in your plan." itself and offers the way here.
    */
-  seedStep?: { nonce: number; step: StackStep } | null;
+  seedStep?: SeedStep | null;
   /** The decision card's rule: a new `nonce` runs the search for the pair in "Keep two sets apart". */
   seedRule?: { nonce: number; aId: string; bId: string } | null;
-  /** Hears the steps the plan holds, so the decision card can mark what it already holds. */
+  /**
+   * Hears the steps the plan really holds: the kept steps once the timetable engine has priced them
+   * together (`/whatif`), and none while that answer is out or after it refused them. So the decision
+   * card and the agent panel say "Kept" only for a step the plan holds.
+   */
   onKeptChange?: (steps: readonly StackStep[]) => void;
   /**
    * The card's move and its receipt: a plan that is just that move prints the receipt under its step,
@@ -880,6 +1058,25 @@ export function TryAMove({
   const choiceKey = `${encodeMoves(moves)}:${actId ?? ""}`;
   const index = choice && choice.key === choiceKey ? choice.index : 0;
   const chosen = result && result.movable ? (result.options[Math.min(index, result.options.length - 1)] ?? null) : null;
+  // From 1024 px a picked set's answer fills the right column with its best tested place (the engine's first
+  // legal place, lowest Clash Budget first), and "Show every legal place" opens the full list under the two
+  // columns. Below 1024 px the full list shows at once, as before. Open for one set on one plan only.
+  const [allFor, setAllFor] = useState<string | null>(null);
+  const allOpen = allFor === choiceKey;
+  const placesId = useId();
+  const placesHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  // The list "Show every legal place" asked for from the card's tested place: its heading takes focus once it
+  // is on the page, so focus never drops to the page when the button that was pressed goes.
+  const focusPlaces = useRef<string | null>(null);
+  useEffect(() => {
+    if (!result || focusPlaces.current !== choiceKey) return;
+    const heading = placesHeadingRef.current;
+    if (!heading) return;
+    focusPlaces.current = null;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    heading.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
+    heading.focus({ preventScroll: true });
+  }, [result, choiceKey]);
 
   const starters = useMemo(() => {
     if (moves.length > 0 && state.plan) {
@@ -959,26 +1156,7 @@ export function TryAMove({
     const partnerId = starterPairs.get(mover)?.partnerId ?? null;
     const partnerName = partnerId ? nameOf(partnerId) : null;
     if (!partnerId || !partnerName || (!seedShown.pair && !seedShown.receipt.includes(partnerName))) return null;
-    const minutes = cardSharedMinutes(preset.festival.timetable, seedShown.move, partnerId, partnerName);
-    if (!minutes) return null;
-    const slot = preset.festival.timetable.find((candidate) => candidate.act_id === mover);
-    const other = preset.festival.timetable.find((candidate) => candidate.act_id === partnerId);
-    const start = clockMinutes(seedShown.move.start);
-    const stageOf = (id: string) => preset.festival.stages.find((stage) => stage.id === id)?.name ?? null;
-    const strip: MoveStripData | null =
-      slot && other && start !== null
-        ? {
-            now: { start: slot.start, end: slot.end },
-            tested: { start, end: start + (slot.end - slot.start) },
-            partner: { start: other.start, end: other.end },
-            moverName: nameOf(mover) ?? mover,
-            partnerName,
-            nowStage: stageOf(slot.stage_id),
-            testedStage: stageOf(seedShown.move.stageId),
-            partnerStage: stageOf(other.stage_id),
-          }
-        : null;
-    return { minutes, strip };
+    return moveFigures(preset.festival, preset.festival.timetable, seedShown.move, partnerId, partnerName);
   }, [seedShown, preset, starterPairs]);
   const seedMinutes = seedFigures?.minutes ?? null;
   // The card's move checked against the engine's legal places for its set, so the tested place can say
@@ -991,6 +1169,11 @@ export function TryAMove({
         : null,
     [seedCheck, preset, timetable],
   );
+
+  // The picked set's best tested place, read as the card's tested place is: the engine's first listed place,
+  // the minutes it shares with its partner before and after (from the plan's timetable) and the clashes the
+  // engine lists for it there.
+  const best = useMemo(() => bestPlace(result, preset, timetable, pairClashes), [result, timetable, preset, pairClashes]);
 
 
   // What the grid may draw: the kept moves and the place being tried on top of them.
@@ -1048,14 +1231,15 @@ export function TryAMove({
     setFocus((previous) => ({ nonce: previous.nonce + 1, delay, target }));
   }
 
-  // A move or change seeded by the decision card becomes the kept plan: state adjusted while
-  // rendering, as React advises for a prop that changes. A plan that already holds it is left as it
-  // is; one that does not is replaced, and the notice above the plan says so. The plan is priced as any
-  // kept step is (this section's own `/whatif` request); for a move, focus reaches the plan card once
-  // the card's own motion (the band and the figure, 900 ms) has played; a change has no motion to wait
-  // for. With reduced motion focus moves at once.
+  // A move or change seeded by the decision card (or a place an agent run tested) becomes the kept plan:
+  // state adjusted while rendering, as React advises for a prop that changes. A plan that already holds it
+  // is left as it is; one that does not is replaced, and the notice above the plan says so. The plan is
+  // priced as any kept step is (this section's own `/whatif` request), which re-checks it against the
+  // published timetable. Nothing scrolls and focus stays where it is: the source announces the keep and
+  // offers "See your plan" (#your-plan), so the visitor is never carried off the card they pressed.
   const seedNonce = seedStep?.nonce ?? 0;
   const seedStepValue = seedStep?.step ?? null;
+  const seedFrom = seedStep?.from ?? "card";
   const [handledSeed, setHandledSeed] = useState(0);
   if (
     seedStepValue &&
@@ -1068,39 +1252,40 @@ export function TryAMove({
   ) {
     const outcome = seedOutcome(moves, seedStepValue);
     setHandledSeed(seedNonce);
-    if (outcome.kind === "same") {
-      focusOn("plan");
-    } else {
+    if (outcome.kind !== "same") {
       const next = [seedStepValue];
       setMoves(next);
       setPicked(null);
       setPlanNews({ moves: encodeMoves(next), picked: null });
-      setFromCard(true);
+      // Only the card's own plan offers the way back to the card.
+      setFromCard(seedFrom === "card");
       setNotice(
         outcome.kind === "replace"
           ? `Replaced your earlier ${pluralize(outcome.dropped, "kept step")} with this ${isRuleStackStep(seedStepValue) ? "change" : "move"}. Start over clears the plan.`
           : null,
       );
-      focusOn("plan", isRuleStackStep(seedStepValue) ? 0 : 900);
     }
   }
   // Keep the tab's plan in step with the moves, whichever way they changed.
   useEffect(() => {
     storeMoves(preset.id, moves);
   }, [preset.id, moves]);
-  // Tell the page what the plan holds, so the decision card can mark its own move or change.
+  // Tell the page what the plan holds, so the decision card and the agent panel can mark their own move or
+  // change: the kept steps once the engine has priced them together (a plan priced for exactly these
+  // steps), none before that answer is in or when it refused them (`invalid`, which keeps no plan).
+  const held = state.plan ? moves : NO_STEPS;
   const keptOut = useRef(onKeptChange);
   useEffect(() => {
     keptOut.current = onKeptChange;
   }, [onKeptChange]);
-  const movesNow = useRef(moves);
+  const heldNow = useRef(held);
   useEffect(() => {
-    movesNow.current = moves;
-  }, [moves]);
-  const movesKey = encodeMoves(moves);
+    heldNow.current = held;
+  }, [held]);
+  const heldKey = state.plan ? encodeMoves(moves) : "";
   useEffect(() => {
-    keptOut.current?.(movesNow.current);
-  }, [movesKey]);
+    keptOut.current?.(heldNow.current);
+  }, [heldKey]);
   useEffect(() => {
     if (focus.nonce === 0) return;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -1179,6 +1364,14 @@ export function TryAMove({
     setPlanNews({ moves: encodeMoves(next), picked });
     // With moves left the plan card is where the change shows; with none, the set picker.
     focusOn(next.length === 0 ? "picker" : "plan-here");
+  }
+
+  /** Every legal place for `id`, opened at once (from the card's tested place, or with no card move). */
+  function showEvery(id: string) {
+    const key = `${encodeMoves(moves)}:${id}`;
+    setPicked(id);
+    setAllFor(key);
+    focusPlaces.current = key;
   }
 
   function startOver() {
@@ -1389,10 +1582,10 @@ export function TryAMove({
                 changes={seedChanges}
                 keepFull={used >= MAX_STACK}
                 onKeep={() => keepCardMove(seedShown.move)}
-                onShowAll={() => setPicked(shown)}
+                onShowAll={() => showEvery(shown)}
               />
             ) : (
-              <Button type="button" variant="ruled" onClick={() => setPicked(shown)}>
+              <Button type="button" variant="ruled" onClick={() => showEvery(shown)}>
                 Show every legal place
                 <ArrowRight aria-hidden="true" />
               </Button>
@@ -1400,39 +1593,63 @@ export function TryAMove({
           </div>
         ) : null}
 
+        {/* From 1024 px, once a set is picked, the right column holds its best tested place, so it is never
+            empty beside the picker; below 1024 px this column is not shown and the full list follows the
+            picker as before (one copy at each width). */}
         {actId ? (
-          <div className="mt-6 lg:col-span-12" aria-busy={state.status === "loading"}>
+          <BestPlaceColumn
+            status={state.status}
+            result={result}
+            best={best}
+            pickedName={pickedName}
+            synthetic={preset.synthetic === true}
+            keepFull={used >= MAX_STACK}
+            onKeep={keep}
+            open={allOpen}
+            controls={placesId}
+            onToggle={() => setAllFor(allOpen ? null : choiceKey)}
+          />
+        ) : null}
+
+        {actId ? (
+          <div id={placesId} className="lg:col-span-12" aria-busy={state.status === "loading"}>
             {state.status === "loading" ? (
-              <div className="flex min-h-32 items-center gap-2 rounded-md border border-border bg-card p-6 text-sm text-muted-foreground">
+              <div className="mt-6 flex min-h-32 items-center gap-2 rounded-md border border-border bg-card p-6 text-sm text-muted-foreground lg:hidden">
                 <LoaderCircle aria-hidden="true" className="size-4 motion-safe:animate-spin" />
                 Pricing every legal place for {pickedName ?? "this set"}
               </div>
             ) : state.status === "error" ? (
-              planned ? (
-                <PlanError onRetry={state.retry} onStartOver={startOver} />
-              ) : (
-                <div role="alert" className="rounded-md border border-destructive bg-card p-5">
-                  <p className="flex items-center gap-2 text-[0.9375rem] font-semibold text-destructive">
-                    <TriangleAlert aria-hidden="true" className="size-4 shrink-0" />
-                    Could not load the places for this set.
-                  </p>
-                  <Button type="button" variant="outline" className="mt-3" onClick={state.retry}>
-                    <RotateCcw aria-hidden="true" />
-                    Try again
-                  </Button>
-                </div>
-              )
+              <div className="mt-6">
+                {planned ? (
+                  <PlanError onRetry={state.retry} onStartOver={startOver} />
+                ) : (
+                  <div role="alert" className="rounded-md border border-destructive bg-card p-5">
+                    <p className="flex items-center gap-2 text-[0.9375rem] font-semibold text-destructive">
+                      <TriangleAlert aria-hidden="true" className="size-4 shrink-0" />
+                      Could not load the places for this set.
+                    </p>
+                    <Button type="button" variant="outline" className="mt-3" onClick={state.retry}>
+                      <RotateCcw aria-hidden="true" />
+                      Try again
+                    </Button>
+                  </div>
+                )}
+              </div>
             ) : result ? (
-              <MovesCard
-                result={result}
-                preset={preset}
-                timetable={timetable}
-                kept={used}
-                range={range}
-                chosen={chosen}
-                keep={{ full: used >= MAX_STACK, onKeep: keep }}
-                onChoose={(next) => setChoice({ key: choiceKey, index: next })}
-              />
+              // From 1024 px the list waits under its best tested place until "Show every legal place" opens it.
+              <div className={cn("mt-6", !allOpen && "lg:hidden")}>
+                <MovesCard
+                  result={result}
+                  preset={preset}
+                  timetable={timetable}
+                  kept={used}
+                  range={range}
+                  chosen={chosen}
+                  keep={{ full: used >= MAX_STACK, onKeep: keep }}
+                  onChoose={(next) => setChoice({ key: choiceKey, index: next })}
+                  headingRef={placesHeadingRef}
+                />
+              </div>
             ) : null}
           </div>
         ) : null}
@@ -1440,10 +1657,13 @@ export function TryAMove({
         {planned ? (
           <div
             ref={planRef}
+            id={YOUR_PLAN_ID}
             tabIndex={-1}
             role="group"
             aria-label="Your tested moves"
-            className="mt-6 rounded-lg focus:outline-none lg:col-span-12"
+            // The sticky header (64 px) and, from 768 px, the section nav (44 px) sit over the top of the page:
+            // the page's own scroll padding (63 / 82 px) plus this 48 px margin lands the plan below both.
+            className="mt-6 scroll-mt-12 rounded-lg focus:outline-none lg:col-span-12"
             aria-busy={state.status === "loading" && !state.plan}
           >
             {notice ? (

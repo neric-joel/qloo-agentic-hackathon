@@ -190,14 +190,19 @@ describe("watchReveal", () => {
 
 describe("the motion classes in globals.css", () => {
   const css = readFileSync(fileURLToPath(new URL("../app/globals.css", import.meta.url)), "utf8");
-  const block = (start: string) => {
-    const from = css.indexOf(start);
+  const block = (start: string, from = css.indexOf(start)) => {
     let depth = 0;
     for (let i = css.indexOf("{", from); i < css.length; i++) {
       if (css[i] === "{") depth++;
       if (css[i] === "}" && --depth === 0) return css.slice(from, i);
     }
     return "";
+  };
+  /** Every block that opens with `start`, joined (the stylesheet may hold several `@media print` blocks). */
+  const allBlocks = (start: string) => {
+    const found: string[] = [];
+    for (let at = css.indexOf(start); at !== -1; at = css.indexOf(start, at + start.length)) found.push(block(start, at));
+    return found.join(" ");
   };
   const pieces = [
     "cc-hero-slot",
@@ -218,8 +223,8 @@ describe("the motion classes in globals.css", () => {
   ];
 
   it("shows every piece's final frame under reduced motion and in print", () => {
-    const reduced = block("@media (prefers-reduced-motion: reduce)");
-    const print = block("@media print");
+    const reduced = allBlocks("@media (prefers-reduced-motion: reduce)");
+    const print = allBlocks("@media print");
     for (const piece of pieces) {
       expect(reduced, piece).toContain(`.${piece}`);
       expect(print, piece).toContain(`.${piece}`);

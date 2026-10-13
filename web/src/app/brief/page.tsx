@@ -39,7 +39,7 @@ const PRINT_CSS = `
 function Loading() {
   return (
     <div className="container-page max-w-[60rem] pt-8 pb-12">
-      <p className="type-kicker text-muted-foreground">Clash brief</p>
+      <h1 className="type-kicker text-muted-foreground">Clash brief</h1>
       <p role="status" className="mt-2 text-lg font-semibold sm:text-xl">
         Loading the brief.
       </p>

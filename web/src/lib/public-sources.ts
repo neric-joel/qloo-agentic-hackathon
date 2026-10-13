@@ -3,8 +3,8 @@
  * project's saved complaint set, in order of first appearance. Ten pages (six articles and four forum threads)
  * give the 45 clusters; one page can name several clashes.
  *
- * A plain list, copied from `_private/backtest/complaints.json` by a one-off local script; nothing here is read
- * at build time. `/method` lists them under "Sources for the 45 clashes".
+ * A plain list, copied from the complaint set in the entry's private backtest folder (not in this repository)
+ * by a one-off local script; nothing here is read at build time. `/method` lists them under "Sources for the 45 clashes".
  */
 export const PUBLIC_SOURCES: readonly string[] = [
   "https://www.vice.com/en/via/coachella-2026-set-times-just-announced-conflicts-surprises-and-more/",

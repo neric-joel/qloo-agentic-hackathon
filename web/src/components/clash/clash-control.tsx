@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { ArrowRight, ChevronDown } from "lucide-react";
 import Link from "next/link";
@@ -47,7 +47,7 @@ import { BoardSkeleton, ScoreSkeleton } from "./skeletons";
 import { TimetableGrid } from "./timetable-grid";
 import { TimetableLegend, legendSymbolCount } from "./timetable-legend";
 import { TimetableList } from "./timetable-list";
-import { TRY_A_MOVE_ID, TryAMove } from "./try-a-move";
+import { TRY_A_MOVE_ID, TryAMove, type SeedStep } from "./try-a-move";
 import { TasteSection, WHAT_QLOO_ID, WhatQlooPointer, concurrentPairs, whatChangesTitle } from "./why-qloo";
 import { WHY_THIS_MATTERS_ID, WhyThisMatters } from "./why-this-matters";
 import { useAgentStatus } from "./use-agent-status";
@@ -59,7 +59,10 @@ import { useRecordings } from "./use-recordings";
 const TOP_LINKS = 10;
 
 /** The anchor of the sources section, for the jump nav. */
-const SOURCES_ID = "sources";
+export const SOURCES_ID = "sources";
+
+/** The hidden-clash examples' section id (`hidden-wall.tsx`), for the jump nav. */
+export const HIDDEN_WALL_ID = "hidden-wall";
 
 /** The card's footer link says what it opens, and only rank 1 is called the costliest. */
 const HERO_BUTTON: Record<HeroClash["kind"], string> = {
@@ -190,38 +193,88 @@ function BoardFrame({
 type JumpLink = { href: string; label: string };
 
 /**
+ * The home page's sections under the hero and the section nav, in reading order: what Qloo changes for the
+ * card's clash, the hidden-clash examples (second, so the clash no genre tag can find is met early), why
+ * this matters, the timetable, Try a move, the agent's recorded or live runs, and the sources.
+ */
+export const HOME_ORDER = ["qloo", "wall", "why", "board", "move", "agent", "sources"] as const;
+
+type HomeSection = (typeof HOME_ORDER)[number];
+
+/** Renders the home sections in `HOME_ORDER`, whatever order the caller passes them in. */
+export function HomeSections(sections: Record<HomeSection, ReactNode>) {
+  return (
+    <>
+      {HOME_ORDER.map((key) => (
+        <Fragment key={key}>{sections[key]}</Fragment>
+      ))}
+    </>
+  );
+}
+
+/**
  * In-page links under the hero, in the order of the sections. From 768 px up it sticks under the site header, and the page's
  * anchor offset grows by its height so a jump lands below it; on a phone it is one row that
  * scrolls sideways.
  */
-function JumpNav({ agent, wall, qloo = null }: { agent: JumpLink; wall: boolean; qloo?: JumpLink | null }) {
-  // In page order.
-  const links: JumpLink[] = [
+/**
+ * The section nav's entries, in page order: What Qloo changes (when the card has its readings), Hidden
+ * clashes (when the day has examples), Why this matters, Timetable, Try a move, the agent's runs, Sources.
+ */
+export function jumpLinks({ agent, wall, qloo = null }: { agent: JumpLink; wall: boolean; qloo?: JumpLink | null }): JumpLink[] {
+  return [
     ...(qloo ? [qloo] : []),
+    ...(wall ? [{ href: `#${HIDDEN_WALL_ID}`, label: "Hidden clashes" }] : []),
     { href: `#${WHY_THIS_MATTERS_ID}`, label: "Why this matters" },
     { href: "#board-heading", label: "Timetable" },
-    ...(wall ? [{ href: "#hidden-wall", label: "Hidden clashes" }] : []),
     { href: `#${TRY_A_MOVE_ID}`, label: "Try a move" },
     agent,
     { href: `#${SOURCES_ID}`, label: "Sources" },
   ];
+}
+
+/**
+ * The entry the nav marks current: the last section whose top is above 40% of the viewport, none at the
+ * very top of the page before the first has reached that line; and the last entry once the page is
+ * scrolled to its end (within 2 px), since a short last section can never reach that line.
+ */
+export function currentJump(
+  tops: readonly { href: string; top: number | null }[],
+  view: { innerHeight: number; scrollY: number; scrollHeight: number },
+): string | null {
+  if (tops.length > 0 && view.scrollY > 0 && view.innerHeight + view.scrollY >= view.scrollHeight - 2) {
+    const last = [...tops].reverse().find((item) => item.top !== null);
+    if (last) return last.href;
+  }
+  const line = view.innerHeight * 0.4;
+  let active: string | null = null;
+  for (const { href, top } of tops) if (top !== null && top <= line) active = href;
+  return active;
+}
+
+function JumpNav({ agent, wall, qloo = null }: { agent: JumpLink; wall: boolean; qloo?: JumpLink | null }) {
+  // In page order.
+  const links = jumpLinks({ agent, wall, qloo });
   const hrefs = links.map((link) => link.href).join("|");
   const [current, setCurrent] = useState<string | null>(null);
 
-  // The section in view: the last anchor whose top is above 40% of the viewport; none at the very
-  // top of the page, before the first section has reached that line.
+  // The section in view (see `currentJump`).
   useEffect(() => {
     const targets = hrefs.split("|").map((href) => ({ href, id: href.slice(1) }));
     let frame = 0;
     function measure() {
       frame = 0;
-      const line = window.innerHeight * 0.4;
-      let active: string | null = null;
-      for (const { href, id } of targets) {
-        const element = document.getElementById(id);
-        if (element && element.getBoundingClientRect().top <= line) active = href;
-      }
-      setCurrent(active);
+      const tops = targets.map(({ href, id }) => ({
+        href,
+        top: document.getElementById(id)?.getBoundingClientRect().top ?? null,
+      }));
+      setCurrent(
+        currentJump(tops, {
+          innerHeight: window.innerHeight,
+          scrollY: window.scrollY,
+          scrollHeight: document.documentElement.scrollHeight,
+        }),
+      );
     }
     function schedule() {
       if (frame === 0) frame = window.requestAnimationFrame(measure);
@@ -412,9 +465,25 @@ export function ClashControl({
   // whether the live agent is on when the festival day first renders.
   const agentStatus = useAgentStatus();
 
+  // A new festival day remounts the whole view, its day tabs included, so a tab chosen with the arrow keys
+  // (or a press) would leave focus on the page. The chosen tab takes focus back in each new tree (the
+  // loading view's, then the day's), until the day itself is on screen.
+  const pickerFocus = useRef<string | null>(null);
+  useEffect(() => {
+    const id = pickerFocus.current;
+    if (!id) return;
+    const tab = [...document.querySelectorAll<HTMLInputElement>(`[role="radiogroup"][aria-label="${PRESET_PICKER_LABEL}"] input[type="radio"]`)].find(
+      (input) => input.value === id,
+    );
+    if (tab && document.activeElement !== tab) tab.focus({ preventScroll: true });
+    if (tab && preset.status === "ready" && preset.value.id === id) pickerFocus.current = null;
+  });
+
   // The native history API keeps `useSearchParams` in sync without a server round trip, so
   // switching festival days needs nothing but the preset data itself.
   function choosePreset(id: string) {
+    const active = document.activeElement;
+    if (active instanceof HTMLInputElement && active.closest(`[aria-label="${PRESET_PICKER_LABEL}"]`)) pickerFocus.current = id;
     const params = new URLSearchParams(searchParams.toString());
     params.set("preset", id);
     window.history.replaceState(null, "", `${pathname}?${params.toString()}`);
@@ -495,6 +564,9 @@ export function ClashControl({
   );
 }
 
+/** The festival-day tabs' group name, which also finds them again after a day change remounts the view. */
+const PRESET_PICKER_LABEL = "Festival day";
+
 function PresetPicker({
   presets,
   selectedId,
@@ -509,7 +581,7 @@ function PresetPicker({
   if (presets.length < 2) return null;
   return (
     <SegmentedControl
-      label="Festival day"
+      label={PRESET_PICKER_LABEL}
       size="sm"
       variant="tabs"
       value={selectedId}
@@ -554,9 +626,11 @@ function PresetView({
   const [rulePreview, setRulePreview] = useState<RulePreview | null>(null);
   // The decision card's buttons hand "Try a move" a seed (a move, or line 3's change as one step); a
   // new nonce replays it, the same one never does.
-  const [seedStep, setSeedStep] = useState<{ nonce: number; step: StackStep } | null>(null);
+  // An agent run's tested place reaches the plan the same way, marked as the agent's (`from`).
+  const [seedStep, setSeedStep] = useState<SeedStep | null>(null);
   const [seedRule, setSeedRule] = useState<{ nonce: number; aId: string; bId: string } | null>(null);
-  // The steps the plan holds now, reported by "Try a move", so the decision card can show what is already kept.
+  // The steps the plan holds now (priced by the engine), reported by "Try a move", so the decision card and the
+  // agent panel say "Kept" only for what the plan really holds.
   const [keptSteps, setKeptSteps] = useState<readonly StackStep[]>([]);
 
   const { festival, report } = preset;
@@ -639,6 +713,14 @@ function PresetView({
   function openClash(clash: PairClash, trigger: HTMLElement | null) {
     setDrawer((previous) => ({ clash, open: true, trigger: previous.open ? previous.trigger : trigger }));
   }
+  // The card's pair among the day's ranked clashes, so its re-check opens that pair's existing drawer.
+  const decisionPair = decisionClash
+    ? (ranked.find(
+        (clash) =>
+          (clash.a.act_id === decisionClash.aId && clash.b.act_id === decisionClash.bId) ||
+          (clash.a.act_id === decisionClash.bId && clash.b.act_id === decisionClash.aId),
+      ) ?? null)
+    : null;
 
   return (
     <>
@@ -659,7 +741,7 @@ function PresetView({
                         const move = decisionCopy.seedMove;
                         if (!move) return null;
                         const note = replacedNote(keptSteps, move);
-                        setSeedStep((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, step: move }));
+                        setSeedStep((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, step: move, from: "card" }));
                         return note;
                       }
                     : undefined
@@ -678,7 +760,7 @@ function PresetView({
                         const change = decisionCopy.seedChange;
                         if (!change) return null;
                         const note = replacedNote(keptSteps, change);
-                        setSeedStep((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, step: change }));
+                        setSeedStep((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, step: change, from: "card" }));
                         return note;
                       }
                     : undefined
@@ -696,6 +778,12 @@ function PresetView({
                     />
                   ) : undefined
                 }
+                saved={
+                  preset.synthetic || preset.built_at === null
+                    ? null
+                    : { builtAt: preset.built_at, requests: preset.requests.length }
+                }
+                onOpenPair={decisionPair ? (trigger) => openClash(decisionPair, trigger) : undefined}
               />
             ) : decisionState.status === "loading" ? (
               <DecisionCardSkeleton />
@@ -710,202 +798,224 @@ function PresetView({
         qloo={decisionClash && lenses ? { href: `#${WHAT_QLOO_ID}`, label: whatChangesTitle(synthetic) } : null}
       />
 
-      {/* What Qloo changes for the card's clash, the equal-popularity pairs and the two rankings of the
-          day, closed by the failed test. Always rendered, so the failed test is there with no lens data. */}
-      <TasteSection
-        clash={
-          decisionClash
-            ? {
-                aId: decisionClash.aId,
-                bId: decisionClash.bId,
-                aName: actName(decisionClash.aId),
-                bName: actName(decisionClash.bId),
-              }
-            : null
-        }
-        lenses={lenses}
-        pairs={sharedPairs}
-        twins={twins}
-        acts={festival.acts}
-        ranked={ranked}
-        onOpen={openClash}
-        synthetic={synthetic}
-      />
-
-      {/* The problem, the pilot and what is not known, next to the failed test and before the board. */}
-      <WhyThisMatters />
-
-      <BoardFrame labelledBy="board-heading">
-        {/* One header block: the dateline and heading on the left; on the right the festival tabs with
-            "How Qloo was used" right under them (8 px), right-aligned from 1024 px and at the left on a
-            phone. */}
-        <div className="mb-8 flex flex-wrap items-end justify-between gap-x-8 gap-y-4 pb-4">
-          <div className="min-w-0">
-            <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
-              {synthetic ? "Invented timetable" : "Published timetable"} · {preset.title}
-              {festival.city ? `, ${festival.city}` : ""}
-            </p>
-            <h2 id="board-heading" className="type-title mt-1.5 scroll-mt-16 md:scroll-mt-26">
-              Where the clash budget goes: {festival.stages.length} stages, {views.length} sets
-            </h2>
-          </div>
-          <div className="flex min-w-0 flex-col items-start gap-2 lg:items-end">
-            {picker}
-            <TraceDrawer
-              toolCalls={allCalls}
-              mode="recorded"
-              triggerVariant="ink"
-              hideIcon
-              triggerClassName="min-h-11 text-[0.8125rem] font-semibold lg:min-h-6"
-              triggerLabel={usedTitle(preset.synthetic === true)}
-              title={usedTitle(preset.synthetic === true)}
-              synthetic={preset.synthetic === true}
-              description={boardTraceDescription(preset.synthetic === true, preset.title)}
-              footnote={`Preset ${preset.id}${preset.built_at ? ` · built ${preset.built_at.slice(0, 10)}` : ""}`}
-            />
-          </div>
-        </div>
-
-        {days.length > 1 ? (
-          <SegmentedControl
-            label="Day"
-            size="sm"
-            variant="tabs"
-            value={String(day)}
-            onValueChange={(value) => {
-              setDay(Number(value));
-              setHighlight(null);
-            }}
-            options={days.map((index) => ({ value: String(index), label: festival.days[index] ?? `Day ${index + 1}` }))}
-            className="mt-4"
+      {/* Under the nav, in HOME_ORDER: what Qloo changes for the card's clash, the hidden-clash examples, why
+          this matters, the timetable, Try a move, the agent's runs and the sources. */}
+      <HomeSections
+        qloo={
+          // What Qloo changes for the card's clash, the equal-popularity pairs and the two rankings of the
+          // day, closed by the failed test. Always rendered, so the failed test is there with no lens data.
+          <TasteSection
+            clash={
+              decisionClash
+                ? {
+                    aId: decisionClash.aId,
+                    bId: decisionClash.bId,
+                    aName: actName(decisionClash.aId),
+                    bName: actName(decisionClash.bId),
+                  }
+                : null
+            }
+            lenses={lenses}
+            pairs={sharedPairs}
+            twins={twins}
+            acts={festival.acts}
+            ranked={ranked}
+            onOpen={openClash}
+            synthetic={synthetic}
           />
-        ) : null}
-
-        {/* From 1280 px up the rail holds the day's score above the costliest clashes, so the stage
-            headers start right under coverage and the key. Below that the rail dissolves into the column
-            (display: contents) and the score comes last, after the board: under 768 px the board leads,
-            then the costliest clashes; from 768 px the costliest clashes lead, then the board. The score
-            holds nothing focusable, and from 768 px the list and the board keep their source order. */}
-        <div className="mt-6 grid gap-10 xl:grid-cols-[18rem_minmax(0,1fr)] xl:gap-10">
-          {/* From 1280 px up the whole rail is sticky (below the site header and jump bar) and scrolls on
-              its own when taller than the screen, so it travels beside the grid instead of leaving blank.
-              There it holds the score and the costliest clashes under one 1px rule (their own surfaces
-              drop at that width). The scroll box reaches 12 px past the column on each side and pads it back,
-              so its content, and the rule drawn by the one wrapper inside it, start on the section's gutter
-              while the focus rings keep their room inside the clip. Below 1280 px both dissolve and each
-              child keeps its own surface. */}
-          <div className="min-w-0 max-xl:contents xl:sticky xl:top-31 xl:max-h-[calc(100dvh-8.75rem)] xl:self-start xl:overflow-y-auto xl:overscroll-contain xl:-mx-3 xl:scroll-py-1 xl:px-3 xl:pb-1">
-            <div className="flex min-w-0 flex-col gap-10 max-xl:contents xl:gap-6 xl:border-t xl:border-border xl:pt-6">
-            <Scorecard className="order-3 max-w-[28rem] xl:order-1 xl:max-w-none">
-              <BudgetDial index={index} baseline={report.baseline} reach={reach} compact synthetic={synthetic} />
-            </Scorecard>
-            <div className="order-2 min-w-0 md:order-1 xl:order-2">
-              <ClashList
-                clashes={links}
-                slots={slots}
-                stages={stages}
-                totalRanked={ranked.length}
-                fixedShare={fixedShare}
-                isLocked={isLocked}
-                activeKeys={activeClashKeys}
-                dimmed={highlight !== null}
-                onOpen={openClash}
-                onHighlight={(key) => setHighlight(key ? { kind: "clash", key } : null)}
-                synthetic={preset.synthetic === true}
+        }
+        wall={<HiddenWall evidence={preset.evidence} synthetic={synthetic} />}
+        why={
+          // The problem, the pilot and what is not known, after the hidden clashes and before the board.
+          <WhyThisMatters />
+        }
+        board={
+          <BoardFrame labelledBy="board-heading">
+            {/* One header block: the dateline and heading on the left; on the right the festival tabs with
+                "How Qloo was used" right under them (8 px), right-aligned from 1024 px and at the left on a
+                phone. */}
+            <div className="mb-8 flex flex-wrap items-end justify-between gap-x-8 gap-y-4 pb-4">
+              <div className="min-w-0">
+                <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
+                  {synthetic ? "Invented timetable" : "Published timetable"} · {preset.title}
+                  {festival.city ? `, ${festival.city}` : ""}
+                </p>
+                <h2 id="board-heading" className="type-title mt-1.5 scroll-mt-16 md:scroll-mt-26">
+                  Where the clash budget goes: {festival.stages.length} stages, {views.length} sets
+                </h2>
+              </div>
+              <div className="flex min-w-0 flex-col items-start gap-2 lg:items-end">
+                {picker}
+                <TraceDrawer
+                  toolCalls={allCalls}
+                  mode="recorded"
+                  triggerVariant="ink"
+                  hideIcon
+                  triggerClassName="min-h-11 text-[0.8125rem] font-semibold lg:min-h-6"
+                  triggerLabel={usedTitle(preset.synthetic === true)}
+                  title={usedTitle(preset.synthetic === true)}
+                  synthetic={preset.synthetic === true}
+                  description={boardTraceDescription(preset.synthetic === true, preset.title)}
+                  footnote={`Preset ${preset.id}${preset.built_at ? ` · built ${preset.built_at.slice(0, 10)}` : ""}`}
+                />
+              </div>
+            </div>
+          
+            {days.length > 1 ? (
+              <SegmentedControl
+                label="Day"
+                size="sm"
+                variant="tabs"
+                value={String(day)}
+                onValueChange={(value) => {
+                  setDay(Number(value));
+                  setHighlight(null);
+                }}
+                options={days.map((index) => ({ value: String(index), label: festival.days[index] ?? `Day ${index + 1}` }))}
+                className="mt-4"
               />
-            </div>
-            </div>
-          </div>
-          <div className="order-1 min-w-0 md:order-2 xl:order-none">
-            <CoverageMeter
-              coverage={report.coverage}
-              metrics={report.metrics}
-              synthetic={synthetic}
-              legend={
-                <TimetableLegend
-                  inline
-                  planShown={planShown}
+            ) : null}
+          
+            {/* From 1280 px up the rail holds the day's score above the costliest clashes, so the stage
+                headers start right under coverage and the key. Below that the rail dissolves into the column
+                (display: contents) and the score comes last, after the board: under 768 px the board leads,
+                then the costliest clashes; from 768 px the costliest clashes lead, then the board. The score
+                holds nothing focusable, and from 768 px the list and the board keep their source order. */}
+            <div className="mt-6 grid gap-10 xl:grid-cols-[18rem_minmax(0,1fr)] xl:gap-10">
+              {/* From 1280 px up the whole rail is sticky (below the site header and jump bar) and scrolls on
+                  its own when taller than the screen, so it travels beside the grid instead of leaving blank.
+                  There it holds the score and the costliest clashes under one 1px rule (their own surfaces
+                  drop at that width). The scroll box reaches 12 px past the column on each side and pads it back,
+                  so its content, and the rule drawn by the one wrapper inside it, start on the section's gutter
+                  while the focus rings keep their room inside the clip. Below 1280 px both dissolve and each
+                  child keeps its own surface. */}
+              <div className="min-w-0 max-xl:contents xl:sticky xl:top-31 xl:max-h-[calc(100dvh-8.75rem)] xl:self-start xl:overflow-y-auto xl:overscroll-contain xl:-mx-3 xl:scroll-py-1 xl:px-3 xl:pb-1">
+                <div className="flex min-w-0 flex-col gap-10 max-xl:contents xl:gap-6 xl:border-t xl:border-border xl:pt-6">
+                <Scorecard className="order-3 max-w-[28rem] xl:order-1 xl:max-w-none">
+                  <BudgetDial index={index} baseline={report.baseline} reach={reach} compact synthetic={synthetic} />
+                </Scorecard>
+                <div className="order-2 min-w-0 md:order-1 xl:order-2">
+                  <ClashList
+                    clashes={links}
+                    slots={slots}
+                    stages={stages}
+                    totalRanked={ranked.length}
+                    fixedShare={fixedShare}
+                    isLocked={isLocked}
+                    activeKeys={activeClashKeys}
+                    dimmed={highlight !== null}
+                    onOpen={openClash}
+                    onHighlight={(key) => setHighlight(key ? { kind: "clash", key } : null)}
+                    synthetic={preset.synthetic === true}
+                  />
+                </div>
+                </div>
+              </div>
+              <div className="order-1 min-w-0 md:order-2 xl:order-none">
+                <CoverageMeter
+                  coverage={report.coverage}
+                  metrics={report.metrics}
                   synthetic={synthetic}
-                  className="max-md:hidden"
-                  note={
-                    <>
-                      Lines join the {links.length} costliest clashes; draw on each set is its {popularityName(synthetic)}.
-                      Open any clash for its figures.
-                    </>
+                  legend={
+                    <TimetableLegend
+                      inline
+                      planShown={planShown}
+                      synthetic={synthetic}
+                      className="max-md:hidden"
+                      note={
+                        <>
+                          Lines join the {links.length} costliest clashes; draw on each set is its {popularityName(synthetic)}.
+                          Open any clash for its figures.
+                        </>
+                      }
+                    />
                   }
                 />
-              }
-            />
-            {/* Below 768 px: the key, then the board itself in a sideways scroller that snaps to the stage
-                columns, then the start-order list behind a summary. Under 640 px the key folds into one
-                closed summary unless a tested place is on the board, when its warning must show. */}
-            {planShown ? (
-              <TimetableLegend planShown synthetic={synthetic} className="mt-4 mb-3 md:hidden" />
-            ) : (
-              <>
-                <MoreDetails
-                  className="mt-4 mb-3 sm:hidden"
-                  summary={`How to read the board (${pluralize(legendSymbolCount({ planShown }), "symbol")})`}
-                >
-                  <TimetableLegend synthetic={synthetic} className="mt-3 px-1" />
-                </MoreDetails>
-                <TimetableLegend synthetic={synthetic} className="mt-4 mb-3 hidden sm:flex md:hidden" />
-              </>
-            )}
-            <p className="mb-3 text-xs text-muted-foreground md:hidden">Scroll sideways to see every stage.</p>
-            <div className="max-md:snap-x max-md:snap-mandatory max-md:scroll-pl-[72px] max-md:overflow-x-auto max-md:overscroll-x-contain max-md:pb-3 md:mt-6">
-              <TimetableGrid
-                className="max-md:min-w-[760px]"
-                views={views}
-                stages={festival.stages}
-                links={links}
-                dayLabel={dayLabel}
-                activeSetIds={activeSetIds}
-                activeClashKeys={activeClashKeys}
-                dimmed={highlight !== null}
-                focusSetId={highlight?.kind === "set" ? highlight.id : null}
-                onHighlightSet={(id) => setHighlight(id ? { kind: "set", id } : null)}
-                onHighlightClash={(key) => setHighlight(key ? { kind: "clash", key } : null)}
-                onOpen={openClash}
-                plan={planPreview}
-                rulePreview={rulePreview}
-                synthetic={synthetic}
-              />
+                {/* Below 768 px: the key, then the board itself in a sideways scroller that snaps to the stage
+                    columns, then the start-order list behind a summary. Under 640 px the key folds into one
+                    closed summary unless a tested place is on the board, when its warning must show. */}
+                {planShown ? (
+                  <TimetableLegend planShown synthetic={synthetic} className="mt-4 mb-3 md:hidden" />
+                ) : (
+                  <>
+                    <MoreDetails
+                      className="mt-4 mb-3 sm:hidden"
+                      summary={`How to read the board (${pluralize(legendSymbolCount({ planShown }), "symbol")})`}
+                    >
+                      <TimetableLegend synthetic={synthetic} className="mt-3 px-1" />
+                    </MoreDetails>
+                    <TimetableLegend synthetic={synthetic} className="mt-4 mb-3 hidden sm:flex md:hidden" />
+                  </>
+                )}
+                <p className="mb-3 text-xs text-muted-foreground md:hidden">Scroll sideways to see every stage.</p>
+                <div className="max-md:snap-x max-md:snap-mandatory max-md:scroll-pl-[72px] max-md:overflow-x-auto max-md:overscroll-x-contain max-md:pb-3 md:mt-6">
+                  <TimetableGrid
+                    className="max-md:min-w-[760px]"
+                    views={views}
+                    stages={festival.stages}
+                    links={links}
+                    dayLabel={dayLabel}
+                    activeSetIds={activeSetIds}
+                    activeClashKeys={activeClashKeys}
+                    dimmed={highlight !== null}
+                    focusSetId={highlight?.kind === "set" ? highlight.id : null}
+                    onHighlightSet={(id) => setHighlight(id ? { kind: "set", id } : null)}
+                    onHighlightClash={(key) => setHighlight(key ? { kind: "clash", key } : null)}
+                    onOpen={openClash}
+                    plan={planPreview}
+                    rulePreview={rulePreview}
+                    synthetic={synthetic}
+                  />
+                </div>
+                <details className="group mt-8 md:hidden">
+                  <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-md border border-border-strong bg-card px-4 py-2.5 text-sm font-semibold hover:bg-accent [&::-webkit-details-marker]:hidden">
+                    Show the start-order list ({pluralize(views.length, "set")})
+                    <ChevronDown
+                      aria-hidden="true"
+                      className="size-4 shrink-0 group-open:rotate-180 motion-safe:transition-transform motion-safe:duration-150"
+                    />
+                  </summary>
+                  <TimetableList className="mt-4" views={views} dayLabel={dayLabel} onOpen={openClash} synthetic={synthetic} />
+                </details>
+              </div>
             </div>
-            <details className="group mt-8 md:hidden">
-              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-md border border-border-strong bg-card px-4 py-2.5 text-sm font-semibold hover:bg-accent [&::-webkit-details-marker]:hidden">
-                Show the start-order list ({pluralize(views.length, "set")})
-                <ChevronDown
-                  aria-hidden="true"
-                  className="size-4 shrink-0 group-open:rotate-180 motion-safe:transition-transform motion-safe:duration-150"
-                />
-              </summary>
-              <TimetableList className="mt-4" views={views} dayLabel={dayLabel} onOpen={openClash} synthetic={synthetic} />
-            </details>
+          </BoardFrame>
+        }
+        move={
+          <TryAMove
+            preset={preset}
+            day={day}
+            ranked={ranked}
+            isLocked={isLocked}
+            onPlanChange={setPlanPreview}
+            onRulePreview={setRulePreview}
+            seedStep={seedStep}
+            seedRule={seedRule}
+            onKeptChange={setKeptSteps}
+            cardMove={decisionCopy?.seedMove && decisionCopy.moveReceipt ? { move: decisionCopy.seedMove, receipt: decisionCopy.moveReceipt } : null}
+          />
+        }
+        agent={
+          <AgentPanel
+            preset={preset}
+            day={day}
+            agentStatus={agentStatus}
+            keptSteps={keptSteps}
+            onKeepPlace={(move) => {
+              // The agent proposes, the programmer keeps: the same seed path as the card's Keep this move,
+              // which replaces the plan and has the plan's own /whatif price it again.
+              const note = replacedNote(keptSteps, move);
+              setSeedStep((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, step: move, from: "agent" }));
+              return note;
+            }}
+          />
+        }
+        sources={
+          <div id={SOURCES_ID}>
+            <PresetSources preset={preset} />
           </div>
-        </div>
-      </BoardFrame>
-
-      <HiddenWall evidence={preset.evidence} synthetic={synthetic} />
-
-      <TryAMove
-        preset={preset}
-        day={day}
-        ranked={ranked}
-        isLocked={isLocked}
-        onPlanChange={setPlanPreview}
-        onRulePreview={setRulePreview}
-        seedStep={seedStep}
-        seedRule={seedRule}
-        onKeptChange={setKeptSteps}
-        cardMove={decisionCopy?.seedMove && decisionCopy.moveReceipt ? { move: decisionCopy.seedMove, receipt: decisionCopy.moveReceipt } : null}
+        }
       />
-
-      <AgentPanel preset={preset} day={day} agentStatus={agentStatus} />
-
-      <div id={SOURCES_ID}>
-        <PresetSources preset={preset} />
-      </div>
 
       <ClashDrawer
         preset={preset}

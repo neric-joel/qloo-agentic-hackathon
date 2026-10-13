@@ -25,6 +25,12 @@ import {
 export const TEXT_ACTION =
   "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md px-2 text-sm font-semibold whitespace-nowrap text-foreground decoration-1 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-3.5 [&_svg]:shrink-0";
 
+/**
+ * Under the size line of a change that moves a set to another stage: a new stage is production's call, not
+ * only the programmer's. The engine's ranking already lists stage changes after equal start-time moves.
+ */
+export const STAGE_SIGN_OFF = "Changes stage: needs production sign-off";
+
 /** What the page keeps of one search: the target it was for, how far it has got and, once done, the result. */
 export type TrialState = {
   targetId: string;
@@ -84,6 +90,7 @@ function ChangeItem({
       </p>
       {rise ? <p className="mt-0.5 text-sm break-words text-warning">{rise}</p> : null}
       <p className="mt-0.5 text-sm text-muted-foreground">{sizeLine(change)}</p>
+      {change.stageChanges > 0 ? <p className="mt-0.5 text-sm text-muted-foreground">{STAGE_SIGN_OFF}</p> : null}
       <Button type="button" variant="outline" size="sm" className="mt-3" disabled={stale} onClick={() => onApply(change)}>
         {TRIAL_COPY.tryIt}
         <span className="sr-only">: {change.lines.join(" and ")}</span>

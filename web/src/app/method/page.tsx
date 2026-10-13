@@ -9,6 +9,7 @@ import { ProvenanceChip } from "@/components/kernel/provenance-chip";
 import { BySyntheticDay } from "@/components/site/synthetic-context";
 import { artSlot } from "@/lib/art";
 import { BUILT_FROM_REAL, BUILT_FROM_SYNTHETIC, COUNTS_ONLY_NEUTRAL, formulaNote } from "@/lib/credit";
+import { DO_NOT_USE } from "@/lib/demand";
 import type { Provenance } from "@/lib/events";
 import {
   METHOD_FIGURES,
@@ -42,6 +43,28 @@ const taste = methodRow("taste");
 const genre = methodRow("genre");
 const popularity = methodRow("popularity");
 const [tasteLow, tasteHigh] = taste.auc95 ?? [taste.auc, taste.auc];
+
+/**
+ * The short version's line on what the same test did show, directly after the failed test: every figure read from
+ * METHOD_FIGURES, the interval's floor against chance, the overlap with genre tags' interval, popularity's lead, and
+ * the exploratory follow-up named as exploratory.
+ */
+const HELD_LINE =
+  `In the same test, taste overlap ranked complained-about clashes above random (AUC ${formatAuc(taste.auc)}, ` +
+  `${scale.intervalPct}% interval ${formatInterval([tasteLow, tasteHigh])}, which stays above ${scale.auc.chance}) ` +
+  `and above genre tags (${formatAuc(genre.auc)}), though the two intervals overlap widely. Popularity did better ` +
+  `(${formatAuc(popularity.auc)}), and the exploratory follow-up did not establish an advantage over popularity. ` +
+  `Taste overlap is nearly unrelated to popularity (correlation ${backtest.popularityCorrelation}).`;
+
+/**
+ * Printed, /method leaves out the site header and footer (the brief and /check do the same); the light print
+ * palette for every page is in globals.css.
+ */
+const PRINT_CSS = `
+@media print {
+  body > header, body > footer { display: none !important; }
+}
+`;
 /** Image slot 2, a decorative band above the heading; nothing renders until its files are in place. */
 const headerArt = artSlot("method");
 
@@ -296,6 +319,7 @@ function ShortVersion() {
             building was {backtest.bar.topQuarterPct}% and {backtest.bar.leadOverGenrePoints} points
             ahead.
           </li>
+          <li className={SHORT_ROW}>{HELD_LINE}</li>
           <li className={SHORT_ROW}>
             Popularity did better. On the same test, popularity, another Qloo field, reached{" "}
             {formatPct(popularity.topQuarterPct)}. The check on suggested moves failed too: taste-overlap
@@ -428,7 +452,10 @@ const QLOO_CALLS: readonly {
       { name: "filter.type", value: <Token>urn:entity:artist</Token> },
       { name: "signal.interests.entities", value: "One act." },
       { name: "filter.results.entities", value: "The day's other acts, up to 50 per request, with take set to match." },
-      { name: "signal.location.query", value: "Sent when the festival has a city." },
+      {
+        name: "signal.location.query",
+        value: "Not sent: both saved days were ranked without a location, so their taste overlap is a global reading, not a local one.",
+      },
     ],
     returns: "How strongly the signal act's audience leans toward each listed act. Ranked within the day, this becomes taste overlap.",
     live: "Sent live by the pair re-check (two of its three requests), the pasted-grid price in live mode and the agent's tools, where switched on.",
@@ -749,6 +776,7 @@ export default function MethodPage() {
   const [overlapLow, overlapHigh] = scale.overlap;
   return (
     <article>
+      <style>{PRINT_CSS}</style>
       <header className="container-page pt-10 pb-10 sm:pt-14 sm:pb-12">
         {/* From 1280px the header is the sections' 12-column grid: the art, the title and the lede across all twelve
             columns, then the short version as the first hanging block, and the running order in its body column. */}
@@ -922,6 +950,7 @@ export default function MethodPage() {
             The Clash Budget Index compares a timetable with random valid timetables of the same
             lineup. It reads one kind of cost. Real programming weighs much more than taste overlap.
           </li>
+          <li>{DO_NOT_USE}</li>
         </ul>
       </Section>
 
@@ -1005,8 +1034,8 @@ export default function MethodPage() {
           <p>
             The brief page prints this day&rsquo;s costliest clashes, the day&rsquo;s Clash Budget Index
             and any moves you kept, using only figures the timetable page already shows. It is for
-            evaluating this entry, it is not offered to festivals, and it leaves out Qloo&rsquo;s tags and
-            identifiers.
+            evaluating this entry. The pilot on the home page sends one back, free, to a festival that sends its
+            bill, with the same limits: no Qloo tags or identifiers, and not for redistribution.
           </p>
         </SubBlock>
       </Section>

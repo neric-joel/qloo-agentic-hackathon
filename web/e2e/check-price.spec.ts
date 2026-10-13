@@ -1,11 +1,12 @@
 import { expect, test } from "./fixtures";
-import { requireSavedDays } from "./helpers";
+import { listDays, requireSavedDays } from "./helpers";
 import { CheckPage } from "./pages/check-page";
 
 /**
  * "Compare audience overlap" on /check. Pressed with its default, it sends only act names and pairs to this
  * site's own server, which answers from a saved festival day (or the invented example day) with no Qloo
- * request. Only an explicit "Ask Qloo" would go live, and the live path is off here.
+ * request. The page offers "Ask Qloo" only while `/api/health` says live grid pricing is on; it is off here,
+ * so no spec presses it, and the suite's guard blocks any request in a mode other than "saved".
  */
 
 /** A real Glastonbury Sunday grid: its act names are on the saved day, so the server can price it from it. */
@@ -68,7 +69,9 @@ test.describe("compare audience overlap, from a saved day", () => {
     await expect(check.priceSection).toContainText("24 acts sent: 24 matched, 23 with a usable signal; 1 matched with no signal.");
     const rows = check.priceSection.getByRole("listitem");
     await expect(rows).toHaveCount(5);
-    await expect(rows.first()).toContainText("Glass Mirror × Marble Machine: 80 min shared. Audience overlap 0.34, ranked 2 of 5.");
+    // One name and one scale for the value: "taste overlap NN / 100" (the invented day's own figures).
+    await expect(rows.first()).toContainText("Glass Mirror × Marble Machine: 80 min shared. Taste overlap 34 / 100, ranked 2 of 5.");
+    for (const row of await rows.all()) await expect(row).toContainText(/Taste overlap \d{1,3} \/ 100, ranked \d of 5\./);
     // A rank, not attendance, and no index here.
     await expect(check.priceSection).toContainText("not Qloo data and not attendance");
     await expect(check.priceSection).toContainText("The Clash Budget Index needs a full priced day and is not computed here.");
@@ -81,7 +84,7 @@ test.describe("compare audience overlap, from a saved day", () => {
 
     const rows = check.priceSection.getByRole("listitem");
     const longest = check.priceSection.getByRole("button", { name: "Longest first" });
-    const highest = check.priceSection.getByRole("button", { name: "Highest audience overlap first" });
+    const highest = check.priceSection.getByRole("button", { name: "Highest taste overlap first" });
     await expect(longest).toHaveAttribute("aria-pressed", "true");
     const byMinutes = await rows.allInnerTexts();
 
@@ -91,7 +94,7 @@ test.describe("compare audience overlap, from a saved day", () => {
     const ranks = (await rows.allInnerTexts()).map((text) => Number(/ranked (\d) of 5/.exec(text)?.[1]));
     expect(ranks).toEqual([1, 2, 3, 4, 5]);
     expect(await rows.allInnerTexts()).not.toEqual(byMinutes);
-    await expect(check.priceSection).toContainText("Audience overlap changes the order of the 5 compared overlaps: Glass Mirror × Hollow Meadow moves from 3rd to 1st.");
+    await expect(check.priceSection).toContainText("Taste overlap changes the order of the 5 compared overlaps: Glass Mirror × Hollow Meadow moves from 3rd to 1st.");
   });
 
   test("a grid of real Glastonbury acts is answered from the saved festival day, and an unranked pair is listed by minutes only", async ({ page }) => {
@@ -109,11 +112,13 @@ test.describe("compare audience overlap, from a saved day", () => {
     expect(sent.map((body) => body.mode)).toEqual(["saved"]);
     await expect(check.priceSection).toContainText("8 acts sent: 8 matched, 8 with a usable signal.");
 
+    // Counts and wording only: no taste value or rank from the saved day is written into this test.
     const rows = check.priceSection.getByRole("listitem");
-    await expect(rows.filter({ hasText: /Audience overlap \d\.\d\d, ranked \d of 4\./ })).toHaveCount(4);
-    // Katy J Pearson × Sprints is the day's costliest clash: first by audience overlap.
-    await expect(rows.filter({ hasText: "Katy J Pearson × Sprints" })).toContainText("ranked 1 of 4");
-    await expect(rows.filter({ hasText: "Nadine Shah × Geordie Greep" })).toContainText("Not compared: not ranked on the saved day. Shown by minutes only.");
+    await expect(rows).toHaveCount(5);
+    await expect(rows.filter({ hasText: /Taste overlap \d{1,3} \/ 100, ranked \d of 4\./ })).toHaveCount(4);
+    // The overlap without a reading says why, in words, and is listed by minutes only.
+    await expect(rows.filter({ hasText: "Nadine Shah × Geordie Greep" })).toContainText(/Not compared: .+\. Shown by minutes only\./);
+    await expect(check.priceSection).toContainText("The overlap without a reading is listed last, by minutes only.");
     await expect(check.priceSection).toContainText("each is a rank among the acts on that day’s lineup of 36 acts, not among the acts you pasted, and not attendance.");
   });
 
@@ -134,60 +139,60 @@ test.describe("compare audience overlap, names no saved day has", () => {
   // The saved attempt is refused with a 422, which the browser reports as a console error.
   test.use({ ignoreConsole: [/status of 422/] });
 
-  test("offers to ask Qloo, says what that sends and costs, and sends nothing until it is pressed", async ({ page, guard }) => {
+  test("with live pricing off on this server, there is no offer to ask Qloo: it says so, and nothing goes live", async ({ page, guard }) => {
+    const health = await (await page.request.get("/api/health")).json();
+    test.skip(health.price_grid_live !== false, "This server has live pricing on; this spec asserts the switched-off state.");
     const sent = recordPriceBodies(page);
     const check = new CheckPage(page);
     await check.goto();
     await check.clearButton.click();
     await check.paste(UNKNOWN_GRID);
     await check.checkButton.click();
+    // Before the press, the page already says what happens when no saved day matches.
+    await expect(check.priceSection).toContainText("If no saved day matches, nothing is compared: live Qloo pricing is off on this server.");
     await check.priceButton.click();
 
-    await expect(check.priceSection).toContainText("These acts are not on a saved day. We can ask Qloo now.");
-    await expect(check.priceSection).toContainText("This sends 5 names to Qloo and uses about 10 of its requests; live pricing is capped per day on this server.");
-    await expect(check.priceSection.getByRole("button", { name: "Ask Qloo for these 5 acts" })).toBeVisible();
-    // Only the saved attempt went out, and it was refused (422); the browser reports that as a console error.
+    await expect(check.priceSection).toContainText(
+      "These acts are not on a saved day, and live Qloo pricing is off on this server, so they are not compared. Acts on a saved day still compare.",
+    );
+    await expect(check.page.getByRole("button", { name: /^Ask Qloo/ })).toHaveCount(0);
+    await expect(check.page.getByText(/We can ask Qloo now/)).toHaveCount(0);
+    // Only the saved attempt went out, and it was refused (422); nothing was sent in a live mode.
     expect(sent.map((body) => body.mode)).toEqual(["saved"]);
     expect(guard.spending).toEqual([]);
     expect(guard.consoleErrors).toHaveLength(1);
   });
 });
 
-test.describe("compare audience overlap, live path refused", () => {
-  // The saved attempt (422) and the refused live one (503) are reported by the browser as console errors.
-  test.use({ ignoreConsole: [/status of (422|503)/] });
-
-  test("pressing Ask Qloo on a server with live pricing switched off says so, and nothing is spent", async ({ page, guard }) => {
-    const health = await (await page.request.get("/api/health")).json();
-    test.skip(health.price_grid_live !== false, "This server has live pricing on; this spec only asserts the switched-off refusal.");
-
-    // The one request this suite lets through to a live mode: the server refuses it first thing, before
-    // any Qloo call or limiter (backend: price_grid checks the switch before anything else), because the
-    // health check just above said it is off. It is stopped here if the switch is found on.
-    const live: Body[] = [];
-    await page.route("**/api/price-grid", async (route) => {
-      const body = JSON.parse(route.request().postData() ?? "{}") as Body;
-      if (body.mode !== "live") return route.fallback();
-      const again = await (await page.request.get("/api/health")).json();
-      if (again.price_grid_live !== false) return route.abort("blockedbyclient");
-      live.push(body);
-      return route.continue();
-    });
-
+test.describe("compare audience overlap on a published day", () => {
+  test("Check a published day, then Compare: every pair sent is priced or says why not, in saved mode only", async ({ page, guard }) => {
+    // Counts only: no taste value or rank from the saved day is written into this test. A clone without the
+    // built days serves only the invented one, so there is no published day to check.
+    const days = await listDays(page);
+    test.skip(!days.some((day) => !day.synthetic), "The API serves no published day.");
+    const sent = recordPriceBodies(page);
     const check = new CheckPage(page);
     await check.goto();
-    await check.clearButton.click();
-    await check.paste(UNKNOWN_GRID);
-    await check.checkButton.click();
-    await check.priceButton.click();
-    await check.priceSection.getByRole("button", { name: "Ask Qloo for these 5 acts" }).click();
 
-    await expect(check.priceSection.getByText("Live pricing is switched off on this server. A saved day still prices.")).toBeVisible();
-    await expect(check.priceSection).toContainText("Everything above stays as it is: the checks, your decisions");
-    await expect(check.review).toContainText("refused");
-    expect(live).toHaveLength(1);
-    expect(live[0].acts).toHaveLength(5);
+    await check.publishedButton.click();
+    // The day says what it is and what it does not check (the draft review repeats it).
+    await expect(check.page.getByText(/^Published timetable: .+\. Curfew and changeover from that day; its billing rules and stage hours are not checked here\./).first()).toBeVisible();
+    await expect(check.rules).toContainText(/0 pair rules/);
+    await check.priceButton.click();
+
+    await expect(check.priceSection).toContainText("Compared using a saved festival day. No Qloo request was sent.");
+    expect(sent.length).toBeGreaterThanOrEqual(1);
+    expect(sent.every((body) => body.mode === "saved"), "the published day compares in saved mode only").toBe(true);
+    const pairsSent = sent[0].pairs.length;
+
+    const rows = check.priceSection.getByRole("listitem");
+    const priced = rows.filter({ hasText: /Taste overlap \d{1,3} \/ 100(, ranked \d+ of \d+|, the only pair compared)\./ });
+    const reasoned = rows.filter({ hasText: /Not compared: \S.+\./ });
+    await expect(priced.first()).toBeVisible();
+    const [total, pricedCount, reasonedCount] = [await rows.count(), await priced.count(), await reasoned.count()];
+    expect(pricedCount, "at least one pair is priced from the saved day").toBeGreaterThanOrEqual(1);
+    expect(pricedCount + reasonedCount, "every listed pair is priced or says why not").toBe(total);
+    expect(total - (await rows.filter({ hasText: "both sets are locked" }).count()), "every pair sent is listed").toBeGreaterThanOrEqual(pairsSent);
     expect(guard.spending).toEqual([]);
-    expect(guard.consoleErrors).toHaveLength(2);
   });
 });

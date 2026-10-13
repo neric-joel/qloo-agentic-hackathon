@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { ArrowRight, Check, CornerDownLeft, History, LoaderCircle, RotateCcw, SkipForward, X } from "lucide-react";
 
 import { ErrorState, MockBadge, ProvenanceChip, TraceDrawer, useAgentRun } from "@/components/kernel";
@@ -9,6 +9,7 @@ import {
   MAX_MESSAGE_CHARS,
   budgetDelta,
   buildClashBody,
+  changeLabel,
   humanizeProblem,
   latestSession,
   readClashReply,
@@ -24,14 +25,18 @@ import {
 import { panelMode, type AgentStatus } from "@/lib/agent-status";
 import { formatOverlap } from "@/lib/clashes";
 import { agentDataLine, explainPrompt } from "@/lib/credit";
+import { isRecord } from "@/lib/events";
 import { formatLatency, humanizeIdentifier, pluralize } from "@/lib/format";
+import { clockMinutes } from "@/lib/moves";
 import type { Festival, Preset } from "@/lib/preset";
 import { replayFinalState, type RecordedRun } from "@/lib/recorded-run";
-import type { ToolCallState } from "@/lib/run-state";
+import type { RunResult, ToolCallState } from "@/lib/run-state";
+import { isRuleStackStep, sameStep, type StackMove, type StackStep } from "@/lib/stack";
+import { formatClock } from "@/lib/timetable";
 import { cn } from "@/lib/utils";
 
 import { BudgetMove, scaleRange, signedDelta, type ScaleRange } from "./budget-move";
-import { RecordedNotice, RecordedRuns } from "./recorded-runs";
+import { RecordedNotice, RecordedRuns, recordedQlooCalls } from "./recorded-runs";
 import { AgentSkeleton } from "./skeletons";
 import { useRecordings } from "./use-recordings";
 
@@ -76,6 +81,131 @@ const CAPABILITIES: { tool: string; title: string; text: string }[] = [
 
 function toolLabel(tool: string): string {
   return TOOL_LABELS[tool] ?? humanizeIdentifier(tool);
+}
+
+/**
+ * What the agent can and cannot do, one line each, every line read from the backend (cited per line). The
+ * Qloo cap names Qloo, so the invented day, which made no Qloo request, gets a line without it.
+ */
+export function agentLimits(synthetic = false): string[] {
+  return [
+    // backend/app/agent/clash_tools.py:281 (try_move) and :755-758 (find_moves -> compute_move_options, the
+    // function behind this page's /moves and /whatif, backend/app/whatif.py:157 and :383): every move, price
+    // and Clash Budget in the agent's result cards is a tool result from that engine, not model text.
+    "It calls the same timetable engine as this page, and every figure in its result cards comes from that engine.",
+    // backend/app/agent/loop.py:41-43 streams the model's own text; the panel labels it with the LLM chip.
+    "Its answer in words is written by a language model and labelled as such.",
+    // backend/app/agent/clash_tools.py:358-369 and :789-797: try_move and find_moves do not change the
+    // timetable; only Keep this place below hands a tested place to your plan.
+    "It can test a move, but it never changes your timetable unless you press Keep this place.",
+    // backend/app/agent/clash_tools.py:1003 (CLASH_TOOLS): its seven tools read and test the timetable;
+    // none sends a message or publishes anything.
+    "It never contacts anyone or publishes anything.",
+    // backend/app/config.py:29-33: agent_max_qloo_calls_per_run = 12 (the run refuses further Qloo-backed
+    // tools, backend/app/agent/tools.py:78-89) and agent_max_turns = 6 (backend/app/main.py:160).
+    synthetic ? "At most 6 model turns per run." : "At most 12 Qloo requests and 6 model turns per run.",
+  ];
+}
+
+/** "three" for 3, up to ten; the figure past that. */
+function countWord(n: number): string {
+  return ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"][n] ?? String(n);
+}
+
+/**
+ * The one line about the recordings' Qloo use, read from the recordings: that none asked Qloo when every
+ * run's saved count is 0, else null (each run then says its own count). Never on the invented day.
+ */
+export function recordingsQlooLine(runs: readonly RecordedRun[], synthetic = false): string | null {
+  if (synthetic || runs.length === 0 || runs.some((run) => recordedQlooCalls(run) !== 0)) return null;
+  return runs.length === 1
+    ? "This recorded run did not ask Qloo: it tests moves with the timetable engine."
+    : `None of these ${countWord(runs.length)} recorded runs asked Qloo: they test moves with the timetable engine.`;
+}
+
+/** A place an agent run tested and the engine found legal, as the plan keeps it, with what to print. */
+export type AgentPlace = {
+  move: StackMove;
+  act: string;
+  stage: string;
+  start: string;
+  end: string | null;
+  /** The Clash Budget Index before and after, as the tool reported them. */
+  before: number | null;
+  after: number | null;
+};
+
+function finite(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * The last place a finished run's own tool results show the timetable engine marked legal, on this
+ * festival day: a `try_move` whose result is `allowed`, or the first (lowest-index) place a `find_moves`
+ * result lists. Read only from the run's `tool_data` (the engine's results, in call order), never from
+ * the model's text. Null when there is none, when its set is locked or not on this day, when the stage
+ * does not read, or when the place is where the set already plays. A live run and a replayed one stream
+ * the same events, so both read the same way.
+ */
+export function keepableMove(results: readonly RunResult[], festival: Festival, day: number): AgentPlace | null {
+  const result = results.find((item) => item.kind === "clash");
+  if (!result || !isRecord(result.data) || !isRecord(result.data.tool_data)) return null;
+  const byName = [...festival.acts].sort((a, b) => b.name.length - a.name.length);
+  const stageNamed = (name: string) =>
+    festival.stages.find((stage) => stage.name === name) ??
+    festival.stages.find((stage) => stage.name.toLowerCase() === name.trim().toLowerCase()) ??
+    null;
+  let found: AgentPlace | null = null;
+  for (const item of Object.values(result.data.tool_data)) {
+    if (!isRecord(item)) continue;
+    let actId: string | null = null;
+    let stageName: string | null = null;
+    let start: string | null = null;
+    let before: number | null = null;
+    let after: number | null = null;
+    let anyDay = true;
+    if (item.kind === "what_if" && item.allowed === true && typeof item.move === "string") {
+      // "Act: Stage 14:00-15:00 -> Stage 14:15-15:15", the engine's own line; try_move keeps the set's day.
+      const move = item.move;
+      const act = byName.find((candidate) => move.startsWith(`${candidate.name}: `));
+      const to = /->\s*(.+?)\s+(\d{1,2}:\d{2})-\d{1,2}:\d{2}\s*$/.exec(move);
+      if (!act || !to) continue;
+      actId = act.id;
+      stageName = to[1];
+      start = to[2];
+      before = finite(item.clash_budget_before);
+      after = finite(item.clash_budget_after);
+    } else if (item.kind === "move_options" && item.movable !== false && Array.isArray(item.options)) {
+      const first = item.options.find(isRecord);
+      const act = festival.acts.find((candidate) => candidate.name === item.act);
+      if (!first || !act || typeof first.stage !== "string" || typeof first.start !== "string") continue;
+      actId = act.id;
+      stageName = first.stage;
+      start = first.start;
+      before = finite(item.clash_budget_before);
+      after = finite(first.clash_budget_after);
+      // find_moves may list another day's place without naming the day, so only a one-day festival reads it.
+      anyDay = false;
+    } else {
+      continue;
+    }
+    const slot = festival.timetable.find((candidate) => candidate.act_id === actId);
+    const stage = stageNamed(stageName);
+    const minutes = clockMinutes(start);
+    if (!slot || !stage || minutes === null || slot.locked || slot.day !== day) continue;
+    if (!anyDay && festival.days.length > 1) continue;
+    if (stage.id === slot.stage_id && minutes === slot.start) continue;
+    found = {
+      move: { actId: slot.act_id, stageId: stage.id, day: slot.day, start: formatClock(minutes) },
+      act: festival.acts.find((candidate) => candidate.id === slot.act_id)?.name ?? slot.act_id,
+      stage: stage.name,
+      start: formatClock(minutes),
+      end: formatClock(minutes + (slot.end - slot.start)),
+      before,
+      after,
+    };
+  }
+  return found;
 }
 
 function Inline({ segments }: { segments: readonly InlineSegment[] }) {
@@ -358,6 +488,115 @@ function ReslotCard({ reslot, range }: { reslot: ReslotSuggestion; range: ScaleR
   );
 }
 
+/** The kept plan's anchor in "Try a move" (`try-a-move.tsx`, YOUR_PLAN_ID). */
+const PLAN_ANCHOR = "your-plan";
+
+/** True when the plan holds this place as one of its kept moves. */
+export function planHolds(steps: readonly StackStep[], move: StackMove): boolean {
+  return steps.some((step) => !isRuleStackStep(step) && sameStep(step, move));
+}
+
+/** The press behind Keep this place: it hands the run's tested place, unchanged, to the page's keep path. */
+export function keepPress(place: AgentPlace, onKeep: (move: StackMove) => string | null): () => string | null {
+  return () => onKeep(place.move);
+}
+
+/**
+ * Under a finished run whose own tool results hold a place the engine found legal: the place, and Keep
+ * this place, which hands it to the plan through the same path as the decision card's Keep this move (the
+ * plan's own /whatif prices it again). Nothing is kept until it is pressed. "Kept in your plan." (ink, in
+ * a status region) shows only once the plan holds the place, and focus then moves to its "See your plan"
+ * link, which takes the visitor to the plan.
+ */
+function KeepThisPlace({
+  place,
+  kept,
+  onKeep,
+}: {
+  place: AgentPlace;
+  /** The steps the plan holds (priced), so "Kept" is said only for a place the plan really holds. */
+  kept: readonly StackStep[];
+  onKeep: (move: StackMove) => string | null;
+}) {
+  // The press, its replaced-steps note, and whether the plan has held the place since: once it has and then
+  // lets it go (Undo, Start over, another keep), the press is spent and the button is back.
+  const [pressed, setPressed] = useState<{ note: string | null; held: boolean } | null>(null);
+  const linkRef = useRef<HTMLAnchorElement | null>(null);
+  const held = planHolds(kept, place.move);
+  const delta = budgetDelta(place.before, place.after);
+  if (pressed && held && !pressed.held) setPressed({ ...pressed, held: true });
+  if (pressed && !held && pressed.held) setPressed(null);
+
+  // Once the plan holds the place this press sent, focus moves to the way there (never on a plan that
+  // already held it before any press).
+  const announced = pressed !== null && held;
+  useEffect(() => {
+    if (announced) linkRef.current?.focus();
+  }, [announced]);
+
+  function seePlan(event: MouseEvent<HTMLAnchorElement>) {
+    const plan = document.getElementById(PLAN_ANCHOR);
+    if (!plan) return;
+    event.preventDefault();
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    plan.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+    plan.focus({ preventScroll: true });
+  }
+
+  return (
+    <div data-agent-keep className="border-t border-border pt-4">
+      <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Legal place this run tested</p>
+      <p className="mt-1 text-[0.9375rem] leading-snug font-semibold break-words">
+        {place.act} → {place.stage}{" "}
+        <span className="font-mono tabular-nums">
+          {place.start}
+          {place.end ? `–${place.end}` : ""}
+        </span>
+      </p>
+      {place.before !== null && place.after !== null && delta !== null ? (
+        <p className="mt-1 text-sm text-muted-foreground">
+          Clash Budget Index{" "}
+          <span className="font-mono tabular-nums">
+            {place.before.toFixed(1)} → {place.after.toFixed(1)}
+          </span>{" "}
+          ({changeLabel(delta)}), from the run&rsquo;s own tool result.
+        </p>
+      ) : null}
+      <p className="mt-1 text-sm text-muted-foreground">
+        Nothing changes until you keep it; your plan then prices it again against the published timetable.
+      </p>
+      {held && pressed ? null : (
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-3"
+          onClick={() => setPressed({ note: keepPress(place, onKeep)(), held: false })}
+        >
+          Keep this place
+        </Button>
+      )}
+      <p role="status" className="mt-2 text-sm">
+        {pressed && held ? (
+          <>
+            <span className="font-semibold text-foreground">Kept in your plan.</span>
+            {pressed.note ? <span className="text-foreground"> {pressed.note}</span> : null}{" "}
+            <a
+              ref={linkRef}
+              href={`#${PLAN_ANCHOR}`}
+              onClick={seePlan}
+              className="inline-flex min-h-11 items-center font-semibold text-foreground underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
+              See your plan
+            </a>
+          </>
+        ) : pressed ? (
+          <span className="text-muted-foreground">Sent to your plan to be priced.</span>
+        ) : null}
+      </p>
+    </div>
+  );
+}
+
 /** An exchange in the panel: a replayed one keeps the recorded run it plays. */
 type PanelExchange = Exchange & { recording?: RecordedRun };
 
@@ -366,23 +605,40 @@ function ExchangeView({
   latest,
   range,
   festival,
+  day,
+  kept = [],
+  onKeepPlace,
   onRetry,
   onSkip,
   onWatchRecorded,
+  onStartOver,
 }: {
   exchange: PanelExchange;
   latest: boolean;
   range: ScaleRange;
   /** Names the stages and days in the engine's reasons for a ruled-out move. */
   festival: Festival;
+  /** The festival day on show: a tested place is offered to keep only on it. */
+  day: number;
+  /** The steps the plan holds, so Keep this place can say when its place is kept. */
+  kept?: readonly StackStep[];
+  /** Keeps a tested place through the page's keep path; absent, no Keep this place is offered. */
+  onKeepPlace?: (move: StackMove) => string | null;
   onRetry: () => void;
   /** Finishes a replay at once. */
   onSkip: () => void;
   /** Plays a recorded run instead; only offered when the day has one. */
   onWatchRecorded?: () => void;
+  /** Clears the conversation; offered with the latest finished run's own controls. */
+  onStartOver?: () => void;
 }) {
   const { state, recording } = exchange;
   const reply = useMemo(() => readClashReply(state.results), [state.results]);
+  // The place to keep comes only from the finished run's own tool results, never from its text.
+  const place = useMemo(
+    () => (state.status === "done" && onKeepPlace ? keepableMove(state.results, festival, day) : null),
+    [state.status, state.results, festival, day, onKeepPlace],
+  );
   const running = state.status === "running";
   const text = reply?.text || state.text;
   const qlooCalls = state.summary?.qlooCalls ?? state.toolCalls.reduce((sum, call) => sum + call.requests.length, 0);
@@ -457,6 +713,8 @@ function ExchangeView({
           </div>
         ) : null}
 
+        {place && onKeepPlace ? <KeepThisPlace place={place} kept={kept} onKeep={onKeepPlace} /> : null}
+
         {state.status === "error" && state.error ? (
           <div>
             <ErrorState
@@ -502,6 +760,11 @@ function ExchangeView({
                   : "The Qloo requests this answer made. Prices and what-ifs reuse the day's saved Qloo data; explaining a clash asks Qloo live for the taste both audiences share."
               }
             />
+            {latest && onStartOver ? (
+              <Button type="button" variant="ghost" size="sm" onClick={onStartOver}>
+                <RotateCcw aria-hidden="true" /> Start over
+              </Button>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -545,16 +808,43 @@ function offLede(withRecordings: boolean, synthetic: boolean): string {
     : `${does} Saved runs on this day replay with no live Qloo or model call.`;
 }
 
-function AgentHeading({
+/** The section's heading while the live agent is off and it shows recorded runs. */
+export const RECORDED_HEADING = "Recorded agent runs";
+
+/**
+ * The section's heading. While the live agent is off (`off`) it says what the section holds, recorded runs
+ * ("Recorded agent runs", or "The agent" on a day with none), with no invitation to type and a lede in
+ * place of one; the kicker is left out, since it would only repeat the heading. While the agent is on (or
+ * its state is unknown) it invites a question, as before.
+ */
+export function AgentHeading({
   isMock,
   synthetic = false,
   lede,
+  off = null,
 }: {
   isMock: boolean;
   synthetic?: boolean;
   /** Replaces the invitation to ask while the live agent is off. */
   lede?: string;
+  /** The live agent is off: "recorded" with recorded runs to show, "none" without. */
+  off?: "recorded" | "none" | null;
 }) {
+  if (off) {
+    return (
+      <div>
+        {isMock ? (
+          <p className="flex max-w-prose flex-wrap items-center gap-2">
+            <MockBadge />
+          </p>
+        ) : null}
+        <h2 id="agent-heading" className={cn("type-title", isMock && "mt-1.5")}>
+          {off === "recorded" ? RECORDED_HEADING : "The agent"}
+        </h2>
+        {lede ? <p className="mt-2 max-w-prose text-[0.9375rem] leading-relaxed">{lede}</p> : null}
+      </div>
+    );
+  }
   return (
     <div>
       <p className="flex max-w-prose flex-wrap items-center gap-2 text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
@@ -571,6 +861,25 @@ function AgentHeading({
           </>
         )}
       </p>
+    </div>
+  );
+}
+
+/**
+ * "What the agent can and cannot do": a short open list, every line true to the backend (see
+ * `agentLimits`), so the section says what the agent is before anything is pressed.
+ */
+export function AgentLimits({ synthetic = false }: { synthetic?: boolean }) {
+  return (
+    <div>
+      <h3 className="pb-2 text-[0.8125rem] leading-5 font-semibold text-foreground">What the agent can and cannot do</h3>
+      <ul className="mt-2 space-y-2 text-sm leading-relaxed">
+        {agentLimits(synthetic).map((line) => (
+          <li key={line} className="max-w-prose">
+            {line}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -648,10 +957,19 @@ export function AgentPanel({
   preset,
   day,
   agentStatus = "unknown",
+  keptSteps = [],
+  onKeepPlace,
 }: {
   preset: Preset;
   day: number;
   agentStatus?: AgentStatus;
+  /** The steps the kept plan holds (priced), so a run's Keep this place says when its place is kept. */
+  keptSteps?: readonly StackStep[];
+  /**
+   * Keeps a place a run tested through the page's keep path (the decision card's), returning the note on
+   * any steps it replaced. Absent: no run offers Keep this place.
+   */
+  onKeepPlace?: (move: StackMove) => string | null;
 }) {
   const run = useAgentRun({ endpoint: "/api/runs" });
   const recordings = useRecordings(preset.id);
@@ -793,20 +1111,31 @@ export function AgentPanel({
             latest={index === all.length - 1}
             range={range}
             festival={preset.festival}
+            day={day}
+            kept={keptSteps}
+            onKeepPlace={onKeepPlace}
             onRetry={run.retry}
             onSkip={skip}
             onWatchRecorded={runs.length > 0 ? () => play(runs[0]) : undefined}
+            onStartOver={!busy && mode !== "checking" ? startOver : undefined}
           />
         ))}
       </ol>
     ) : null;
 
-  const recorded = <RecordedRuns runs={runs} onPlay={play} disabled={busy} />;
+  const synthetic = preset.synthetic === true;
+  // The recordings' Qloo use, read from the recordings: one line when none asked Qloo, else each run's own
+  // count on its row. The invented day names no Qloo request either way.
+  const qlooLine = recordingsQlooLine(runs, synthetic);
+  const recorded = <RecordedRuns runs={runs} onPlay={play} disabled={busy} qlooCounts={!synthetic && qlooLine === null} />;
   // While the agent is off, the heading already says saved runs replay with no live call, so the list
   // keeps its kicker and drops the line under it.
-  const recordedOff = <RecordedRuns runs={runs} onPlay={play} disabled={busy} description={null} />;
-  // The side column holds the capabilities (live agent only), the rules said so far and Start over.
-  const aside = mode === "live" || rules.length > 0 || (all.length > 0 && mode !== "checking");
+  const recordedOff = (
+    <RecordedRuns runs={runs} onPlay={play} disabled={busy} description={null} qlooCounts={!synthetic && qlooLine === null} />
+  );
+  // The side column, under the heading: the rules said so far, the capabilities (live agent only) and what
+  // the agent can and cannot do. Start over sits with the latest run's own controls, not here.
+  const aside = mode !== "checking";
 
   let main: ReactNode;
   if (mode === "checking") {
@@ -828,7 +1157,10 @@ export function AgentPanel({
         {mode === "off-recorded" ? (
           <div className="mt-8">
             {recordedOff}
-            <p className="mt-3 max-w-prose text-sm text-muted-foreground">{NEVER_CHANGES}</p>
+            <p className="mt-3 max-w-prose text-sm text-muted-foreground">
+              {qlooLine ? `${qlooLine} ` : ""}
+              {NEVER_CHANGES}
+            </p>
           </div>
         ) : null}
         {conversation ? <div className="mt-10">{conversation}</div> : null}
@@ -901,19 +1233,25 @@ export function AgentPanel({
           to keep the demo free.
         </p>
 
-        {runs.length > 0 ? <div className="mt-12">{recorded}</div> : null}
+        {runs.length > 0 ? (
+          <div className="mt-12">
+            {recorded}
+            {qlooLine ? <p className="mt-3 max-w-prose text-sm text-muted-foreground">{qlooLine}</p> : null}
+          </div>
+        ) : null}
       </>
     );
   }
 
   return (
     <section id="agent" aria-labelledby="agent-heading">
-      <div className="container-page grid gap-x-12 py-10 sm:py-12 lg:grid-cols-12 lg:items-start">
+      <div className="container-page grid gap-x-12 py-10 sm:py-12 lg:grid-cols-12 lg:grid-rows-[auto_1fr] lg:items-start">
         <div className="lg:col-span-5">
           <AgentHeading
             isMock={run.isMock}
-            synthetic={preset.synthetic === true}
-            lede={off ? offLede(mode === "off-recorded", preset.synthetic === true) : undefined}
+            synthetic={synthetic}
+            off={agentStatus === "off" ? (mode === "off" ? "none" : "recorded") : null}
+            lede={off || agentStatus === "off" ? offLede(mode !== "off", synthetic) : undefined}
           />
         </div>
 
@@ -941,12 +1279,8 @@ export function AgentPanel({
                 </ul>
               </div>
             ) : null}
-            {mode === "live" ? <Capabilities synthetic={preset.synthetic === true} /> : null}
-            {all.length > 0 && mode !== "checking" ? (
-              <Button type="button" variant="outline" size="sm" onClick={startOver} disabled={busy}>
-                <RotateCcw aria-hidden="true" /> Start over
-              </Button>
-            ) : null}
+            {mode === "live" ? <Capabilities synthetic={synthetic} /> : null}
+            <AgentLimits synthetic={synthetic} />
           </aside>
         ) : null}
       </div>

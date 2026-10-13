@@ -27,10 +27,11 @@ test.describe("opening curtain, with motion allowed", () => {
     expect(await page.evaluate(() => sessionStorage.getItem("cc.intro.v2"))).toBe("1");
   });
 
-  test("lifts by itself within a few seconds", async ({ page }) => {
+  test("lifts by itself, in about a second and a half", async ({ page }) => {
     await page.goto(`/?preset=${DAYS.glastonbury.id}`, { waitUntil: "domcontentloaded" });
     await expect(page.locator("html")).toHaveAttribute("data-intro", "play");
-    await expect(page.locator("html")).toHaveAttribute("data-intro", "done", { timeout: 9_000 });
+    // Its clock ends at 1.48 s and the page calls it done at 1.8 s at the latest; the margin is for a busy dev server.
+    await expect(page.locator("html")).toHaveAttribute("data-intro", "done", { timeout: 4_000 });
     await expect(page.locator(".cc-intro")).toBeHidden();
   });
 
@@ -58,6 +59,32 @@ test.describe("opening curtain, with motion allowed", () => {
     await page.goto(`/?preset=${DAYS.glastonbury.id}`, { waitUntil: "domcontentloaded" });
     await expect(home.heading).toBeVisible();
     expect(await page.locator("html").getAttribute("data-intro")).not.toBe("play");
+  });
+
+  test("plays once per visitor: a new tab of the same visitor gets no curtain", async ({ page, context }) => {
+    const home = new HomePage(page);
+    await page.goto(`/?preset=${DAYS.glastonbury.id}`, { waitUntil: "domcontentloaded" });
+    await expect(page.locator("html")).toHaveAttribute("data-intro", "play");
+    await page.keyboard.press("Space");
+    await expect(page.locator("html")).toHaveAttribute("data-intro", "done");
+    expect(await page.evaluate(() => localStorage.getItem("cc.intro.seen"))).toBe("1");
+    await expect(home.heading).toBeVisible();
+
+    // A second tab starts with its own, empty sessionStorage (which alone would play the curtain again) but shares
+    // the visitor's localStorage, which remembers it was seen.
+    const second = await context.newPage();
+    await second.goto(`/?preset=${DAYS.glastonbury.id}`, { waitUntil: "domcontentloaded" });
+    await expect(new HomePage(second).heading).toBeVisible();
+    expect(await second.locator("html").getAttribute("data-intro")).not.toBe("play");
+    await expect(second.locator(".cc-intro")).toBeHidden();
+    await second.close();
+
+    // The control: a new tab whose visitor has not seen it (the key cleared before any page script) plays it.
+    const third = await context.newPage();
+    await third.addInitScript(() => localStorage.removeItem("cc.intro.seen"));
+    await third.goto(`/?preset=${DAYS.glastonbury.id}`, { waitUntil: "domcontentloaded" });
+    await expect(third.locator("html")).toHaveAttribute("data-intro", "play");
+    await third.close();
   });
 
   test("a first visit that is not the bare home page does not play it", async ({ page }) => {

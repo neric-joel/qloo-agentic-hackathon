@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
 import { ArrowRight, Check, ChevronRight } from "lucide-react";
 
+import { ProvenanceChip } from "@/components/kernel";
 import { Button } from "@/components/ui/button";
+import { LABEL_META } from "@/lib/clashes";
 import { ATTRIBUTION, type DecisionCopy, type SharedTimeline, type TimelineBar } from "@/lib/decision";
 import { ALREADY_KEPT } from "@/lib/rule-fix";
 import { useInView, useIntroDone } from "@/lib/use-in-view";
@@ -12,6 +14,7 @@ import { cn } from "@/lib/utils";
 
 import { PairStrip, type StripLane } from "./pair-strip";
 import { TradeoffTable } from "./tradeoff-table";
+import { usePairCheckEnabled } from "./use-agent-status";
 import { useAnnouncement } from "./use-announcement";
 
 /** The anchor of the card, for the hero button and the jump links. */
@@ -30,7 +33,7 @@ function reducedMotion(): boolean {
 
 /**
  * The index after the move, shown as it counts from the reading before to the reading after (420 to
- * 900 ms into "Open this move"). The final value is what the page holds before and after, and what
+ * 900 ms into "Keep this move"). The final value is what the page holds before and after, and what
  * screen readers get; with reduced motion the final value shows at once.
  */
 function useCount(from: number | null, to: number | null, playKey: number): string | null {
@@ -239,12 +242,14 @@ export function DecisionCardSkeleton() {
         <div className="mt-1 flex h-13 items-center sm:h-7.5">
           <div className={cn(bar, "h-6 w-4/5")} />
         </div>
-        <div className="mt-3 flex h-23 flex-col justify-center gap-2.5 sm:h-18.75">
+        {/* The index block with its scale line: 132 px at 390 px, 97 px from 640 px (measured). */}
+        <div className="mt-3 flex h-33 flex-col justify-center gap-2.5 sm:h-24.25">
           <div className={cn(bar, "h-3 w-1/4")} />
           <div className={cn(bar, "h-6 w-1/2")} />
+          <div className={cn(bar, "h-3 w-4/5")} />
           <div className={cn(bar, "h-3 w-3/4")} />
         </div>
-        {/* Below 1024 px: "Open this move", 44 px, under the index block. */}
+        {/* Below 1024 px: "Keep this move", 44 px, under the index block. */}
         <div className="mt-4 flex h-11 items-center lg:hidden max-sm:mt-3">
           <div className={cn(bar, "h-11 w-37")} />
         </div>
@@ -287,6 +292,17 @@ type DecisionCardProps = {
   hiddenLabel?: string;
   /** "Same clash, three readings", above the actions; absent in the server HTML, which has no lens data. */
   readings?: ReactNode;
+  /**
+   * The published day's saved Qloo reading: when it was built and how many saved responses built it.
+   * Printed in the working with the Recorded stamp; never on the invented day, even when passed.
+   */
+  saved?: SavedReading | null;
+  /**
+   * Opens this pair's existing clash drawer, with the button as the place to return to. With it, and
+   * while the server answers live pair checks, the working offers the re-check, which only opens the
+   * drawer: the drawer's own button asks before anything is sent.
+   */
+  onOpenPair?: (trigger: HTMLElement) => void;
   className?: string;
 };
 
@@ -321,12 +337,158 @@ export const SHOW_WORKING = "Show the working";
 /** The subhead over rows 1 to 3, inside that disclosure. */
 export const HOW_CHOSEN = "How this was chosen";
 
+/** The card's one filled action: it keeps the move as the plan. */
+export const KEEP_MOVE = "Keep this move";
+
+/** What the card says, in place, once the plan holds its move, and the link to that plan. */
+export const KEPT_IN_PLAN = "Kept in your plan.";
+export const SEE_YOUR_PLAN = "See your plan";
+/** The plan card's heading (Try a move), which the link scrolls to and focuses. */
+export const PLAN_ANCHOR = "your-plan";
+
+/**
+ * The index's scale, in the index block on every day: the same definition the dial uses, and the
+ * pinned "Lower is better". The scale is this app's, not a Qloo figure, so the invented day says the same.
+ */
+export const INDEX_SCALE = "A score, not money: 100 = the average random valid timetable of this lineup. Lower is better.";
+
+/**
+ * The hero's own clash, when it carries the board's Hidden label: the Hidden wall's definition
+ * (`LABEL_META.hidden.explain`), so the card and the wall say one thing. Names no source, so it reads
+ * the same on the invented day.
+ */
+export const HIDDEN_CLASH_LINE = `A hidden clash: ${LABEL_META.hidden.explain.charAt(0).toLowerCase()}${LABEL_META.hidden.explain.slice(1)}`;
+
+/**
+ * Whether the card's pair carries the Hidden label. `buildDecisionCopy` writes "Their main genre tags
+ * differ; ..." into line 1 for exactly that label, so the card reads it from its own copy.
+ */
+export function isHiddenDecision(copy: Pick<DecisionCopy, "clashLine">): boolean {
+  return copy.clashLine.includes("Their main genre tags differ;");
+}
+
+/** Whether the card is for the invented day, whose dateline says so (`decisionDateline`). */
+export function isInventedDecision(copy: Pick<DecisionCopy, "title">): boolean {
+  return copy.title.startsWith("Invented day");
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "3 Oct 2026" in UTC, so the server and every browser print the same day; null when it is not a date. */
+export function builtDate(value: string): string | null {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+}
+
+/** What the saved reading of a published day is: when it was built and from how many saved Qloo responses. */
+export type SavedReading = { builtAt: string; requests: number };
+
+/**
+ * "Saved Qloo reading of this day: built 3 Oct 2026 from 104 saved Qloo responses." The count is the
+ * whole day's build (most were served from the build's own cache), never this pair's. Null without a
+ * date or a count.
+ */
+export function savedReadingLine(saved: SavedReading): string | null {
+  const date = builtDate(saved.builtAt);
+  if (!date || !Number.isInteger(saved.requests) || saved.requests < 1) return null;
+  const responses = saved.requests === 1 ? "1 saved Qloo response" : `${saved.requests} saved Qloo responses`;
+  return `Saved Qloo reading of this day: built ${date} from ${responses}.`;
+}
+
+/** The working's text action that opens this pair's clash drawer, where the live re-check asks before it sends. */
+export const RECHECK_PAIR = "Re-check this pair with Qloo (3 requests)";
+
+/**
+ * "See your plan": scrolls the plan card's heading into view (at once under reduced motion) and gives it
+ * focus without a second scroll. Without that heading on the page the link is left to the browser.
+ */
+export function seeYourPlan(
+  event: { preventDefault: () => void },
+  doc: Pick<Document, "getElementById"> = document,
+  reduce: boolean = reducedMotion(),
+): boolean {
+  const target = doc.getElementById(PLAN_ANCHOR);
+  if (!target) return false;
+  event.preventDefault();
+  target.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  target.focus({ preventScroll: true });
+  return true;
+}
+
+/**
+ * Focuses the first of the links that is displayed (the card draws one copy per width, the other
+ * display:none), without scrolling the page. Returns the one it focused.
+ */
+export function focusShown(links: readonly (HTMLElement | null)[]): HTMLElement | null {
+  const shown = links.find((link) => link !== null && link.getClientRects().length > 0) ?? null;
+  shown?.focus({ preventScroll: true });
+  return shown;
+}
+
+/**
+ * The confirmation in place, under the button that was pressed: a polite live region that, once the
+ * plan holds the card's move, reads "Kept in your plan." in ink with the "See your plan" link. Empty
+ * otherwise, so it takes no room.
+ */
+function KeptNotice({
+  shown,
+  linkRef,
+  className,
+}: {
+  shown: boolean;
+  linkRef: RefObject<HTMLAnchorElement | null>;
+  className?: string;
+}) {
+  return (
+    <div role="status" aria-live="polite" data-kept-notice="" className={className}>
+      {shown ? (
+        <p className="flex flex-wrap items-center gap-x-3 text-sm leading-snug text-foreground">
+          <span className="inline-flex items-center gap-1.5 font-semibold">
+            <Check aria-hidden="true" className="size-4 shrink-0" />
+            {KEPT_IN_PLAN}
+          </span>
+          <a
+            ref={linkRef}
+            href={`#${PLAN_ANCHOR}`}
+            onClick={(event) => seeYourPlan(event)}
+            className="inline-flex min-h-11 items-center font-semibold text-foreground underline decoration-border-strong decoration-1 underline-offset-4 hover:decoration-foreground"
+          >
+            {SEE_YOUR_PLAN}
+          </a>
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** The re-check action itself, with no hook: it only opens the pair's drawer and sends nothing. */
+export function PairRecheck({ onOpenPair }: { onOpenPair: (trigger: HTMLElement) => void }) {
+  return (
+    <Button
+      type="button"
+      variant="ruled"
+      className="py-2 text-left whitespace-normal"
+      onClick={(event) => onOpenPair(event.currentTarget)}
+    >
+      {RECHECK_PAIR}
+      <ArrowRight aria-hidden="true" />
+    </Button>
+  );
+}
+
+/** Shows the re-check only while this server answers live pair checks (`/api/health`). */
+function PairRecheckWhenOn({ onOpenPair }: { onOpenPair: (trigger: HTMLElement) => void }) {
+  const enabled = usePairCheckEnabled();
+  return enabled ? <PairRecheck onOpenPair={onOpenPair} /> : null;
+}
+
 /**
  * One worked decision on the published day: the festival and day as a dateline, then the action and
  * its result as the heading ("Sprints 15 minutes later: 45 → 30 minutes shared"), then the labelled index
  * with one caption under it (who selected and scored it, and that it is a reading, not a verdict), the
  * drawn timeline across the card, the pointer to the three readings, then one row: the one solid button,
- * "Open this move", and directly after it the "Show the working" toggle. Below 1024 px that button sits
+ * "Keep this move", and directly after it the "Show the working" toggle. Below 1024 px that button sits
  * instead directly under the index block, before the drawing, and the row holds the toggle alone; one
  * copy is displayed at each width. The working opens directly under that row: the hidden-clash link
  * first, then the two changes side by side under the table's own heading, with
@@ -346,6 +508,8 @@ export function DecisionCard({
   onOpenHidden,
   hiddenLabel,
   readings,
+  saved,
+  onOpenPair,
   className,
 }: DecisionCardProps) {
   const rootRef = useRef<HTMLElement | null>(null);
@@ -359,6 +523,24 @@ export function DecisionCard({
   const workingToggleId = useId();
   const counted = useCount(copy.indexFrom, copy.indexTo, playKey);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
+  const invented = isInventedDecision(copy);
+
+  // "Keep this move" confirms in place: once the plan holds the card's move (or, for a card told
+  // nothing about the plan, once pressed) the notice under the button reads "Kept in your plan." with
+  // its link. A press moves focus to that link, never to the page, and never scrolls it.
+  const [pressed, setPressed] = useState(false);
+  const keptShown = kept ? kept.move : pressed;
+  const [focusAsk, setFocusAsk] = useState<{ key: number; at: number }>({ key: 0, at: 0 });
+  const focusedAsk = useRef(0);
+  const earlyLinkRef = useRef<HTMLAnchorElement | null>(null);
+  const rowLinkRef = useRef<HTMLAnchorElement | null>(null);
+  useEffect(() => {
+    if (focusAsk.key === 0 || !keptShown || focusedAsk.current === focusAsk.key) return;
+    focusedAsk.current = focusAsk.key;
+    // A plan that took longer than two seconds to hold the move is no answer to this press.
+    if (Date.now() - focusAsk.at > 2000) return;
+    focusShown([earlyLinkRef.current, rowLinkRef.current]);
+  }, [focusAsk, keptShown]);
 
   // M1, the hero receipt: once the interactive card is in view (or 1.2 s after it mounts), the shared
   // time hatches in, the tested slot flies, the bracket under what is left shrinks and the index counts
@@ -374,7 +556,7 @@ export function DecisionCard({
     // does not use up the page's one play.
     const timer = window.setTimeout(() => {
       receiptPlayed = true;
-      // A press of "Open this move" got there first: that was the play.
+      // A press of "Keep this move" got there first: that was the play.
       if (playKey > 0) return;
       setHeroPlay(1);
       setPlayKey(1);
@@ -392,6 +574,8 @@ export function DecisionCard({
 
   function openMove() {
     if (!onOpenMove) return;
+    setPressed(true);
+    setFocusAsk((previous) => ({ key: previous.key + 1, at: Date.now() }));
     // Pressing it again for a move the plan already holds changes nothing and says so.
     if (kept?.move) {
       say(ALREADY_KEPT);
@@ -451,9 +635,25 @@ export function DecisionCard({
             </p>
           ) : null}
         </div>
+        {/* The scale, where the index first appears; the attribution stays the block's last line. */}
+        <p data-index-scale="" className="mt-1 text-[0.8125rem] leading-snug text-muted-foreground">
+          {INDEX_SCALE}
+        </p>
         <p className="mt-1 text-[0.8125rem] leading-snug text-muted-foreground">{ATTRIBUTION}. A reading, not a verdict.</p>
       </div>
     ) : null;
+
+  // The taste line says so when the card's own clash carries the Hidden label: in ink, as a fact of
+  // the board, never the teal of a Qloo figure.
+  const hiddenLine = isHiddenDecision(copy) ? (
+    <p data-hidden-line="" className="text-sm leading-snug">
+      {HIDDEN_CLASH_LINE}
+    </p>
+  ) : null;
+  // The working's last lines on a published day: where the reading came from, with the Recorded stamp,
+  // and (while the server answers live pair checks) the way to this pair's drawer and its re-check.
+  const savedLine = !invented && saved ? savedReadingLine(saved) : null;
+  const recheck = !invented && onOpenPair ? <PairRecheckWhenOn onOpenPair={onOpenPair} /> : null;
 
   const timelineFacts = copy.timeline ? readTimelineFacts(copy, copy.timeline) : null;
   const timelineText =
@@ -463,7 +663,7 @@ export function DecisionCard({
   const lanes =
     copy.timeline && timelineFacts ? heroLanes(copy.timeline, timelineFacts, copy.minutesBefore, copy.minutesAfter) : null;
   // The first play of the page is the hero receipt (the shared time hatches in, the slot flies, the
-  // bracket shrinks); a press of "Open this move" after it replays the bracket alone.
+  // bracket shrinks); a press of "Keep this move" after it replays the bracket alone.
   const motion =
     playKey === 0
       ? null
@@ -471,7 +671,7 @@ export function DecisionCard({
   // Wrapped labels instead of a label running past the card; the button keeps a 44 px height at least.
   const wrap = "h-auto min-h-11 py-2 text-left whitespace-normal";
   const showMove = Boolean(onOpenMove && copy.seedMove);
-  // Below 1024 px "Open this move" sits directly under the reading, after the index block (never inside
+  // Below 1024 px "Keep this move" sits directly under the reading, after the index block (never inside
   // it, so "A reading, not a verdict." stays the block's last line) and before the drawing, so a phone's
   // first screen holds the result, its one filled action and the clash. From 1024 px this copy is
   // display:none and the action row's copy shows instead: one copy displayed at every width, neither
@@ -480,14 +680,15 @@ export function DecisionCard({
     showMove && figure ? (
       <div className="mt-4 lg:hidden max-sm:mt-3">
         <Button type="button" variant="default" className={wrap} onClick={openMove}>
-          Open this move
+          {KEEP_MOVE}
         </Button>
+        <KeptNotice shown={keptShown} linkRef={earlyLinkRef} className={keptShown ? "mt-1" : undefined} />
       </div>
     ) : null;
   const timeline = lanes ? (
     // One pair strip across the card: the staying set once, then the moving set Now and Tested. Its words
     // are HTML at fixed sizes, so nothing grows with the width. At every width it and its key sit directly
-    // under the index (below 1024 px under the index and its "Open this move") and before the taste line
+    // under the index (below 1024 px under the index and its "Keep this move") and before the taste line
     // and the action row, so a phone's first screen shows the clash itself. It holds nothing focusable.
     <figure
       data-shared-time=""
@@ -501,7 +702,7 @@ export function DecisionCard({
   ) : null;
 
   // The secondary actions are ruled text (the button's "ruled" variant), like a note in a running
-  // order's margin: no fill, no box. Only "Open this move" is a solid button.
+  // order's margin: no fill, no box. Only "Keep this move" is a solid button.
   const ruled = "py-2 text-left whitespace-normal";
   const showRule = Boolean(onTryRule && copy.seedRule);
   const showKeep = Boolean(onKeepChange && copy.seedChange);
@@ -545,7 +746,7 @@ export function DecisionCard({
         {copy.changeSummary}
       </p>
     ) : null;
-  // With a comparison on the card, "Open this move" is the one action in view; the rule search and the
+  // With a comparison on the card, "Keep this move" is the one action in view; the rule search and the
   // keep button with its summary sit under the comparison, in "Show the working".
   const tucked = copy.tradeoff !== null;
   // The day's hero clash, as a ruled text link with its arrow: the first line of the working, one click
@@ -561,7 +762,7 @@ export function DecisionCard({
       <ArrowRight aria-hidden="true" />
     </Button>
   ) : null;
-  // "Show the working": the disclosure toggle directly after "Open this move" from 1024 px, and the action
+  // "Show the working": the disclosure toggle directly after "Keep this move" from 1024 px, and the action
   // row's only control below it, where that button sits under the reading. A native button, so click,
   // Enter and Space all work; the region it controls
   // carries `hidden` while closed, so nothing in it is in the tab order. Its 12 px corner and 8 px sides
@@ -597,11 +798,19 @@ export function DecisionCard({
             className={cn(wrap, "max-[390px]:w-full", earlyMove && "max-lg:hidden")}
             onClick={openMove}
           >
-            Open this move
+            {KEEP_MOVE}
           </Button>
         ) : null}
         {workingToggle}
       </div>
+      {/* The row's own confirmation, shown with the row's button (from 1024 px when the card has the early copy). */}
+      {showMove ? (
+        <KeptNotice
+          shown={keptShown}
+          linkRef={rowLinkRef}
+          className={cn(keptShown && "mt-1", earlyMove && "max-lg:hidden")}
+        />
+      ) : null}
       {tucked ? null : secondary}
       {tucked ? null : changeSummary}
     </div>
@@ -617,7 +826,7 @@ export function DecisionCard({
         // nothing else (no corner, no side or foot edge, no fill, no shadow), its text and its strip starting
         // at the column's own left edge: a read-only receipt drawn with the timetable's own marks. It reads
         // in source order at every width: the dateline, the heading, the index with its caption, (below
-        // 1024 px) "Open this move", the drawing and its key, the taste line, the action row and the working.
+        // 1024 px) "Keep this move", the drawing and its key, the taste line, the action row and the working.
         "@container min-w-0 border-t border-border pt-5 sm:pt-6",
         className,
       )}
@@ -660,7 +869,12 @@ export function DecisionCard({
       {earlyMove}
       {/* The drawing spans the card; the pointer to the three readings, then the action row, sit under it. */}
       {timeline}
-      {readings ? <div className="mt-4">{readings}</div> : null}
+      {hiddenLine || readings ? (
+        <div className="mt-4 space-y-1">
+          {hiddenLine}
+          {readings}
+        </div>
+      ) : null}
       {actions}
 
       {/* The working, directly under the button's row: the hidden-clash link first, then the two changes
@@ -714,6 +928,16 @@ export function DecisionCard({
             </div>
           ) : null}
         </div>
+        {savedLine ? (
+          <div data-saved-reading="" className="mt-4 border-t border-border pt-3">
+            <p className="max-w-prose text-[0.8125rem] leading-snug text-muted-foreground">
+              <ProvenanceChip provenance="recorded" size="sm" className="mr-1.5" /> {savedLine}
+            </p>
+            {recheck}
+          </div>
+        ) : (
+          recheck
+        )}
       </div>
 
       <p role="status" aria-live="polite" className="sr-only">

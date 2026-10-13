@@ -21,9 +21,9 @@ export const BRIEF_ROWS = 25;
 
 export const BRIEF_FOOTER = "Computed in your browser from the pasted grid.";
 
-/** The footer: where the figures came from, and what any audience overlap on the brief is a rank among. */
+/** The footer: where the figures came from, and what any taste overlap on the brief is a rank among. */
 export function briefFooter(price: ScopeOf | null): string {
-  return price ? `${BRIEF_FOOTER} Audience overlap: ${rankScope(price)}` : BRIEF_FOOTER;
+  return price ? `${BRIEF_FOOTER} Taste overlap: ${rankScope(price)}` : BRIEF_FOOTER;
 }
 
 /** "Snapshot: the invented sample as checked at 14:05, with 1 change applied in a working copy." */
@@ -31,13 +31,16 @@ export function snapshotLine({
   sample,
   checkedAt,
   applied,
+  published = false,
 }: {
   sample: boolean;
+  /** The checked grid is the published day "Check a published day" loaded. */
+  published?: boolean;
   /** Minutes from midnight, local time, when the check ran; null when unknown. */
   checkedAt: number | null;
   applied: number;
 }): string {
-  const what = sample ? "the invented sample" : "the pasted grid";
+  const what = sample ? "the invented sample" : published ? "the published timetable" : "the pasted grid";
   const when = checkedAt === null ? "" : ` at ${formatClock(checkedAt)}`;
   const changes = applied === 0 ? "" : `, with ${applied} ${applied === 1 ? "change" : "changes"} applied in a working copy`;
   return `Snapshot: ${what} as checked${when}${changes}.`;
@@ -92,6 +95,7 @@ export function CheckBrief({
   decisions,
   price,
   sample = false,
+  published = null,
   checkedAt = null,
   stale = false,
   preview = false,
@@ -102,6 +106,8 @@ export function CheckBrief({
   price: PriceAnswer | null;
   /** The checked snapshot is the invented sample: the brief says so under its title. */
   sample?: boolean;
+  /** The checked snapshot is a published day loaded by "Check a published day": its label, printed under the title. */
+  published?: string | null;
   /** When the check ran, minutes from local midnight. */
   checkedAt?: number | null;
   /** The fields were edited after the check: the brief says it shows the grid as last checked. */
@@ -118,7 +124,8 @@ export function CheckBrief({
     >
       <p className={cn("type-title text-[16pt]", !preview && "hidden print:block")}>{CHECK_COPY.printTitle}</p>
       {sample ? <p className="mt-[2pt] font-semibold">{SAMPLE_LABEL}</p> : null}
-      <p className="mt-[2pt]">{snapshotLine({ sample, checkedAt, applied: applied.length })}</p>
+      {published ? <p className="mt-[2pt] font-semibold">{published}</p> : null}
+      <p className="mt-[2pt]">{snapshotLine({ sample, checkedAt, applied: applied.length, published: Boolean(published) })}</p>
       {stale ? <p className="mt-[2pt] font-semibold">{BRIEF_STALE}</p> : null}
       <p className="mt-[4pt]">
         Read {sets.length} {sets.length === 1 ? "set" : "sets"} on {stages.length} {stages.length === 1 ? "stage" : "stages"}.

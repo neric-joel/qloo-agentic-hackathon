@@ -9,6 +9,9 @@ export class TryAMove {
   readonly select: Locator;
   readonly card: Locator;
   readonly places: Locator;
+  /** From 1024 px: the right column's best tested place for the picked set (display:none below 1024 px). */
+  readonly bestPlace: Locator;
+  readonly showEvery: Locator;
   readonly keepButton: Locator;
   readonly plan: Locator;
   readonly planRegion: Locator;
@@ -24,7 +27,10 @@ export class TryAMove {
     this.select = this.section.getByRole("combobox", { name: /^(Or choose any set|Set to move)$/ });
     this.card = this.section.locator("[data-moves-card]");
     this.places = this.section.getByRole("list", { name: "Legal places" });
-    this.keepButton = this.section.getByRole("button", { name: /^(Keep this move|Plan is full)$/ });
+    this.bestPlace = this.section.locator("[data-best-place]");
+    this.showEvery = this.bestPlace.getByRole("button", { name: /^(Show|Hide) every legal place$/ });
+    // The keep under the full list of places (the best tested place beside it has its own).
+    this.keepButton = this.card.getByRole("button", { name: /^(Keep this move|Plan is full)$/ });
     this.plan = this.section.getByRole("group", { name: "Your tested moves" });
     this.planRegion = this.plan.getByRole("region", { name: "Your tested moves" });
     this.kept = this.plan.getByRole("list", { name: "Kept moves" }).getByRole("listitem");
@@ -45,11 +51,23 @@ export class TryAMove {
     return this.starters.getByRole("button", { name: new RegExp(`^\\d{2}:\\d{2} ${literal(act)} `) });
   }
 
-  /** Picks any set from the select, by the act's name (the option's label starts with its time). */
-  async choose(act: string): Promise<void> {
+  /**
+   * Picks any set from the select, by the act's name (the option's label starts with its time), and opens
+   * every legal place. From 1024 px the right column first shows the set's best tested place and the full
+   * list waits behind "Show every legal place"; below 1024 px the full list shows at once.
+   */
+  async choose(act: string, { every = true }: { every?: boolean } = {}): Promise<void> {
     const option = this.select.locator("option").filter({ hasText: new RegExp(`^\\d{2}:\\d{2} ${literal(act)}( \\(.*\\))?$`) });
     await expect(option, `option for ${act}`).toHaveCount(1);
     await this.select.selectOption((await option.getAttribute("value")) as string);
+    if (every) await this.openEvery(act);
+  }
+
+  /** Opens the full list of legal places for the picked set, wherever the width puts it. */
+  async openEvery(act: string): Promise<void> {
+    const show = this.bestPlace.getByRole("button", { name: "Show every legal place" });
+    await expect(this.heading(act).or(show).first()).toBeVisible();
+    if (await show.isVisible()) await show.click();
     await expect(this.heading(act)).toBeVisible();
     await expect(this.places).toBeVisible();
   }
@@ -62,7 +80,7 @@ export class TryAMove {
 
 export type Place = { stage: string; start: string; end: string; index: number; change: string };
 
-/** Reads one place's accessible name: "Woodsies 12:45–13:45: Clash Budget Index 114.8, 1.9 lower". */
+/** Reads one place's accessible name: "<stage> HH:MM–HH:MM: Clash Budget Index NNN.N, N.N lower". */
 export function parsePlace(label: string): Place {
   const match = /^(.+?) (\d{2}:\d{2})–(\d{2}:\d{2}): Clash Budget Index (\d+\.\d)(?:, (.+))?$/.exec(label);
   if (!match) throw new Error(`Not a legal-place label: ${label}`);

@@ -1,0 +1,279 @@
+{
+ "kind": "lenses",
+ "day": 0,
+ "ranked": 15,
+ "with_taste": [
+  {
+   "a": "Neon Garden",
+   "b": "Glass Mirror",
+   "a_id": "act-16",
+   "b_id": "act-02",
+   "rank": 1,
+   "rank_without_taste": 4
+  },
+  {
+   "a": "Glass Mirror",
+   "b": "Marble Machine",
+   "a_id": "act-02",
+   "b_id": "act-04",
+   "rank": 2,
+   "rank_without_taste": 1
+  },
+  {
+   "a": "Glass Mirror",
+   "b": "Hollow Meadow",
+   "a_id": "act-02",
+   "b_id": "act-11",
+   "rank": 3,
+   "rank_without_taste": 3
+  },
+  {
+   "a": "Brass Choir",
+   "b": "Cobalt Choir",
+   "a_id": "act-03",
+   "b_id": "act-13",
+   "rank": 4,
+   "rank_without_taste": 21
+  },
+  {
+   "a": "Rustic Season",
+   "b": "Fable Pilots",
+   "a_id": "act-07",
+   "b_id": "act-01",
+   "rank": 5,
+   "rank_without_taste": 2
+  },
+  {
+   "a": "Fable Pilots",
+   "b": "Rustic Harbour",
+   "a_id": "act-01",
+   "b_id": "act-09",
+   "rank": 6,
+   "rank_without_taste": 20
+  },
+  {
+   "a": "Neon Harbour",
+   "b": "Fable Pilots",
+   "a_id": "act-10",
+   "b_id": "act-01",
+   "rank": 7,
+   "rank_without_taste": 10
+  },
+  {
+   "a": "Fable Meadow",
+   "b": "Fable Pilots",
+   "a_id": "act-06",
+   "b_id": "act-01",
+   "rank": 8,
+   "rank_without_taste": 17
+  },
+  {
+   "a": "Brass Choir",
+   "b": "Willow Circuit",
+   "a_id": "act-03",
+   "b_id": "act-12",
+   "rank": 9,
+   "rank_without_taste": 9
+  },
+  {
+   "a": "Willow Circuit",
+   "b": "Cobalt Choir",
+   "a_id": "act-12",
+   "b_id": "act-13",
+   "rank": 10,
+   "rank_without_taste": 13
+  },
+  {
+   "a": "Orchid Bloom",
+   "b": "Brass Choir",
+   "a_id": "act-23",
+   "b_id": "act-03",
+   "rank": 11,
+   "rank_without_taste": 23
+  },
+  {
+   "a": "Willow Circuit",
+   "b": "Cobalt Hours",
+   "a_id": "act-12",
+   "b_id": "act-18",
+   "rank": 12,
+   "rank_without_taste": 22
+  },
+  {
+   "a": "Saffron Season",
+   "b": "Orchid Bloom",
+   "a_id": "act-14",
+   "b_id": "act-23",
+   "rank": 13,
+   "rank_without_taste": 18
+  },
+  {
+   "a": "Marble Syndicate",
+   "b": "Harbor Atlas",
+   "a_id": "act-08",
+   "b_id": "act-20",
+   "rank": 14,
+   "rank_without_taste": 19
+  },
+  {
+   "a": "Saffron Season",
+   "b": "Brass Choir",
+   "a_id": "act-14",
+   "b_id": "act-03",
+   "rank": 15,
+   "rank_without_taste": 7
+  }
+ ],
+ "without_taste": [
+  {
+   "a": "Glass Mirror",
+   "b": "Marble Machine",
+   "a_id": "act-02",
+   "b_id": "act-04",
+   "rank": 1,
+   "rank_with_taste": 2
+  },
+  {
+   "a": "Rustic Season",
+   "b": "Fable Pilots",
+   "a_id": "act-07",
+   "b_id": "act-01",
+   "rank": 2,
+   "rank_with_taste": 5
+  },
+  {
+   "a": "Glass Mirror",
+   "b": "Hollow Meadow",
+   "a_id": "act-02",
+   "b_id": "act-11",
+   "rank": 3,
+   "rank_with_taste": 3
+  },
+  {
+   "a": "Neon Garden",
+   "b": "Glass Mirror",
+   "a_id": "act-16",
+   "b_id": "act-02",
+   "rank": 4,
+   "rank_with_taste": 1
+  },
+  {
+   "a": "Marble Machine",
+   "b": "Hollow Meadow",
+   "a_id": "act-04",
+   "b_id": "act-11",
+   "rank": 5,
+   "rank_with_taste": 28
+  },
+  {
+   "a": "Fable Meadow",
+   "b": "Neon Harbour",
+   "a_id": "act-06",
+   "b_id": "act-10",
+   "rank": 6,
+   "rank_with_taste": 18
+  },
+  {
+   "a": "Saffron Season",
+   "b": "Brass Choir",
+   "a_id": "act-14",
+   "b_id": "act-03",
+   "rank": 7,
+   "rank_with_taste": 15
+  },
+  {
+   "a": "Brass Choir",
+   "b": "Ivory Lights",
+   "a_id": "act-03",
+   "b_id": "act-22",
+   "rank": 8,
+   "rank_with_taste": 20
+  },
+  {
+   "a": "Brass Choir",
+   "b": "Willow Circuit",
+   "a_id": "act-03",
+   "b_id": "act-12",
+   "rank": 9,
+   "rank_with_taste": 9
+  },
+  {
+   "a": "Neon Harbour",
+   "b": "Fable Pilots",
+   "a_id": "act-10",
+   "b_id": "act-01",
+   "rank": 10,
+   "rank_with_taste": 7
+  },
+  {
+   "a": "Neon Garden",
+   "b": "Marble Machine",
+   "a_id": "act-16",
+   "b_id": "act-04",
+   "rank": 11,
+   "rank_with_taste": 16
+  },
+  {
+   "a": "Neon Harbour",
+   "b": "Rustic Season",
+   "a_id": "act-10",
+   "b_id": "act-07",
+   "rank": 12,
+   "rank_with_taste": 17
+  },
+  {
+   "a": "Willow Circuit",
+   "b": "Cobalt Choir",
+   "a_id": "act-12",
+   "b_id": "act-13",
+   "rank": 13,
+   "rank_with_taste": 10
+  },
+  {
+   "a": "Marble Syndicate",
+   "b": "Echo Mirror",
+   "a_id": "act-08",
+   "b_id": "act-17",
+   "rank": 14,
+   "rank_with_taste": 27
+  },
+  {
+   "a": "Fable Meadow",
+   "b": "Rustic Season",
+   "a_id": "act-06",
+   "b_id": "act-07",
+   "rank": 15,
+   "rank_with_taste": 24
+  }
+ ],
+ "priced_with_taste": 31,
+ "priced_without_taste": 31,
+ "only_with_taste": 7,
+ "only_without_taste": 7,
+ "shuffled": {
+  "runs": 200,
+  "median": 5,
+  "low": 4,
+  "high": 7
+ },
+ "apart": [
+  {
+   "a": "Fable Meadow",
+   "b": "Saffron Season",
+   "a_id": "act-06",
+   "b_id": "act-14"
+  },
+  {
+   "a": "Harbor Atlas",
+   "b": "Tidal Fields",
+   "a_id": "act-20",
+   "b_id": "act-24"
+  },
+  {
+   "a": "Marble Machine",
+   "b": "Juniper Bloom",
+   "a_id": "act-04",
+   "b_id": "act-15"
+  }
+ ]
+}

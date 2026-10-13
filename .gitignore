@@ -43,3 +43,7 @@ Thumbs.db
 
 # Test runner caches
 .vitest/
+
+# Playwright end-to-end output (web/e2e)
+web/test-results/
+web/playwright-report/

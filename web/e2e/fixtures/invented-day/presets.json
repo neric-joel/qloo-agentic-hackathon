@@ -1,0 +1,11 @@
+[
+ {
+  "id": "synthetic-lanternfield-friday",
+  "title": "Lanternfield Friday (synthetic demo)",
+  "city": "Lanternfield",
+  "sets": 24,
+  "stages": 4,
+  "scored_share": 0.9583,
+  "synthetic": true
+ }
+]

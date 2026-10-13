@@ -1,0 +1,1329 @@
+{
+ "id": "synthetic-lanternfield-friday",
+ "title": "Lanternfield Friday (synthetic demo)",
+ "built_at": null,
+ "synthetic": true,
+ "festival": {
+  "id": "synthetic-lanternfield",
+  "name": "Lanternfield Festival (synthetic)",
+  "city": "Lanternfield",
+  "days": [
+   "Friday"
+  ],
+  "stages": [
+   {
+    "id": "main",
+    "name": "Main Stage",
+    "tier": 1,
+    "capacity": null,
+    "hours": [
+     {
+      "day": 0,
+      "open": 625,
+      "close": 1410
+     }
+    ]
+   },
+   {
+    "id": "river",
+    "name": "Riverside Stage",
+    "tier": 2,
+    "capacity": null,
+    "hours": [
+     {
+      "day": 0,
+      "open": 780,
+      "close": 1380
+     }
+    ]
+   },
+   {
+    "id": "grove",
+    "name": "Grove Stage",
+    "tier": 2,
+    "capacity": null,
+    "hours": [
+     {
+      "day": 0,
+      "open": 780,
+      "close": 1350
+     }
+    ]
+   },
+   {
+    "id": "tent",
+    "name": "Night Tent",
+    "tier": 3,
+    "capacity": null,
+    "hours": [
+     {
+      "day": 0,
+      "open": 960,
+      "close": 1425
+     }
+    ]
+   }
+  ],
+  "acts": [
+   {
+    "id": "act-01",
+    "name": "Fable Pilots",
+    "qloo_id": null,
+    "popularity": 0.868,
+    "genre": "Indie",
+    "billing_tier": 1,
+    "rarity": 0.5
+   },
+   {
+    "id": "act-02",
+    "name": "Glass Mirror",
+    "qloo_id": null,
+    "popularity": 0.983,
+    "genre": "Electronic",
+    "billing_tier": 1,
+    "rarity": 0.5
+   },
+   {
+    "id": "act-03",
+    "name": "Brass Choir",
+    "qloo_id": null,
+    "popularity": 0.913,
+    "genre": "Folk",
+    "billing_tier": 1,
+    "rarity": 0.5
+   },
+   {
+    "id": "act-04",
+    "name": "Marble Machine",
+    "qloo_id": null,
+    "popularity": 0.773,
+    "genre": "Electronic",
+    "billing_tier": 2,
+    "rarity": 0.5
+   },
+   {
+    "id": "act-05",
+    "name": "Crimson Season",
+    "qloo_id": null,
+    "popularity": 0.764,
+    "genre": "Folk",
+    "billing_tier": 2,
+    "rarity": 0.9
+   },
+   {
+    "id": "act-06",
+    "name": "Fable Meadow",
+    "qloo_id": null,
+    "popularity": 0.732,
+    "genre": "Pop",
+    "billing_tier": 2,
+    "rarity": 0.8
+   },
+   {
+    "id": "act-07",
+    "name": "Rustic Season",
+    "qloo_id": null,
+    "popularity": 0.678,
+    "genre": "Rock",
+    "billing_tier": 2,
+    "rarity": 0.5
+   },
+   {
+    "id": "act-08",
+    "name": "Marble Syndicate",
+    "qloo_id": null,
+    "popularity": 0.792,
+    "genre": "Pop",
+    "billing_tier": 2,
+    "rarity": 0.8
+   },
+   {
+    "id": "act-09",
+    "name": "Rustic Harbour",
+    "qloo_id": null,
+    "popularity": 0.568,
+    "genre": "Hip-hop",
+    "billing_tier": 3,
+    "rarity": 0.2
+   },
+   {
+    "id": "act-10",
+    "name": "Neon Harbour",
+    "qloo_id": null,
+    "popularity": 0.508,
+    "genre": "Folk",
+    "billing_tier": 3,
+    "rarity": 0.5
+   },
+   {
+    "id": "act-11",
+    "name": "Hollow Meadow",
+    "qloo_id": null,
+    "popularity": 0.482,
+    "genre": "Electronic",
+    "billing_tier": 3,
+    "rarity": 0.5
+   },
+   {
+    "id": "act-12",
+    "name": "Willow Circuit",
+    "qloo_id": null,
+    "popularity": 0.646,
+    "genre": "Indie",
+    "billing_tier": 3,
+    "rarity": 0.5
+   },
+   {
+    "id": "act-13",
+    "name": "Cobalt Choir",
+    "qloo_id": null,
+    "popularity": 0.521,
+    "genre": "Folk",
+    "billing_tier": 3,
+    "rarity": 0.5
+   },
+   {
+    "id": "act-14",
+    "name": "Saffron Season",
+    "qloo_id": null,
+    "popularity": 0.577,
+    "genre": "Pop",
+    "billing_tier": 3,
+    "rarity": 0.9
+   },
+   {
+    "id": "act-15",
+    "name": "Juniper Bloom",
+    "qloo_id": null,
+    "popularity": 0.516,
+    "genre": "Electronic",
+    "billing_tier": 3,
+    "rarity": 0.1
+   },
+   {
+    "id": "act-16",
+    "name": "Neon Garden",
+    "qloo_id": null,
+    "popularity": 0.462,
+    "genre": "Hip-hop",
+    "billing_tier": 3,
+    "rarity": 0.5
+   },
+   {
+    "id": "act-17",
+    "name": "Echo Mirror",
+    "qloo_id": null,
+    "popularity": 0.232,
+    "genre": "Rock",
+    "billing_tier": 4,
+    "rarity": 0.5
+   },
+   {
+    "id": "act-18",
+    "name": "Cobalt Hours",
+    "qloo_id": null,
+    "popularity": 0.387,
+    "genre": "Pop",
+    "billing_tier": 4,
+    "rarity": 0.5
+   },
+   {
+    "id": "act-19",
+    "name": "Willow Bloom",
+    "qloo_id": null,
+    "popularity": 0.174,
+    "genre": "Rock",
+    "billing_tier": 4,
+    "rarity": 0.5
+   },
+   {
+    "id": "act-20",
+    "name": "Harbor Atlas",
+    "qloo_id": null,
+    "popularity": 0.163,
+    "genre": "Hip-hop",
+    "billing_tier": 4,
+    "rarity": 0.2
+   },
+   {
+    "id": "act-21",
+    "name": "Cedar Roads",
+    "qloo_id": null,
+    "popularity": 0.335,
+    "genre": "Indie",
+    "billing_tier": 4,
+    "rarity": 0.5
+   },
+   {
+    "id": "act-22",
+    "name": "Ivory Lights",
+    "qloo_id": null,
+    "popularity": 0.301,
+    "genre": "Rock",
+    "billing_tier": 4,
+    "rarity": 0.1
+   },
+   {
+    "id": "act-23",
+    "name": "Orchid Bloom",
+    "qloo_id": null,
+    "popularity": 0.232,
+    "genre": "Indie",
+    "billing_tier": 4,
+    "rarity": 0.5
+   },
+   {
+    "id": "act-24",
+    "name": "Tidal Fields",
+    "qloo_id": null,
+    "popularity": 0.333,
+    "genre": "Hip-hop",
+    "billing_tier": 4,
+    "rarity": 0.2
+   }
+  ],
+  "timetable": [
+   {
+    "act_id": "act-24",
+    "day": 0,
+    "stage_id": "main",
+    "start": 625,
+    "end": 670,
+    "locked": false,
+    "stage_locked": false,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   },
+   {
+    "act_id": "act-15",
+    "day": 0,
+    "stage_id": "main",
+    "start": 700,
+    "end": 755,
+    "locked": false,
+    "stage_locked": false,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   },
+   {
+    "act_id": "act-05",
+    "day": 0,
+    "stage_id": "main",
+    "start": 800,
+    "end": 875,
+    "locked": false,
+    "stage_locked": true,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   },
+   {
+    "act_id": "act-08",
+    "day": 0,
+    "stage_id": "main",
+    "start": 915,
+    "end": 985,
+    "locked": false,
+    "stage_locked": true,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   },
+   {
+    "act_id": "act-03",
+    "day": 0,
+    "stage_id": "main",
+    "start": 1015,
+    "end": 1115,
+    "locked": true,
+    "stage_locked": false,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   },
+   {
+    "act_id": "act-02",
+    "day": 0,
+    "stage_id": "main",
+    "start": 1160,
+    "end": 1250,
+    "locked": true,
+    "stage_locked": false,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   },
+   {
+    "act_id": "act-01",
+    "day": 0,
+    "stage_id": "main",
+    "start": 1280,
+    "end": 1380,
+    "locked": true,
+    "stage_locked": false,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   },
+   {
+    "act_id": "act-19",
+    "day": 0,
+    "stage_id": "river",
+    "start": 850,
+    "end": 890,
+    "locked": false,
+    "stage_locked": false,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   },
+   {
+    "act_id": "act-17",
+    "day": 0,
+    "stage_id": "river",
+    "start": 925,
+    "end": 965,
+    "locked": false,
+    "stage_locked": false,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   },
+   {
+    "act_id": "act-14",
+    "day": 0,
+    "stage_id": "river",
+    "start": 1000,
+    "end": 1060,
+    "locked": false,
+    "stage_locked": false,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   },
+   {
+    "act_id": "act-13",
+    "day": 0,
+    "stage_id": "river",
+    "start": 1085,
+    "end": 1145,
+    "locked": false,
+    "stage_locked": false,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   },
+   {
+    "act_id": "act-04",
+    "day": 0,
+    "stage_id": "river",
+    "start": 1165,
+    "end": 1245,
+    "locked": false,
+    "stage_locked": false,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   },
+   {
+    "act_id": "act-07",
+    "day": 0,
+    "stage_id": "river",
+    "start": 1275,
+    "end": 1350,
+    "locked": false,
+    "stage_locked": false,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   },
+   {
+    "act_id": "act-21",
+    "day": 0,
+    "stage_id": "grove",
+    "start": 855,
+    "end": 900,
+    "locked": false,
+    "stage_locked": false,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   },
+   {
+    "act_id": "act-20",
+    "day": 0,
+    "stage_id": "grove",
+    "start": 925,
+    "end": 965,
+    "locked": false,
+    "stage_locked": false,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   },
+   {
+    "act_id": "act-23",
+    "day": 0,
+    "stage_id": "grove",
+    "start": 1000,
+    "end": 1040,
+    "locked": false,
+    "stage_locked": false,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   },
+   {
+    "act_id": "act-12",
+    "day": 0,
+    "stage_id": "grove",
+    "start": 1075,
+    "end": 1135,
+    "locked": false,
+    "stage_locked": false,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   },
+   {
+    "act_id": "act-16",
+    "day": 0,
+    "stage_id": "grove",
+    "start": 1155,
+    "end": 1215,
+    "locked": false,
+    "stage_locked": false,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   },
+   {
+    "act_id": "act-06",
+    "day": 0,
+    "stage_id": "grove",
+    "start": 1240,
+    "end": 1320,
+    "locked": false,
+    "stage_locked": false,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   },
+   {
+    "act_id": "act-22",
+    "day": 0,
+    "stage_id": "tent",
+    "start": 1040,
+    "end": 1085,
+    "locked": false,
+    "stage_locked": false,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   },
+   {
+    "act_id": "act-18",
+    "day": 0,
+    "stage_id": "tent",
+    "start": 1105,
+    "end": 1150,
+    "locked": false,
+    "stage_locked": false,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   },
+   {
+    "act_id": "act-11",
+    "day": 0,
+    "stage_id": "tent",
+    "start": 1185,
+    "end": 1240,
+    "locked": false,
+    "stage_locked": false,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   },
+   {
+    "act_id": "act-10",
+    "day": 0,
+    "stage_id": "tent",
+    "start": 1265,
+    "end": 1325,
+    "locked": false,
+    "stage_locked": false,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   },
+   {
+    "act_id": "act-09",
+    "day": 0,
+    "stage_id": "tent",
+    "start": 1350,
+    "end": 1410,
+    "locked": false,
+    "stage_locked": false,
+    "not_before": null,
+    "not_after": null,
+    "stages": null
+   }
+  ],
+  "constraints": {
+   "changeover_minutes": 15,
+   "curfew": {
+    "0": 1425
+   },
+   "no_clash_with": [
+    [
+     "act-11",
+     "act-15"
+    ]
+   ],
+   "billing_rules": [
+    {
+     "billing_tier": 1,
+     "max_stage_tier": 1,
+     "last_slots": 3
+    }
+   ],
+   "allow_day_moves": false
+  }
+ },
+ "report": {
+  "festival_id": "synthetic-lanternfield",
+  "metrics": {
+   "regret": 2.953071,
+   "clash_budget_index": 143.68,
+   "split_quality": 0.967147,
+   "split_index": 103.49,
+   "objective": null,
+   "scored_concurrent_pairs": 31,
+   "unscored_concurrent_pairs": 2
+  },
+  "baseline": {
+   "samples": 300,
+   "mean_regret": 2.0552427641236766,
+   "std_regret": 0.44094347292618463,
+   "mean_split": 0.9345603118496075,
+   "p10_index": 74.27434912537375,
+   "p90_index": 128.26910667457958,
+   "degenerate": false
+  },
+  "clashes": [
+   {
+    "rank": 1,
+    "a": {
+     "act_id": "act-16",
+     "name": "Neon Garden",
+     "stage_id": "grove",
+     "genre": "Hip-hop"
+    },
+    "b": {
+     "act_id": "act-02",
+     "name": "Glass Mirror",
+     "stage_id": "main",
+     "genre": "Electronic"
+    },
+    "day": 0,
+    "overlap_minutes": 55,
+    "concurrency": 0.9167,
+    "audience_overlap": 0.7896,
+    "draw": 0.6739,
+    "regret": 0.487771,
+    "regret_share": 0.1652,
+    "split_quality": null,
+    "label": "hidden",
+    "confidence": "strong"
+   },
+   {
+    "rank": 2,
+    "a": {
+     "act_id": "act-02",
+     "name": "Glass Mirror",
+     "stage_id": "main",
+     "genre": "Electronic"
+    },
+    "b": {
+     "act_id": "act-04",
+     "name": "Marble Machine",
+     "stage_id": "river",
+     "genre": "Electronic"
+    },
+    "day": 0,
+    "overlap_minutes": 80,
+    "concurrency": 1.0,
+    "audience_overlap": 0.3405,
+    "draw": 0.8717,
+    "regret": 0.296813,
+    "regret_share": 0.1005,
+    "split_quality": 0.51861,
+    "label": null,
+    "confidence": "strong"
+   },
+   {
+    "rank": 3,
+    "a": {
+     "act_id": "act-02",
+     "name": "Glass Mirror",
+     "stage_id": "main",
+     "genre": "Electronic"
+    },
+    "b": {
+     "act_id": "act-11",
+     "name": "Hollow Meadow",
+     "stage_id": "tent",
+     "genre": "Electronic"
+    },
+    "day": 0,
+    "overlap_minutes": 55,
+    "concurrency": 1.0,
+    "audience_overlap": 0.4268,
+    "draw": 0.6883,
+    "regret": 0.293782,
+    "regret_share": 0.0995,
+    "split_quality": null,
+    "label": null,
+    "confidence": "strong"
+   },
+   {
+    "rank": 4,
+    "a": {
+     "act_id": "act-03",
+     "name": "Brass Choir",
+     "stage_id": "main",
+     "genre": "Folk"
+    },
+    "b": {
+     "act_id": "act-13",
+     "name": "Cobalt Choir",
+     "stage_id": "river",
+     "genre": "Folk"
+    },
+    "day": 0,
+    "overlap_minutes": 30,
+    "concurrency": 0.5,
+    "audience_overlap": 0.6774,
+    "draw": 0.6897,
+    "regret": 0.233598,
+    "regret_share": 0.0791,
+    "split_quality": null,
+    "label": null,
+    "confidence": "strong"
+   },
+   {
+    "rank": 5,
+    "a": {
+     "act_id": "act-07",
+     "name": "Rustic Season",
+     "stage_id": "river",
+     "genre": "Rock"
+    },
+    "b": {
+     "act_id": "act-01",
+     "name": "Fable Pilots",
+     "stage_id": "main",
+     "genre": "Indie"
+    },
+    "day": 0,
+    "overlap_minutes": 70,
+    "concurrency": 0.9333,
+    "audience_overlap": 0.3229,
+    "draw": 0.7671,
+    "regret": 0.231196,
+    "regret_share": 0.0783,
+    "split_quality": null,
+    "label": null,
+    "confidence": "strong"
+   },
+   {
+    "rank": 6,
+    "a": {
+     "act_id": "act-01",
+     "name": "Fable Pilots",
+     "stage_id": "main",
+     "genre": "Indie"
+    },
+    "b": {
+     "act_id": "act-09",
+     "name": "Rustic Harbour",
+     "stage_id": "tent",
+     "genre": "Hip-hop"
+    },
+    "day": 0,
+    "overlap_minutes": 30,
+    "concurrency": 0.5,
+    "audience_overlap": 0.6817,
+    "draw": 0.7022,
+    "regret": 0.203431,
+    "regret_share": 0.0689,
+    "split_quality": null,
+    "label": "hidden",
+    "confidence": "strong"
+   },
+   {
+    "rank": 7,
+    "a": {
+     "act_id": "act-10",
+     "name": "Neon Harbour",
+     "stage_id": "tent",
+     "genre": "Folk"
+    },
+    "b": {
+     "act_id": "act-01",
+     "name": "Fable Pilots",
+     "stage_id": "main",
+     "genre": "Indie"
+    },
+    "day": 0,
+    "overlap_minutes": 45,
+    "concurrency": 0.75,
+    "audience_overlap": 0.3024,
+    "draw": 0.664,
+    "regret": 0.150603,
+    "regret_share": 0.051,
+    "split_quality": null,
+    "label": null,
+    "confidence": "strong"
+   },
+   {
+    "rank": 8,
+    "a": {
+     "act_id": "act-06",
+     "name": "Fable Meadow",
+     "stage_id": "grove",
+     "genre": "Pop"
+    },
+    "b": {
+     "act_id": "act-01",
+     "name": "Fable Pilots",
+     "stage_id": "main",
+     "genre": "Indie"
+    },
+    "day": 0,
+    "overlap_minutes": 40,
+    "concurrency": 0.5,
+    "audience_overlap": 0.2147,
+    "draw": 0.7971,
+    "regret": 0.098405,
+    "regret_share": 0.0333,
+    "split_quality": 0.331129,
+    "label": null,
+    "confidence": "strong"
+   },
+   {
+    "rank": 9,
+    "a": {
+     "act_id": "act-03",
+     "name": "Brass Choir",
+     "stage_id": "main",
+     "genre": "Folk"
+    },
+    "b": {
+     "act_id": "act-12",
+     "name": "Willow Circuit",
+     "stage_id": "grove",
+     "genre": "Indie"
+    },
+    "day": 0,
+    "overlap_minutes": 40,
+    "concurrency": 0.6667,
+    "audience_overlap": 0.18,
+    "draw": 0.768,
+    "regret": 0.092158,
+    "regret_share": 0.0312,
+    "split_quality": null,
+    "label": null,
+    "confidence": "strong"
+   },
+   {
+    "rank": 10,
+    "a": {
+     "act_id": "act-12",
+     "name": "Willow Circuit",
+     "stage_id": "grove",
+     "genre": "Indie"
+    },
+    "b": {
+     "act_id": "act-13",
+     "name": "Cobalt Choir",
+     "stage_id": "river",
+     "genre": "Folk"
+    },
+    "day": 0,
+    "overlap_minutes": 50,
+    "concurrency": 0.8333,
+    "audience_overlap": 0.1795,
+    "draw": 0.5801,
+    "regret": 0.08678,
+    "regret_share": 0.0294,
+    "split_quality": null,
+    "label": null,
+    "confidence": "strong"
+   },
+   {
+    "rank": 11,
+    "a": {
+     "act_id": "act-23",
+     "name": "Orchid Bloom",
+     "stage_id": "grove",
+     "genre": "Indie"
+    },
+    "b": {
+     "act_id": "act-03",
+     "name": "Brass Choir",
+     "stage_id": "main",
+     "genre": "Folk"
+    },
+    "day": 0,
+    "overlap_minutes": 25,
+    "concurrency": 0.625,
+    "audience_overlap": 0.2999,
+    "draw": 0.4602,
+    "regret": 0.086265,
+    "regret_share": 0.0292,
+    "split_quality": null,
+    "label": null,
+    "confidence": "weak"
+   },
+   {
+    "rank": 12,
+    "a": {
+     "act_id": "act-12",
+     "name": "Willow Circuit",
+     "stage_id": "grove",
+     "genre": "Indie"
+    },
+    "b": {
+     "act_id": "act-18",
+     "name": "Cobalt Hours",
+     "stage_id": "tent",
+     "genre": "Pop"
+    },
+    "day": 0,
+    "overlap_minutes": 30,
+    "concurrency": 0.6667,
+    "audience_overlap": 0.2504,
+    "draw": 0.5,
+    "regret": 0.083467,
+    "regret_share": 0.0283,
+    "split_quality": null,
+    "label": null,
+    "confidence": "strong"
+   },
+   {
+    "rank": 13,
+    "a": {
+     "act_id": "act-14",
+     "name": "Saffron Season",
+     "stage_id": "river",
+     "genre": "Pop"
+    },
+    "b": {
+     "act_id": "act-23",
+     "name": "Orchid Bloom",
+     "stage_id": "grove",
+     "genre": "Indie"
+    },
+    "day": 0,
+    "overlap_minutes": 40,
+    "concurrency": 1.0,
+    "audience_overlap": 0.1813,
+    "draw": 0.3659,
+    "regret": 0.0796,
+    "regret_share": 0.027,
+    "split_quality": null,
+    "label": null,
+    "confidence": "weak"
+   },
+   {
+    "rank": 14,
+    "a": {
+     "act_id": "act-08",
+     "name": "Marble Syndicate",
+     "stage_id": "main",
+     "genre": "Pop"
+    },
+    "b": {
+     "act_id": "act-20",
+     "name": "Harbor Atlas",
+     "stage_id": "grove",
+     "genre": "Hip-hop"
+    },
+    "day": 0,
+    "overlap_minutes": 40,
+    "concurrency": 1.0,
+    "audience_overlap": 0.1998,
+    "draw": 0.3593,
+    "regret": 0.071788,
+    "regret_share": 0.0243,
+    "split_quality": null,
+    "label": null,
+    "confidence": "strong"
+   },
+   {
+    "rank": 15,
+    "a": {
+     "act_id": "act-14",
+     "name": "Saffron Season",
+     "stage_id": "river",
+     "genre": "Pop"
+    },
+    "b": {
+     "act_id": "act-03",
+     "name": "Brass Choir",
+     "stage_id": "main",
+     "genre": "Folk"
+    },
+    "day": 0,
+    "overlap_minutes": 45,
+    "concurrency": 0.75,
+    "audience_overlap": 0.1048,
+    "draw": 0.7258,
+    "regret": 0.068458,
+    "regret_share": 0.0232,
+    "split_quality": null,
+    "label": null,
+    "confidence": "strong"
+   }
+  ],
+  "false_clashes": [
+   {
+    "rank": 1,
+    "a": {
+     "act_id": "act-04",
+     "name": "Marble Machine",
+     "stage_id": "river",
+     "genre": "Electronic"
+    },
+    "b": {
+     "act_id": "act-11",
+     "name": "Hollow Meadow",
+     "stage_id": "tent",
+     "genre": "Electronic"
+    },
+    "day": 0,
+    "overlap_minutes": 55,
+    "concurrency": 1.0,
+    "audience_overlap": 0.0176,
+    "draw": 0.6104,
+    "regret": 0.010743,
+    "regret_share": 0.0036,
+    "split_quality": null,
+    "label": "false",
+    "confidence": "strong"
+   }
+  ],
+  "splits": [
+   {
+    "rank": 1,
+    "a": {
+     "act_id": "act-02",
+     "name": "Glass Mirror",
+     "stage_id": "main",
+     "genre": "Electronic"
+    },
+    "b": {
+     "act_id": "act-04",
+     "name": "Marble Machine",
+     "stage_id": "river",
+     "genre": "Electronic"
+    },
+    "day": 0,
+    "overlap_minutes": 80,
+    "concurrency": 1.0,
+    "audience_overlap": 0.3405,
+    "draw": 0.8717,
+    "regret": 0.296813,
+    "regret_share": 0.1005,
+    "split_quality": 0.51861,
+    "label": null,
+    "confidence": "strong"
+   },
+   {
+    "rank": 2,
+    "a": {
+     "act_id": "act-06",
+     "name": "Fable Meadow",
+     "stage_id": "grove",
+     "genre": "Pop"
+    },
+    "b": {
+     "act_id": "act-01",
+     "name": "Fable Pilots",
+     "stage_id": "main",
+     "genre": "Indie"
+    },
+    "day": 0,
+    "overlap_minutes": 40,
+    "concurrency": 0.5,
+    "audience_overlap": 0.2147,
+    "draw": 0.7971,
+    "regret": 0.098405,
+    "regret_share": 0.0333,
+    "split_quality": 0.331129,
+    "label": null,
+    "confidence": "strong"
+   },
+   {
+    "rank": 3,
+    "a": {
+     "act_id": "act-02",
+     "name": "Glass Mirror",
+     "stage_id": "main",
+     "genre": "Electronic"
+    },
+    "b": {
+     "act_id": "act-06",
+     "name": "Fable Meadow",
+     "stage_id": "grove",
+     "genre": "Pop"
+    },
+    "day": 0,
+    "overlap_minutes": 10,
+    "concurrency": 0.125,
+    "audience_overlap": 0.2589,
+    "draw": 0.8483,
+    "regret": 0.03157,
+    "regret_share": 0.0107,
+    "split_quality": 0.068983,
+    "label": null,
+    "confidence": "strong"
+   },
+   {
+    "rank": 4,
+    "a": {
+     "act_id": "act-04",
+     "name": "Marble Machine",
+     "stage_id": "river",
+     "genre": "Electronic"
+    },
+    "b": {
+     "act_id": "act-06",
+     "name": "Fable Meadow",
+     "stage_id": "grove",
+     "genre": "Pop"
+    },
+    "day": 0,
+    "overlap_minutes": 5,
+    "concurrency": 0.0625,
+    "audience_overlap": 0.1818,
+    "draw": 0.7522,
+    "regret": 0.009829,
+    "regret_share": 0.0033,
+    "split_quality": 0.048425,
+    "label": null,
+    "confidence": "strong"
+   }
+  ],
+  "hidden_clash_count": 2,
+  "false_clash_count": 1,
+  "regret_by_act": {
+   "act-05": 0.0205,
+   "act-08": 0.088,
+   "act-03": 0.5182,
+   "act-02": 1.1099,
+   "act-01": 0.6836,
+   "act-19": 0.0205,
+   "act-17": 0.0255,
+   "act-14": 0.1698,
+   "act-13": 0.3387,
+   "act-04": 0.3779,
+   "act-07": 0.3056,
+   "act-20": 0.0811,
+   "act-23": 0.1659,
+   "act-12": 0.281,
+   "act-16": 0.5678,
+   "act-06": 0.1988,
+   "act-22": 0.0677,
+   "act-18": 0.1122,
+   "act-11": 0.3241,
+   "act-10": 0.2459,
+   "act-09": 0.2034
+  },
+  "top_draw_acts": [
+   "act-05",
+   "act-08",
+   "act-03",
+   "act-02",
+   "act-01",
+   "act-04",
+   "act-06"
+  ],
+  "thresholds": {
+   "hidden_overlap": 0.3908,
+   "false_overlap": 0.0686,
+   "top_draw_cutoff": 0.732
+  },
+  "stage_fit": [
+   {
+    "act_id": "act-04",
+    "name": "Marble Machine",
+    "stage_id": "river",
+    "stage_name": "Riverside Stage",
+    "stage_tier": 2,
+    "draw_rank": 5,
+    "lineup_size": 24,
+    "expected_tier_min": 1,
+    "expected_tier_max": 1,
+    "direction": "bigger_stage_suggested",
+    "message": "Marble Machine ranks 5 of 24 by draw but plays Riverside Stage (tier 2); that draw fits tier 1."
+   },
+   {
+    "act_id": "act-09",
+    "name": "Rustic Harbour",
+    "stage_id": "tent",
+    "stage_name": "Night Tent",
+    "stage_tier": 3,
+    "draw_rank": 11,
+    "lineup_size": 24,
+    "expected_tier_min": 2,
+    "expected_tier_max": 2,
+    "direction": "bigger_stage_suggested",
+    "message": "Rustic Harbour ranks 11 of 24 by draw but plays Night Tent (tier 3); that draw fits tier 2."
+   },
+   {
+    "act_id": "act-15",
+    "name": "Juniper Bloom",
+    "stage_id": "main",
+    "stage_name": "Main Stage",
+    "stage_tier": 1,
+    "draw_rank": 13,
+    "lineup_size": 24,
+    "expected_tier_min": 2,
+    "expected_tier_max": 2,
+    "direction": "smaller_stage_suggested",
+    "message": "Juniper Bloom ranks 13 of 24 by draw but plays Main Stage (tier 1); that draw fits tier 2."
+   },
+   {
+    "act_id": "act-10",
+    "name": "Neon Harbour",
+    "stage_id": "tent",
+    "stage_name": "Night Tent",
+    "stage_tier": 3,
+    "draw_rank": 14,
+    "lineup_size": 24,
+    "expected_tier_min": 2,
+    "expected_tier_max": 2,
+    "direction": "bigger_stage_suggested",
+    "message": "Neon Harbour ranks 14 of 24 by draw but plays Night Tent (tier 3); that draw fits tier 2."
+   },
+   {
+    "act_id": "act-11",
+    "name": "Hollow Meadow",
+    "stage_id": "tent",
+    "stage_name": "Night Tent",
+    "stage_tier": 3,
+    "draw_rank": 15,
+    "lineup_size": 24,
+    "expected_tier_min": 2,
+    "expected_tier_max": 2,
+    "direction": "bigger_stage_suggested",
+    "message": "Hollow Meadow ranks 15 of 24 by draw but plays Night Tent (tier 3); that draw fits tier 2."
+   },
+   {
+    "act_id": "act-18",
+    "name": "Cobalt Hours",
+    "stage_id": "tent",
+    "stage_name": "Night Tent",
+    "stage_tier": 3,
+    "draw_rank": 17,
+    "lineup_size": 24,
+    "expected_tier_min": 2,
+    "expected_tier_max": 2,
+    "direction": "bigger_stage_suggested",
+    "message": "Cobalt Hours ranks 17 of 24 by draw but plays Night Tent (tier 3); that draw fits tier 2."
+   },
+   {
+    "act_id": "act-24",
+    "name": "Tidal Fields",
+    "stage_id": "main",
+    "stage_name": "Main Stage",
+    "stage_tier": 1,
+    "draw_rank": 19,
+    "lineup_size": 24,
+    "expected_tier_min": 2,
+    "expected_tier_max": 3,
+    "direction": "smaller_stage_suggested",
+    "message": "Tidal Fields ranks 19 of 24 by draw but plays Main Stage (tier 1); that draw fits tiers 2-3."
+   },
+   {
+    "act_id": "act-23",
+    "name": "Orchid Bloom",
+    "stage_id": "grove",
+    "stage_name": "Grove Stage",
+    "stage_tier": 2,
+    "draw_rank": 22,
+    "lineup_size": 24,
+    "expected_tier_min": 3,
+    "expected_tier_max": 3,
+    "direction": "smaller_stage_suggested",
+    "message": "Orchid Bloom ranks 22 of 24 by draw but plays Grove Stage (tier 2); that draw fits tier 3."
+   },
+   {
+    "act_id": "act-19",
+    "name": "Willow Bloom",
+    "stage_id": "river",
+    "stage_name": "Riverside Stage",
+    "stage_tier": 2,
+    "draw_rank": 23,
+    "lineup_size": 24,
+    "expected_tier_min": 3,
+    "expected_tier_max": 3,
+    "direction": "smaller_stage_suggested",
+    "message": "Willow Bloom ranks 23 of 24 by draw but plays Riverside Stage (tier 2); that draw fits tier 3."
+   },
+   {
+    "act_id": "act-20",
+    "name": "Harbor Atlas",
+    "stage_id": "grove",
+    "stage_name": "Grove Stage",
+    "stage_tier": 2,
+    "draw_rank": 24,
+    "lineup_size": 24,
+    "expected_tier_min": 3,
+    "expected_tier_max": 3,
+    "direction": "smaller_stage_suggested",
+    "message": "Harbor Atlas ranks 24 of 24 by draw but plays Grove Stage (tier 2); that draw fits tier 3."
+   }
+  ],
+  "coverage": {
+   "strong": 21,
+   "weak": 2,
+   "none": 1,
+   "scored_acts": 23,
+   "scored_share": 0.9583,
+   "unscored": [
+    {
+     "act_id": "act-21",
+     "name": "Cedar Roads",
+     "reason": "no_signal"
+    }
+   ],
+   "weak_act_ids": [
+    "act-23",
+    "act-22"
+   ]
+  },
+  "movability": {
+   "total_sets": 24,
+   "locked": 3,
+   "frozen_by_existing_violations": 0,
+   "unscored": 1,
+   "movable": 20,
+   "movable_share": 0.8333,
+   "with_feasible_move": null
+  },
+  "violations": []
+ },
+ "requests": [],
+ "sources": [],
+ "overlap_notes": [
+  "Synthetic example day: every artist, set time, popularity and affinity here is invented.",
+  "No Qloo request was made. Nothing on this day says anything about a real festival."
+ ],
+ "evidence": null
+}

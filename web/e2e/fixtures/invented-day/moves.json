@@ -1,0 +1,3385 @@
+{
+ "act-01": {
+  "kind": "move_options",
+  "act": "Fable Pilots",
+  "act_id": "act-01",
+  "priced": true,
+  "from": "Main Stage 21:20-23:00",
+  "movable": false,
+  "why": "locked in place",
+  "options": []
+ },
+ "act-02": {
+  "kind": "move_options",
+  "act": "Glass Mirror",
+  "act_id": "act-02",
+  "priced": true,
+  "from": "Main Stage 19:20-20:50",
+  "movable": false,
+  "why": "locked in place",
+  "options": []
+ },
+ "act-03": {
+  "kind": "move_options",
+  "act": "Brass Choir",
+  "act_id": "act-03",
+  "priced": true,
+  "from": "Main Stage 16:55-18:35",
+  "movable": false,
+  "why": "locked in place",
+  "options": []
+ },
+ "act-04": {
+  "kind": "move_options",
+  "act": "Marble Machine",
+  "act_id": "act-04",
+  "priced": true,
+  "from": "Riverside Stage 19:25-20:45",
+  "movable": true,
+  "why": null,
+  "clash_budget_before": 143.68,
+  "legal_places": 4,
+  "searched": "every start on a 5-minute grid in the free time it may use",
+  "clashes_now": [
+   {
+    "with": "Glass Mirror",
+    "points": 14.4
+   },
+   {
+    "with": "Neon Garden",
+    "points": 2.9
+   },
+   {
+    "with": "Hollow Meadow",
+    "points": 0.5
+   }
+  ],
+  "options": [
+   {
+    "move": "Marble Machine: Riverside Stage 19:25-20:45 -> Riverside Stage 19:40-21:00",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "19:40",
+    "end": "21:00",
+    "day": 0,
+    "clash_budget_after": 142.43,
+    "clashes_after": [
+     {
+      "with": "Glass Mirror",
+      "points": 12.6
+     },
+     {
+      "with": "Neon Garden",
+      "points": 2.1
+     },
+     {
+      "with": "Fable Meadow",
+      "points": 1.9
+     }
+    ]
+   },
+   {
+    "move": "Marble Machine: Riverside Stage 19:25-20:45 -> Riverside Stage 19:35-20:55",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "19:35",
+    "end": "20:55",
+    "day": 0,
+    "clash_budget_after": 143.15,
+    "clashes_after": [
+     {
+      "with": "Glass Mirror",
+      "points": 13.5
+     },
+     {
+      "with": "Neon Garden",
+      "points": 2.4
+     },
+     {
+      "with": "Fable Meadow",
+      "points": 1.4
+     }
+    ]
+   },
+   {
+    "move": "Marble Machine: Riverside Stage 19:25-20:45 -> Riverside Stage 19:20-20:40",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "19:20",
+    "end": "20:40",
+    "day": 0,
+    "clash_budget_after": 143.5,
+    "clashes_after": [
+     {
+      "with": "Glass Mirror",
+      "points": 14.4
+     },
+     {
+      "with": "Neon Garden",
+      "points": 3.2
+     },
+     {
+      "with": "Hollow Meadow",
+      "points": 0.5
+     }
+    ]
+   },
+   {
+    "move": "Marble Machine: Riverside Stage 19:25-20:45 -> Riverside Stage 19:30-20:50",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "19:30",
+    "end": "20:50",
+    "day": 0,
+    "clash_budget_after": 143.87,
+    "clashes_after": [
+     {
+      "with": "Glass Mirror",
+      "points": 14.4
+     },
+     {
+      "with": "Neon Garden",
+      "points": 2.6
+     },
+     {
+      "with": "Fable Meadow",
+      "points": 0.9
+     }
+    ]
+   }
+  ]
+ },
+ "act-05": {
+  "kind": "move_options",
+  "act": "Crimson Season",
+  "act_id": "act-05",
+  "priced": true,
+  "from": "Main Stage 13:20-14:35",
+  "movable": true,
+  "why": null,
+  "clash_budget_before": 143.68,
+  "legal_places": 11,
+  "searched": "every start on a 5-minute grid in the free time it may use",
+  "clashes_now": [
+   {
+    "with": "Willow Bloom",
+    "points": 1.0
+   }
+  ],
+  "options": [
+   {
+    "move": "Crimson Season: Main Stage 13:20-14:35 -> Main Stage 12:50-14:05",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "12:50",
+    "end": "14:05",
+    "day": 0,
+    "clash_budget_after": 142.69,
+    "clashes_after": []
+   },
+   {
+    "move": "Crimson Season: Main Stage 13:20-14:35 -> Main Stage 12:55-14:10",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "12:55",
+    "end": "14:10",
+    "day": 0,
+    "clash_budget_after": 142.69,
+    "clashes_after": []
+   },
+   {
+    "move": "Crimson Season: Main Stage 13:20-14:35 -> Main Stage 13:00-14:15",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "13:00",
+    "end": "14:15",
+    "day": 0,
+    "clash_budget_after": 142.89,
+    "clashes_after": [
+     {
+      "with": "Willow Bloom",
+      "points": 0.2
+     }
+    ]
+   },
+   {
+    "move": "Crimson Season: Main Stage 13:20-14:35 -> Main Stage 13:05-14:20",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "13:05",
+    "end": "14:20",
+    "day": 0,
+    "clash_budget_after": 143.09,
+    "clashes_after": [
+     {
+      "with": "Willow Bloom",
+      "points": 0.4
+     }
+    ]
+   },
+   {
+    "move": "Crimson Season: Main Stage 13:20-14:35 -> Main Stage 13:10-14:25",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "13:10",
+    "end": "14:25",
+    "day": 0,
+    "clash_budget_after": 143.29,
+    "clashes_after": [
+     {
+      "with": "Willow Bloom",
+      "points": 0.6
+     }
+    ]
+   },
+   {
+    "move": "Crimson Season: Main Stage 13:20-14:35 -> Main Stage 13:15-14:30",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "13:15",
+    "end": "14:30",
+    "day": 0,
+    "clash_budget_after": 143.49,
+    "clashes_after": [
+     {
+      "with": "Willow Bloom",
+      "points": 0.8
+     }
+    ]
+   },
+   {
+    "move": "Crimson Season: Main Stage 13:20-14:35 -> Main Stage 13:25-14:40",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "13:25",
+    "end": "14:40",
+    "day": 0,
+    "clash_budget_after": 143.88,
+    "clashes_after": [
+     {
+      "with": "Willow Bloom",
+      "points": 1.2
+     }
+    ]
+   },
+   {
+    "move": "Crimson Season: Main Stage 13:20-14:35 -> Main Stage 13:30-14:45",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "13:30",
+    "end": "14:45",
+    "day": 0,
+    "clash_budget_after": 144.08,
+    "clashes_after": [
+     {
+      "with": "Willow Bloom",
+      "points": 1.4
+     }
+    ]
+   }
+  ]
+ },
+ "act-06": {
+  "kind": "move_options",
+  "act": "Fable Meadow",
+  "act_id": "act-06",
+  "priced": true,
+  "from": "Grove Stage 20:40-22:00",
+  "movable": true,
+  "why": null,
+  "clash_budget_before": 143.68,
+  "legal_places": 8,
+  "searched": "every start on a 5-minute grid in the free time it may use",
+  "clashes_now": [
+   {
+    "with": "Fable Pilots",
+    "points": 4.8
+   },
+   {
+    "with": "Neon Harbour",
+    "points": 1.9
+   },
+   {
+    "with": "Glass Mirror",
+    "points": 1.5
+   }
+  ],
+  "options": [
+   {
+    "move": "Fable Meadow: Grove Stage 20:40-22:00 -> Grove Stage 20:50-22:10",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "20:50",
+    "end": "22:10",
+    "day": 0,
+    "clash_budget_after": 143.25,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 6.0
+     },
+     {
+      "with": "Neon Harbour",
+      "points": 2.1
+     },
+     {
+      "with": "Rustic Season",
+      "points": 1.1
+     }
+    ]
+   },
+   {
+    "move": "Fable Meadow: Grove Stage 20:40-22:00 -> Grove Stage 20:45-22:05",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "20:45",
+    "end": "22:05",
+    "day": 0,
+    "clash_budget_after": 143.32,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 5.4
+     },
+     {
+      "with": "Neon Harbour",
+      "points": 2.1
+     },
+     {
+      "with": "Rustic Season",
+      "points": 1.0
+     }
+    ]
+   },
+   {
+    "move": "Fable Meadow: Grove Stage 20:40-22:00 -> Grove Stage 20:55-22:15",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "20:55",
+    "end": "22:15",
+    "day": 0,
+    "clash_budget_after": 143.95,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 6.6
+     },
+     {
+      "with": "Neon Harbour",
+      "points": 2.1
+     },
+     {
+      "with": "Rustic Season",
+      "points": 1.2
+     }
+    ]
+   },
+   {
+    "move": "Fable Meadow: Grove Stage 20:40-22:00 -> Grove Stage 21:00-22:20",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "21:00",
+    "end": "22:20",
+    "day": 0,
+    "clash_budget_after": 144.65,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 7.2
+     },
+     {
+      "with": "Neon Harbour",
+      "points": 2.1
+     },
+     {
+      "with": "Rustic Season",
+      "points": 1.3
+     }
+    ]
+   },
+   {
+    "move": "Fable Meadow: Grove Stage 20:40-22:00 -> Grove Stage 20:35-21:55",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "20:35",
+    "end": "21:55",
+    "day": 0,
+    "clash_budget_after": 144.84,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 4.2
+     },
+     {
+      "with": "Glass Mirror",
+      "points": 2.3
+     },
+     {
+      "with": "Neon Harbour",
+      "points": 1.8
+     }
+    ]
+   },
+   {
+    "move": "Fable Meadow: Grove Stage 20:40-22:00 -> Grove Stage 21:05-22:25",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "21:05",
+    "end": "22:25",
+    "day": 0,
+    "clash_budget_after": 145.35,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 7.8
+     },
+     {
+      "with": "Neon Harbour",
+      "points": 2.1
+     },
+     {
+      "with": "Rustic Season",
+      "points": 1.4
+     }
+    ]
+   },
+   {
+    "move": "Fable Meadow: Grove Stage 20:40-22:00 -> Grove Stage 21:10-22:30",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "21:10",
+    "end": "22:30",
+    "day": 0,
+    "clash_budget_after": 145.88,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 8.4
+     },
+     {
+      "with": "Neon Harbour",
+      "points": 1.9
+     },
+     {
+      "with": "Rustic Season",
+      "points": 1.5
+     }
+    ]
+   },
+   {
+    "move": "Fable Meadow: Grove Stage 20:40-22:00 -> Grove Stage 20:30-21:50",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "20:30",
+    "end": "21:50",
+    "day": 0,
+    "clash_budget_after": 145.99,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 3.6
+     },
+     {
+      "with": "Glass Mirror",
+      "points": 3.1
+     },
+     {
+      "with": "Neon Harbour",
+      "points": 1.6
+     }
+    ]
+   }
+  ]
+ },
+ "act-07": {
+  "kind": "move_options",
+  "act": "Rustic Season",
+  "act_id": "act-07",
+  "priced": true,
+  "from": "Riverside Stage 21:15-22:30",
+  "movable": true,
+  "why": null,
+  "clash_budget_before": 143.68,
+  "legal_places": 9,
+  "searched": "every start on a 5-minute grid in the free time it may use",
+  "clashes_now": [
+   {
+    "with": "Fable Pilots",
+    "points": 11.3
+   },
+   {
+    "with": "Neon Harbour",
+    "points": 2.7
+   },
+   {
+    "with": "Fable Meadow",
+    "points": 0.9
+   }
+  ],
+  "options": [
+   {
+    "move": "Rustic Season: Riverside Stage 21:15-22:30 -> Riverside Stage 21:00-22:15",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "21:00",
+    "end": "22:15",
+    "day": 0,
+    "clash_budget_after": 142.12,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 8.8
+     },
+     {
+      "with": "Neon Harbour",
+      "points": 3.2
+     },
+     {
+      "with": "Fable Meadow",
+      "points": 1.2
+     }
+    ]
+   },
+   {
+    "move": "Rustic Season: Riverside Stage 21:15-22:30 -> Riverside Stage 21:05-22:20",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "21:05",
+    "end": "22:20",
+    "day": 0,
+    "clash_budget_after": 142.82,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 9.6
+     },
+     {
+      "with": "Neon Harbour",
+      "points": 3.2
+     },
+     {
+      "with": "Fable Meadow",
+      "points": 1.1
+     }
+    ]
+   },
+   {
+    "move": "Rustic Season: Riverside Stage 21:15-22:30 -> Riverside Stage 21:10-22:25",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "21:10",
+    "end": "22:25",
+    "day": 0,
+    "clash_budget_after": 143.25,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 10.4
+     },
+     {
+      "with": "Neon Harbour",
+      "points": 3.0
+     },
+     {
+      "with": "Fable Meadow",
+      "points": 1.0
+     }
+    ]
+   },
+   {
+    "move": "Rustic Season: Riverside Stage 21:15-22:30 -> Riverside Stage 21:45-23:00",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "21:45",
+    "end": "23:00",
+    "day": 0,
+    "clash_budget_after": 143.49,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 12.1
+     },
+     {
+      "with": "Rustic Harbour",
+      "points": 1.2
+     },
+     {
+      "with": "Neon Harbour",
+      "points": 1.1
+     }
+    ]
+   },
+   {
+    "move": "Rustic Season: Riverside Stage 21:15-22:30 -> Riverside Stage 21:40-22:55",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "21:40",
+    "end": "22:55",
+    "day": 0,
+    "clash_budget_after": 143.65,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 12.1
+     },
+     {
+      "with": "Neon Harbour",
+      "points": 1.4
+     },
+     {
+      "with": "Rustic Harbour",
+      "points": 1.0
+     }
+    ]
+   },
+   {
+    "move": "Rustic Season: Riverside Stage 21:15-22:30 -> Riverside Stage 21:35-22:50",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "21:35",
+    "end": "22:50",
+    "day": 0,
+    "clash_budget_after": 143.82,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 12.1
+     },
+     {
+      "with": "Neon Harbour",
+      "points": 1.6
+     },
+     {
+      "with": "Rustic Harbour",
+      "points": 0.8
+     }
+    ]
+   },
+   {
+    "move": "Rustic Season: Riverside Stage 21:15-22:30 -> Riverside Stage 21:30-22:45",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "21:30",
+    "end": "22:45",
+    "day": 0,
+    "clash_budget_after": 143.99,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 12.1
+     },
+     {
+      "with": "Neon Harbour",
+      "points": 1.9
+     },
+     {
+      "with": "Fable Meadow",
+      "points": 0.6
+     }
+    ]
+   },
+   {
+    "move": "Rustic Season: Riverside Stage 21:15-22:30 -> Riverside Stage 21:25-22:40",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "21:25",
+    "end": "22:40",
+    "day": 0,
+    "clash_budget_after": 144.15,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 12.1
+     },
+     {
+      "with": "Neon Harbour",
+      "points": 2.1
+     },
+     {
+      "with": "Fable Meadow",
+      "points": 0.7
+     }
+    ]
+   }
+  ]
+ },
+ "act-08": {
+  "kind": "move_options",
+  "act": "Marble Syndicate",
+  "act_id": "act-08",
+  "priced": true,
+  "from": "Main Stage 15:15-16:25",
+  "movable": true,
+  "why": null,
+  "clash_budget_before": 143.68,
+  "legal_places": 8,
+  "searched": "every start on a 5-minute grid in the free time it may use",
+  "clashes_now": [
+   {
+    "with": "Harbor Atlas",
+    "points": 3.5
+   },
+   {
+    "with": "Echo Mirror",
+    "points": 0.8
+   }
+  ],
+  "options": [
+   {
+    "move": "Marble Syndicate: Main Stage 15:15-16:25 -> Main Stage 14:50-16:00",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "14:50",
+    "end": "16:00",
+    "day": 0,
+    "clash_budget_after": 143.15,
+    "clashes_after": [
+     {
+      "with": "Harbor Atlas",
+      "points": 3.1
+     },
+     {
+      "with": "Echo Mirror",
+      "points": 0.7
+     }
+    ]
+   },
+   {
+    "move": "Marble Syndicate: Main Stage 15:15-16:25 -> Main Stage 15:30-16:40",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "15:30",
+    "end": "16:40",
+    "day": 0,
+    "clash_budget_after": 143.15,
+    "clashes_after": [
+     {
+      "with": "Harbor Atlas",
+      "points": 3.1
+     },
+     {
+      "with": "Echo Mirror",
+      "points": 0.7
+     }
+    ]
+   },
+   {
+    "move": "Marble Syndicate: Main Stage 15:15-16:25 -> Main Stage 14:55-16:05",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "14:55",
+    "end": "16:05",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": [
+     {
+      "with": "Harbor Atlas",
+      "points": 3.5
+     },
+     {
+      "with": "Echo Mirror",
+      "points": 0.8
+     }
+    ]
+   },
+   {
+    "move": "Marble Syndicate: Main Stage 15:15-16:25 -> Main Stage 15:00-16:10",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "15:00",
+    "end": "16:10",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": [
+     {
+      "with": "Harbor Atlas",
+      "points": 3.5
+     },
+     {
+      "with": "Echo Mirror",
+      "points": 0.8
+     }
+    ]
+   },
+   {
+    "move": "Marble Syndicate: Main Stage 15:15-16:25 -> Main Stage 15:05-16:15",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "15:05",
+    "end": "16:15",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": [
+     {
+      "with": "Harbor Atlas",
+      "points": 3.5
+     },
+     {
+      "with": "Echo Mirror",
+      "points": 0.8
+     }
+    ]
+   },
+   {
+    "move": "Marble Syndicate: Main Stage 15:15-16:25 -> Main Stage 15:10-16:20",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "15:10",
+    "end": "16:20",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": [
+     {
+      "with": "Harbor Atlas",
+      "points": 3.5
+     },
+     {
+      "with": "Echo Mirror",
+      "points": 0.8
+     }
+    ]
+   },
+   {
+    "move": "Marble Syndicate: Main Stage 15:15-16:25 -> Main Stage 15:20-16:30",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "15:20",
+    "end": "16:30",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": [
+     {
+      "with": "Harbor Atlas",
+      "points": 3.5
+     },
+     {
+      "with": "Echo Mirror",
+      "points": 0.8
+     }
+    ]
+   },
+   {
+    "move": "Marble Syndicate: Main Stage 15:15-16:25 -> Main Stage 15:25-16:35",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "15:25",
+    "end": "16:35",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": [
+     {
+      "with": "Harbor Atlas",
+      "points": 3.5
+     },
+     {
+      "with": "Echo Mirror",
+      "points": 0.8
+     }
+    ]
+   }
+  ]
+ },
+ "act-09": {
+  "kind": "move_options",
+  "act": "Rustic Harbour",
+  "act_id": "act-09",
+  "priced": true,
+  "from": "Night Tent 22:30-23:30",
+  "movable": true,
+  "why": null,
+  "clash_budget_before": 143.68,
+  "legal_places": 8,
+  "searched": "every start on a 5-minute grid in the free time it may use",
+  "clashes_now": [
+   {
+    "with": "Fable Pilots",
+    "points": 9.9
+   }
+  ],
+  "options": [
+   {
+    "move": "Rustic Harbour: Night Tent 22:30-23:30 -> Grove Stage 13:00-14:00",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:00",
+    "end": "14:00",
+    "day": 0,
+    "clash_budget_after": 135.79,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 2.0
+     }
+    ]
+   },
+   {
+    "move": "Rustic Harbour: Night Tent 22:30-23:30 -> Night Tent 22:45-23:45",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "22:45",
+    "end": "23:45",
+    "day": 0,
+    "clash_budget_after": 138.74,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 5.0
+     }
+    ]
+   },
+   {
+    "move": "Rustic Harbour: Night Tent 22:30-23:30 -> Night Tent 16:05-17:05",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "16:05",
+    "end": "17:05",
+    "day": 0,
+    "clash_budget_after": 139.69,
+    "clashes_after": [
+     {
+      "with": "Marble Syndicate",
+      "points": 2.4
+     },
+     {
+      "with": "Saffron Season",
+      "points": 2.3
+     },
+     {
+      "with": "Orchid Bloom",
+      "points": 0.9
+     }
+    ]
+   },
+   {
+    "move": "Rustic Harbour: Night Tent 22:30-23:30 -> Night Tent 22:40-23:40",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "22:40",
+    "end": "23:40",
+    "day": 0,
+    "clash_budget_after": 140.39,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 6.6
+     }
+    ]
+   },
+   {
+    "move": "Rustic Harbour: Night Tent 22:30-23:30 -> Night Tent 16:00-17:00",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "16:00",
+    "end": "17:00",
+    "day": 0,
+    "clash_budget_after": 140.64,
+    "clashes_after": [
+     {
+      "with": "Marble Syndicate",
+      "points": 3.1
+     },
+     {
+      "with": "Saffron Season",
+      "points": 1.9
+     },
+     {
+      "with": "Harbor Atlas",
+      "points": 0.9
+     }
+    ]
+   },
+   {
+    "move": "Rustic Harbour: Night Tent 22:30-23:30 -> Night Tent 22:35-23:35",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "22:35",
+    "end": "23:35",
+    "day": 0,
+    "clash_budget_after": 142.04,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 8.3
+     }
+    ]
+   },
+   {
+    "move": "Rustic Harbour: Night Tent 22:30-23:30 -> Night Tent 22:25-23:25",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "22:25",
+    "end": "23:25",
+    "day": 0,
+    "clash_budget_after": 145.54,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 11.5
+     },
+     {
+      "with": "Rustic Season",
+      "points": 0.2
+     }
+    ]
+   },
+   {
+    "move": "Rustic Harbour: Night Tent 22:30-23:30 -> Night Tent 22:20-23:20",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "22:20",
+    "end": "23:20",
+    "day": 0,
+    "clash_budget_after": 147.39,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 13.2
+     },
+     {
+      "with": "Rustic Season",
+      "points": 0.4
+     }
+    ]
+   }
+  ]
+ },
+ "act-10": {
+  "kind": "move_options",
+  "act": "Neon Harbour",
+  "act_id": "act-10",
+  "priced": true,
+  "from": "Night Tent 21:05-22:05",
+  "movable": true,
+  "why": null,
+  "clash_budget_before": 143.68,
+  "legal_places": 7,
+  "searched": "every start on a 5-minute grid in the free time it may use",
+  "clashes_now": [
+   {
+    "with": "Fable Pilots",
+    "points": 7.3
+   },
+   {
+    "with": "Rustic Season",
+    "points": 2.7
+   },
+   {
+    "with": "Fable Meadow",
+    "points": 1.9
+   }
+  ],
+  "options": [
+   {
+    "move": "Neon Harbour: Night Tent 21:05-22:05 -> Grove Stage 13:00-14:00",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:00",
+    "end": "14:00",
+    "day": 0,
+    "clash_budget_after": 141.32,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 9.6
+     }
+    ]
+   },
+   {
+    "move": "Neon Harbour: Night Tent 21:05-22:05 -> Night Tent 20:55-21:55",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "20:55",
+    "end": "21:55",
+    "day": 0,
+    "clash_budget_after": 141.69,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 5.7
+     },
+     {
+      "with": "Rustic Season",
+      "points": 2.2
+     },
+     {
+      "with": "Fable Meadow",
+      "points": 2.1
+     }
+    ]
+   },
+   {
+    "move": "Neon Harbour: Night Tent 21:05-22:05 -> Night Tent 21:00-22:00",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "21:00",
+    "end": "22:00",
+    "day": 0,
+    "clash_budget_after": 142.78,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 6.5
+     },
+     {
+      "with": "Rustic Season",
+      "points": 2.4
+     },
+     {
+      "with": "Fable Meadow",
+      "points": 2.1
+     }
+    ]
+   },
+   {
+    "move": "Neon Harbour: Night Tent 21:05-22:05 -> Night Tent 16:00-17:00",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "16:00",
+    "end": "17:00",
+    "day": 0,
+    "clash_budget_after": 143.99,
+    "clashes_after": [
+     {
+      "with": "Saffron Season",
+      "points": 7.6
+     },
+     {
+      "with": "Brass Choir",
+      "points": 2.3
+     },
+     {
+      "with": "Orchid Bloom",
+      "points": 1.7
+     }
+    ]
+   },
+   {
+    "move": "Neon Harbour: Night Tent 21:05-22:05 -> Night Tent 21:10-22:10",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "21:10",
+    "end": "22:10",
+    "day": 0,
+    "clash_budget_after": 144.59,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 8.1
+     },
+     {
+      "with": "Rustic Season",
+      "points": 3.0
+     },
+     {
+      "with": "Fable Meadow",
+      "points": 1.8
+     }
+    ]
+   },
+   {
+    "move": "Neon Harbour: Night Tent 21:05-22:05 -> Night Tent 21:15-22:15",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "21:15",
+    "end": "22:15",
+    "day": 0,
+    "clash_budget_after": 145.5,
+    "clashes_after": [
+     {
+      "with": "Fable Pilots",
+      "points": 9.0
+     },
+     {
+      "with": "Rustic Season",
+      "points": 3.2
+     },
+     {
+      "with": "Fable Meadow",
+      "points": 1.6
+     }
+    ]
+   },
+   {
+    "move": "Neon Harbour: Night Tent 21:05-22:05 -> Night Tent 16:05-17:05",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "16:05",
+    "end": "17:05",
+    "day": 0,
+    "clash_budget_after": 148.13,
+    "clashes_after": [
+     {
+      "with": "Saffron Season",
+      "points": 9.5
+     },
+     {
+      "with": "Brass Choir",
+      "points": 4.5
+     },
+     {
+      "with": "Orchid Bloom",
+      "points": 2.1
+     }
+    ]
+   }
+  ]
+ },
+ "act-11": {
+  "kind": "move_options",
+  "act": "Hollow Meadow",
+  "act_id": "act-11",
+  "priced": true,
+  "from": "Night Tent 19:45-20:40",
+  "movable": true,
+  "why": null,
+  "clash_budget_before": 143.68,
+  "legal_places": 12,
+  "searched": "every start on a 5-minute grid in the free time it may use",
+  "clashes_now": [
+   {
+    "with": "Glass Mirror",
+    "points": 14.3
+   },
+   {
+    "with": "Neon Garden",
+    "points": 0.9
+   },
+   {
+    "with": "Marble Machine",
+    "points": 0.5
+   }
+  ],
+  "options": [
+   {
+    "move": "Hollow Meadow: Night Tent 19:45-20:40 -> Riverside Stage 13:00-13:55",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:00",
+    "end": "13:55",
+    "day": 0,
+    "clash_budget_after": 129.94,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 2.0
+     }
+    ]
+   },
+   {
+    "move": "Hollow Meadow: Night Tent 19:45-20:40 -> Grove Stage 13:00-13:55",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:00",
+    "end": "13:55",
+    "day": 0,
+    "clash_budget_after": 129.94,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 2.0
+     }
+    ]
+   },
+   {
+    "move": "Hollow Meadow: Night Tent 19:45-20:40 -> Grove Stage 13:05-14:00",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:05",
+    "end": "14:00",
+    "day": 0,
+    "clash_budget_after": 130.23,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 2.3
+     }
+    ]
+   },
+   {
+    "move": "Hollow Meadow: Night Tent 19:45-20:40 -> Night Tent 16:05-17:00",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "16:05",
+    "end": "17:00",
+    "day": 0,
+    "clash_budget_after": 133.95,
+    "clashes_after": [
+     {
+      "with": "Marble Syndicate",
+      "points": 3.1
+     },
+     {
+      "with": "Saffron Season",
+      "points": 2.0
+     },
+     {
+      "with": "Orchid Bloom",
+      "points": 0.7
+     }
+    ]
+   },
+   {
+    "move": "Hollow Meadow: Night Tent 19:45-20:40 -> Night Tent 16:10-17:05",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "16:10",
+    "end": "17:05",
+    "day": 0,
+    "clash_budget_after": 134.12,
+    "clashes_after": [
+     {
+      "with": "Saffron Season",
+      "points": 2.5
+     },
+     {
+      "with": "Marble Syndicate",
+      "points": 2.3
+     },
+     {
+      "with": "Orchid Bloom",
+      "points": 0.9
+     }
+    ]
+   },
+   {
+    "move": "Hollow Meadow: Night Tent 19:45-20:40 -> Night Tent 16:00-16:55",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "16:00",
+    "end": "16:55",
+    "day": 0,
+    "clash_budget_after": 134.13,
+    "clashes_after": [
+     {
+      "with": "Marble Syndicate",
+      "points": 3.8
+     },
+     {
+      "with": "Saffron Season",
+      "points": 1.5
+     },
+     {
+      "with": "Orchid Bloom",
+      "points": 0.5
+     }
+    ]
+   },
+   {
+    "move": "Hollow Meadow: Night Tent 19:45-20:40 -> Night Tent 19:40-20:35",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "19:40",
+    "end": "20:35",
+    "day": 0,
+    "clash_budget_after": 143.84,
+    "clashes_after": [
+     {
+      "with": "Glass Mirror",
+      "points": 14.3
+     },
+     {
+      "with": "Neon Garden",
+      "points": 1.1
+     },
+     {
+      "with": "Marble Machine",
+      "points": 0.5
+     }
+    ]
+   },
+   {
+    "move": "Hollow Meadow: Night Tent 19:45-20:40 -> Night Tent 19:35-20:30",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "19:35",
+    "end": "20:30",
+    "day": 0,
+    "clash_budget_after": 144.0,
+    "clashes_after": [
+     {
+      "with": "Glass Mirror",
+      "points": 14.3
+     },
+     {
+      "with": "Neon Garden",
+      "points": 1.3
+     },
+     {
+      "with": "Marble Machine",
+      "points": 0.5
+     }
+    ]
+   }
+  ]
+ },
+ "act-12": {
+  "kind": "move_options",
+  "act": "Willow Circuit",
+  "act_id": "act-12",
+  "priced": true,
+  "from": "Grove Stage 17:55-18:55",
+  "movable": true,
+  "why": null,
+  "clash_budget_before": 143.68,
+  "legal_places": 8,
+  "searched": "every start on a 5-minute grid in the free time it may use",
+  "clashes_now": [
+   {
+    "with": "Brass Choir",
+    "points": 4.5
+   },
+   {
+    "with": "Cobalt Choir",
+    "points": 4.2
+   },
+   {
+    "with": "Cobalt Hours",
+    "points": 4.1
+   }
+  ],
+  "options": [
+   {
+    "move": "Willow Circuit: Grove Stage 17:55-18:55 -> Grove Stage 13:00-14:00",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:00",
+    "end": "14:00",
+    "day": 0,
+    "clash_budget_after": 134.93,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 4.9
+     }
+    ]
+   },
+   {
+    "move": "Willow Circuit: Grove Stage 17:55-18:55 -> Grove Stage 17:40-18:40",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "17:40",
+    "end": "18:40",
+    "day": 0,
+    "clash_budget_after": 143.43,
+    "clashes_after": [
+     {
+      "with": "Brass Choir",
+      "points": 6.2
+     },
+     {
+      "with": "Cobalt Choir",
+      "points": 3.0
+     },
+     {
+      "with": "Ivory Lights",
+      "points": 2.3
+     }
+    ]
+   },
+   {
+    "move": "Willow Circuit: Grove Stage 17:55-18:55 -> Grove Stage 17:45-18:45",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "17:45",
+    "end": "18:45",
+    "day": 0,
+    "clash_budget_after": 143.51,
+    "clashes_after": [
+     {
+      "with": "Brass Choir",
+      "points": 5.6
+     },
+     {
+      "with": "Cobalt Choir",
+      "points": 3.4
+     },
+     {
+      "with": "Cobalt Hours",
+      "points": 2.7
+     }
+    ]
+   },
+   {
+    "move": "Willow Circuit: Grove Stage 17:55-18:55 -> Grove Stage 17:50-18:50",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "17:50",
+    "end": "18:50",
+    "day": 0,
+    "clash_budget_after": 143.6,
+    "clashes_after": [
+     {
+      "with": "Brass Choir",
+      "points": 5.0
+     },
+     {
+      "with": "Cobalt Choir",
+      "points": 3.8
+     },
+     {
+      "with": "Cobalt Hours",
+      "points": 3.4
+     }
+    ]
+   },
+   {
+    "move": "Willow Circuit: Grove Stage 17:55-18:55 -> Grove Stage 18:00-19:00",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "18:00",
+    "end": "19:00",
+    "day": 0,
+    "clash_budget_after": 143.77,
+    "clashes_after": [
+     {
+      "with": "Cobalt Hours",
+      "points": 4.7
+     },
+     {
+      "with": "Cobalt Choir",
+      "points": 4.6
+     },
+     {
+      "with": "Brass Choir",
+      "points": 3.9
+     }
+    ]
+   },
+   {
+    "move": "Willow Circuit: Grove Stage 17:55-18:55 -> Grove Stage 17:35-18:35",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "17:35",
+    "end": "18:35",
+    "day": 0,
+    "clash_budget_after": 143.79,
+    "clashes_after": [
+     {
+      "with": "Brass Choir",
+      "points": 6.7
+     },
+     {
+      "with": "Ivory Lights",
+      "points": 2.7
+     },
+     {
+      "with": "Cobalt Choir",
+      "points": 2.5
+     }
+    ]
+   },
+   {
+    "move": "Willow Circuit: Grove Stage 17:55-18:55 -> Night Tent 16:00-17:00",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "16:00",
+    "end": "17:00",
+    "day": 0,
+    "clash_budget_after": 144.7,
+    "clashes_after": [
+     {
+      "with": "Orchid Bloom",
+      "points": 6.9
+     },
+     {
+      "with": "Marble Syndicate",
+      "points": 4.7
+     },
+     {
+      "with": "Saffron Season",
+      "points": 1.8
+     }
+    ]
+   },
+   {
+    "move": "Willow Circuit: Grove Stage 17:55-18:55 -> Night Tent 16:05-17:05",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "16:05",
+    "end": "17:05",
+    "day": 0,
+    "clash_budget_after": 145.76,
+    "clashes_after": [
+     {
+      "with": "Orchid Bloom",
+      "points": 8.6
+     },
+     {
+      "with": "Marble Syndicate",
+      "points": 3.8
+     },
+     {
+      "with": "Saffron Season",
+      "points": 2.2
+     }
+    ]
+   }
+  ]
+ },
+ "act-13": {
+  "kind": "move_options",
+  "act": "Cobalt Choir",
+  "act_id": "act-13",
+  "priced": true,
+  "from": "Riverside Stage 18:05-19:05",
+  "movable": true,
+  "why": null,
+  "clash_budget_before": 143.68,
+  "legal_places": 6,
+  "searched": "every start on a 5-minute grid in the free time it may use",
+  "clashes_now": [
+   {
+    "with": "Brass Choir",
+    "points": 11.4
+   },
+   {
+    "with": "Willow Circuit",
+    "points": 4.2
+   },
+   {
+    "with": "Cobalt Hours",
+    "points": 0.9
+   }
+  ],
+  "options": [
+   {
+    "move": "Cobalt Choir: Riverside Stage 18:05-19:05 -> Grove Stage 13:00-14:00",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:00",
+    "end": "14:00",
+    "day": 0,
+    "clash_budget_after": 127.92,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 0.7
+     }
+    ]
+   },
+   {
+    "move": "Cobalt Choir: Riverside Stage 18:05-19:05 -> Night Tent 16:00-17:00",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "16:00",
+    "end": "17:00",
+    "day": 0,
+    "clash_budget_after": 132.23,
+    "clashes_after": [
+     {
+      "with": "Brass Choir",
+      "points": 1.9
+     },
+     {
+      "with": "Marble Syndicate",
+      "points": 1.6
+     },
+     {
+      "with": "Orchid Bloom",
+      "points": 1.2
+     }
+    ]
+   },
+   {
+    "move": "Cobalt Choir: Riverside Stage 18:05-19:05 -> Night Tent 16:05-17:05",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "16:05",
+    "end": "17:05",
+    "day": 0,
+    "clash_budget_after": 133.86,
+    "clashes_after": [
+     {
+      "with": "Brass Choir",
+      "points": 3.8
+     },
+     {
+      "with": "Orchid Bloom",
+      "points": 1.5
+     },
+     {
+      "with": "Marble Syndicate",
+      "points": 1.3
+     }
+    ]
+   },
+   {
+    "move": "Cobalt Choir: Riverside Stage 18:05-19:05 -> Riverside Stage 18:10-19:10",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "18:10",
+    "end": "19:10",
+    "day": 0,
+    "clash_budget_after": 141.48,
+    "clashes_after": [
+     {
+      "with": "Brass Choir",
+      "points": 9.5
+     },
+     {
+      "with": "Willow Circuit",
+      "points": 3.8
+     },
+     {
+      "with": "Cobalt Hours",
+      "points": 1.0
+     }
+    ]
+   },
+   {
+    "move": "Cobalt Choir: Riverside Stage 18:05-19:05 -> Riverside Stage 18:00-19:00",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "18:00",
+    "end": "19:00",
+    "day": 0,
+    "clash_budget_after": 145.99,
+    "clashes_after": [
+     {
+      "with": "Brass Choir",
+      "points": 13.3
+     },
+     {
+      "with": "Willow Circuit",
+      "points": 4.6
+     },
+     {
+      "with": "Cobalt Hours",
+      "points": 0.8
+     }
+    ]
+   },
+   {
+    "move": "Cobalt Choir: Riverside Stage 18:05-19:05 -> Riverside Stage 17:55-18:55",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "17:55",
+    "end": "18:55",
+    "day": 0,
+    "clash_budget_after": 148.29,
+    "clashes_after": [
+     {
+      "with": "Brass Choir",
+      "points": 15.2
+     },
+     {
+      "with": "Willow Circuit",
+      "points": 5.1
+     },
+     {
+      "with": "Cobalt Hours",
+      "points": 0.7
+     }
+    ]
+   }
+  ]
+ },
+ "act-14": {
+  "kind": "move_options",
+  "act": "Saffron Season",
+  "act_id": "act-14",
+  "priced": true,
+  "from": "Riverside Stage 16:40-17:40",
+  "movable": true,
+  "why": null,
+  "clash_budget_before": 143.68,
+  "legal_places": 9,
+  "searched": "every start on a 5-minute grid in the free time it may use",
+  "clashes_now": [
+   {
+    "with": "Orchid Bloom",
+    "points": 3.9
+   },
+   {
+    "with": "Brass Choir",
+    "points": 3.3
+   },
+   {
+    "with": "Ivory Lights",
+    "points": 1.1
+   }
+  ],
+  "options": [
+   {
+    "move": "Saffron Season: Riverside Stage 16:40-17:40 -> Grove Stage 13:00-14:00",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:00",
+    "end": "14:00",
+    "day": 0,
+    "clash_budget_after": 135.97,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 0.5
+     }
+    ]
+   },
+   {
+    "move": "Saffron Season: Riverside Stage 16:40-17:40 -> Night Tent 16:00-17:00",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "16:00",
+    "end": "17:00",
+    "day": 0,
+    "clash_budget_after": 138.86,
+    "clashes_after": [
+     {
+      "with": "Orchid Bloom",
+      "points": 1.9
+     },
+     {
+      "with": "Harbor Atlas",
+      "points": 0.5
+     },
+     {
+      "with": "Brass Choir",
+      "points": 0.4
+     }
+    ]
+   },
+   {
+    "move": "Saffron Season: Riverside Stage 16:40-17:40 -> Night Tent 16:05-17:05",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "16:05",
+    "end": "17:05",
+    "day": 0,
+    "clash_budget_after": 138.86,
+    "clashes_after": [
+     {
+      "with": "Orchid Bloom",
+      "points": 2.4
+     },
+     {
+      "with": "Brass Choir",
+      "points": 0.7
+     },
+     {
+      "with": "Marble Syndicate",
+      "points": 0.3
+     }
+    ]
+   },
+   {
+    "move": "Saffron Season: Riverside Stage 16:40-17:40 -> Riverside Stage 16:20-17:20",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "16:20",
+    "end": "17:20",
+    "day": 0,
+    "clash_budget_after": 141.22,
+    "clashes_after": [
+     {
+      "with": "Orchid Bloom",
+      "points": 3.9
+     },
+     {
+      "with": "Brass Choir",
+      "points": 1.8
+     },
+     {
+      "with": "Marble Syndicate",
+      "points": 0.1
+     }
+    ]
+   },
+   {
+    "move": "Saffron Season: Riverside Stage 16:40-17:40 -> Riverside Stage 16:25-17:25",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "16:25",
+    "end": "17:25",
+    "day": 0,
+    "clash_budget_after": 141.78,
+    "clashes_after": [
+     {
+      "with": "Orchid Bloom",
+      "points": 3.9
+     },
+     {
+      "with": "Brass Choir",
+      "points": 2.2
+     },
+     {
+      "with": "Ivory Lights",
+      "points": 0.3
+     }
+    ]
+   },
+   {
+    "move": "Saffron Season: Riverside Stage 16:40-17:40 -> Riverside Stage 16:30-17:30",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "16:30",
+    "end": "17:30",
+    "day": 0,
+    "clash_budget_after": 142.42,
+    "clashes_after": [
+     {
+      "with": "Orchid Bloom",
+      "points": 3.9
+     },
+     {
+      "with": "Brass Choir",
+      "points": 2.6
+     },
+     {
+      "with": "Ivory Lights",
+      "points": 0.5
+     }
+    ]
+   },
+   {
+    "move": "Saffron Season: Riverside Stage 16:40-17:40 -> Riverside Stage 16:35-17:35",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "16:35",
+    "end": "17:35",
+    "day": 0,
+    "clash_budget_after": 143.05,
+    "clashes_after": [
+     {
+      "with": "Orchid Bloom",
+      "points": 3.9
+     },
+     {
+      "with": "Brass Choir",
+      "points": 3.0
+     },
+     {
+      "with": "Ivory Lights",
+      "points": 0.8
+     }
+    ]
+   },
+   {
+    "move": "Saffron Season: Riverside Stage 16:40-17:40 -> Riverside Stage 16:45-17:45",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "16:45",
+    "end": "17:45",
+    "day": 0,
+    "clash_budget_after": 143.84,
+    "clashes_after": [
+     {
+      "with": "Brass Choir",
+      "points": 3.7
+     },
+     {
+      "with": "Orchid Bloom",
+      "points": 3.4
+     },
+     {
+      "with": "Ivory Lights",
+      "points": 1.3
+     }
+    ]
+   }
+  ]
+ },
+ "act-15": {
+  "kind": "move_options",
+  "act": "Juniper Bloom",
+  "act_id": "act-15",
+  "priced": true,
+  "from": "Main Stage 11:40-12:35",
+  "movable": true,
+  "why": null,
+  "clash_budget_before": 143.68,
+  "legal_places": 15,
+  "searched": "every start on a 5-minute grid in the free time it may use",
+  "clashes_now": [],
+  "options": [
+   {
+    "move": "Juniper Bloom: Main Stage 11:40-12:35 -> Main Stage 11:25-12:20",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "11:25",
+    "end": "12:20",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": []
+   },
+   {
+    "move": "Juniper Bloom: Main Stage 11:40-12:35 -> Main Stage 11:30-12:25",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "11:30",
+    "end": "12:25",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": []
+   },
+   {
+    "move": "Juniper Bloom: Main Stage 11:40-12:35 -> Main Stage 11:35-12:30",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "11:35",
+    "end": "12:30",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": []
+   },
+   {
+    "move": "Juniper Bloom: Main Stage 11:40-12:35 -> Main Stage 11:45-12:40",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "11:45",
+    "end": "12:40",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": []
+   },
+   {
+    "move": "Juniper Bloom: Main Stage 11:40-12:35 -> Main Stage 11:50-12:45",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "11:50",
+    "end": "12:45",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": []
+   },
+   {
+    "move": "Juniper Bloom: Main Stage 11:40-12:35 -> Main Stage 11:55-12:50",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "11:55",
+    "end": "12:50",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": []
+   },
+   {
+    "move": "Juniper Bloom: Main Stage 11:40-12:35 -> Main Stage 12:00-12:55",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "12:00",
+    "end": "12:55",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": []
+   },
+   {
+    "move": "Juniper Bloom: Main Stage 11:40-12:35 -> Main Stage 12:05-13:00",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "12:05",
+    "end": "13:00",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": []
+   }
+  ]
+ },
+ "act-16": {
+  "kind": "move_options",
+  "act": "Neon Garden",
+  "act_id": "act-16",
+  "priced": true,
+  "from": "Grove Stage 19:15-20:15",
+  "movable": true,
+  "why": null,
+  "clash_budget_before": 143.68,
+  "legal_places": 6,
+  "searched": "every start on a 5-minute grid in the free time it may use",
+  "clashes_now": [
+   {
+    "with": "Glass Mirror",
+    "points": 23.7
+   },
+   {
+    "with": "Marble Machine",
+    "points": 2.9
+   },
+   {
+    "with": "Hollow Meadow",
+    "points": 0.9
+   }
+  ],
+  "options": [
+   {
+    "move": "Neon Garden: Grove Stage 19:15-20:15 -> Grove Stage 13:00-14:00",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:00",
+    "end": "14:00",
+    "day": 0,
+    "clash_budget_after": 117.09,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 1.0
+     }
+    ]
+   },
+   {
+    "move": "Neon Garden: Grove Stage 19:15-20:15 -> Night Tent 16:05-17:05",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "16:05",
+    "end": "17:05",
+    "day": 0,
+    "clash_budget_after": 121.85,
+    "clashes_after": [
+     {
+      "with": "Marble Syndicate",
+      "points": 2.9
+     },
+     {
+      "with": "Saffron Season",
+      "points": 2.5
+     },
+     {
+      "with": "Orchid Bloom",
+      "points": 0.3
+     }
+    ]
+   },
+   {
+    "move": "Neon Garden: Grove Stage 19:15-20:15 -> Night Tent 16:00-17:00",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "16:00",
+    "end": "17:00",
+    "day": 0,
+    "clash_budget_after": 123.13,
+    "clashes_after": [
+     {
+      "with": "Marble Syndicate",
+      "points": 3.6
+     },
+     {
+      "with": "Saffron Season",
+      "points": 2.0
+     },
+     {
+      "with": "Harbor Atlas",
+      "points": 0.9
+     }
+    ]
+   },
+   {
+    "move": "Neon Garden: Grove Stage 19:15-20:15 -> Grove Stage 19:10-20:10",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "19:10",
+    "end": "20:10",
+    "day": 0,
+    "clash_budget_after": 141.07,
+    "clashes_after": [
+     {
+      "with": "Glass Mirror",
+      "points": 21.6
+     },
+     {
+      "with": "Marble Machine",
+      "points": 2.7
+     },
+     {
+      "with": "Hollow Meadow",
+      "points": 0.8
+     }
+    ]
+   },
+   {
+    "move": "Neon Garden: Grove Stage 19:15-20:15 -> Grove Stage 19:20-20:20",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "19:20",
+    "end": "20:20",
+    "day": 0,
+    "clash_budget_after": 146.3,
+    "clashes_after": [
+     {
+      "with": "Glass Mirror",
+      "points": 25.9
+     },
+     {
+      "with": "Marble Machine",
+      "points": 3.2
+     },
+     {
+      "with": "Hollow Meadow",
+      "points": 1.1
+     }
+    ]
+   },
+   {
+    "move": "Neon Garden: Grove Stage 19:15-20:15 -> Grove Stage 19:25-20:25",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "19:25",
+    "end": "20:25",
+    "day": 0,
+    "clash_budget_after": 146.75,
+    "clashes_after": [
+     {
+      "with": "Glass Mirror",
+      "points": 25.9
+     },
+     {
+      "with": "Marble Machine",
+      "points": 3.5
+     },
+     {
+      "with": "Hollow Meadow",
+      "points": 1.3
+     }
+    ]
+   }
+  ]
+ },
+ "act-17": {
+  "kind": "move_options",
+  "act": "Echo Mirror",
+  "act_id": "act-17",
+  "priced": true,
+  "from": "Riverside Stage 15:25-16:05",
+  "movable": true,
+  "why": null,
+  "clash_budget_before": 143.68,
+  "legal_places": 23,
+  "searched": "every start on a 5-minute grid in the free time it may use",
+  "clashes_now": [
+   {
+    "with": "Marble Syndicate",
+    "points": 0.8
+   },
+   {
+    "with": "Harbor Atlas",
+    "points": 0.4
+   }
+  ],
+  "options": [
+   {
+    "move": "Echo Mirror: Riverside Stage 15:25-16:05 -> Riverside Stage 13:00-13:40",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:00",
+    "end": "13:40",
+    "day": 0,
+    "clash_budget_after": 142.75,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 0.3
+     }
+    ]
+   },
+   {
+    "move": "Echo Mirror: Riverside Stage 15:25-16:05 -> Grove Stage 13:00-13:40",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:00",
+    "end": "13:40",
+    "day": 0,
+    "clash_budget_after": 142.75,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 0.3
+     }
+    ]
+   },
+   {
+    "move": "Echo Mirror: Riverside Stage 15:25-16:05 -> Riverside Stage 13:05-13:45",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:05",
+    "end": "13:45",
+    "day": 0,
+    "clash_budget_after": 142.82,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 0.4
+     }
+    ]
+   },
+   {
+    "move": "Echo Mirror: Riverside Stage 15:25-16:05 -> Grove Stage 13:05-13:45",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:05",
+    "end": "13:45",
+    "day": 0,
+    "clash_budget_after": 142.82,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 0.4
+     }
+    ]
+   },
+   {
+    "move": "Echo Mirror: Riverside Stage 15:25-16:05 -> Riverside Stage 13:10-13:50",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:10",
+    "end": "13:50",
+    "day": 0,
+    "clash_budget_after": 142.9,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 0.5
+     }
+    ]
+   },
+   {
+    "move": "Echo Mirror: Riverside Stage 15:25-16:05 -> Grove Stage 13:10-13:50",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:10",
+    "end": "13:50",
+    "day": 0,
+    "clash_budget_after": 142.9,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 0.5
+     }
+    ]
+   },
+   {
+    "move": "Echo Mirror: Riverside Stage 15:25-16:05 -> Riverside Stage 13:15-13:55",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:15",
+    "end": "13:55",
+    "day": 0,
+    "clash_budget_after": 142.97,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 0.5
+     }
+    ]
+   },
+   {
+    "move": "Echo Mirror: Riverside Stage 15:25-16:05 -> Grove Stage 13:15-13:55",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:15",
+    "end": "13:55",
+    "day": 0,
+    "clash_budget_after": 142.97,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 0.5
+     }
+    ]
+   }
+  ]
+ },
+ "act-18": {
+  "kind": "move_options",
+  "act": "Cobalt Hours",
+  "act_id": "act-18",
+  "priced": true,
+  "from": "Night Tent 18:25-19:10",
+  "movable": true,
+  "why": null,
+  "clash_budget_before": 143.68,
+  "legal_places": 17,
+  "searched": "every start on a 5-minute grid in the free time it may use",
+  "clashes_now": [
+   {
+    "with": "Willow Circuit",
+    "points": 4.1
+   },
+   {
+    "with": "Cobalt Choir",
+    "points": 0.9
+   },
+   {
+    "with": "Brass Choir",
+    "points": 0.5
+   }
+  ],
+  "options": [
+   {
+    "move": "Cobalt Hours: Night Tent 18:25-19:10 -> Riverside Stage 13:00-13:45",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:00",
+    "end": "13:45",
+    "day": 0,
+    "clash_budget_after": 139.75,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 1.5
+     }
+    ]
+   },
+   {
+    "move": "Cobalt Hours: Night Tent 18:25-19:10 -> Grove Stage 13:00-13:45",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:00",
+    "end": "13:45",
+    "day": 0,
+    "clash_budget_after": 139.75,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 1.5
+     }
+    ]
+   },
+   {
+    "move": "Cobalt Hours: Night Tent 18:25-19:10 -> Riverside Stage 13:05-13:50",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:05",
+    "end": "13:50",
+    "day": 0,
+    "clash_budget_after": 140.05,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 1.8
+     }
+    ]
+   },
+   {
+    "move": "Cobalt Hours: Night Tent 18:25-19:10 -> Grove Stage 13:05-13:50",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:05",
+    "end": "13:50",
+    "day": 0,
+    "clash_budget_after": 140.05,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 1.8
+     }
+    ]
+   },
+   {
+    "move": "Cobalt Hours: Night Tent 18:25-19:10 -> Riverside Stage 13:10-13:55",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:10",
+    "end": "13:55",
+    "day": 0,
+    "clash_budget_after": 140.36,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 2.1
+     }
+    ]
+   },
+   {
+    "move": "Cobalt Hours: Night Tent 18:25-19:10 -> Grove Stage 13:10-13:55",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:10",
+    "end": "13:55",
+    "day": 0,
+    "clash_budget_after": 140.36,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 2.1
+     }
+    ]
+   },
+   {
+    "move": "Cobalt Hours: Night Tent 18:25-19:10 -> Grove Stage 13:15-14:00",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:15",
+    "end": "14:00",
+    "day": 0,
+    "clash_budget_after": 140.66,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 2.4
+     }
+    ]
+   },
+   {
+    "move": "Cobalt Hours: Night Tent 18:25-19:10 -> Night Tent 18:35-19:20",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "18:35",
+    "end": "19:20",
+    "day": 0,
+    "clash_budget_after": 142.09,
+    "clashes_after": [
+     {
+      "with": "Willow Circuit",
+      "points": 2.7
+     },
+     {
+      "with": "Cobalt Choir",
+      "points": 0.7
+     },
+     {
+      "with": "Neon Garden",
+      "points": 0.5
+     }
+    ]
+   }
+  ]
+ },
+ "act-19": {
+  "kind": "move_options",
+  "act": "Willow Bloom",
+  "act_id": "act-19",
+  "priced": true,
+  "from": "Riverside Stage 14:10-14:50",
+  "movable": true,
+  "why": null,
+  "clash_budget_before": 143.68,
+  "legal_places": 29,
+  "searched": "every start on a 5-minute grid in the free time it may use",
+  "clashes_now": [
+   {
+    "with": "Crimson Season",
+    "points": 1.0
+   }
+  ],
+  "options": [
+   {
+    "move": "Willow Bloom: Riverside Stage 14:10-14:50 -> Riverside Stage 14:30-15:10",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "14:30",
+    "end": "15:10",
+    "day": 0,
+    "clash_budget_after": 142.89,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 0.2
+     }
+    ]
+   },
+   {
+    "move": "Willow Bloom: Riverside Stage 14:10-14:50 -> Riverside Stage 14:25-15:05",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "14:25",
+    "end": "15:05",
+    "day": 0,
+    "clash_budget_after": 143.09,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 0.4
+     }
+    ]
+   },
+   {
+    "move": "Willow Bloom: Riverside Stage 14:10-14:50 -> Riverside Stage 14:20-15:00",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "14:20",
+    "end": "15:00",
+    "day": 0,
+    "clash_budget_after": 143.29,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 0.6
+     }
+    ]
+   },
+   {
+    "move": "Willow Bloom: Riverside Stage 14:10-14:50 -> Riverside Stage 13:00-13:40",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:00",
+    "end": "13:40",
+    "day": 0,
+    "clash_budget_after": 143.49,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 0.8
+     }
+    ]
+   },
+   {
+    "move": "Willow Bloom: Riverside Stage 14:10-14:50 -> Riverside Stage 14:15-14:55",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "14:15",
+    "end": "14:55",
+    "day": 0,
+    "clash_budget_after": 143.49,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 0.8
+     }
+    ]
+   },
+   {
+    "move": "Willow Bloom: Riverside Stage 14:10-14:50 -> Grove Stage 13:00-13:40",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:00",
+    "end": "13:40",
+    "day": 0,
+    "clash_budget_after": 143.49,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 0.8
+     }
+    ]
+   },
+   {
+    "move": "Willow Bloom: Riverside Stage 14:10-14:50 -> Night Tent 16:05-16:45",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "16:05",
+    "end": "16:45",
+    "day": 0,
+    "clash_budget_after": 143.53,
+    "clashes_after": [
+     {
+      "with": "Marble Syndicate",
+      "points": 0.4
+     },
+     {
+      "with": "Orchid Bloom",
+      "points": 0.3
+     },
+     {
+      "with": "Saffron Season",
+      "points": 0.1
+     }
+    ]
+   },
+   {
+    "move": "Willow Bloom: Riverside Stage 14:10-14:50 -> Riverside Stage 13:05-13:45",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:05",
+    "end": "13:45",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 1.0
+     }
+    ]
+   }
+  ]
+ },
+ "act-20": {
+  "kind": "move_options",
+  "act": "Harbor Atlas",
+  "act_id": "act-20",
+  "priced": true,
+  "from": "Grove Stage 15:25-16:05",
+  "movable": true,
+  "why": null,
+  "clash_budget_before": 143.68,
+  "legal_places": 21,
+  "searched": "every start on a 5-minute grid in the free time it may use",
+  "clashes_now": [
+   {
+    "with": "Marble Syndicate",
+    "points": 3.5
+   },
+   {
+    "with": "Echo Mirror",
+    "points": 0.4
+   }
+  ],
+  "options": [
+   {
+    "move": "Harbor Atlas: Grove Stage 15:25-16:05 -> Riverside Stage 13:00-13:40",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:00",
+    "end": "13:40",
+    "day": 0,
+    "clash_budget_after": 140.67,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 0.9
+     }
+    ]
+   },
+   {
+    "move": "Harbor Atlas: Grove Stage 15:25-16:05 -> Grove Stage 13:00-13:40",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:00",
+    "end": "13:40",
+    "day": 0,
+    "clash_budget_after": 140.67,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 0.9
+     }
+    ]
+   },
+   {
+    "move": "Harbor Atlas: Grove Stage 15:25-16:05 -> Riverside Stage 13:05-13:45",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:05",
+    "end": "13:45",
+    "day": 0,
+    "clash_budget_after": 140.91,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 1.2
+     }
+    ]
+   },
+   {
+    "move": "Harbor Atlas: Grove Stage 15:25-16:05 -> Grove Stage 13:05-13:45",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:05",
+    "end": "13:45",
+    "day": 0,
+    "clash_budget_after": 140.91,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 1.2
+     }
+    ]
+   },
+   {
+    "move": "Harbor Atlas: Grove Stage 15:25-16:05 -> Riverside Stage 13:10-13:50",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:10",
+    "end": "13:50",
+    "day": 0,
+    "clash_budget_after": 141.14,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 1.4
+     }
+    ]
+   },
+   {
+    "move": "Harbor Atlas: Grove Stage 15:25-16:05 -> Grove Stage 13:10-13:50",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:10",
+    "end": "13:50",
+    "day": 0,
+    "clash_budget_after": 141.14,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 1.4
+     }
+    ]
+   },
+   {
+    "move": "Harbor Atlas: Grove Stage 15:25-16:05 -> Riverside Stage 13:15-13:55",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:15",
+    "end": "13:55",
+    "day": 0,
+    "clash_budget_after": 141.37,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 1.6
+     }
+    ]
+   },
+   {
+    "move": "Harbor Atlas: Grove Stage 15:25-16:05 -> Grove Stage 13:15-13:55",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:15",
+    "end": "13:55",
+    "day": 0,
+    "clash_budget_after": 141.37,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 1.6
+     }
+    ]
+   }
+  ]
+ },
+ "act-21": {
+  "kind": "move_options",
+  "act": "Cedar Roads",
+  "act_id": "act-21",
+  "priced": false,
+  "from": "Grove Stage 14:15-15:00",
+  "movable": true,
+  "why": null,
+  "clash_budget_before": 143.68,
+  "legal_places": 25,
+  "searched": "every start on a 5-minute grid in the free time it may use",
+  "clashes_now": [],
+  "options": [
+   {
+    "move": "Cedar Roads: Grove Stage 14:15-15:00 -> Riverside Stage 13:00-13:45",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:00",
+    "end": "13:45",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": []
+   },
+   {
+    "move": "Cedar Roads: Grove Stage 14:15-15:00 -> Riverside Stage 13:05-13:50",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:05",
+    "end": "13:50",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": []
+   },
+   {
+    "move": "Cedar Roads: Grove Stage 14:15-15:00 -> Riverside Stage 13:10-13:55",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:10",
+    "end": "13:55",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": []
+   },
+   {
+    "move": "Cedar Roads: Grove Stage 14:15-15:00 -> Grove Stage 13:00-13:45",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:00",
+    "end": "13:45",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": []
+   },
+   {
+    "move": "Cedar Roads: Grove Stage 14:15-15:00 -> Grove Stage 13:05-13:50",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:05",
+    "end": "13:50",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": []
+   },
+   {
+    "move": "Cedar Roads: Grove Stage 14:15-15:00 -> Grove Stage 13:10-13:55",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:10",
+    "end": "13:55",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": []
+   },
+   {
+    "move": "Cedar Roads: Grove Stage 14:15-15:00 -> Grove Stage 13:15-14:00",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:15",
+    "end": "14:00",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": []
+   },
+   {
+    "move": "Cedar Roads: Grove Stage 14:15-15:00 -> Grove Stage 13:20-14:05",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:20",
+    "end": "14:05",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": []
+   }
+  ]
+ },
+ "act-22": {
+  "kind": "move_options",
+  "act": "Ivory Lights",
+  "act_id": "act-22",
+  "priced": true,
+  "from": "Night Tent 17:20-18:05",
+  "movable": true,
+  "why": null,
+  "clash_budget_before": 143.68,
+  "legal_places": 24,
+  "searched": "every start on a 5-minute grid in the free time it may use",
+  "clashes_now": [
+   {
+    "with": "Brass Choir",
+    "points": 1.3
+   },
+   {
+    "with": "Saffron Season",
+    "points": 1.1
+   },
+   {
+    "with": "Willow Circuit",
+    "points": 0.9
+   }
+  ],
+  "options": [
+   {
+    "move": "Ivory Lights: Night Tent 17:20-18:05 -> Riverside Stage 13:00-13:45",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:00",
+    "end": "13:45",
+    "day": 0,
+    "clash_budget_after": 141.4,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 1.0
+     }
+    ]
+   },
+   {
+    "move": "Ivory Lights: Night Tent 17:20-18:05 -> Grove Stage 13:00-13:45",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:00",
+    "end": "13:45",
+    "day": 0,
+    "clash_budget_after": 141.4,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 1.0
+     }
+    ]
+   },
+   {
+    "move": "Ivory Lights: Night Tent 17:20-18:05 -> Night Tent 16:05-16:50",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "16:05",
+    "end": "16:50",
+    "day": 0,
+    "clash_budget_after": 141.47,
+    "clashes_after": [
+     {
+      "with": "Saffron Season",
+      "points": 0.5
+     },
+     {
+      "with": "Orchid Bloom",
+      "points": 0.4
+     },
+     {
+      "with": "Marble Syndicate",
+      "points": 0.1
+     }
+    ]
+   },
+   {
+    "move": "Ivory Lights: Night Tent 17:20-18:05 -> Riverside Stage 13:05-13:50",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:05",
+    "end": "13:50",
+    "day": 0,
+    "clash_budget_after": 141.6,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 1.2
+     }
+    ]
+   },
+   {
+    "move": "Ivory Lights: Night Tent 17:20-18:05 -> Grove Stage 13:05-13:50",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:05",
+    "end": "13:50",
+    "day": 0,
+    "clash_budget_after": 141.6,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 1.2
+     }
+    ]
+   },
+   {
+    "move": "Ivory Lights: Night Tent 17:20-18:05 -> Riverside Stage 13:10-13:55",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:10",
+    "end": "13:55",
+    "day": 0,
+    "clash_budget_after": 141.8,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 1.4
+     }
+    ]
+   },
+   {
+    "move": "Ivory Lights: Night Tent 17:20-18:05 -> Grove Stage 13:10-13:55",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:10",
+    "end": "13:55",
+    "day": 0,
+    "clash_budget_after": 141.8,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 1.4
+     }
+    ]
+   },
+   {
+    "move": "Ivory Lights: Night Tent 17:20-18:05 -> Night Tent 16:00-16:45",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "16:00",
+    "end": "16:45",
+    "day": 0,
+    "clash_budget_after": 141.93,
+    "clashes_after": [
+     {
+      "with": "Echo Mirror",
+      "points": 0.9
+     },
+     {
+      "with": "Saffron Season",
+      "points": 0.3
+     },
+     {
+      "with": "Orchid Bloom",
+      "points": 0.2
+     }
+    ]
+   }
+  ]
+ },
+ "act-23": {
+  "kind": "move_options",
+  "act": "Orchid Bloom",
+  "act_id": "act-23",
+  "priced": true,
+  "from": "Grove Stage 16:40-17:20",
+  "movable": true,
+  "why": null,
+  "clash_budget_before": 143.68,
+  "legal_places": 23,
+  "searched": "every start on a 5-minute grid in the free time it may use",
+  "clashes_now": [
+   {
+    "with": "Brass Choir",
+    "points": 4.2
+   },
+   {
+    "with": "Saffron Season",
+    "points": 3.9
+   }
+  ],
+  "options": [
+   {
+    "move": "Orchid Bloom: Grove Stage 16:40-17:20 -> Night Tent 16:15-16:55",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "16:15",
+    "end": "16:55",
+    "day": 0,
+    "clash_budget_after": 138.05,
+    "clashes_after": [
+     {
+      "with": "Saffron Season",
+      "points": 1.4
+     },
+     {
+      "with": "Marble Syndicate",
+      "points": 1.0
+     }
+    ]
+   },
+   {
+    "move": "Orchid Bloom: Grove Stage 16:40-17:20 -> Night Tent 16:05-16:45",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "16:05",
+    "end": "16:45",
+    "day": 0,
+    "clash_budget_after": 138.06,
+    "clashes_after": [
+     {
+      "with": "Marble Syndicate",
+      "points": 2.0
+     },
+     {
+      "with": "Saffron Season",
+      "points": 0.5
+     }
+    ]
+   },
+   {
+    "move": "Orchid Bloom: Grove Stage 16:40-17:20 -> Night Tent 16:10-16:50",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "16:10",
+    "end": "16:50",
+    "day": 0,
+    "clash_budget_after": 138.06,
+    "clashes_after": [
+     {
+      "with": "Marble Syndicate",
+      "points": 1.5
+     },
+     {
+      "with": "Saffron Season",
+      "points": 1.0
+     }
+    ]
+   },
+   {
+    "move": "Orchid Bloom: Grove Stage 16:40-17:20 -> Riverside Stage 13:00-13:40",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:00",
+    "end": "13:40",
+    "day": 0,
+    "clash_budget_after": 138.28,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 2.7
+     }
+    ]
+   },
+   {
+    "move": "Orchid Bloom: Grove Stage 16:40-17:20 -> Grove Stage 13:00-13:40",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:00",
+    "end": "13:40",
+    "day": 0,
+    "clash_budget_after": 138.28,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 2.7
+     }
+    ]
+   },
+   {
+    "move": "Orchid Bloom: Grove Stage 16:40-17:20 -> Night Tent 16:00-16:40",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "16:00",
+    "end": "16:40",
+    "day": 0,
+    "clash_budget_after": 138.34,
+    "clashes_after": [
+     {
+      "with": "Marble Syndicate",
+      "points": 2.5
+     },
+     {
+      "with": "Echo Mirror",
+      "points": 0.2
+     },
+     {
+      "with": "Harbor Atlas",
+      "points": 0.1
+     }
+    ]
+   },
+   {
+    "move": "Orchid Bloom: Grove Stage 16:40-17:20 -> Grove Stage 16:20-17:00",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "16:20",
+    "end": "17:00",
+    "day": 0,
+    "clash_budget_after": 138.88,
+    "clashes_after": [
+     {
+      "with": "Saffron Season",
+      "points": 1.9
+     },
+     {
+      "with": "Brass Choir",
+      "points": 0.8
+     },
+     {
+      "with": "Marble Syndicate",
+      "points": 0.5
+     }
+    ]
+   },
+   {
+    "move": "Orchid Bloom: Grove Stage 16:40-17:20 -> Night Tent 16:20-17:00",
+    "stage": "Night Tent",
+    "stage_id": "tent",
+    "start": "16:20",
+    "end": "17:00",
+    "day": 0,
+    "clash_budget_after": 138.88,
+    "clashes_after": [
+     {
+      "with": "Saffron Season",
+      "points": 1.9
+     },
+     {
+      "with": "Brass Choir",
+      "points": 0.8
+     },
+     {
+      "with": "Marble Syndicate",
+      "points": 0.5
+     }
+    ]
+   }
+  ]
+ },
+ "act-24": {
+  "kind": "move_options",
+  "act": "Tidal Fields",
+  "act_id": "act-24",
+  "priced": true,
+  "from": "Main Stage 10:25-11:10",
+  "movable": true,
+  "why": null,
+  "clash_budget_before": 143.68,
+  "legal_places": 15,
+  "searched": "every start on a 5-minute grid in the free time it may use",
+  "clashes_now": [],
+  "options": [
+   {
+    "move": "Tidal Fields: Main Stage 10:25-11:10 -> Main Stage 10:30-11:15",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "10:30",
+    "end": "11:15",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": []
+   },
+   {
+    "move": "Tidal Fields: Main Stage 10:25-11:10 -> Main Stage 10:35-11:20",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "10:35",
+    "end": "11:20",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": []
+   },
+   {
+    "move": "Tidal Fields: Main Stage 10:25-11:10 -> Main Stage 10:40-11:25",
+    "stage": "Main Stage",
+    "stage_id": "main",
+    "start": "10:40",
+    "end": "11:25",
+    "day": 0,
+    "clash_budget_after": 143.68,
+    "clashes_after": []
+   },
+   {
+    "move": "Tidal Fields: Main Stage 10:25-11:10 -> Riverside Stage 13:00-13:45",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:00",
+    "end": "13:45",
+    "day": 0,
+    "clash_budget_after": 143.95,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 0.3
+     }
+    ]
+   },
+   {
+    "move": "Tidal Fields: Main Stage 10:25-11:10 -> Grove Stage 13:00-13:45",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:00",
+    "end": "13:45",
+    "day": 0,
+    "clash_budget_after": 143.95,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 0.3
+     }
+    ]
+   },
+   {
+    "move": "Tidal Fields: Main Stage 10:25-11:10 -> Riverside Stage 13:05-13:50",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:05",
+    "end": "13:50",
+    "day": 0,
+    "clash_budget_after": 144.0,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 0.3
+     }
+    ]
+   },
+   {
+    "move": "Tidal Fields: Main Stage 10:25-11:10 -> Grove Stage 13:05-13:50",
+    "stage": "Grove Stage",
+    "stage_id": "grove",
+    "start": "13:05",
+    "end": "13:50",
+    "day": 0,
+    "clash_budget_after": 144.0,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 0.3
+     }
+    ]
+   },
+   {
+    "move": "Tidal Fields: Main Stage 10:25-11:10 -> Riverside Stage 13:10-13:55",
+    "stage": "Riverside Stage",
+    "stage_id": "river",
+    "start": "13:10",
+    "end": "13:55",
+    "day": 0,
+    "clash_budget_after": 144.06,
+    "clashes_after": [
+     {
+      "with": "Crimson Season",
+      "points": 0.4
+     }
+    ]
+   }
+  ]
+ }
+}

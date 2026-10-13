@@ -1,0 +1,56 @@
+{
+ "step": {
+  "act": "act-16",
+  "stage_id": "grove",
+  "day": 0,
+  "start": "13:00"
+ },
+ "answer": {
+  "kind": "whatif",
+  "published_budget": 143.68,
+  "plan": {
+   "budget": 117.09,
+   "steps": [
+    {
+     "act": "Neon Garden",
+     "act_id": "act-16",
+     "move": "Neon Garden: Grove Stage 19:15-20:15 -> Grove Stage 13:00-14:00",
+     "stage": "Grove Stage",
+     "stage_id": "grove",
+     "day": 0,
+     "start": "13:00",
+     "end": "14:00",
+     "budget_after": 117.09
+    }
+   ],
+   "clashes": [
+    {
+     "a": "Glass Mirror",
+     "b": "Marble Machine",
+     "points": 14.4
+    },
+    {
+     "a": "Glass Mirror",
+     "b": "Hollow Meadow",
+     "points": 14.3
+    },
+    {
+     "a": "Brass Choir",
+     "b": "Cobalt Choir",
+     "points": 11.4
+    },
+    {
+     "a": "Rustic Season",
+     "b": "Fable Pilots",
+     "points": 11.3
+    },
+    {
+     "a": "Fable Pilots",
+     "b": "Rustic Harbour",
+     "points": 9.9
+    }
+   ]
+  },
+  "options": null
+ }
+}

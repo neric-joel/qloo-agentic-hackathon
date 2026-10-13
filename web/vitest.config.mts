@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   resolve: {
@@ -10,5 +10,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts", "*.test.ts"],
+    // The Playwright suite (e2e/*.spec.ts) runs with `npm run e2e`, in a real browser, never under vitest.
+    exclude: [...configDefaults.exclude, "e2e/**", "test-results/**", "playwright-report/**"],
   },
 });

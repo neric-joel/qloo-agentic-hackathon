@@ -1,0 +1,130 @@
+{
+ "kind": "decision",
+ "day": 0,
+ "skipped_locked": 0,
+ "skipped_no_place": 0,
+ "clash": {
+  "a_id": "act-16",
+  "b_id": "act-02",
+  "rank": 1,
+  "minutes": 55
+ },
+ "published_budget": 143.68,
+ "move": {
+  "act_id": "act-16",
+  "act": "Neon Garden",
+  "from": "Grove Stage 19:15-20:15",
+  "stage_id": "grove",
+  "stage": "Grove Stage",
+  "day": 0,
+  "start": "13:00",
+  "end": "14:00",
+  "minutes_moved": 375,
+  "legal_places": 6,
+  "stage_changed": false,
+  "budget_after": 117.09,
+  "minutes_shared_after": 0,
+  "same_index_alternative": null,
+  "stage_fit_flags_now": 10,
+  "stage_fit_flags_after": 10,
+  "costliest_after": {
+   "a": "Glass Mirror",
+   "b": "Marble Machine",
+   "minutes": 80,
+   "points": 14.4
+  }
+ },
+ "rule": {
+  "kind": "rule_fixes",
+  "a": {
+   "act_id": "act-16",
+   "act": "Neon Garden",
+   "locked": false,
+   "place": "Grove Stage 19:15-20:15"
+  },
+  "b": {
+   "act_id": "act-02",
+   "act": "Glass Mirror",
+   "locked": true,
+   "place": "Main Stage 19:20-20:50"
+  },
+  "rule": "Neon Garden and Glass Mirror must not overlap",
+  "shared_minutes": 55,
+  "holds": false,
+  "single_set_places": 3,
+  "fixes_found": 710,
+  "searched": "single places on the 5-minute grid for either set, and two-set changes where one other set makes room and moves to a free place; each checked for a new rule break; longer chains were not searched",
+  "fixes": [
+   {
+    "sets_moved": 1,
+    "minutes_moved": 190,
+    "stage_changes": 1,
+    "budget_after": 121.85,
+    "stage_fit_flags_now": 10,
+    "stage_fit_flags_after": 11,
+    "moves": [
+     {
+      "act_id": "act-16",
+      "act": "Neon Garden",
+      "from": "Grove Stage 19:15-20:15",
+      "stage_id": "tent",
+      "stage": "Night Tent",
+      "day": 0,
+      "start": "16:05",
+      "end": "17:05",
+      "minutes_moved": 190
+     }
+    ],
+    "minutes_shared_after": 0,
+    "costliest_after": {
+     "a": "Glass Mirror",
+     "b": "Marble Machine",
+     "minutes": 80,
+     "points": 14.4
+    }
+   },
+   {
+    "sets_moved": 1,
+    "minutes_moved": 195,
+    "stage_changes": 1,
+    "budget_after": 123.13,
+    "stage_fit_flags_now": 10,
+    "stage_fit_flags_after": 11,
+    "moves": [
+     {
+      "act_id": "act-16",
+      "act": "Neon Garden",
+      "from": "Grove Stage 19:15-20:15",
+      "stage_id": "tent",
+      "stage": "Night Tent",
+      "day": 0,
+      "start": "16:00",
+      "end": "17:00",
+      "minutes_moved": 195
+     }
+    ]
+   },
+   {
+    "sets_moved": 1,
+    "minutes_moved": 375,
+    "stage_changes": 0,
+    "budget_after": 117.09,
+    "stage_fit_flags_now": 10,
+    "stage_fit_flags_after": 10,
+    "moves": [
+     {
+      "act_id": "act-16",
+      "act": "Neon Garden",
+      "from": "Grove Stage 19:15-20:15",
+      "stage_id": "grove",
+      "stage": "Grove Stage",
+      "day": 0,
+      "start": "13:00",
+      "end": "14:00",
+      "minutes_moved": 375
+     }
+    ]
+   }
+  ]
+ }
+}

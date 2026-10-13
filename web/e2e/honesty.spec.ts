@@ -63,7 +63,7 @@ test.describe("honesty lines", () => {
     // The card's score, the dial's score and the plan's score each carry the caveat in their own block.
     await expect(home.card.locator("[data-index-block]")).toContainText("Selected and scored by this app’s index. A reading, not a verdict.");
     const dial = page.getByRole("figure").filter({ hasText: "Clash Budget Index" });
-    await expect(dial).toContainText("lower is better");
+    await expect(dial).toContainText("Lower is better; 100 is the average of random valid timetables of this lineup.");
     await expect(dial).toContainText("It counts only what clashes cost: taste overlap, time shared, draw and a rarity factor.");
     await home.keepMove.click();
     await expect(new TryAMove(page).planRegion).toContainText("Scored by the same measure the places are found with, so a lower number shows what that measure rewards, not that audiences would be better served.");

@@ -1,7 +1,10 @@
-import { DAYS, requireSavedDays } from "./helpers";
+import { DAYS, pdfPages, requireSavedDays } from "./helpers";
 import { expect, test } from "./fixtures";
 import { HomePage } from "./pages/home-page";
 import { parsePlace, TryAMove } from "./pages/try-a-move";
+
+/** Said beside a run's zero count when it priced every place it tested with the day's saved reading. */
+const SAVED_READING = "Every place it tested was scored with this day’s saved Qloo reading (taste overlap and popularity); it sent no new request.";
 
 /**
  * The agent section on a server with no language model: the live agent is off, and saved runs replay from
@@ -31,8 +34,10 @@ test.describe("recorded agent runs", () => {
     await expect(home.agent.getByRole("heading", { level: 3, name: "What the agent can and cannot do" })).toBeVisible();
     await expect(home.agent).toContainText("It can test a move, but it never changes your timetable unless you press Keep this place.");
     await expect(home.agent).toContainText("At most 12 Qloo requests and 6 model turns per run.");
-    // The recordings on this day made no Qloo request, and the section says so.
-    await expect(home.agent).toContainText("None of these three recorded runs asked Qloo");
+    // The recordings on this day sent no new Qloo request, and the section says so, and what they scored with.
+    await expect(home.agent).toContainText(
+      "None of these three recorded runs sent a new Qloo request: they test moves with the timetable engine, which scores with this day’s saved Qloo reading.",
+    );
     expect(guard.requested.filter((url) => url.includes("/api/runs"))).toEqual([]);
   });
 
@@ -71,8 +76,9 @@ test.describe("recorded agent runs", () => {
     await expect(conversation.getByRole("list", { name: "What the agent did" })).toContainText("Tested a move");
     await expect(conversation).toContainText("Ruled out · 1 move");
     await expect(conversation).toContainText("Joy Crookes and Nadine Shah would overlap on the Other stage");
-    // The recorded run made no Qloo request, and says so on its trace button.
-    await expect(conversation.getByRole("button", { name: "How Qloo was used, 0 requests" })).toBeVisible();
+    // The recorded run sent no new Qloo request, and its trace button says so as a count.
+    await expect(conversation.getByRole("button", { name: "Qloo requests in this run: 0" })).toBeVisible();
+    await expect(conversation.getByRole("button", { name: /^How Qloo was used/ })).toHaveCount(0);
     expect(guard.requested.filter((url) => url.includes("/api/runs"))).toEqual([]);
   });
 
@@ -118,6 +124,11 @@ test.describe("recorded agent runs", () => {
     await expect(tested).toBeVisible();
     const [, stage = "", start = "", end = ""] = /^Parcels → (.+) (\d{2}:\d{2})–(\d{2}:\d{2})$/.exec((await tested.innerText()).trim()) ?? [];
     await expect(home.plan).toHaveCount(0);
+    // Every place it tested was priced with the day's saved reading, and the run says so beside its zero count.
+    await expect(home.agent).toContainText(SAVED_READING);
+    await expect(home.agent.getByRole("button", { name: "Qloo requests in this run: 0" })).toBeVisible();
+    // With an empty plan there is nothing to add to or replace: one button keeps the place.
+    await expect(home.agent.getByRole("button", { name: /^(Add to|Replace) your plan$/ })).toHaveCount(0);
 
     await home.agent.getByRole("button", { name: "Keep this place" }).click();
     const kept = home.agent.getByRole("status").filter({ hasText: "Kept in your plan." });
@@ -163,5 +174,88 @@ test.describe("recorded agent runs", () => {
     await home.agent.getByRole("button", { name: "Skip to the answer" }).click();
     await expect(home.agent.getByRole("status").filter({ hasText: /\S/ })).toHaveText("The recorded run has finished.", { timeout: 15_000 });
     await expect(home.agent.getByRole("list", { name: "Conversation" })).toContainText("Good Riddance");
+    // This run made one Qloo request, so it is never labelled with a zero count or the saved-reading line.
+    await expect(runs.first()).toContainText("This run made 1 Qloo request.");
+    await expect(home.agent.getByRole("button", { name: "Qloo requests in this run: 0" })).toHaveCount(0);
+    await expect(home.agent).not.toContainText(SAVED_READING);
   });
+
+  test("while a run replays on a wide screen, the column beside it holds the runs and what the agent can do", async ({ page, isPhone }) => {
+    test.skip(isPhone, "The two columns sit side by side from 1024 px.");
+    const home = new HomePage(page);
+    await home.goto(DAYS.glastonbury.id);
+
+    await home.agent.getByRole("button", { name: /^Replay the recorded run: Set two rules, then move one set/ }).click();
+    const conversation = home.agent.getByRole("list", { name: "Conversation" });
+    await expect(conversation).toBeVisible();
+    // Still replaying: Skip to the answer is offered until the run ends.
+    const skip = home.agent.getByRole("button", { name: "Skip to the answer" });
+    await expect(skip).toBeVisible();
+    const run = await conversation.boundingBox();
+    const runs = home.agent.getByRole("list", { name: "Recorded runs" });
+    for (const beside of [runs, home.agent.getByRole("heading", { level: 3, name: "What the agent can and cannot do" })]) {
+      await expect(beside).toBeVisible();
+      const box = await beside.boundingBox();
+      expect((box?.x ?? 0) + (box?.width ?? 0), "it sits to the left of the run").toBeLessThanOrEqual(run?.x ?? 0);
+    }
+    // From the can/cannot list down to the runs, the left column shares rows of the page with the run.
+    const can = await home.agent.getByRole("heading", { level: 3, name: "What the agent can and cannot do" }).boundingBox();
+    const list = await runs.boundingBox();
+    const top = Math.max(can?.y ?? 0, run?.y ?? 0);
+    const bottom = Math.min((list?.y ?? 0) + (list?.height ?? 0), (run?.y ?? 0) + (run?.height ?? 0));
+    expect(bottom - top, "the left column and the run overlap vertically").toBeGreaterThan(0);
+    expect(can?.y ?? Infinity, "the left column starts no lower than the run's last row").toBeLessThan((run?.y ?? 0) + (run?.height ?? 0));
+    await expect(skip).toBeVisible();
+  });
+
+  for (const choice of ["Add to your plan", "Replace your plan"] as const) {
+    test(`after the card's move is kept, Keep this place offers Add and Replace, and ${choice} says what it did`, async ({ page, guard }) => {
+      const home = new HomePage(page);
+      const move = new TryAMove(page);
+      await home.goto(DAYS.glastonbury.id);
+
+      await home.keepMove.click();
+      await expect(move.kept).toHaveCount(1);
+      await home.agent.getByRole("button", { name: /^Replay the recorded run: Set two rules, then move one set/ }).click();
+      await home.agent.getByRole("button", { name: "Skip to the answer" }).click();
+      await expect(home.agent.getByRole("status").filter({ hasText: "The recorded run has finished." })).toBeVisible({ timeout: 15_000 });
+
+      // Never a silent replace: the plan holds a kept move, so both ways are offered, Add first.
+      const add = home.agent.getByRole("button", { name: "Add to your plan" });
+      const replace = home.agent.getByRole("button", { name: "Replace your plan" });
+      await expect(add).toBeVisible();
+      await expect(replace).toBeVisible();
+      await expect(home.agent.getByRole("button", { name: "Keep this place" })).toHaveCount(0);
+      await expect(home.agent).toContainText("your plan already holds 1 kept move.");
+      expect(await home.agent.getByRole("button", { name: /^(Add to|Replace) your plan$/ }).allInnerTexts()).toEqual(["Add to your plan", "Replace your plan"]);
+      await expect(move.kept).toHaveCount(1);
+
+      await home.agent.getByRole("button", { name: choice }).click();
+      const kept = home.agent.getByRole("status").filter({ hasText: "Kept in your plan." });
+      await expect(kept).toBeVisible();
+      await expect(kept.getByRole("link", { name: "See your plan" })).toBeFocused();
+      if (choice === "Add to your plan") {
+        await expect(kept).toContainText("Added: 2 kept moves.");
+        await expect(move.kept).toHaveCount(2);
+        await expect(move.kept.nth(0)).toContainText("1. Sprints · ");
+        await expect(move.kept.nth(1)).toContainText("2. Parcels · ");
+        // The brief made from this plan lists both moves.
+        const href = await move.briefLink.getAttribute("href");
+        expect(href).toMatch(/^\/brief\?preset=glastonbury-2025-sun&day=0&moves=.+/);
+        await page.goto(href as string, { waitUntil: "domcontentloaded" });
+        const plan = page.getByRole("region", { name: "Your plan" });
+        await expect(plan).toContainText("2 kept moves: Clash Budget Index ");
+        await expect(plan.getByRole("listitem").filter({ hasText: /^1\. Sprints · / })).toHaveCount(1);
+        await expect(plan.getByRole("listitem").filter({ hasText: /^2\. Parcels · / })).toHaveCount(1);
+        // A brief with two kept moves still prints on one Letter page and one A4 page.
+        await page.emulateMedia({ media: "print" });
+        for (const format of ["Letter", "A4"] as const) expect(pdfPages(await page.pdf({ format, printBackground: true })), `${format} pages`).toBe(1);
+      } else {
+        await expect(kept).toContainText("Replaced your 1 kept move.");
+        await expect(move.kept).toHaveCount(1);
+        await expect(move.kept.first()).toContainText("1. Parcels · ");
+      }
+      expect(guard.requested.filter((url) => url.includes("/api/runs"))).toEqual([]);
+    });
+  }
 });

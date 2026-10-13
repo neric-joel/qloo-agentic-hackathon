@@ -4,11 +4,16 @@ import { CHECK_COPY, RULE_LABELS, formatClock, pairCountLabel, type CheckReport 
 import { decisionLine, type Decision } from "@/lib/check-decisions";
 import {
   PRICE_COPY,
+  comparedPairs,
   coverageLine,
+  notCompared,
+  notComparedLine,
+  notComparedText,
   orderLine,
   pairLine,
   rankScope,
   sourceBanner,
+  type PassedOverlap,
   type PriceAnswer,
   type ScopeOf,
 } from "@/lib/check-price";
@@ -94,6 +99,7 @@ export function CheckBrief({
   applied,
   decisions,
   price,
+  priceSkipped = [],
   sample = false,
   published = null,
   checkedAt = null,
@@ -104,6 +110,8 @@ export function CheckBrief({
   applied: readonly TrialChange[];
   decisions: readonly Decision[];
   price: PriceAnswer | null;
+  /** Overlaps the compare step passed over before its request (both sets locked, or no usable signal). */
+  priceSkipped?: readonly PassedOverlap[];
   /** The checked snapshot is the invented sample: the brief says so under its title. */
   sample?: boolean;
   /** The checked snapshot is a published day loaded by "Check a published day": its label, printed under the title. */
@@ -117,6 +125,8 @@ export function CheckBrief({
 }) {
   const { sets, stages, settings, breaks, shared } = report;
   const reorder = price ? orderLine(price) : null;
+  const missed = price ? notCompared(priceSkipped, price) : [];
+  const missedLine = price ? notComparedLine(missed, price) : null;
   return (
     <div
       className={cn(preview ? "p-[22pt]" : "hidden print:block", "text-[9pt] leading-snug")}
@@ -162,12 +172,19 @@ export function CheckBrief({
 
       {price ? (
         <section className="mt-[6pt]">
-          <h2 className="text-[11pt] font-semibold">{PRICE_COPY.briefHeading(price.pairs.length)}</h2>
+          <h2 className="text-[11pt] font-semibold">{PRICE_COPY.briefHeading(price.pairs.length, price.basis)}</h2>
           <p className="mt-[2pt]">
             {sourceBanner(price)} {coverageLine(price)}.
           </p>
-          <Capped items={price.pairs.map((pair) => pairLine(pair, price))} />
+          <Capped items={comparedPairs(price, "minutes").map((pair) => pairLine(pair, price))} />
           {reorder ? <p className="mt-[2pt]">{reorder}</p> : null}
+          {price.basis === "saved_ranking" ? <p className="mt-[2pt]">{PRICE_COPY.workedExample}</p> : null}
+          {missedLine ? (
+            <>
+              <p className="mt-[2pt]">{missedLine}</p>
+              <Capped items={missed.map((item) => notComparedText(item, price, price.basis))} />
+            </>
+          ) : null}
         </section>
       ) : null}
 

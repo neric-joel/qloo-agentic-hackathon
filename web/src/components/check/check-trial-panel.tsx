@@ -27,9 +27,34 @@ export const TEXT_ACTION =
 
 /**
  * Under the size line of a change that moves a set to another stage: a new stage is production's call, not
- * only the programmer's. The engine's ranking already lists stage changes after equal start-time moves.
+ * only the programmer's. Plain ink text at medium weight (not small grey text, not a badge). The list puts
+ * changes that keep every set on its stage first.
  */
 export const STAGE_SIGN_OFF = "Changes stage: needs production sign-off";
+
+/** The sign-off line's classes: ink on card, 14px medium, no fill, border or stripe. */
+export const SIGN_OFF_CLASS = "mt-0.5 text-sm font-medium text-foreground";
+
+/**
+ * The listed changes (the first five, and any more that keep every set on its stage), split for the panel:
+ * those that keep every overlap marked "Kept on purpose", with changes that keep every set on its stage
+ * first and then those that change a stage (each group in the engine's order), and apart from them every
+ * change that would end a kept overlap. Nothing is dropped.
+ */
+export function splitChanges(
+  result: Pick<TrialResult, "changes" | "sameStageMore">,
+  kept: ReadonlySet<string> = new Set(),
+): { sameStage: TrialChange[]; stageChange: TrialChange[]; endsKept: TrialChange[] } {
+  const all = [...result.changes, ...(result.sameStageMore ?? [])];
+  const ending = all.filter((change) => (change.ends ?? []).some((id) => kept.has(id)));
+  const endsKept = [...ending.filter((change) => change.stageChanges === 0), ...ending.filter((change) => change.stageChanges > 0)];
+  const listed = all.filter((change) => !ending.includes(change));
+  return {
+    sameStage: listed.filter((change) => change.stageChanges === 0),
+    stageChange: listed.filter((change) => change.stageChanges > 0),
+    endsKept,
+  };
+}
 
 /** What the page keeps of one search: the target it was for, how far it has got and, once done, the result. */
 export type TrialState = {
@@ -48,6 +73,11 @@ export type TrialUi = {
   onFind: (target: TrialTarget, label: string) => void;
   onApply: (change: TrialChange) => void;
   onClose: () => void;
+  /**
+   * The decision ids marked "Kept on purpose". A change that would end one of those overlaps is left out of
+   * the list by default and offered only inside a closed fold: opening it is the explicit override.
+   */
+  kept?: ReadonlySet<string>;
 };
 
 function ChangeItem({
@@ -55,6 +85,7 @@ function ChangeItem({
   onApply,
   gloss,
   stale,
+  endsKept = false,
 }: {
   change: TrialChange;
   onApply: (change: TrialChange) => void;
@@ -62,10 +93,13 @@ function ChangeItem({
   stale: boolean;
   /** The plain line under "Adds no rule break and makes none larger.", on the first change of a list. */
   gloss: boolean;
+  /** This change ends an overlap marked "Kept on purpose" (drawn only inside the closed fold). */
+  endsKept?: boolean;
 }) {
   const rise = sharedRiseLine(change);
   return (
     <li className="py-3 first:pt-0 last:pb-0">
+      {endsKept ? <p className="mb-1 text-sm font-semibold text-foreground">{TRIAL_COPY.endsKept}</p> : null}
       <p className={change.longerThanEnded ? "font-semibold break-words text-warning" : "font-semibold break-words"}>
         {change.tradeOff}
       </p>
@@ -90,7 +124,7 @@ function ChangeItem({
       </p>
       {rise ? <p className="mt-0.5 text-sm break-words text-warning">{rise}</p> : null}
       <p className="mt-0.5 text-sm text-muted-foreground">{sizeLine(change)}</p>
-      {change.stageChanges > 0 ? <p className="mt-0.5 text-sm text-muted-foreground">{STAGE_SIGN_OFF}</p> : null}
+      {change.stageChanges > 0 ? <p className={SIGN_OFF_CLASS}>{STAGE_SIGN_OFF}</p> : null}
       <Button type="button" variant="outline" size="sm" className="mt-3" disabled={stale} onClick={() => onApply(change)}>
         {TRIAL_COPY.tryIt}
         <span className="sr-only">: {change.lines.join(" and ")}</span>
@@ -111,6 +145,8 @@ function TrialPanel({
   headingRef?: Ref<HTMLHeadingElement>;
 }) {
   const { result } = state;
+  const { sameStage, stageChange, endsKept } = splitChanges(result ?? { changes: [] }, ui.kept);
+  const listed = [...sameStage, ...stageChange];
   if (state.running || !result) {
     const progress = state.progress;
     return (
@@ -131,12 +167,47 @@ function TrialPanel({
         {TRIAL_COPY.heading}
       </h3>
       <p className="mt-1.5 break-words">{result.summary}</p>
-      {result.changes.length > 0 ? (
+      {sameStage.length === 0 && stageChange.length > 0 ? (
+        <p className="mt-3 text-sm font-medium text-foreground">{TRIAL_COPY.noSameStage}</p>
+      ) : null}
+      {listed.length > 0 ? (
         <ol className="mt-3 divide-y divide-border border-y border-border py-3">
-          {result.changes.map((change, index) => (
-            <ChangeItem key={index} change={change} onApply={ui.onApply} gloss={index === 0} stale={ui.stale === true} />
+          {sameStage.map((change, index) => (
+            <ChangeItem key={`same-${index}`} change={change} onApply={ui.onApply} gloss={index === 0} stale={ui.stale === true} />
+          ))}
+          {stageChange.map((change, index) => (
+            <ChangeItem
+              key={`stage-${index}`}
+              change={change}
+              onApply={ui.onApply}
+              gloss={sameStage.length === 0 && index === 0}
+              stale={ui.stale === true}
+            />
           ))}
         </ol>
+      ) : null}
+      {endsKept.length > 0 ? (
+        <>
+          <p className="mt-3 text-sm leading-relaxed">{TRIAL_COPY.keptLine(endsKept.length, listed.length)}</p>
+          <details className="group cc-disclosure mt-2">
+            <summary className="cc-disclosure-summary text-sm">
+              {TRIAL_COPY.keptSummary(endsKept.length)}
+              <span aria-hidden="true" className="cc-disclosure-mark" />
+            </summary>
+            <ol className="divide-y divide-border pb-3">
+              {endsKept.map((change, index) => (
+                <ChangeItem
+                  key={`kept-${index}`}
+                  change={change}
+                  onApply={ui.onApply}
+                  gloss={false}
+                  stale={ui.stale === true}
+                  endsKept
+                />
+              ))}
+            </ol>
+          </details>
+        </>
       ) : null}
       <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{TRIAL_COPY.scope}</p>
       <details className="mt-1 text-sm leading-relaxed text-muted-foreground">

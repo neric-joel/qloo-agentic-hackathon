@@ -26,7 +26,7 @@ test.describe("how we know (/method)", () => {
     const short = article.getByRole("region", { name: "The short version" });
     await expect(short.getByRole("listitem").first()).toContainText("The test we set before building failed.");
     await expect(short.getByRole("listitem").first()).toContainText("The bar we wrote down before building was 60% and 10 points ahead.");
-    await expect(short).toContainText("It ranks a day’s clashes and tests moves against timetable rules. Taste overlap is a rank, not attendance;");
+    await expect(short).toContainText("It ranks a day’s clashes and tests moves against timetable rules. Taste overlap is a rank, not attendance.");
   });
 
   test("states the failed pre-set test with its figures, and the check on moves that failed as written", async ({ page }) => {
@@ -34,10 +34,10 @@ test.describe("how we know (/method)", () => {
     const short = article.getByRole("region", { name: "The short version" });
 
     await expect(short).toContainText("Taste overlap put 46.8% of complained-about clashes in the 25% highest-ranked clashes among that day’s pairs, 7.8 points ahead of genre tags.");
-    await expect(short).toContainText("Popularity did better. On the same test, popularity, another Qloo field, reached 57.8%.");
+    await expect(short).toContainText("Popularity did better. On the same test, popularity, another Qloo field, reached 57.8%");
     await expect(short).toContainText("The check on suggested moves failed too");
     await expect(short).toContainText("the bar was 10");
-    await expect(short).toContainText("The results do not establish an advantage over popularity.");
+    await expect(short).toContainText("exploratory follow-ups on the same data did not establish an advantage over popularity for the app’s full price.");
 
     // The figure draws the same four numbers, with the bar that was set.
     const chart = short.getByRole("figure", { name: "Complained-about clashes in the day’s highest 25%, by method" });
@@ -55,8 +55,10 @@ test.describe("how we know (/method)", () => {
 
   test("the test's table agrees with the short version, and the honest caveats follow it", async ({ page }) => {
     const tested = page.getByRole("region", { name: "What we tested it against" });
-    const table = tested.getByRole("table");
+    // The pre-set test's own table (the exploratory follow-up has a table of its own further down).
+    const table = tested.getByRole("table").filter({ hasText: "Taste overlap (rank on the bill)" });
 
+    await expect(table).toHaveCount(1);
     await expect(table.getByRole("columnheader")).toHaveText(["Method", "Complained-about clashes in the day’s top quarter", "AUC (95% interval)"]);
     const rows = table.getByRole("row");
     await expect(rows.filter({ hasText: "Taste overlap (rank on the bill)" })).toContainText("46.8%");
@@ -76,6 +78,27 @@ test.describe("how we know (/method)", () => {
     await expect(limits).toContainText("It is not attendance, and this app estimates no attendance or money figure anywhere.");
     await expect(limits).toContainText("Hidden clashes are examples, not detections.");
     await expect(limits).toContainText("Real programming weighs much more than taste overlap.");
+  });
+
+  test("the follow-up on taste inside the full price is open, says it is exploratory, and says what it did not establish", async ({ page }) => {
+    const followUp = page.getByRole("region", { name: "What we tested it against" }).getByRole("group", { name: "Taste inside the full price (exploratory)" });
+    const heading = followUp.getByRole("heading", { level: 3, name: "Taste inside the full price (exploratory)" });
+    await expect(heading).toBeVisible();
+    await expect(followUp).toContainText("Run after the test failed, on the same 68 scored pairs, so it is exploratory.");
+    await expect(followUp).toContainText("so the full price did not establish an advantage over popularity.");
+    await expect(followUp).toContainText("This check did not establish that taste adds to time and draw.");
+    await expect(followUp).toContainText("So the price depends on the real taste values");
+    await expect(followUp).not.toContainText(/beats|better than popularity/);
+    // One row per festival group, with the small one left uninterpreted.
+    const table = followUp.getByRole("table");
+    await expect(table).toHaveCount(1);
+    await expect(table).toBeVisible();
+    await expect(table.getByRole("columnheader")).toHaveText(["Festivals", "Popularity", "Time and draw", "Full price"]);
+    await expect(table.getByRole("row").filter({ hasText: "Glastonbury 2025" })).toHaveCount(1);
+    await expect(table.getByRole("row").filter({ hasText: "Four US festivals" })).toHaveCount(1);
+    await expect(table.getByRole("row").filter({ hasText: "Riot Fest 2026, one of the four" })).toContainText("Not interpreted: too few complaints to read alone");
+    // It is on the page with no click: not inside a closed disclosure.
+    expect(await heading.evaluate((element) => element.closest("details:not([open])") === null)).toBe(true);
   });
 
   test("the home page quotes the same failed test", async ({ page }) => {

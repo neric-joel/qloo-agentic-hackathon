@@ -6,6 +6,7 @@ import {
   concurrentActs,
   currentPlacement,
   movableSets,
+  nextRankedPair,
   parseMoves,
   placementOf,
   startingSets,
@@ -353,5 +354,32 @@ describe("clashChanges", () => {
       adds: [{ name: "Act Three", points: 1.2 }],
       keeps: [{ name: "Act One", now: 2.9, after: 0.8 }],
     });
+  });
+});
+
+describe("nextRankedPair", () => {
+  const locked = new Set(["act-one"]);
+  const cannotMove = (id: string) => locked.has(id);
+  const ranked = [
+    clash(1, "act-two", "act-five"),
+    clash(2, "act-one", "act-three"),
+    clash(3, "act-three", "act-four"),
+  ];
+
+  it("takes the first clash in the published ranking that no kept step addresses, with its set free to move", () => {
+    // Act Two is kept, so clash 1 is addressed; clash 2's free set is Act Three (Act One is locked).
+    expect(nextRankedPair(ranked, new Set(["act-two"]), cannotMove)).toEqual({ a: "Act One", b: "Act Three", actId: "act-three" });
+    // Nothing kept: the first clash, its first free set.
+    expect(nextRankedPair(ranked, new Set(), cannotMove)).toEqual({ a: "Act Two", b: "Act Five", actId: "act-two" });
+  });
+
+  it("skips a clash whose sets cannot move, and says nothing when none is left", () => {
+    expect(nextRankedPair([clash(1, "act-one", "act-one"), clash(2, "act-three", "act-four")], new Set(), cannotMove)).toEqual({
+      a: "Act Three",
+      b: "Act Four",
+      actId: "act-three",
+    });
+    expect(nextRankedPair(ranked, new Set(["act-two", "act-three"]), cannotMove)).toBeNull();
+    expect(nextRankedPair([], new Set(), cannotMove)).toBeNull();
   });
 });

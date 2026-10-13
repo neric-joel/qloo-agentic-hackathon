@@ -21,6 +21,7 @@ import {
   briefSteps,
   briefTitle,
   briefTradeoff,
+  clashesCaption,
   clashesTitle,
   coverageSentence,
   dayFigures,
@@ -558,7 +559,7 @@ export function BriefContent({
       ) : (
         <>
           <p id={tableCaption} className="sr-only">
-            {withMoves ? `${tableTitle}, costliest first` : `${tableTitle} on this day, costliest first`}
+            {clashesCaption(rows.length, withMoves)}
           </p>
           <ClashTable rows={rows} captionId={tableCaption} />
           <ClashCards rows={rows} />

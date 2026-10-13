@@ -14,18 +14,24 @@
  * The contract is the price-grid contract (kept outside this repository): `saved` matches the names to
  * a saved festival day or the invented example day and sends no Qloo request; `live` asks Qloo, is
  * capped per visitor and for everyone, and is offered only after `saved` answers `not_a_saved_day`, and
- * only when the server says live pricing is on.
+ * only when the server says live pricing is on. A saved body takes up to 60 act names and 10 pairs; a
+ * live body 25 and 5.
  */
 
 import { isPriceGridLive } from "@/lib/agent-status";
-import type { CheckReport, SharedPair } from "@/lib/check";
+import { normalizeName, type CheckReport, type SharedPair } from "@/lib/check";
 
 export const PRICE_LIMITS = {
-  /** Overlaps priced at most, longest first. */
+  /** Overlaps priced at most for a pasted grid (it may go live), longest first. */
   pairs: 5,
-  /** Distinct acts the route needs, and the most it takes. */
+  /** Clashes priced at most for a published day loaded here (saved mode only), in its saved ranking. */
+  savedPairs: 10,
+  /** Distinct acts the route needs. */
   minActs: 4,
+  /** The most act names a live answer takes. */
   maxActs: 25,
+  /** The most act names a saved answer takes (it sends no Qloo request). */
+  savedActs: 60,
 } as const;
 
 export type PriceMode = "saved" | "live";
@@ -33,21 +39,46 @@ export type PriceMode = "saved" | "live";
 /** One overlap the page asks about: two act names as the page shows them, and its minutes on this grid. */
 export type PriceOverlap = { a: string; b: string; minutes: number };
 
+/** Why an overlap the rule passed over was never sent: both sets locked, or an act with no usable signal. */
+export type PassedReason = "locked" | "no_signal";
+
+/** An overlap passed over before the request, with its reason. */
+export type PassedOverlap = PriceOverlap & { reason: PassedReason };
+
+/**
+ * How the pairs were chosen: a pasted grid's longest overlaps, or (a published day loaded here) the saved
+ * day's own ranked clashes, costliest first by this app's index.
+ */
+export type PriceBasis = "longest" | "saved_ranking";
+
+/**
+ * A published day's own ranking, as the presets route already serves it: its ranked clashes, costliest
+ * first, as act names, and the acts it marks as having no usable signal. Held in memory for the request;
+ * no value of it is printed.
+ */
+export type SavedRanking = { pairs: { a: string; b: string }[]; noSignal: string[] };
+
 /** What one press of Compare audience overlap sends, and what the page needs to word it. */
 export type PriceRequest = {
+  /** The act names a saved answer is asked with: the acts of the pairs first, at most 60. */
   acts: string[];
+  /** The act names a live answer would send: the same order, at most 25. */
+  liveActs: string[];
   overlaps: PriceOverlap[];
-  /** Qloo requests a live answer may use: one per act, plus one per distinct act named in a pair. */
+  /** Qloo requests a live answer may use: one per live act, plus one per distinct act named in a pair. */
   need: number;
-  /** Different acts in the grid; past 25 the rest are not sent. */
+  /** Different acts in the grid. */
   total: number;
-  /** Acts of the grid left out of the request (past 25): never sent, so never compared. */
+  /** Acts of the grid left out of a saved request (past 60): never sent, so never compared. */
   omitted: number;
+  /** Acts of the grid left out of a live request (past 25). */
+  liveOmitted: number;
   /**
-   * Overlaps passed over because both of their sets are locked (neither can move), longest first: never
-   * sent, so never compared; the next-longest overlaps are sent instead.
+   * Overlaps passed over, with the reason: both sets locked (neither can move) or an act the saved day marks
+   * as having no usable signal. Never sent, so never compared; the next one in the rule's order is sent instead.
    */
-  skipped: PriceOverlap[];
+  skipped: PassedOverlap[];
+  basis: PriceBasis;
 };
 
 export type PriceSource = "saved_day" | "invented_day" | "qloo_live";
@@ -87,6 +118,8 @@ export type PriceAnswer = {
   /** Act names the request sent, and the grid's acts it left out: the comparator population. */
   sent: number;
   omitted: number;
+  /** How the pairs were chosen (the request's rule); an older caller without it reads as "longest". */
+  basis?: PriceBasis;
 };
 
 export type PriceResult =
@@ -107,8 +140,12 @@ export const PRICE_COPY = {
    * Before the press. `live` is whether this server prices live (from its health answer; unknown counts as
    * off), so the last sentence never offers what the server would refuse.
    */
-  intro: (k: number, n: number, omitted = 0, live = false) =>
-    `The checks above ran in your browser and used no Qloo data. To compare audience overlap for the ${count(k, "longest overlap")}, we send ${
+  intro: (k: number, n: number, omitted = 0, live = false, basis: PriceBasis = "longest") =>
+    `The checks above ran in your browser and used no Qloo data. To compare audience overlap for ${
+      basis === "saved_ranking"
+        ? `the saved day’s ${count(k, "costliest clash", "costliest clashes")} that can move (its own ranking, pairs with both sets locked passed over)`
+        : `the ${count(k, "longest overlap")}`
+    }, we send ${
       omitted > 0 ? `${n} of the grid’s ${n + omitted} act names (the acts of these overlaps first)` : `the ${count(n, "act name")}`
     } and the pairs to this site’s server to look for saved audience data. No times, stages or rules are sent; names are not stored or logged. ${
       live
@@ -142,7 +179,18 @@ export const PRICE_COPY = {
   longestFirst: "Longest first",
   overlapFirst: "Highest taste overlap first",
   sortLabel: "Order",
-  briefHeading: (k: number) => `Taste overlap compared (${count(k, "longest overlap")})`,
+  briefHeading: (k: number, basis: PriceBasis = "longest") =>
+    basis === "saved_ranking"
+      ? `Taste overlap compared (the saved day’s ${count(k, "costliest clash", "costliest clashes")} that can move)`
+      : `Taste overlap compared (${count(k, "longest overlap")})`,
+  /**
+   * Beside the values of a published day's compare: its pairs were chosen by the saved day's index, which
+   * already counts taste overlap, so the order sentence above it is an illustration and not evidence.
+   */
+  workedExample:
+    "These pairs are the saved day's costliest by this app's index, which already includes taste overlap: a worked example, not a test.",
+  /** The closed fold that lists, with its reason, each overlap the step did not compare. */
+  notComparedSummary: (n: number) => `Why ${n === 1 ? "this was" : "these were"} not compared (${n})`,
 } as const;
 
 /** The third-party sentence of the live consent: what leaves for Qloo, and whose terms govern it. */
@@ -154,13 +202,20 @@ export function thirdParty(n: number): string {
  * An overlap left out because both of its sets are locked, with its reason in words. A lock says a set
  * cannot move; it says nothing about whether the overlap is wanted.
  */
-export function lockedLine(overlap: PriceOverlap): string {
-  return `${pairName(overlap)}: ${overlap.minutes} min shared. Not compared: both sets are locked, so neither can move; the next-longest overlap is compared instead.`;
+export function lockedLine(overlap: PriceOverlap, basis: PriceBasis = "longest"): string {
+  const next = basis === "saved_ranking" ? "the next clash in the saved day’s ranking" : "the next-longest overlap";
+  return `${pairName(overlap)}: ${overlap.minutes} min shared. Not compared: both sets are locked, so neither can move; ${next} is compared instead.`;
 }
 
-/** "This grid has 30 different acts and at most 25 are sent, so 5 acts are not sent and not compared." */
-export function omittedLine(omitted: number, total: number): string {
-  return `This grid has ${total} different acts and at most ${PRICE_LIMITS.maxActs} are sent, so ${count(omitted, "act")} ${
+/** An overlap passed over before the request, with its reason in words. */
+export function passedLine(overlap: PassedOverlap, basis: PriceBasis = "longest"): string {
+  if (overlap.reason === "locked") return lockedLine(overlap, basis);
+  return `${pairName(overlap)}: ${overlap.minutes} min shared. Not compared: the saved day marks an act of this pair as having no usable Qloo signal, so it was not sent.`;
+}
+
+/** "This grid has 70 different acts and at most 60 are sent, so 10 acts are not sent and not compared." */
+export function omittedLine(omitted: number, total: number, cap: number = PRICE_LIMITS.savedActs): string {
+  return `This grid has ${total} different acts and at most ${cap} are sent, so ${count(omitted, "act")} ${
     omitted === 1 ? "is" : "are"
   } not sent and not compared.`;
 }
@@ -171,7 +226,8 @@ export function omittedLine(omitted: number, total: number): string {
  * the acts sent for a live answer; with the grid's acts that were not sent counted.
  */
 export function rankScope(answer: ScopeOf): string {
-  const left = answer.omitted > 0 ? ` ${omittedLine(answer.omitted, answer.sent + answer.omitted)}` : "";
+  const cap = answer.source === "qloo_live" ? PRICE_LIMITS.maxActs : PRICE_LIMITS.savedActs;
+  const left = answer.omitted > 0 ? ` ${omittedLine(answer.omitted, answer.sent + answer.omitted, cap)}` : "";
   const lineup = answer.comparator?.kind === "saved_day" ? ` of ${count(answer.comparator.acts, "act")}` : "";
   if (answer.source === "saved_day") {
     return `Values come from the saved day: each is a rank among the acts on that day’s lineup${lineup}, not among the acts you pasted, and not attendance. “Ranked 1 of n” orders only the pairs compared here.${left}`;
@@ -234,62 +290,132 @@ function ordinal(value: number): string {
 // ---------------------------------------------------------------------------------------------------
 // The request
 
-/**
- * The longest overlaps of the grid, one per pair of acts, and the act names to send: the acts of
- * those overlaps first, then the grid's other acts in grid order, at most 25. Null when the grid has
- * fewer than four different acts or no two sets share time.
- */
-export function priceRequest(report: Pick<CheckReport, "sets" | "shared">): PriceRequest | null {
-  const names = new Map<string, string>();
-  for (const set of report.sets) if (!names.has(set.actKey)) names.set(set.actKey, set.act);
-  if (names.size < PRICE_LIMITS.minActs) return null;
+function pairKey(a: string, b: string): string {
+  return [a, b].sort().join("\u0000");
+}
 
-  // The longest overlaps a programmer could move: a pair whose two sets are both locked is passed over
-  // (said so, with its reason) and the next-longest is taken instead.
+/** A pasted grid's rule: its longest overlaps, one per pair of acts, a pair with both sets locked passed over. */
+function longestPairs(report: Pick<CheckReport, "shared">): { chosen: SharedPair[]; passed: PassedOverlap[] } {
   const seen = new Set<string>();
   const chosen: SharedPair[] = [];
-  const passed: SharedPair[] = [];
+  const passed: PassedOverlap[] = [];
   for (const pair of report.shared) {
-    const key = [pair.a.actKey, pair.b.actKey].sort().join("\u0000");
+    const key = pairKey(pair.a.actKey, pair.b.actKey);
     if (seen.has(key)) continue;
     seen.add(key);
     if (pair.a.locked && pair.b.locked) {
-      passed.push(pair);
+      passed.push({ a: pair.a.act, b: pair.b.act, minutes: pair.minutes, reason: "locked" });
       continue;
     }
     chosen.push(pair);
     if (chosen.length === PRICE_LIMITS.pairs) break;
   }
+  return { chosen, passed };
+}
+
+/**
+ * A published day's rule: the saved day's ranked clashes in its own order (costliest first by this app's
+ * index), each matched to the overlap it is on the grid checked; a pair whose two sets are both locked, or
+ * with an act the saved day marks as having no usable signal, is passed over with its reason; at most 10.
+ * A ranked pair that no longer shares time on this grid (a change was tried) is not an overlap here.
+ */
+function rankedPairs(
+  report: Pick<CheckReport, "shared">,
+  ranking: SavedRanking,
+): { chosen: SharedPair[]; passed: PassedOverlap[] } {
+  const longest = new Map<string, SharedPair>();
+  for (const pair of report.shared) {
+    const key = pairKey(pair.a.actKey, pair.b.actKey);
+    if (!longest.has(key)) longest.set(key, pair);
+  }
+  const quiet = new Set(ranking.noSignal.map(normalizeName));
+  const seen = new Set<string>();
+  const chosen: SharedPair[] = [];
+  const passed: PassedOverlap[] = [];
+  for (const ranked of ranking.pairs) {
+    const key = pairKey(normalizeName(ranked.a), normalizeName(ranked.b));
+    const found = longest.get(key);
+    if (!found || seen.has(key)) continue;
+    seen.add(key);
+    // Named in the saved ranking's own order, as the timetable page names the pair.
+    const pair = found.a.actKey === normalizeName(ranked.a) ? found : { ...found, a: found.b, b: found.a };
+    const shown = { a: pair.a.act, b: pair.b.act, minutes: pair.minutes };
+    if (pair.a.locked && pair.b.locked) {
+      passed.push({ ...shown, reason: "locked" });
+      continue;
+    }
+    if (quiet.has(pair.a.actKey) || quiet.has(pair.b.actKey)) {
+      passed.push({ ...shown, reason: "no_signal" });
+      continue;
+    }
+    chosen.push(pair);
+    if (chosen.length === PRICE_LIMITS.savedPairs) break;
+  }
+  return { chosen, passed };
+}
+
+/**
+ * The pairs to compare and the act names to send. A pasted grid: its 5 longest overlaps (both-locked pairs
+ * passed over). A published day loaded here (`ranking` given): up to 10 of the saved day's own ranked
+ * clashes, costliest first, both-locked and no-signal pairs passed over; when none of them is left, the
+ * pasted rule. The act names: the acts of the pairs first, then the grid's other acts in grid order, at
+ * most 60 for a saved answer and 25 for a live one. Null when the grid has fewer than four different acts
+ * or no pair to compare.
+ */
+export function priceRequest(
+  report: Pick<CheckReport, "sets" | "shared">,
+  ranking: SavedRanking | null = null,
+): PriceRequest | null {
+  const names = new Map<string, string>();
+  for (const set of report.sets) if (!names.has(set.actKey)) names.set(set.actKey, set.act);
+  if (names.size < PRICE_LIMITS.minActs) return null;
+
+  let basis: PriceBasis = "longest";
+  let { chosen, passed } = { chosen: [] as SharedPair[], passed: [] as PassedOverlap[] };
+  if (ranking) {
+    ({ chosen, passed } = rankedPairs(report, ranking));
+    if (chosen.length > 0) basis = "saved_ranking";
+  }
+  if (chosen.length === 0) ({ chosen, passed } = longestPairs(report));
   if (chosen.length === 0) return null;
 
   const order: string[] = [];
   const add = (key: string) => {
-    if (!order.includes(key) && order.length < PRICE_LIMITS.maxActs) order.push(key);
+    if (!order.includes(key) && order.length < PRICE_LIMITS.savedActs) order.push(key);
   };
   for (const pair of chosen) {
     add(pair.a.actKey);
     add(pair.b.actKey);
   }
   for (const key of names.keys()) add(key);
+  const live = order.slice(0, PRICE_LIMITS.maxActs);
 
   const inPairs = new Set(chosen.flatMap((pair) => [pair.a.actKey, pair.b.actKey]));
   return {
     total: names.size,
     omitted: names.size - order.length,
+    liveOmitted: names.size - live.length,
     acts: order.map((key) => names.get(key) as string),
+    liveActs: live.map((key) => names.get(key) as string),
     overlaps: chosen.map((pair) => ({
       a: names.get(pair.a.actKey) as string,
       b: names.get(pair.b.actKey) as string,
       minutes: pair.minutes,
     })),
-    need: order.length + inPairs.size,
-    skipped: passed.map((pair) => ({ a: pair.a.act, b: pair.b.act, minutes: pair.minutes })),
+    need: live.length + inPairs.size,
+    skipped: passed,
+    basis,
   };
+}
+
+/** The act names a request sends in this mode: every name up to 60 for a saved answer, 25 for a live one. */
+export function sentActs(request: Pick<PriceRequest, "acts" | "liveActs">, mode: PriceMode): string[] {
+  return mode === "live" ? request.liveActs : request.acts;
 }
 
 /** The body as sent: exactly `acts`, `pairs` and `mode`. */
 export function priceBody(request: PriceRequest, mode: PriceMode): string {
-  return JSON.stringify({ acts: request.acts, pairs: request.overlaps.map((o) => [o.a, o.b]), mode });
+  return JSON.stringify({ acts: sentActs(request, mode), pairs: request.overlaps.map((o) => [o.a, o.b]), mode });
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -308,7 +434,7 @@ const SOURCES: ReadonlySet<string> = new Set(["saved_day", "invented_day", "qloo
 /** A list of names from the route, clipped; null when the key is absent or not a list of strings. */
 function names(value: unknown): string[] | null {
   if (!Array.isArray(value) || !value.every((name) => typeof name === "string")) return null;
-  return value.slice(0, 25).map((name: string) => name.slice(0, 80));
+  return value.slice(0, PRICE_LIMITS.savedActs).map((name: string) => name.slice(0, 80));
 }
 
 function comparatorOf(value: unknown): PriceAnswer["comparator"] {
@@ -366,8 +492,9 @@ export function parsePriceAnswer(json: unknown, request: PriceRequest, mode: Pri
     requestsUsed: json.requests_used,
     comparator: comparatorOf(json.comparator),
     presetId: typeof json.preset_id === "string" ? json.preset_id.slice(0, 80) : null,
-    sent: request.acts.length,
-    omitted: request.omitted,
+    sent: sentActs(request, mode).length,
+    omitted: mode === "live" ? request.liveOmitted : request.omitted,
+    basis: request.basis,
   };
 }
 
@@ -523,12 +650,14 @@ export type LineOf = Pick<PriceAnswer, "pairs" | "coverage"> & { source?: PriceS
 /**
  * Why a pair has no value, in words, from the reasons and the coverage lists the route returns: an act
  * matched with no usable signal, an act that is not on the saved day (so the two are not both on one
- * saved day), a name that matched more than one act, or a pair the saved day holds no reading for.
+ * saved day), a name that matched more than one act, or a pair the saved day serves no reading for (saved
+ * pricing answers only the pairs the timetable page prints; the rest of the saved readings stay on the
+ * server).
  */
 export function unpricedReason(pair: Pick<PricedPair, "a" | "b" | "reason">, answer: LineOf): string {
   const sides = [pair.a, pair.b];
   if (pair.reason === "not_ranked_on_saved_day") {
-    return "both acts are on the saved day, but it holds no reading for these two together";
+    return "both acts are on the saved day, but this demo serves readings only for the pairs its timetable page shows, and this pair is not one of them";
   }
   if (pair.reason === "ambiguous") {
     const unsure = sides.filter((name) => answer.coverage.ambiguous?.includes(name));
@@ -561,6 +690,65 @@ export function unpricedReason(pair: Pick<PricedPair, "a" | "b" | "reason">, ans
   return `${names.join(" and ")} ${names.length === 1 ? "has" : "have"} ${signal}`;
 }
 
+/** An overlap the step did not compare: passed over before the request, or sent and answered with no value. */
+export type NotCompared = { kind: "passed"; overlap: PassedOverlap } | { kind: "unpriced"; pair: PricedPair };
+
+/** Every overlap the step did not compare, passed over first, then those sent without a value. */
+export function notCompared(skipped: readonly PassedOverlap[], answer: Pick<PriceAnswer, "pairs"> | null): NotCompared[] {
+  return [
+    ...skipped.map((overlap): NotCompared => ({ kind: "passed", overlap })),
+    ...(answer ? answer.pairs : [])
+      .filter((pair) => pair.status !== "priced")
+      .map((pair): NotCompared => ({ kind: "unpriced", pair })),
+  ];
+}
+
+/**
+ * The short kind of a reason, for the one count line: "both sets locked", "no usable Qloo signal", "not on
+ * the saved day", "ambiguous name" or "no reading served for the pair".
+ */
+export function notComparedKind(item: NotCompared, answer: LineOf | null): string {
+  const signal = answer?.source === "invented_day" ? "no usable signal" : "no usable Qloo signal";
+  if (item.kind === "passed") return item.overlap.reason === "locked" ? "both sets locked" : signal;
+  const { pair } = item;
+  if (pair.reason === "not_ranked_on_saved_day") return "no reading served for the pair";
+  if (pair.reason === "ambiguous") return "ambiguous name";
+  if (!answer) return signal;
+  const { noSignal, ambiguous, unpriced } = answer.coverage;
+  const sides = [pair.a, pair.b];
+  if (noSignal === null || sides.some((name) => noSignal.includes(name))) return signal;
+  const absent = sides.some(
+    (name) => unpriced.includes(name) && !noSignal.includes(name) && !(ambiguous ?? []).includes(name),
+  );
+  if (!absent) return signal;
+  return answer.source === "qloo_live"
+    ? "not found by Qloo"
+    : answer.source === "invented_day"
+      ? "not on the invented example day"
+      : "not on the saved day";
+}
+
+/** One overlap not compared, in words: its passed-over line, or its unpriced row. */
+export function notComparedText(item: NotCompared, answer: LineOf | null, basis: PriceBasis = "longest"): string {
+  if (item.kind === "passed") return passedLine(item.overlap, basis);
+  return answer ? pairLine(item.pair, answer) : pairName(item.pair);
+}
+
+/**
+ * The one count line for the overlaps not compared, by kind in order of first appearance: "3 overlaps not
+ * compared: both sets locked (3)." Null when every overlap considered was compared.
+ */
+export function notComparedLine(items: readonly NotCompared[], answer: LineOf | null): string | null {
+  if (items.length === 0) return null;
+  const kinds = new Map<string, number>();
+  for (const item of items) {
+    const kind = notComparedKind(item, answer);
+    kinds.set(kind, (kinds.get(kind) ?? 0) + 1);
+  }
+  const parts = [...kinds].map(([kind, n]) => `${kind} (${n})`);
+  return `${count(items.length, "overlap")} not compared: ${parts.join(", ")}.`;
+}
+
 /**
  * One row: "A × B: 80 min shared. Taste overlap 91 / 100, ranked 1 of 5." The rank is among the priced
  * pairs of this answer ("the only pair compared" when it is the only one). An unpriced row says why, in
@@ -576,28 +764,36 @@ export function pairLine(pair: PricedPair, answer: LineOf): string {
   return `${head} Not compared: ${unpricedReason(pair, answer)}. Shown by minutes only.`;
 }
 
-/** The pairs as listed: longest first (the grid's order), or highest taste overlap first with unpriced pairs last. */
+/**
+ * The pairs as listed: longest first (a stable sort by minutes, so a pasted grid keeps its own order), or
+ * highest taste overlap first; unpriced pairs last either way.
+ */
 export function sortedPairs(answer: Pick<PriceAnswer, "pairs">, order: "minutes" | "overlap"): PricedPair[] {
   const pairs = [...answer.pairs];
-  if (order === "minutes") return pairs;
   const position = new Map(pairs.map((pair, index) => [pair, index]));
   return pairs.sort((x, y) => {
     if (x.overlap === null || y.overlap === null) {
       if (x.overlap !== y.overlap) return x.overlap === null ? 1 : -1;
-    } else if (x.overlap !== y.overlap) return y.overlap - x.overlap;
+    } else if (order === "overlap" && x.overlap !== y.overlap) return y.overlap - x.overlap;
+    if (order === "minutes" && x.minutes !== y.minutes) return y.minutes - x.minutes;
     return (position.get(x) as number) - (position.get(y) as number);
   });
 }
 
+/** The priced pairs of an answer, in the order chosen: the values the step shows first. */
+export function comparedPairs(answer: Pick<PriceAnswer, "pairs">, order: "minutes" | "overlap"): PricedPair[] {
+  return sortedPairs(answer, order).filter((pair) => pair.status === "priced");
+}
+
 /**
- * Whether taste overlap reorders the compared overlaps, judged among the priced pairs only: their
- * order by minutes against their order by taste overlap. "Taste overlap changes the order of the
- * 4 compared overlaps: A × B moves from 4th to 1st." (the pair that rises most), or "does not change
- * the order". An unpriced pair is never part of that comparison: a separate sentence says it is listed
- * last. Null when fewer than two pairs were priced, so there is no order to compare.
+ * Whether taste overlap reorders the compared overlaps, judged among the priced pairs only: their order by
+ * minutes (longest first) against their order by taste overlap. "Taste overlap changes the order of the 4
+ * compared overlaps: A × B moves from 4th to 1st." (the pair that rises most), or "does not change the
+ * order". An unpriced pair is never part of that comparison: the count line under the values says how
+ * many were not compared, and why. Null when fewer than two pairs were priced.
  */
 export function orderLine(answer: Pick<PriceAnswer, "pairs">): string | null {
-  const priced = answer.pairs.filter((pair) => pair.status === "priced" && pair.overlap !== null);
+  const priced = comparedPairs(answer, "minutes");
   if (priced.length < 2) return null;
   const byOverlap = sortedPairs({ pairs: priced }, "overlap");
   let best: { pair: PricedPair; from: number; to: number } | null = null;
@@ -608,15 +804,8 @@ export function orderLine(answer: Pick<PriceAnswer, "pairs">): string | null {
       best = { pair, from, to };
     }
   });
-  const unpriced = answer.pairs.length - priced.length;
-  const tail =
-    unpriced === 0
-      ? ""
-      : unpriced === 1
-        ? " The overlap without a reading is listed last, by minutes only."
-        : ` The ${unpriced} overlaps without a reading are listed last, by minutes only.`;
   const compared = `the ${priced.length} compared overlaps`;
   const moved = best as { pair: PricedPair; from: number; to: number } | null;
-  if (!moved) return `Taste overlap does not change the order of ${compared}.${tail}`;
-  return `Taste overlap changes the order of ${compared}: ${pairName(moved.pair)} moves from ${ordinal(moved.from + 1)} to ${ordinal(moved.to + 1)}.${tail}`;
+  if (!moved) return `Taste overlap does not change the order of ${compared}.`;
+  return `Taste overlap changes the order of ${compared}: ${pairName(moved.pair)} moves from ${ordinal(moved.from + 1)} to ${ordinal(moved.to + 1)}.`;
 }

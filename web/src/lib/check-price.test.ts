@@ -11,6 +11,11 @@ import {
   loadPublishedDay,
   loadPublishedTimetable,
   lockedLine,
+  omittedLine,
+  notCompared,
+  notComparedLine,
+  notComparedText,
+  passedLine,
   priceGridLive,
   tasteScore,
   thirdParty,
@@ -107,13 +112,40 @@ describe("what a press sends", () => {
     }
   });
 
-  it("asks nothing of a grid with fewer than four acts or no overlap, and never more than 25 acts", () => {
+  it("asks nothing of a grid with fewer than four acts or no overlap, and never more than 60 acts saved or 25 live", () => {
     expect(priceRequest(reportOf("A,Main,18:00,19:00\nB,Side,18:30,19:30\nC,Tent,18:00,19:00"))).toBeNull();
     expect(priceRequest(reportOf("A,Main,18:00,19:00\nB,Main,19:30,20:30\nC,Main,21:00,22:00\nD,Main,22:30,23:00"))).toBeNull();
     const many = Array.from({ length: 40 }, (_, i) => `Act ${i},Stage ${i % 8},${10 + Math.floor(i / 8) * 2}:00,${11 + Math.floor(i / 8) * 2}:30`).join("\n");
     const request = priceRequest(reportOf(many)) as PriceRequest;
-    expect(request.acts).toHaveLength(PRICE_LIMITS.maxActs);
-    for (const o of request.overlaps) expect(request.acts).toEqual(expect.arrayContaining([o.a, o.b]));
+    // A saved answer sends no Qloo request, so every name of a 40-act grid goes; a live one takes 25.
+    expect(request.acts).toHaveLength(40);
+    expect(request.liveActs).toHaveLength(PRICE_LIMITS.maxActs);
+    expect(request).toMatchObject({ omitted: 0, liveOmitted: 15 });
+    expect(request.liveActs).toEqual(request.acts.slice(0, PRICE_LIMITS.maxActs));
+    for (const o of request.overlaps) {
+      expect(request.acts).toEqual(expect.arrayContaining([o.a, o.b]));
+      expect(request.liveActs).toEqual(expect.arrayContaining([o.a, o.b]));
+    }
+    // The check reads at most 60 sets, so a saved request never leaves a name out; the cap is the route's.
+    const sixty = Array.from({ length: 60 }, (_, i) => `Act ${i},Stage ${i % 10},${10 + Math.floor(i / 10) * 2}:00,${11 + Math.floor(i / 10) * 2}:30`).join("\n");
+    const full = priceRequest(reportOf(sixty)) as PriceRequest;
+    expect(full.acts).toHaveLength(PRICE_LIMITS.savedActs);
+    expect(full).toMatchObject({ total: 60, omitted: 0, liveOmitted: 35 });
+  });
+
+  it("sends every act name up to 60 in saved mode and 25 in live mode, with the same pairs (K2)", () => {
+    const many = Array.from({ length: 40 }, (_, i) => `Act ${i},Stage ${i % 8},${10 + Math.floor(i / 8) * 2}:00,${11 + Math.floor(i / 8) * 2}:30`).join("\n");
+    const request = priceRequest(reportOf(many)) as PriceRequest;
+    const saved = JSON.parse(priceBody(request, "saved")) as { acts: string[]; pairs: string[][] };
+    const live = JSON.parse(priceBody(request, "live")) as { acts: string[]; pairs: string[][] };
+    expect(saved.acts).toHaveLength(40);
+    expect(live.acts).toHaveLength(25);
+    expect(saved.pairs).toEqual(live.pairs);
+    expect(saved.pairs).toHaveLength(PRICE_LIMITS.pairs);
+    // The live consent counts the live names; the intro the saved ones, with no "not sent" clause when none is left out.
+    expect(PRICE_COPY.intro(request.overlaps.length, request.acts.length, request.omitted)).toContain("we send the 40 act names and the pairs");
+    expect(scopeNote(null, request)).not.toMatch(/not sent/);
+    expect(request.need).toBe(25 + new Set(request.overlaps.flatMap((o) => [o.a, o.b])).size);
   });
 
   it("does not ask about the same two acts twice when one act plays two sets", () => {
@@ -233,7 +265,7 @@ describe("the words of an answer", () => {
     expect(coverageLine(answer)).toBe("23 of 24 acts with a usable signal");
     const notRanked = { ...last, reason: "not_ranked_on_saved_day" as const };
     expect(pairLine(notRanked, answer)).toContain(
-      "Not compared: both acts are on the saved day, but it holds no reading for these two together. Shown by minutes only.",
+      "Not compared: both acts are on the saved day, but this demo serves readings only for the pairs its timetable page shows, and this pair is not one of them. Shown by minutes only.",
     );
   });
 
@@ -243,7 +275,7 @@ describe("the words of an answer", () => {
     expect(sortedPairs(answer, "minutes")).toEqual(answer.pairs);
     const fourth = answer.pairs[3];
     expect(orderLine(answer)).toBe(
-      `Taste overlap changes the order of the 4 compared overlaps: ${fourth.a} × ${fourth.b} moves from 4th to 1st. The overlap without a reading is listed last, by minutes only.`,
+      `Taste overlap changes the order of the 4 compared overlaps: ${fourth.a} × ${fourth.b} moves from 4th to 1st.`,
     );
     const same = parsePriceAnswer(answerFor(request, "invented_day", [0.9, 0.8, 0.7, 0.6, 0.5]), request, "saved") as PriceAnswer;
     expect(orderLine(same)).toBe("Taste overlap does not change the order of the 5 compared overlaps.");
@@ -277,14 +309,14 @@ describe("round-9 regressions: order, rank scope and recovery", () => {
     const answer = parsePriceAnswer(answerFor(request, "invented_day", [null, 0.6, 0.3, null, null]), request, "saved") as PriceAnswer;
     expect(sortedPairs(answer, "overlap").map((p) => p.overlap)).toEqual([0.6, 0.3, null, null, null]);
     const line = orderLine(answer) as string;
-    expect(line).toBe(
-      "Taste overlap does not change the order of the 2 compared overlaps. The 3 overlaps without a reading are listed last, by minutes only.",
-    );
+    expect(line).toBe("Taste overlap does not change the order of the 2 compared overlaps.");
     expect(line).not.toMatch(/moves from/);
+    // The overlaps without a reading are counted once, under the values, by kind.
+    expect(notComparedLine(notCompared([], answer), answer)).toBe("3 overlaps not compared: no usable signal (3).");
     // A real swap among the priced pairs is still named, by its place among the priced pairs only.
     const swapped = parsePriceAnswer(answerFor(request, "invented_day", [null, 0.3, 0.6, null, null]), request, "saved") as PriceAnswer;
     expect(orderLine(swapped)).toBe(
-      `Taste overlap changes the order of the 2 compared overlaps: ${request.overlaps[2].a} × ${request.overlaps[2].b} moves from 2nd to 1st. The 3 overlaps without a reading are listed last, by minutes only.`,
+      `Taste overlap changes the order of the 2 compared overlaps: ${request.overlaps[2].a} × ${request.overlaps[2].b} moves from 2nd to 1st.`,
     );
     // Equal values keep the minutes order: no move is claimed.
     const tied = parsePriceAnswer(answerFor(request, "invented_day", [0.5, 0.5, 0.5, 0.5, 0.5]), request, "saved") as PriceAnswer;
@@ -309,19 +341,27 @@ describe("round-9 regressions: order, rank scope and recovery", () => {
     }
   });
 
-  it("says how many acts were not sent when a draft has more than 25", () => {
+  it("says how many acts were not sent: past 60 for a saved answer, past 25 for a live one", () => {
     const grid = Array.from({ length: 30 }, (_, i) => `Act ${i},Stage ${i % 6},${10 + Math.floor(i / 6) * 2}:00,${11 + Math.floor(i / 6) * 2}:30`).join("\n");
     const request = priceRequest(reportOf(grid)) as PriceRequest;
-    expect(request.acts).toHaveLength(25);
-    expect(request).toMatchObject({ total: 30, omitted: 5 });
-    expect(PRICE_COPY.intro(request.overlaps.length, request.acts.length, request.omitted)).toContain(
-      "we send 25 of the grid’s 30 act names (the acts of these overlaps first) and the pairs",
-    );
-    expect(scopeNote(null, request)).toContain("This grid has 30 different acts and at most 25 are sent, so 5 acts are not sent and not compared.");
+    expect(request.acts).toHaveLength(30);
+    expect(request.liveActs).toHaveLength(25);
+    expect(request).toMatchObject({ total: 30, omitted: 0, liveOmitted: 5 });
+    expect(PRICE_COPY.intro(request.overlaps.length, request.acts.length, request.omitted)).toContain("we send the 30 act names and the pairs");
+    expect(scopeNote(null, request)).not.toContain("not sent");
     const live = parsePriceAnswer(answerFor(request, "qloo_live", [0.5, 0.4, 0.3, 0.2, 0.1].slice(0, request.overlaps.length)), request, "live") as PriceAnswer;
     expect(live.omitted).toBe(5);
     expect(rankScope(live)).toBe(
       "A rank among the 25 acts sent to Qloo just now, not attendance, and not comparable with a published day’s figures. This grid has 30 different acts and at most 25 are sent, so 5 acts are not sent and not compared.",
+    );
+    const saved = parsePriceAnswer(answerFor(request, "saved_day", [0.5, 0.4, 0.3, 0.2, 0.1].slice(0, request.overlaps.length)), request, "saved") as PriceAnswer;
+    expect(saved).toMatchObject({ sent: 30, omitted: 0 });
+    expect(rankScope(saved)).not.toContain("not sent");
+    // Were a grid ever past the saved cap, the same sentences would say so with the cap that applies.
+    expect(PRICE_COPY.intro(5, 60, 4)).toContain("we send 60 of the grid’s 64 act names (the acts of these overlaps first) and the pairs");
+    expect(omittedLine(4, 64)).toBe("This grid has 64 different acts and at most 60 are sent, so 4 acts are not sent and not compared.");
+    expect(omittedLine(5, 30, PRICE_LIMITS.maxActs)).toBe(
+      "This grid has 30 different acts and at most 25 are sent, so 5 acts are not sent and not compared.",
     );
   });
 
@@ -522,7 +562,8 @@ describe("round 31: pairs a programmer could move (C5) and reasons in words (C9)
     const request = priceRequest(report) as PriceRequest;
     expect(request.overlaps).toHaveLength(PRICE_LIMITS.pairs);
     expect(request.overlaps.some((o) => [o.a, o.b].sort().join("|") === "Pine Lantern|Quill Harbor")).toBe(false);
-    expect(request.skipped).toEqual([{ a: both?.a.act, b: both?.b.act, minutes: both?.minutes }]);
+    expect(request.skipped).toEqual([{ a: both?.a.act, b: both?.b.act, minutes: both?.minutes, reason: "locked" }]);
+    expect(request.basis).toBe("longest");
     // A pair with one locked set is still sent.
     expect(request.overlaps.some((o) => o.a === "Pine Lantern" || o.b === "Pine Lantern")).toBe(true);
   });
@@ -556,9 +597,11 @@ describe("round 31: pairs a programmer could move (C5) and reasons in words (C9)
     expect(unpricedReason({ a: "Pine Lantern", b: "Tin Orchard", reason: "ambiguous" }, saved)).toBe(
       "Tin Orchard matched more than one act of that name, so none was picked",
     );
+    // K4: true to the server, which answers only the pairs the timetable page prints (pair.py taste_pairs).
     expect(unpricedReason({ a: "Pine Lantern", b: "Quill Harbor", reason: "not_ranked_on_saved_day" }, saved)).toBe(
-      "both acts are on the saved day, but it holds no reading for these two together",
+      "both acts are on the saved day, but this demo serves readings only for the pairs its timetable page shows, and this pair is not one of them",
     );
+    expect(unpricedReason({ a: "Pine Lantern", b: "Quill Harbor", reason: "not_ranked_on_saved_day" }, saved)).not.toMatch(/holds no reading/);
     for (const reason of ["no_signal", "ambiguous", "not_ranked_on_saved_day"] as const) {
       expect(unpricedReason({ a: "Pine Lantern", b: "Sable Comet", reason }, saved)).not.toMatch(/not ranked on the saved day/);
     }
@@ -596,5 +639,116 @@ describe("round 31: a published day to check (C8)", () => {
     }
     vi.stubGlobal("fetch", respond(500, {}));
     expect(await loadPublishedDay()).toBeNull();
+  });
+});
+
+describe("round 32: a published day compares its saved day's own costliest clashes (K1, K3)", () => {
+  // An invented published day: every name and every value below is invented for the test.
+  const grid = [
+    "act,stage,start,end,locked",
+    "Amber Coast,North,18:00,19:00,",
+    "Birch Lane,South,18:15,19:00,",
+    "Cobalt Fern,East,18:00,19:30,yes",
+    "Dune Parade,West,18:00,19:30,yes",
+    "Elm Signal,Club,18:30,19:00,",
+    "Fox Harbour,Tent,17:30,19:30,",
+    "Gale Rooms,Field,18:00,18:45,",
+  ].join("\n");
+  const report = reportOf(grid);
+  // The saved ranking, costliest first: a both-locked pair, a pair with a no-signal act, then movable pairs.
+  const ranking = {
+    pairs: [
+      { a: "Cobalt Fern", b: "Dune Parade" },
+      { a: "Gale Rooms", b: "Amber Coast" },
+      { a: "Birch Lane", b: "Amber Coast" },
+      { a: "Elm Signal", b: "Fox Harbour" },
+      { a: "Nobody Here", b: "Amber Coast" },
+      { a: "Amber Coast", b: "Fox Harbour" },
+    ],
+    noSignal: ["Gale Rooms"],
+  };
+
+  it("takes the saved day's ranked clashes in its order, passing over both-locked and no-signal pairs", () => {
+    const request = priceRequest(report, ranking) as PriceRequest;
+    expect(request.basis).toBe("saved_ranking");
+    // The first pair compared is the saved day's first movable one, named in the ranking's own order.
+    expect(request.overlaps.map((o) => `${o.a} × ${o.b}`)).toEqual([
+      "Birch Lane × Amber Coast",
+      "Elm Signal × Fox Harbour",
+      "Amber Coast × Fox Harbour",
+    ]);
+    expect(request.skipped.map((o) => [o.a, o.b, o.reason])).toEqual([
+      ["Cobalt Fern", "Dune Parade", "locked"],
+      ["Gale Rooms", "Amber Coast", "no_signal"],
+    ]);
+    // Every act name of the grid is sent in saved mode.
+    expect(request.acts).toHaveLength(7);
+    expect(new Set(request.acts.slice(0, 4))).toEqual(new Set(["Birch Lane", "Amber Coast", "Elm Signal", "Fox Harbour"]));
+  });
+
+  it("takes at most 10 pairs", () => {
+    const wide = Array.from({ length: 20 }, (_, i) => `Act ${i},Stage ${i % 10},${i < 10 ? "18:00,19:00" : "18:30,19:30"}`).join("\n");
+    const many = reportOf(wide);
+    const pairs = many.shared.map((pair) => ({ a: pair.a.act, b: pair.b.act }));
+    expect(pairs.length).toBeGreaterThan(10);
+    const request = priceRequest(many, { pairs, noSignal: [] }) as PriceRequest;
+    expect(request.overlaps).toHaveLength(PRICE_LIMITS.savedPairs);
+    expect(request.overlaps.map((o) => `${o.a}|${o.b}`)).toEqual(pairs.slice(0, 10).map((p) => `${p.a}|${p.b}`));
+  });
+
+  it("keeps a pasted grid on its longest-first rule, and falls back to it when the ranking matches nothing", () => {
+    const pasted = priceRequest(report) as PriceRequest;
+    expect(pasted.basis).toBe("longest");
+    expect(pasted.overlaps).toEqual((priceRequest(report, null) as PriceRequest).overlaps);
+    expect(pasted.overlaps.map((o) => o.minutes)).toEqual([...pasted.overlaps.map((o) => o.minutes)].sort((x, y) => y - x));
+    const elsewhere = priceRequest(report, { pairs: [{ a: "Nobody", b: "Else" }], noSignal: [] }) as PriceRequest;
+    expect(elsewhere.basis).toBe("longest");
+    expect(elsewhere.overlaps).toEqual(pasted.overlaps);
+  });
+
+  it("words the request and the result: intro, worked-example line, brief heading", () => {
+    const request = priceRequest(report, ranking) as PriceRequest;
+    expect(PRICE_COPY.intro(3, 7, 0, false, "saved_ranking")).toContain(
+      "To compare audience overlap for the saved day’s 3 costliest clashes that can move (its own ranking, pairs with both sets locked passed over), we send the 7 act names and the pairs",
+    );
+    expect(PRICE_COPY.workedExample).toBe(
+      "These pairs are the saved day's costliest by this app's index, which already includes taste overlap: a worked example, not a test.",
+    );
+    expect(PRICE_COPY.briefHeading(3, "saved_ranking")).toBe("Taste overlap compared (the saved day’s 3 costliest clashes that can move)");
+    const answer = parsePriceAnswer(answerFor(request, "saved_day", [0.2, 0.9, null]), request, "saved") as PriceAnswer;
+    expect(answer.basis).toBe("saved_ranking");
+    expect(lockedLine(request.skipped[0], "saved_ranking")).toContain("the next clash in the saved day’s ranking is compared instead");
+    expect(passedLine(request.skipped[1], "saved_ranking")).toBe(
+      "Gale Rooms × Amber Coast: 45 min shared. Not compared: the saved day marks an act of this pair as having no usable Qloo signal, so it was not sent.",
+    );
+  });
+
+  it("orders by minutes, not by the order sent, so the order sentence stays computed for a ranked request", () => {
+    const request = priceRequest(report, ranking) as PriceRequest;
+    // Sent in ranking order (45, 30, 60 minutes); longest first puts the 60-minute pair first.
+    expect(request.overlaps.map((o) => o.minutes)).toEqual([45, 30, 60]);
+    const answer = parsePriceAnswer(answerFor(request, "saved_day", [0.2, 0.9, 0.5]), request, "saved") as PriceAnswer;
+    expect(sortedPairs(answer, "minutes").map((p) => p.minutes)).toEqual([60, 45, 30]);
+    expect(orderLine(answer)).toBe("Taste overlap changes the order of the 3 compared overlaps: Elm Signal × Fox Harbour moves from 3rd to 1st.");
+    const flat = parsePriceAnswer(answerFor(request, "saved_day", [0.5, 0.2, 0.9]), request, "saved") as PriceAnswer;
+    expect(orderLine(flat)).toBe("Taste overlap does not change the order of the 3 compared overlaps.");
+  });
+
+  it("puts the values first, then one count line and every reason in words (K3)", () => {
+    const request = priceRequest(report, ranking) as PriceRequest;
+    const answer = parsePriceAnswer(answerFor(request, "saved_day", [0.2, 0.9, null]), request, "saved") as PriceAnswer;
+    const items = notCompared(request.skipped, answer);
+    expect(items).toHaveLength(3);
+    expect(notComparedLine(items, answer)).toBe("3 overlaps not compared: both sets locked (1), no usable Qloo signal (2).");
+    expect(PRICE_COPY.notComparedSummary(3)).toBe("Why these were not compared (3)");
+    const words = items.map((item) => notComparedText(item, answer, request.basis));
+    expect(words[0]).toMatch(/Not compared: both sets are locked/);
+    expect(words[1]).toMatch(/Not compared: the saved day marks an act of this pair as having no usable Qloo signal/);
+    expect(words[2]).toMatch(/Not compared: .+ has no usable Qloo signal\. Shown by minutes only\./);
+    // Before an answer, only the passed-over pairs are counted.
+    expect(notComparedLine(notCompared(request.skipped, null), null)).toBe(
+      "2 overlaps not compared: both sets locked (1), no usable Qloo signal (1).",
+    );
+    expect(notComparedLine([], answer)).toBeNull();
   });
 });

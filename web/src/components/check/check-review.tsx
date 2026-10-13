@@ -38,6 +38,11 @@ export function comparedLine(state: PriceState): { value: string; done: boolean 
   return { value: `${pairs} · asked Qloo just now`, done: true };
 }
 
+/** The "Rule breaks" row: "3 · 1 of 3 reviewed", or "0" when there is nothing to review. */
+export function ruleBreaksValue(counts: Pick<ReviewCounts, "breaks" | "breaksReviewed">): string {
+  return counts.breaks === 0 ? "0" : `${counts.breaks} · ${counts.breaksReviewed} of ${counts.breaks} reviewed`;
+}
+
 function Row({ label, children, strong = false }: { label: string; children: ReactNode; strong?: boolean }) {
   return (
     <div className="grid grid-cols-[minmax(0,8.5rem)_minmax(0,1fr)] items-baseline gap-x-3 py-1.5">
@@ -132,9 +137,7 @@ export function CheckReview({
           <Row label="Sets checked">
             {counts.sets} on {counts.stages} {counts.stages === 1 ? "stage" : "stages"}
           </Row>
-          <Row label="Rule breaks">
-            {counts.breaks} · {counts.breaksReviewed} of {counts.breaks} reviewed
-          </Row>
+          <Row label="Rule breaks">{ruleBreaksValue(counts)}</Row>
           <Row label="Overlaps">
             {pairCountLabel(counts.pairs)} · {counts.pairsDecided} decided
           </Row>

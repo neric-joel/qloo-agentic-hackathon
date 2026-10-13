@@ -27,7 +27,8 @@
  * then sets moved, then stage changes, then a fixed order. At most one change is listed per moved set and
  * stage (its smallest shift). A change that moves any set by more than three hours is listed only when
  * nothing smaller exists. One-set moves include a set taking another set's exact start (any minute), and
- * two-set changes are searched even when one-set changes exist, in the same ranking.
+ * two-set changes are searched even when one-set changes exist, in the same ranking. The page then lists
+ * the changes that keep every set on its stage first, each group in this ranking (check-trial-panel.tsx).
  */
 
 import {
@@ -42,12 +43,18 @@ import {
   type RuleId,
   type SharedPair,
 } from "@/lib/check";
+import { pairDecisionId } from "@/lib/check-decisions";
 
 export const TRIAL_LIMITS = {
   /** Candidates tested per search, then the search stops and says so. */
   candidates: 20_000,
   /** Changes listed. */
   shown: 5,
+  /**
+   * Changes that keep every set on its stage the page lists at least, when the search found that many: when
+   * the first five hold fewer, the next ones in the ranking that do are listed with them.
+   */
+  sameStage: 3,
   /** Start times are tried on this grid, in minutes. */
   grid: 5,
   /** Candidates tested between two yields when the search runs in chunks. */
@@ -92,6 +99,11 @@ export type TrialChange = {
   longerThanEnded: boolean;
   /** Shared minutes of the targeted pair before this change (pair targets only). */
   pairBefore: number | null;
+  /**
+   * The decision ids (`pair:` ids, as "Kept on purpose" marks them) of every overlap on the searched grid that
+   * shares time before this change and none after it: the clashes it ends. Optional for an older caller.
+   */
+  ends?: string[];
   sharedBefore: SharedTotals;
   sharedAfter: SharedTotals;
 };
@@ -116,6 +128,12 @@ export type TrialResult = {
   /** True when every change found moves a set by more than three hours, so those are the ones listed. */
   onlyLarge: boolean;
   changes: TrialChange[];
+  /**
+   * The next changes in the ranking that keep every set on its stage, listed after the first five when those
+   * hold fewer than three such changes (the page lists them first). Empty with `everyChange`; optional for an
+   * older caller.
+   */
+  sameStageMore?: TrialChange[];
   summary: string;
 };
 
@@ -144,12 +162,25 @@ export const TRIAL_COPY = {
   scope: "Searches one or two set moves within this day; locked sets stay put. It uses no audience data and sends nothing.",
   scopeSummary: "How the search works",
   scopeDetail:
-    "One-set moves first, then two-set changes, on a 5-minute grid within the day’s span (a set may also take another set’s exact start time), at most 20,000 candidates. A change is listed only if it ends this break, adds no rule break and makes none of the existing ones larger, under your settings. A change that creates an overlap longer than the one it ends is ranked after every change that does not; then they are ranked by total start-time minutes moved, one per moved set and stage; a change that moves a set by more than 3 hours is listed only when nothing smaller exists.",
+    "One-set moves first, then two-set changes, on a 5-minute grid within the day’s span (a set may also take another set’s exact start time), at most 20,000 candidates. A change is listed only if it ends this break, adds no rule break and makes none of the existing ones larger, under your settings. A change that creates an overlap longer than the one it ends is ranked after every change that does not; then they are ranked by total start-time minutes moved, one per moved set and stage; a change that moves a set by more than 3 hours is listed only when nothing smaller exists. Changes that keep every set on its stage are listed first, then changes that move a set to another stage, each group in that ranking. A change that ends an overlap you marked Kept on purpose is not in the list; it waits in its own closed fold.",
   adds: "Adds no rule break and makes none larger.",
   addsGloss: "Other sets may still share time; the grid line below shows the total.",
   stale: "You changed the grid or settings; check again to search.",
   tryIt: "Try it",
   back: "Back to the pasted grid",
+  /** Before the stage-changing changes, when none listed keeps every set on its stage. */
+  noSameStage: "None of the changes listed here keeps every set on its stage.",
+  /** On each change that would end an overlap marked "Kept on purpose" (inside its fold only). */
+  endsKept: "Ends a clash you kept on purpose",
+  keptSummary: (n: number) => `Changes that end a clash you kept on purpose (${n})`,
+  keptLine: (n: number, listed = 1) =>
+    listed === 0
+      ? n === 1
+        ? "The change found ends a clash you kept on purpose, so it is not listed."
+        : `All ${n} changes found end a clash you kept on purpose, so none is listed.`
+      : n === 1
+        ? "1 change found ends a clash you kept on purpose, so it is not listed above."
+        : `${n} changes found end a clash you kept on purpose, so they are not listed above.`,
 } as const;
 
 // ---------------------------------------------------------------------------------------------------
@@ -759,6 +790,13 @@ function buildChange(report: CheckReport, target: TrialTarget, search: Search, c
     pairBefore = overlapBetween(a, b);
   }
   const { line, longer } = tradeOffOf(report, after, target, moves);
+  const afterByRow = new Map(after.sets.map((set) => [set.row, set]));
+  const ends = report.shared
+    .filter((pair) => {
+      const [a, b] = [afterByRow.get(pair.a.row), afterByRow.get(pair.b.row)];
+      return a !== undefined && b !== undefined && overlapBetween(a, b) === 0;
+    })
+    .map(pairDecisionId);
   return {
     moves,
     setsMoved: moves.length,
@@ -770,6 +808,7 @@ function buildChange(report: CheckReport, target: TrialTarget, search: Search, c
     tradeOff: line,
     longerThanEnded: longer,
     pairBefore,
+    ends,
     sharedBefore: totals(report),
     sharedAfter: totals(after),
   };
@@ -866,10 +905,20 @@ export function trialSummary(result: Omit<TrialResult, "summary">): string {
   // in its own words, and the omitted count below says how many more there are and what the two make in all.
   const found = result.found.toLocaleString("en-US");
   const foundWords = result.largeOmitted > 0 ? `${found} within ${LARGE_HOURS} hours found` : `${found} found`;
+  const listed = [...result.changes, ...(result.sameStageMore ?? [])];
   parts.push(
-    `${foundWords}, ${result.changes.length.toLocaleString("en-US")} shown: each ends it, adds no rule break and makes none larger, ranked by total start-time minutes moved, with any that create a longer overlap than they end last.`,
+    `${foundWords}, ${listed.length.toLocaleString("en-US")} shown: each ends it, adds no rule break and makes none larger, ranked by total start-time minutes moved, with any that create a longer overlap than they end last.`,
   );
   parts.push(`${count(result.tested, "candidate")} tested.`);
+  if (listed.some((change) => change.stageChanges > 0)) {
+    parts.push(
+      (result.sameStageMore ?? []).length > 0
+        ? `Changes that keep every set on its stage are listed first; ${(result.sameStageMore ?? []).length} of them ${
+            (result.sameStageMore ?? []).length === 1 ? "comes" : "come"
+          } after the first ${result.changes.length} in the ranking.`
+        : "Changes that keep every set on its stage are listed first.",
+    );
+  }
   if (result.swapsSearched) {
     parts.push(
       result.oneSetPassed === 0
@@ -976,12 +1025,28 @@ export function* trialSteps(
 
   const shown = options.shown ?? TRIAL_LIMITS.shown;
   const changes: TrialChange[] = [];
+  const looked = new Set<Candidate>();
   for (const candidate of pool) {
     // The list is the first few; the rest are only counted, from the search's own tally.
     if (changes.length >= shown) break;
+    looked.add(candidate);
     const change = buildChange(report, target, search, candidate);
     if (!confirmChange(report, target, change)) continue;
     changes.push(change);
+  }
+  // A change that keeps every set on its stage needs no production sign-off: when the first few hold fewer
+  // than three, the next ones in the ranking are listed too (the page lists that group first).
+  const sameStageMore: TrialChange[] = [];
+  let sameStage = changes.filter((change) => change.stageChanges === 0).length;
+  if (!options.everyChange) {
+    for (const candidate of pool) {
+      if (sameStage >= TRIAL_LIMITS.sameStage) break;
+      if (candidate.stageChanges !== 0 || looked.has(candidate)) continue;
+      const change = buildChange(report, target, search, candidate);
+      if (!confirmChange(report, target, change)) continue;
+      sameStageMore.push(change);
+      sameStage += 1;
+    }
   }
   const base = {
     target,
@@ -995,6 +1060,7 @@ export function* trialSteps(
     largeOmitted: onlyLarge ? 0 : distinct.length - ordinary.length,
     onlyLarge,
     changes,
+    sameStageMore,
   };
   return { ...base, summary: trialSummary(base) };
 }

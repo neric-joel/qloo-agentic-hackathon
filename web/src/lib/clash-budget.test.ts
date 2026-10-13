@@ -58,12 +58,23 @@ describe("dialFraction and dialPoint", () => {
 });
 
 describe("describeVsRandom", () => {
-  it("states the gap to the average random valid timetable as taste-overlap cost", () => {
-    expect(describeVsRandom(117)).toBe("17% more taste-overlap cost than the average random valid timetable");
-    expect(describeVsRandom(116.71)).toBe("17% more taste-overlap cost than the average random valid timetable");
-    expect(describeVsRandom(86.48)).toBe("14% less taste-overlap cost than the average random valid timetable");
-    expect(describeVsRandom(100)).toBe("level with the average random valid timetable");
-    expect(describeVsRandom(100.3)).toBe("level with the average random valid timetable");
+  it("reads the gap to the average random valid timetable as a score of this index, not a verdict", () => {
+    expect(describeVsRandom(117)).toBe("By this index, the published timetable scores 17% above the average random valid timetable");
+    expect(describeVsRandom(116.71)).toBe("By this index, the published timetable scores 17% above the average random valid timetable");
+    expect(describeVsRandom(86.48)).toBe("By this index, the published timetable scores 14% below the average random valid timetable");
+    expect(describeVsRandom(100)).toBe("By this index, the published timetable scores level with the average random valid timetable");
+    expect(describeVsRandom(100.3)).toBe("By this index, the published timetable scores level with the average random valid timetable");
+  });
+
+  it("calls the invented day's timetable invented, never published", () => {
+    expect(describeVsRandom(117, true)).toBe("By this index, the invented timetable scores 17% above the average random valid timetable");
+    expect(describeVsRandom(117, true)).not.toContain("published");
+  });
+
+  it("names no cost the festival bears: no 'more cost', 'less cost' or money word", () => {
+    for (const value of [86.48, 100, 117]) {
+      expect(describeVsRandom(value)).not.toMatch(/more taste-overlap cost|less taste-overlap cost|price|money/);
+    }
   });
 });
 

@@ -5,7 +5,6 @@ import { ArrowRight, Check, ChevronRight } from "lucide-react";
 
 import { ProvenanceChip } from "@/components/kernel";
 import { Button } from "@/components/ui/button";
-import { LABEL_META } from "@/lib/clashes";
 import { ATTRIBUTION, type DecisionCopy, type SharedTimeline, type TimelineBar } from "@/lib/decision";
 import { ALREADY_KEPT } from "@/lib/rule-fix";
 import { useInView, useIntroDone } from "@/lib/use-in-view";
@@ -227,27 +226,34 @@ function LineLabel({ n, className }: { n: number; className?: string }) {
 /**
  * Holds the receipt's footprint while the day's decision loads: no heading, nothing to read. The same open
  * frame as the receipt (one 1px rule along the top, nothing else) and the same rows at the heights the
- * receipt's own rows take (the dateline, the heading, the index block, below 1024 px the 44 px button
- * under it, the strip of three lanes and its key, the taste line, the action row, in that order, as the
- * receipt puts them), so the swap moves nothing below it.
+ * receipt's own rows take on the published day the page opens on (the dateline with its saved reading,
+ * the heading, the two "why this clash" lines, the index block, below 1024 px the 44 px button under it,
+ * the strip of three lanes and its key, the action row, in that order, as the receipt puts them), so the
+ * swap moves nothing below it.
  */
 export function DecisionCardSkeleton() {
   const bar = "rounded-sm bg-muted";
   return (
     <div aria-hidden="true" className="border-t border-border pt-5 sm:pt-6">
       <div>
-        <div className="flex h-5 items-center">
-          <div className={cn(bar, "h-3 w-2/5")} />
+        {/* The dateline and its saved reading: two lines at 390 px, one from 640 px. */}
+        <div className="flex h-10 items-center sm:h-5">
+          <div className={cn(bar, "h-3 w-3/5")} />
         </div>
         <div className="mt-1 flex h-13 items-center sm:h-7.5">
           <div className={cn(bar, "h-6 w-4/5")} />
         </div>
-        {/* The index block with its scale line: 132 px at 390 px, 97 px from 640 px (measured). */}
-        <div className="mt-3 flex h-33 flex-col justify-center gap-2.5 sm:h-24.25">
+        {/* The two "why this clash" lines: 81 px at every width on the opening day (measured). */}
+        <div className="mt-3 flex h-20.25 flex-col justify-center gap-2.5">
+          <div className={cn(bar, "h-3 w-11/12")} />
+          <div className={cn(bar, "h-3 w-3/5")} />
+          <div className={cn(bar, "h-3 w-4/5")} />
+        </div>
+        {/* The index block with its paragraph: 110 px at 390 px, 93 px from 640 px (measured). */}
+        <div className="mt-4 flex h-27.5 flex-col justify-center gap-2.5 sm:h-23.25">
           <div className={cn(bar, "h-3 w-1/4")} />
           <div className={cn(bar, "h-6 w-1/2")} />
           <div className={cn(bar, "h-3 w-4/5")} />
-          <div className={cn(bar, "h-3 w-3/4")} />
         </div>
         {/* Below 1024 px: "Keep this move", 44 px, under the index block. */}
         <div className="mt-4 flex h-11 items-center lg:hidden max-sm:mt-3">
@@ -260,9 +266,6 @@ export function DecisionCardSkeleton() {
               <div className={cn(bar, "h-3 flex-1")} />
             </div>
           ))}
-        </div>
-        <div className="mt-4 flex h-10 items-center sm:h-5">
-          <div className={cn(bar, "h-3 w-3/5")} />
         </div>
         <div className="mt-5 flex h-11 items-center">
           <div className={cn(bar, "h-3 w-28")} />
@@ -290,8 +293,15 @@ type DecisionCardProps = {
   onOpenHidden?: (trigger: HTMLElement) => void;
   /** What that link says; "Open a hidden clash" unless the day has none. */
   hiddenLabel?: string;
-  /** "Same clash, three readings", above the actions; absent in the server HTML, which has no lens data. */
+  /** "Same clash, three readings", under the heading; absent in the server HTML, which has no lens data. */
   readings?: ReactNode;
+  /**
+   * How many of the day's ranked clashes carry the Hidden label (the board's own labels). With it the
+   * hidden-clash line says "1 of N on this day"; without it, or below 1, that part is left out.
+   */
+  hiddenCount?: number;
+  /** The two acts' main genre tags, for the hidden-clash line; left out unless both are saved. */
+  genres?: readonly (string | null)[] | null;
   /**
    * The published day's saved Qloo reading: when it was built and how many saved responses built it.
    * Printed in the working with the Recorded stamp; never on the invented day, even when passed.
@@ -307,9 +317,10 @@ type DecisionCardProps = {
 };
 
 /**
- * What the index change means, under the figure: "−2.4 index points · lower is better". Read from the
- * same two readings the figure shows (one decimal each), so it can never disagree with them; a real minus
- * sign (U+2212), and a plus when the index would rise. Null when either reading is not a number.
+ * What the index change is, beside the figure: "−2.4 index points". Read from the same two readings the
+ * figure shows (one decimal each), so it can never disagree with them; a real minus sign (U+2212), and a
+ * plus when the index would rise. Null when either reading is not a number. "Lower is better" is said
+ * once, in the scale line under it.
  */
 export function indexDelta(before: string | null, after: string | null): string | null {
   if (before === null || after === null) return null;
@@ -319,7 +330,7 @@ export function indexDelta(before: string | null, after: string | null): string 
   const tenths = Math.round((to - from) * 10);
   const size = (Math.abs(tenths) / 10).toFixed(1);
   const sign = tenths < 0 ? "−" : tenths > 0 ? "+" : "";
-  return `${sign}${size} index points · lower is better`;
+  return `${sign}${size} index points`;
 }
 
 /**
@@ -342,6 +353,8 @@ export const KEEP_MOVE = "Keep this move";
 
 /** What the card says, in place, once the plan holds its move, and the link to that plan. */
 export const KEPT_IN_PLAN = "Kept in your plan.";
+/** Said with it: a kept move is a plan, not a change to the published timetable. */
+export const KEPT_AGREE = "Nothing moves until the acts’ teams agree.";
 export const SEE_YOUR_PLAN = "See your plan";
 /** The plan card's heading (Try a move), which the link scrolls to and focuses. */
 export const PLAN_ANCHOR = "your-plan";
@@ -353,11 +366,39 @@ export const PLAN_ANCHOR = "your-plan";
 export const INDEX_SCALE = "A score, not money: 100 = the average random valid timetable of this lineup. Lower is better.";
 
 /**
- * The hero's own clash, when it carries the board's Hidden label: the Hidden wall's definition
- * (`LABEL_META.hidden.explain`), so the card and the wall say one thing. Names no source, so it reads
- * the same on the invented day.
+ * The pair's taste overlap as line 1 of the working prints it ("their taste overlap is 97 of 100 on this
+ * bill"), read back from the card's own copy; null when line 1 does not say it.
  */
-export const HIDDEN_CLASH_LINE = `A hidden clash: ${LABEL_META.hidden.explain.charAt(0).toLowerCase()}${LABEL_META.hidden.explain.slice(1)}`;
+export function tasteOverlapOf(copy: Pick<DecisionCopy, "clashLine">): string | null {
+  return /taste overlap is (\d{1,3}) of 100 on this bill/.exec(copy.clashLine)?.[1] ?? null;
+}
+
+/**
+ * The hero's own clash, when it carries the board's Hidden label, said concretely: how many of the day's
+ * ranked clashes carry that label (`count`, left out without it), the two main genres (left out unless
+ * both are saved) and the taste overlap line 1 prints. It keeps the board's definition
+ * (`LABEL_META.hidden.explain`: the main genre tags differ, and the taste overlap is among the day's
+ * highest). Names no source; on the invented day it says the day and the overlap are invented.
+ */
+export function hiddenClashLine({
+  count,
+  genres,
+  taste,
+  invented = false,
+}: {
+  count?: number | null;
+  genres?: readonly (string | null | undefined)[] | null;
+  taste: string | null;
+  invented?: boolean;
+}): string {
+  const day = invented ? "this invented day" : "this day";
+  const share = count !== undefined && count !== null && Number.isInteger(count) && count >= 1 ? `, 1 of ${count} on ${day}` : "";
+  const named = (genres ?? []).map((genre) => genre?.trim() ?? "").filter(Boolean);
+  const which = genres && genres.length === 2 && named.length === 2 ? ` (${named[0]}, ${named[1]})` : "";
+  const overlap = invented ? "invented taste overlap" : "taste overlap";
+  const rank = taste ? `ranks ${taste} of 100 on this bill, among the day’s highest` : "is among the day’s highest";
+  return `A hidden clash${share}: main genres differ${which}, yet their ${overlap} ${rank}.`;
+}
 
 /**
  * Whether the card's pair carries the Hidden label. `buildDecisionCopy` writes "Their main genre tags
@@ -396,6 +437,26 @@ export function savedReadingLine(saved: SavedReading): string | null {
   return `Saved Qloo reading of this day: built ${date} from ${responses}.`;
 }
 
+/**
+ * The dateline with where the reading came from, on a published day with a saved reading: "Glastonbury
+ * 2025, Sunday · published timetable · saved Qloo reading built 3 Oct 2026" (the date by `builtDate`, in
+ * UTC, as the working's saved-reading line prints it). The plain dateline otherwise, and always on the
+ * invented day.
+ */
+export function datelineWithReading(title: string, saved: SavedReading | null | undefined, invented: boolean): string {
+  const dateline = datelineText(title);
+  if (invented || !saved || savedReadingLine(saved) === null) return dateline;
+  return `${dateline} · saved Qloo reading built ${builtDate(saved.builtAt)}`;
+}
+
+/**
+ * Why the card's move is this one and not a bigger gain elsewhere, as `backend/app/decision.py` chooses
+ * it: the day's costliest clash whose sets have a legal place that lowers the index, then the lower of
+ * its two sets' lowest-index places.
+ */
+export const MOVE_CHOICE_LINE =
+  "Chosen by clash, not by gain: the lowest-index single move for the day’s costliest clash that has one. A move for another clash can lower the index more; Try a move prices the legal places of other sets.";
+
 /** The working's text action that opens this pair's clash drawer, where the live re-check asks before it sends. */
 export const RECHECK_PAIR = "Re-check this pair with Qloo (3 requests)";
 
@@ -428,8 +489,8 @@ export function focusShown(links: readonly (HTMLElement | null)[]): HTMLElement 
 
 /**
  * The confirmation in place, under the button that was pressed: a polite live region that, once the
- * plan holds the card's move, reads "Kept in your plan." in ink with the "See your plan" link. Empty
- * otherwise, so it takes no room.
+ * plan holds the card's move, reads "Kept in your plan. Nothing moves until the acts' teams agree." in
+ * ink with the "See your plan" link. Empty otherwise, so it takes no room.
  */
 function KeptNotice({
   shown,
@@ -448,6 +509,7 @@ function KeptNotice({
             <Check aria-hidden="true" className="size-4 shrink-0" />
             {KEPT_IN_PLAN}
           </span>
+          <span>{KEPT_AGREE}</span>
           <a
             ref={linkRef}
             href={`#${PLAN_ANCHOR}`}
@@ -484,10 +546,12 @@ function PairRecheckWhenOn({ onOpenPair }: { onOpenPair: (trigger: HTMLElement) 
 }
 
 /**
- * One worked decision on the published day: the festival and day as a dateline, then the action and
- * its result as the heading ("Sprints 15 minutes later: 45 → 30 minutes shared"), then the labelled index
- * with one caption under it (who selected and scored it, and that it is a reading, not a verdict), the
- * drawn timeline across the card, the pointer to the three readings, then one row: the one solid button,
+ * One worked decision on the published day: the festival and day as a dateline (with the saved reading's
+ * date on a published day), then the action and its result as the heading ("Sprints 15 minutes later: 45
+ * → 30 minutes shared"), then why this clash (the hidden-clash line when it carries that label, and the
+ * pointer to the three readings), then the labelled index with one paragraph under it (its scale, who
+ * selected and scored it, and that it is a reading, not a verdict), the drawn timeline across the card,
+ * then one row: the one solid button,
  * "Keep this move", and directly after it the "Show the working" toggle. Below 1024 px that button sits
  * instead directly under the index block, before the drawing, and the row holds the toggle alone; one
  * copy is displayed at each width. The working opens directly under that row: the hidden-clash link
@@ -508,6 +572,8 @@ export function DecisionCard({
   onOpenHidden,
   hiddenLabel,
   readings,
+  hiddenCount,
+  genres,
   saved,
   onOpenPair,
   className,
@@ -612,12 +678,13 @@ export function DecisionCard({
   const delta = deltaText
     ? { figure: deltaText.slice(0, deltaText.indexOf(" ")), words: deltaText.slice(deltaText.indexOf(" ") + 1) }
     : null;
-  const figure =
-    copy.indexBefore !== null && copy.indexAfter !== null ? (
-      // The score as one block of about 80 px: the label, the figure with what its change means on the
-      // same baseline, then one caption: who selected and scored it, and what kind of claim it is. It is
-      // outside the working in every state of the card, so the caption is read with no click.
-      <div data-index-block="" className="mt-3">
+  const hasIndex = copy.indexBefore !== null && copy.indexAfter !== null;
+  const figure = hasIndex ? (
+      // The score as one block: the label, the figure with its change on the same baseline, then one
+      // paragraph: the scale ("Lower is better", said once in the card), who selected and scored it, and
+      // what kind of claim it is. It is outside the working in every state of the card, so the paragraph
+      // is read with no click.
+      <div data-index-block="" className="mt-4">
         <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Clash Budget Index</p>
         <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
           <p className="type-numeral text-[1.75rem] leading-none tabular-nums">
@@ -635,19 +702,23 @@ export function DecisionCard({
             </p>
           ) : null}
         </div>
-        {/* The scale, where the index first appears; the attribution stays the block's last line. */}
+        {/* The scale, where the index first appears, then the attribution, which ends the block. */}
         <p data-index-scale="" className="mt-1 text-[0.8125rem] leading-snug text-muted-foreground">
-          {INDEX_SCALE}
+          {INDEX_SCALE} {ATTRIBUTION}. A reading, not a verdict.
         </p>
-        <p className="mt-1 text-[0.8125rem] leading-snug text-muted-foreground">{ATTRIBUTION}. A reading, not a verdict.</p>
       </div>
-    ) : null;
+    ) : (
+      // With no move there is no figure, and the same paragraph still limits the card with no click.
+      <p data-index-scale="" className="mt-4 text-[0.8125rem] leading-snug text-muted-foreground">
+        {INDEX_SCALE} {ATTRIBUTION}. A reading, not a verdict.
+      </p>
+    );
 
-  // The taste line says so when the card's own clash carries the Hidden label: in ink, as a fact of
-  // the board, never the teal of a Qloo figure.
+  // The first "why this clash" line, when the card's own clash carries the Hidden label: in ink, as a
+  // fact of the board, never the teal of a Qloo figure.
   const hiddenLine = isHiddenDecision(copy) ? (
     <p data-hidden-line="" className="text-sm leading-snug">
-      {HIDDEN_CLASH_LINE}
+      {hiddenClashLine({ count: hiddenCount, genres, taste: tasteOverlapOf(copy), invented })}
     </p>
   ) : null;
   // The working's last lines on a published day: where the reading came from, with the Recorded stamp,
@@ -677,7 +748,7 @@ export function DecisionCard({
   // display:none and the action row's copy shows instead: one copy displayed at every width, neither
   // with an id. Both call the same `openMove`, so the M1 play and its replay start from either.
   const earlyMove =
-    showMove && figure ? (
+    showMove && hasIndex ? (
       <div className="mt-4 lg:hidden max-sm:mt-3">
         <Button type="button" variant="default" className={wrap} onClick={openMove}>
           {KEEP_MOVE}
@@ -688,8 +759,8 @@ export function DecisionCard({
   const timeline = lanes ? (
     // One pair strip across the card: the staying set once, then the moving set Now and Tested. Its words
     // are HTML at fixed sizes, so nothing grows with the width. At every width it and its key sit directly
-    // under the index (below 1024 px under the index and its "Keep this move") and before the taste line
-    // and the action row, so a phone's first screen shows the clash itself. It holds nothing focusable.
+    // under the index (below 1024 px under the index and its "Keep this move") and before the action row,
+    // so a phone's first screen shows the clash itself. It holds nothing focusable.
     <figure
       data-shared-time=""
       className={cn("mt-3 w-full min-w-0 max-sm:mt-4", earlyMove && "max-lg:mt-4 max-sm:mt-3")}
@@ -825,17 +896,18 @@ export function DecisionCard({
         // An open composition on the page's paper, not a box: one 1px decorative rule along the top and
         // nothing else (no corner, no side or foot edge, no fill, no shadow), its text and its strip starting
         // at the column's own left edge: a read-only receipt drawn with the timetable's own marks. It reads
-        // in source order at every width: the dateline, the heading, the index with its caption, (below
-        // 1024 px) "Keep this move", the drawing and its key, the taste line, the action row and the working.
+        // in source order at every width: the dateline, the heading, the "why this clash" lines, the index
+        // with its paragraph, (below 1024 px) "Keep this move", the drawing and its key, the action row and
+        // the working.
         "@container min-w-0 border-t border-border pt-5 sm:pt-6",
         className,
       )}
     >
-      {/* The festival and day are the dateline; the heading is the action and its result, or the
-          dateline alone, as a title, when no move lowers the index. */}
+      {/* The festival and day are the dateline, with the saved reading's date on a published day; the
+          heading is the action and its result, or the dateline alone, as a title, when no move lowers the index. */}
       {receiptShown ? (
         <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
-          {datelineText(copy.title)}
+          {datelineWithReading(copy.title, saved, invented)}
         </p>
       ) : null}
       <h2
@@ -864,17 +936,18 @@ export function DecisionCard({
         )}
       </h2>
 
-      {figure}
-      {/* Below 1024 px the one filled action, directly under the reading; from 1024 px it is in the action row. */}
-      {earlyMove}
-      {/* The drawing spans the card; the pointer to the three readings, then the action row, sit under it. */}
-      {timeline}
+      {/* Why this clash, before the score: the hidden-clash line, then the three readings' line. */}
       {hiddenLine || readings ? (
-        <div className="mt-4 space-y-1">
+        <div data-why-lines="" className="mt-3 space-y-1">
           {hiddenLine}
           {readings}
         </div>
       ) : null}
+      {figure}
+      {/* Below 1024 px the one filled action, directly under the reading; from 1024 px it is in the action row. */}
+      {earlyMove}
+      {/* The drawing spans the card; the action row sits under it. */}
+      {timeline}
       {actions}
 
       {/* The working, directly under the button's row: the hidden-clash link first, then the two changes
@@ -911,6 +984,11 @@ export function DecisionCard({
             <LineLabel n={2} />
             <div className="min-w-0">
               <p>{copy.moveLine}</p>
+              {copy.indexBefore !== null && copy.indexAfter !== null ? (
+                <p data-move-choice="" className="mt-2 text-[0.8125rem] text-muted-foreground">
+                  {MOVE_CHOICE_LINE}
+                </p>
+              ) : null}
               {copy.rangeLine ? <p className="mt-2 text-[0.8125rem] text-muted-foreground">{copy.rangeLine}</p> : null}
             </div>
           </div>

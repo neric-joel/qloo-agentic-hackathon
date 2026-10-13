@@ -67,7 +67,7 @@ export class HomePage {
 
     this.rail = page.getByRole("navigation", { name: "On this page" });
 
-    this.boardHeading = page.getByRole("heading", { level: 2, name: /^Where the clash budget goes/ });
+    this.boardHeading = page.getByRole("heading", { level: 2, name: /^Where the clashes fall/ });
     this.board = page.getByRole("group", { name: /timetable\. Use the arrow keys to move between sets\.$/ });
     this.dayPicker = page.getByRole("radiogroup", { name: "Festival day" });
     this.costliest = page.getByRole("region", { name: /^The \d+ costliest clashes$/ });
@@ -113,7 +113,7 @@ export class HomePage {
     await this.dayPicker.locator("label").filter({ hasText: title }).click();
   }
 
-  /** The board's heading as text, e.g. "Where the clash budget goes: 5 stages, 39 sets". */
+  /** The board's heading as text, e.g. "Where the clashes fall: 5 stages, 39 sets". */
   async boardTitle(): Promise<string> {
     return (await this.boardHeading.innerText()).replace(/\s+/g, " ").trim();
   }

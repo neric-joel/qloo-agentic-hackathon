@@ -351,16 +351,26 @@ describe("the page's labels and short version (round 18)", () => {
     expect(html).toContain('<h2 id="short-heading" class="type-title break-words xl:col-span-4">The short version</h2>');
   });
 
-  it("keeps bold only on the failed pre-set test, and merges popularity and the moves check into one plain paragraph", () => {
+  it("keeps bold only on the failed pre-set test, and states the failed test and the popularity result once each (round 32)", () => {
     const short = html.slice(html.indexOf('id="short-heading"'), html.indexOf("</section>", html.indexOf('id="short-heading"')));
     expect(short.match(/<strong/g)).toHaveLength(1);
     expect(short).toContain('<strong class="font-semibold">The test we set before building failed.</strong>');
     const { moves, scale } = METHOD_FIGURES;
+    const popularity = methodRow("popularity");
     expect(text(short)).toContain(
-      `Popularity did better. On the same test, popularity, another Qloo field, reached ${methodRow("popularity").topQuarterPct.toFixed(1)}%. The check on suggested moves failed too: taste-overlap suggestions differed from popularity-only ones by ${moves.measuredPoints} index points (one point is ${scale.indexPointPct}% of the average random timetable's cost); the bar was ${moves.barPoints}.`,
+      `Popularity did better. On the same test, popularity, another Qloo field, reached ${popularity.topQuarterPct.toFixed(1)}%, and exploratory follow-ups on the same data did not establish an advantage over popularity for the app's full price. See the full comparison below`,
     );
-    expect(text(short)).toContain("Taste overlap is a rank, not attendance");
-    expect(text(short)).toContain("The results do not establish an advantage over popularity.");
+    expect(text(short)).toContain(
+      `The check on suggested moves failed too: taste-overlap suggestions differed from popularity-only ones by ${moves.measuredPoints} index points (one point is ${scale.indexPointPct}% of the average random timetable's cost); the bar was ${moves.barPoints}.`,
+    );
+    expect(text(short)).toContain("Taste overlap is a rank, not attendance.");
+    // Each said once: the failed pre-set test, popularity's result and the exploratory answer.
+    const once = (needle: RegExp) => (text(short).match(needle) ?? []).length;
+    expect(once(/The test we set before building failed/g)).toBe(1);
+    expect(once(/after the test failed/g)).toBe(0);
+    expect(once(/did better/g)).toBe(1);
+    expect(once(/advantage over popularity|better than popularity/g)).toBe(1);
+    expect(short).toContain('href="#tested"');
   });
 });
 
@@ -803,12 +813,13 @@ describe("true sentences about location, the test that held, the brief and its l
     const held =
       `In the same test, taste overlap ranked complained-about clashes above random (AUC ${taste.auc.toFixed(3)}, ` +
       `${scale.intervalPct}% interval ${low.toFixed(3)} to ${high.toFixed(3)}, which stays above ${scale.auc.chance}) ` +
-      `and above genre tags (${genre.auc.toFixed(3)}), though the two intervals overlap widely. Popularity did better ` +
-      `(${popularity.auc.toFixed(3)}), and the exploratory follow-up did not establish an advantage over popularity. ` +
+      `and above genre tags (${genre.auc.toFixed(3)}), though the two intervals overlap widely. ` +
       `Taste overlap is nearly unrelated to popularity (correlation ${backtest.popularityCorrelation}).`;
     expect(held).toBe(
-      "In the same test, taste overlap ranked complained-about clashes above random (AUC 0.634, 95% interval 0.517 to 0.755, which stays above 0.5) and above genre tags (0.512), though the two intervals overlap widely. Popularity did better (0.722), and the exploratory follow-up did not establish an advantage over popularity. Taste overlap is nearly unrelated to popularity (correlation 0.08).",
+      "In the same test, taste overlap ranked complained-about clashes above random (AUC 0.634, 95% interval 0.517 to 0.755, which stays above 0.5) and above genre tags (0.512), though the two intervals overlap widely. Taste overlap is nearly unrelated to popularity (correlation 0.08).",
     );
+    // Popularity's result is the next row, said once there (round 32).
+    expect(popularity.auc).toBe(0.722);
     // "Stays above 0.5" is true of the figures themselves.
     expect(low).toBeGreaterThan(scale.auc.chance);
     const start = html.indexOf('<section aria-labelledby="short-heading"');
@@ -830,9 +841,11 @@ describe("true sentences about location, the test that held, the brief and its l
 
   it("describes the brief the way the home page's pilot offers it, and says what the figures must never be used for under #limits", () => {
     expect(plain).toContain(
-      "It is for evaluating this entry. The pilot on the home page sends one back, free, to a festival that sends its bill, with the same limits: no Qloo tags or identifiers, and not for redistribution.",
+      "It is for evaluating this entry. The pilot on the home page walks a programmer through a published day's brief, with the same limits: no Qloo tags or identifiers, and not for redistribution.",
     );
     expect(plain).not.toContain("it is not offered to festivals");
+    // The pilot no longer offers a brief for a new bill (round 32, V4).
+    expect(plain).not.toMatch(/sends one back|sends its bill/);
     const start = html.indexOf('<section id="limits"');
     const limits = text(html.slice(start, html.indexOf("</section>", start)));
     expect(limits).toContain(
@@ -846,5 +859,80 @@ describe("true sentences about location, the test that held, the brief and its l
     const print = css.slice(css.indexOf("@media print {\n  :root.dark {"));
     expect(print).toMatch(/^@media print \{\s*:root\.dark \{\s*color-scheme: light;/);
     expect(print.slice(0, print.indexOf("}"))).toContain("--foreground: oklch(0.21 0.018 262);");
+  });
+});
+
+describe("taste inside the full price, the second exploratory follow-up (round 32, V2)", () => {
+  const html = renderToStaticMarkup(createElement(MethodPage));
+  const visible = text(html.replace(/<details(?![^>]*\bopen\b)[^>]*>[\s\S]*?<\/details>/g, " "));
+  const start = html.indexOf('id="taste-in-price"');
+  const block = html.slice(start, html.indexOf("<details", start));
+  const blockText = text(block);
+
+  it("sits in the open inside #tested, after the first follow-up's fold and before the sources, under a neutral heading", () => {
+    expect(start).toBeGreaterThan(html.indexOf('id="tested"'));
+    expect(start).toBeLessThan(html.indexOf('id="limits"'));
+    expect(start).toBeGreaterThan(html.indexOf("Exploratory follow-up, run after the test failed"));
+    expect(html).toContain(
+      '<h3 id="taste-in-price-heading" class="text-lg leading-snug font-semibold break-words">Taste inside the full price (exploratory)</h3>',
+    );
+    expect(html).not.toContain("What taste adds");
+    expect(visible).toContain("Taste inside the full price (exploratory)");
+  });
+
+  it("prints every figure from METHOD_FIGURES and says it did not establish an advantage over popularity", () => {
+    expect(blockText).toContain(
+      "Run after the test failed, on the same 68 scored pairs, so it is exploratory. The full price, which multiplies taste overlap by shared time and draw, scored AUC 0.746 (interval 0.675 to 0.812); popularity alone scored 0.722. The difference is +0.024 (interval -0.074 to +0.136), so the full price did not establish an advantage over popularity.",
+    );
+    expect(blockText).toContain(
+      "With taste taken out, every pair given the same taste overlap so that only shared time and draw are left, the price scored 0.754 (interval 0.690 to 0.828). The full price minus that is -0.009 (interval -0.102 to +0.079). This check did not establish that taste adds to time and draw.",
+    );
+    expect(blockText).toContain(
+      "With the taste values shuffled among each day's pairs, 1,000 times, the full price fell to 0.652 on average (95% of shuffles between 0.593 and 0.706). So the price depends on the real taste values, which is not the same as taste adding to time and draw.",
+    );
+    expect(visible).toContain("so the full price did not establish an advantage over popularity.");
+    expect(visible).toContain("This check did not establish that taste adds to time and draw.");
+  });
+
+  it("says plainly that taste adding was not established, in bold, because the interval holds zero", () => {
+    expect(block).toContain('<strong class="font-semibold">This check did not establish that taste adds to time and draw.</strong>');
+  });
+
+  it("tables the figures by festival, Glastonbury against the four US festivals, with Riot Fest not interpreted", () => {
+    expect(block).toContain('<figcaption id="taste-by-festival-caption"');
+    const table = text(block.slice(block.indexOf("<table"), block.indexOf("</table>")));
+    expect(table).toBe(
+      "Festivals Popularity Time and draw Full price " +
+        "Glastonbury 2025 14 pairs from 8 complaints 0.563 0.671 0.871 " +
+        "Four US festivals 54 pairs from 34 complaints 0.768 0.779 0.715 " +
+        "Riot Fest 2026, one of the four 5 pairs from 3 complaints Not interpreted: too few complaints to read alone",
+    );
+    expect(blockText).toContain("AUC by festival, exploratory (0.5 means no better than chance)");
+  });
+
+  it("says in two plain sentences why the US differs and that location is untested, with its cost", () => {
+    expect(blockText).toContain(
+      "At Glastonbury 2025, adding taste raised the price's AUC by 0.201 (interval +0.111 to +0.277, resampled by complaint); over the four US festivals it lowered it by 0.065 (interval -0.163 to +0.025). US complaints mostly name the day's biggest acts, which popularity already ranks well. Location is untested: these rankings were made without a location, and asking again for the US festival days with each festival's city would cost 347 Qloo requests.",
+    );
+    expect(blockText).not.toMatch(/\bbeats?\b|better than popularity|predicts|validated|proves|pre-registered|What taste adds/i);
+  });
+
+  it("keeps the anchors other pages link to", () => {
+    for (const id of ["price", "tested", "limits", "labels", "brief"]) expect(html).toContain(`id="${id}"`);
+  });
+});
+
+describe("the Hidden label's definition (round 32, V6)", () => {
+  const plain = text(renderToStaticMarkup(createElement(MethodPage)));
+
+  it("says the label's genre test is that main genre tags differ, and keeps the count line and its caveats", () => {
+    expect(plain).toContain(
+      "The Hidden label on the timetable uses a stricter line than this count for taste overlap, the day's top tenth where the count above uses the top quarter, and a looser one for genre: the two acts' main genre tags differ.",
+    );
+    expect(plain).toContain(
+      "Hidden clashes are examples, not detections. Of 185 pairs with top-quarter taste overlap and no shared genre tag, 15 were complained about (8.1%, against 5.0% for all pairs).",
+    );
+    // One definition of the label: the old "with no shared genre tag" wording of the label is gone.
+    expect(plain).not.toContain("top tenth, with no shared genre tag");
   });
 });

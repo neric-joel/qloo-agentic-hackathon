@@ -2,7 +2,7 @@
 
 import { useId } from "react";
 import Link from "next/link";
-import { ArrowUp, FileText, Undo2 } from "lucide-react";
+import { ArrowRight, ArrowUp, FileText, Undo2 } from "lucide-react";
 
 import { ProvenanceChip } from "@/components/kernel";
 import { Button } from "@/components/ui/button";
@@ -100,6 +100,7 @@ export function ScratchPlan({
   onStartOver,
   backToDecision = false,
   cardMove = null,
+  next = null,
 }: {
   preset: Preset;
   day: number;
@@ -111,6 +112,8 @@ export function ScratchPlan({
   backToDecision?: boolean;
   /** The decision card's move and its receipt, for a plan that is just that move. */
   cardMove?: { move: StackMove; receipt: string } | null;
+  /** The next clash in the published day's ranking and the press that opens it in Try a move; null for none. */
+  next?: { label: string; onPress: () => void } | null;
 }) {
   const headingId = useId();
   const clashesId = useId();
@@ -198,6 +201,16 @@ export function ScratchPlan({
       </div>
 
       <p className="mt-5 text-xs leading-relaxed text-muted-foreground lg:text-[0.8125rem]">{PLAN_CAVEAT}</p>
+
+      {next ? (
+        // One way on from the plan: the next clash in the published day's ranking, opened in Try a move.
+        <div className="mt-4">
+          <Button type="button" variant="ruled" className="text-left whitespace-normal" onClick={next.onPress}>
+            {next.label}
+            <ArrowRight aria-hidden="true" />
+          </Button>
+        </div>
+      ) : null}
 
       <PlanActions
         preset={preset}

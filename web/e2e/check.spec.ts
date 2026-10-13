@@ -267,7 +267,7 @@ test.describe("check a draft grid", () => {
 
     await check.rulesSection.getByRole("button", { name: /^Find a change : Willow Circuit and Neon Garden/ }).click();
     await expect(
-      check.page.getByRole("paragraph").filter({ hasText: /\d+ within 3 hours found, 5 shown: each ends it, adds no rule break and makes none larger/ }),
+      check.page.getByRole("paragraph").filter({ hasText: /\d+ within 3 hours found, \d+ shown: each ends it, adds no rule break and makes none larger/ }),
     ).toBeVisible();
     const tryIt = check.page.getByRole("button", { name: "Try it" });
     await expect(tryIt.first()).toBeVisible();
@@ -434,6 +434,39 @@ test.describe("check a draft grid, round-31 paths", () => {
     await expect(otherStage).toHaveCount(1);
     await expect(otherStage).toContainText("Changes stage: needs production sign-off");
     await expect(sameStage).not.toContainText("Changes stage");
+    // Changes that keep every set on its stage come first; the engine's order holds within each group.
+    await expect(check.page.getByText(/Changes that keep every set on its stage are listed first/).first()).toBeVisible();
+    const stageChanges = await changes.evaluateAll((all) => all.map((item) => (item.textContent ?? "").includes("Changes stage: needs production sign-off")));
+    const firstStageChange = stageChanges.indexOf(true);
+    expect(firstStageChange, "a stage change is listed").toBeGreaterThan(0);
+    expect(stageChanges.slice(firstStageChange).every(Boolean), "no same-stage change after a stage change").toBe(true);
+  });
+
+  test("Find a change leaves out, by default, a change that ends a clash kept on purpose, and keeps it in a closed fold", async ({ page }) => {
+    const check = new CheckPage(page);
+    await check.goto();
+
+    // Mark an overlap as kept on purpose, then look for a change that ends that same overlap: every change does.
+    const pair = "Glass Mirror and Marble Machine";
+    await check.sharedSection.getByRole("button", { name: new RegExp(`^Kept on purpose\\s*:\\s*${pair}$`) }).click();
+    await check.sharedSection.getByRole("button", { name: new RegExp(`^Find a change\\s*:\\s*${pair}$`) }).click();
+
+    const none = check.page.getByText(/^All (\d+) changes found end a clash you kept on purpose, so none is listed\.$/);
+    await expect(none).toBeVisible();
+    const [, found = "0"] = /^All (\d+)/.exec(await none.innerText()) ?? [];
+    expect(Number(found)).toBeGreaterThan(0);
+    // Nothing is offered to try until the fold is opened: opening it is the explicit override.
+    const fold = check.page.locator("details").filter({ has: check.page.locator("summary", { hasText: /^Changes that end a clash you kept on purpose \(\d+\)$/ }) });
+    await expect(fold).toHaveCount(1);
+    await expect(fold.locator("summary")).toHaveText(`Changes that end a clash you kept on purpose (${found})`);
+    await expect(fold).toHaveJSProperty("open", false);
+    const inside = fold.getByRole("listitem").filter({ has: check.page.getByRole("button", { name: "Try it" }) });
+    await expect(inside).toHaveCount(0);
+
+    await fold.locator("summary").click();
+    await expect(fold).toHaveJSProperty("open", true);
+    await expect(inside).toHaveCount(Number(found));
+    for (const change of await inside.all()) await expect(change).toContainText("Ends a clash you kept on purpose");
   });
 
   test("the privacy line sits by the paste box, once, with no click", async ({ page, isPhone }) => {

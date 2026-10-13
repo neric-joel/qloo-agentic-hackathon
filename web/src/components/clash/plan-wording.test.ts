@@ -82,7 +82,7 @@ describe("the plan card", () => {
   it("names the middle 80% and gives the gap when the plan sits just above it", () => {
     const text = textOf(card(planOf(109.3)));
     expect(text).toContain("The middle 80% of random valid timetables of this lineup score 92 to 109.");
-    expect(text).toContain("This plan scores 0.3 index points above that range. The published timetable is 7.7 above it.");
+    expect(text).toContain("This plan scores 0.3 index points above that range. By this index, the published timetable sits 7.7 points above that range.");
     expect(text).not.toContain("For scale");
     expect(text).not.toMatch(/re-order/i);
   });

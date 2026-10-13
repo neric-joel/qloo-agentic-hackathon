@@ -138,15 +138,29 @@ function ParamsTable({ item }: { item: TracedRequest }) {
   );
 }
 
+/**
+ * Why a saved, cached answer carries no request id, in words. A saved day's ledger keeps what the build saw:
+ * `cached` marks a request answered from a response this app had saved (backend/app/qloo/client.py:352-353,
+ * the fixtures-first path), and that saved response holds a request id only since request ids were kept with
+ * saved responses (client.py:370-376 writes it; :437-450 reads it, None "when the fixture predates" it). The
+ * published days were built before that (built_at 2026-10-03; the change came later), and the two requests
+ * that reached Qloo live during the build keep theirs (backend/scripts/build_preset.py:91-97).
+ */
+export const NO_ID_SAVED_BEFORE = "No request id: this response was saved before request ids were kept.";
+
 function requestIdNote(record: QlooRequestRecord): string {
   if (record.recorded) return "not saved with this response";
   if (record.cached) return "none (served from cache)";
   return "not supplied";
 }
 
-/** One Qloo request: method, path, status, latency, source, parameters and request id. */
-export function RequestItem({ item }: { item: TracedRequest }) {
+/**
+ * One Qloo request: method, path, status, latency, source, parameters and request id. `synthetic`: the invented
+ * day, whose rows are not saved Qloo responses, so they never get the saved-response reason.
+ */
+export function RequestItem({ item, synthetic = false }: { item: TracedRequest; synthetic?: boolean }) {
   const { record, ordinal } = item;
+  const savedBefore = !record.request_id && record.recorded === true && record.cached && !synthetic;
   return (
     <li className="border-t border-border py-4 first:border-t-0 first:pt-0 last:pb-0">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
@@ -167,8 +181,8 @@ export function RequestItem({ item }: { item: TracedRequest }) {
       </div>
       <ParamsTable item={item} />
       <p className="mt-2 text-xs text-muted-foreground">
-        Request ID{" "}
-        {record.request_id ? (
+        {savedBefore ? NO_ID_SAVED_BEFORE : "Request ID "}
+        {savedBefore ? null : record.request_id ? (
           <code className="min-w-0 font-mono break-words text-foreground">{dotted(record.request_id)}</code>
         ) : (
           <span>{requestIdNote(record)}</span>

@@ -33,20 +33,23 @@ export const PILOT_TERMS: string | null = null;
 
 /** Who we guess would pay, said as a guess right after "Who would pay is not known." */
 export const PAYER_GUESS =
-  "Our guess, not yet tested: the festival, through its head of programming, once per edition, before set times go out. The pilot below is how we will find out.";
+  "Our guess, not yet tested: the festival’s head of programming, once per edition, before set times go out.";
 
 /** What the readings must never be used for, on /method's limits and on the brief (screen and print). */
 export const DO_NOT_USE =
   "Do not use this to set fees, billing order or an artist’s worth, or for crowd capacity, safety or attendance.";
 
 /**
- * The pilot's stated limits, as the offer prints them. A bill is checked in the browser, then its
- * longest overlaps are priced live: at most 35 requests for a grid (one search per act and one audience
- * ranking per act in a priced pair) plus a 3-request re-check of the chosen move, so about 40. The
- * month's allowance is the entry's shared Qloo quota.
+ * What pricing a new bill would cost, as the pilot's fold prints it. The pilot itself offers only what costs no
+ * Qloo request (a walk through a published day's brief, and rule checks that run in the browser); pricing a new
+ * bill is not offered, and would run only with the festival's OK. Comparing a bill's longest overlaps through
+ * /check: at most 35 requests for a grid (one search per act and one audience ranking per act in a priced pair)
+ * plus a 3-request re-check of the chosen move, so about 40. A full-day reading: the request records of the two
+ * published days' builds (Glastonbury 2025 Sunday, Riot Fest 2026 Sunday). The month's allowance is the entry's
+ * shared Qloo quota.
  */
 export const PILOT = {
-  bills: 10,
   requestsPerBill: 40,
   monthlyRequests: 10_000,
+  fullDayRequests: [104, 70],
 } as const;

@@ -67,6 +67,7 @@ import {
   isSampleInput,
   keepSampleRules,
   publishedDayInput,
+  publishedPairsLine,
   type PublishedInput,
 } from "@/lib/check-sample";
 import { SHARE_COPY, csvName, readShareHash, shareHash, shareable } from "@/lib/check-share";
@@ -144,6 +145,12 @@ const GRID_COLUMNS = ["Act", "Stage", "Start", "End", "Locked"] as const;
 /** One line of the grid's mono text: the line-number gutter and the textarea share it exactly. */
 const GRID_LINE = "font-mono text-[0.8125rem] leading-5";
 const IDLE: PriceState = { phase: "idle" };
+
+/** The published day's label for a check of it: with its pair counts when they match the overlaps found. */
+function publishedRunLabel(published: PublishedInput, outcome: CheckOutcome): string {
+  const line = outcome.ok ? publishedPairsLine(outcome.report.shared.length, published.pairCounts ?? null) : null;
+  return line ? `${published.label} ${line}` : published.label;
+}
 
 /** Minutes from local midnight now. */
 function nowMinutes(): number {
@@ -1096,7 +1103,7 @@ export function CheckTool({
         sample: isSampleInput(next),
         checkedAt: nowMinutes(),
         removed,
-        published: isPublishedInput(next, publishedNow) ? (publishedNow?.label ?? null) : null,
+        published: isPublishedInput(next, publishedNow) && publishedNow ? publishedRunLabel(publishedNow, outcome) : null,
       }));
     },
     [stopSearch, dropPrice],
@@ -1267,7 +1274,8 @@ export function CheckTool({
   const shown = working?.report ?? pasted;
   /** The text on show is the text last checked, and it read: the right column says Checked, not Preview. */
   const checkedNow = run !== null && Boolean(outcome?.ok) && !stale;
-  const request = shown ? priceRequest(shown) : null;
+  // A published day loaded here compares its saved day's own ranked clashes; a pasted grid its longest overlaps.
+  const request = shown ? priceRequest(shown, run?.published && published ? (published.ranking ?? null) : null) : null;
   /** The grid on show and the settings it was checked with: what the link and the .csv carry. */
   const shownInput: CheckInput | null =
     run && shown ? { ...run.input, grid: working ? gridText(working.report.sets) : run.input.grid } : null;
@@ -1354,7 +1362,7 @@ export function CheckTool({
       setLive(on);
       setPrice({ phase: "not_saved" });
       setNote(
-        !on ? PRICE_COPY.liveOff : run?.published ? PRICE_COPY.publishedNotSaved : PRICE_COPY.notSaved(request.acts.length, request.need),
+        !on ? PRICE_COPY.liveOff : run?.published ? PRICE_COPY.publishedNotSaved : PRICE_COPY.notSaved(request.liveActs.length, request.need),
       );
     } else if (result.status === "refused") {
       setPrice({ phase: "refused", mode, code: result.code, message: result.message });
@@ -1364,6 +1372,12 @@ export function CheckTool({
       setNote(PRICE_COPY.error);
     }
   }
+
+  /** The decisions marked "Kept on purpose": Find a change leaves out, by default, a change that ends one. */
+  const keptIds = useMemo(
+    () => new Set([...decisions.values()].filter((decision) => decision.status === "kept").map((decision) => decision.id)),
+    [decisions],
+  );
 
   async function copyLink() {
     if (!shownInput) return;
@@ -1385,6 +1399,7 @@ export function CheckTool({
   const trialUi: TrialUi = {
     state: trial,
     stale,
+    kept: keptIds,
     onFind: findChange,
     onApply: tryChange,
     onClose: () => {
@@ -1402,6 +1417,7 @@ export function CheckTool({
           applied: working?.applied ?? [],
           decisions: listed,
           price: price.phase === "ready" ? price.answer : null,
+          priceSkipped: request?.skipped ?? [],
           sample: run.sample,
           published: run.published ?? null,
           checkedAt: run.checkedAt,

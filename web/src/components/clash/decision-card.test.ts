@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { LABEL_META } from "@/lib/clashes";
 import { buildDecisionCopy, NO_PRICED_CLASH, parseDecision, sharedTimeline } from "@/lib/decision";
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
 import { parsePreset } from "@/lib/preset";
@@ -9,21 +10,25 @@ import { parseRuleFixes, plannedNote, STAGE_FIT_GLOSS } from "@/lib/rule-fix";
 
 import {
   builtDate,
+  datelineWithReading,
   DecisionCard,
   DecisionCardSkeleton,
   focusShown,
-  HIDDEN_CLASH_LINE,
+  hiddenClashLine,
   INDEX_SCALE,
   indexDelta,
   isHiddenDecision,
   isInventedDecision,
   KEEP_MOVE,
+  KEPT_AGREE,
   KEPT_IN_PLAN,
+  MOVE_CHOICE_LINE,
   PairRecheck,
   RECHECK_PAIR,
   savedReadingLine,
   SEE_YOUR_PLAN,
   seeYourPlan,
+  tasteOverlapOf,
   timelineSpans,
 } from "./decision-card";
 import { ChangeCard, KeepApart } from "./keep-apart";
@@ -206,12 +211,14 @@ function fixtureLanes(testedStage?: string): string[][] {
 }
 
 describe("DecisionCard", () => {
-  it("leads with the festival and day as a dateline, then the action as the heading, the index with its one caption, the timeline, and only then rows 1 to 3 with the rule check beside row 3", () => {
+  it("leads with the festival and day as a dateline, then the action as the heading, why this clash, the index with its one paragraph, the timeline, and only then rows 1 to 3 with the rule check beside row 3", () => {
     const html = renderToStaticMarkup(createElement(DecisionCard, { copy: copy() }));
     const plain = text(html);
     const order = [
       "Tiny Fest, Saturday · published timetable",
       "Bo Diddly Squat 60 minutes later:",
+      "A hidden clash",
+      "Clash Budget Index",
       "104.2 → 98.4",
       "Selected and scored by this app’s index. A reading, not a verdict.",
       "Solid: where the sets play now.",
@@ -244,19 +251,21 @@ describe("DecisionCard", () => {
     expect(html).not.toMatch(/cc-hero-(slot|band|mark)|cc-overlap-band/);
   });
 
-  it("puts the line about taste (a pointer to the three readings) above the actions, outside the working, only when passed", () => {
+  it("puts the line about taste (a pointer to the three readings) under the heading, above the index, outside the working, only when passed", () => {
     const readings = createElement("p", null, "Three readings here");
     const html = renderToStaticMarkup(createElement(DecisionCard, { copy: copy(), onOpenMove: () => {}, readings }));
     const plain = text(html);
     expect(plain).toContain("Three readings here");
-    expect(plain.indexOf("Three readings here")).toBeGreaterThan(plain.indexOf("Hatched: time shared."));
-    // Before the action row's "Keep this move" (shown from 1024 px); the copy shown below 1024 px sits
-    // above the drawing, so the taste line comes after it there.
-    expect(plain.indexOf("Three readings here")).toBeLessThan(plain.lastIndexOf("Keep this move"));
-    expect(plain.indexOf("Keep this move")).toBeLessThan(plain.indexOf("Three readings here"));
+    // After the heading; before the index, both copies of "Keep this move" and the drawing.
+    expect(plain.indexOf("Three readings here")).toBeGreaterThan(plain.indexOf("minutes shared"));
+    expect(plain.indexOf("Three readings here")).toBeLessThan(plain.indexOf("Clash Budget Index"));
+    expect(plain.indexOf("Three readings here")).toBeLessThan(plain.indexOf("Keep this move"));
+    expect(plain.indexOf("Three readings here")).toBeLessThan(plain.indexOf("Hatched: time shared."));
     expect(text(working(html).outside)).toContain("Three readings here");
-    // The fixture's pair carries the Hidden label, so the hidden-clash sentence leads the taste line.
-    expect(html).toMatch(/<div class="mt-4 space-y-1"><p data-hidden-line=""[^>]*>[^<]*<\/p><p>Three readings here<\/p><\/div>/);
+    // The fixture's pair carries the Hidden label, so the hidden-clash sentence comes first, then the readings.
+    expect(html).toMatch(
+      /<div data-why-lines="" class="mt-3 space-y-1"><p data-hidden-line=""[^>]*>[^<]*<\/p><p>Three readings here<\/p><\/div><div data-index-block=""/,
+    );
     expect(text(renderToStaticMarkup(createElement(DecisionCard, { copy: copy() })))).not.toContain("Three readings here");
   });
 
@@ -299,7 +308,8 @@ describe("DecisionCard", () => {
     expect(open).toContain("Selected and scored by this app’s index. A reading, not a verdict.");
     expect(open).not.toContain(limits);
     expect(open.match(/not a verdict/g)).toHaveLength(1);
-    const caption = /<p class="([^"]*)">Selected and scored by this app’s index\. A reading, not a verdict\.<\/p>/.exec(html)?.[1] ?? "";
+    const caption =
+      /<p data-index-scale="" class="([^"]*)">A score, not money: [^<]*Selected and scored by this app’s index\. A reading, not a verdict\.<\/p>/.exec(html)?.[1] ?? "";
     // 13 px under the index line, so it reads directly under the figure on a phone too.
     expect(caption.split(" ")).toEqual(expect.arrayContaining(["text-[0.8125rem]", "leading-snug", "text-muted-foreground"]));
     expect(html.indexOf("Selected and scored")).toBeLessThan(html.indexOf("<figure"));
@@ -520,15 +530,16 @@ describe("DecisionCard", () => {
     const figureHtml = /<figure[\s\S]*?<\/figure>/.exec(hiddenHtml)?.[0] ?? "";
     expect(figureHtml).toContain("Solid: where the sets play now. Dashed: tested. Hatched: time shared.");
     expect(figureHtml).not.toMatch(/<(a|button|input|select|textarea)\b|tabindex=/);
-    expect(hiddenHtml).toMatch(/<div data-index-block="" class="mt-3">/);
+    expect(hiddenHtml).toMatch(/<div data-index-block="" class="mt-4">/);
     for (const pattern of [/<h2[^>]*class="[^"]*"/, /<p class="text-\[0\.8125rem\] leading-5 font-semibold text-muted-foreground">Tiny Fest/]) {
       expect(pattern.exec(hiddenHtml)?.[0]).not.toMatch(ORDER);
     }
-    // Source order: dateline, headline, index (readings, then the attribution), the early "Keep this move",
-    // drawing, the action row (its own "Keep this move"), working.
+    // Source order: dateline, headline, why this clash, index (readings, then the attribution), the early
+    // "Keep this move", drawing, the action row (its own "Keep this move"), working.
     const at = (needle: string) => hiddenHtml.indexOf(needle);
     expect(at("Tiny Fest, Saturday")).toBeLessThan(at('id="decision-heading"'));
-    expect(at('id="decision-heading"')).toBeLessThan(at("data-index-block"));
+    expect(at('id="decision-heading"')).toBeLessThan(at("data-why-lines"));
+    expect(at("data-why-lines")).toBeLessThan(at("data-index-block"));
     expect(at("data-index-block")).toBeLessThan(at(">Keep this move<"));
     expect(at(">Keep this move<")).toBeLessThan(at("<figure"));
     expect(at("<figure")).toBeLessThan(hiddenHtml.lastIndexOf(">Keep this move<"));
@@ -652,21 +663,21 @@ describe("DecisionCard", () => {
     expect(text(withRule)).not.toMatch(/lines 1 to/);
   });
 
-  it("says under the index figure what its change means, from the same two readings", () => {
+  it("says beside the index figure what its change is, from the same two readings, and 'Lower is better' once, in the paragraph", () => {
     const plain = text(renderToStaticMarkup(createElement(DecisionCard, { copy: copy() })));
-    // 104.2 → 98.4: a fall of 5.8, with a real minus sign, before the attribution.
+    // 104.2 → 98.4: a fall of 5.8, with a real minus sign, then one paragraph: the scale, the attribution, the limit.
     expect(plain).toContain(
-      "104.2 to 98.4. \u22125.8 index points · lower is better A score, not money: 100 = the average random valid timetable of this lineup. Lower is better. Selected and scored by this app’s index",
+      "104.2 to 98.4. \u22125.8 index points A score, not money: 100 = the average random valid timetable of this lineup. Lower is better. Selected and scored by this app’s index. A reading, not a verdict.",
     );
-    // Mono for the figure only; "index points" and "lower is better" in the sans, muted.
+    // Mono for the figure only; "index points" in the sans, muted.
     const html = renderToStaticMarkup(createElement(DecisionCard, { copy: copy() }));
     expect(html).toContain(
-      '<p class="text-[0.8125rem] leading-snug text-muted-foreground"><span class="font-mono tabular-nums">\u22125.8</span> index points · lower is better</p>',
+      '<p class="text-[0.8125rem] leading-snug text-muted-foreground"><span class="font-mono tabular-nums">\u22125.8</span> index points</p>',
     );
-    expect(indexDelta("104.2", "98.4")).toBe("\u22125.8 index points · lower is better");
-    expect(indexDelta("116.7", "114.3")).toBe("\u22122.4 index points · lower is better");
-    expect(indexDelta("10.0", "12.5")).toBe("+2.5 index points · lower is better");
-    expect(indexDelta("10.0", "10.0")).toBe("0.0 index points · lower is better");
+    expect(indexDelta("104.2", "98.4")).toBe("\u22125.8 index points");
+    expect(indexDelta("116.7", "114.3")).toBe("\u22122.4 index points");
+    expect(indexDelta("10.0", "12.5")).toBe("+2.5 index points");
+    expect(indexDelta("10.0", "10.0")).toBe("0.0 index points");
     expect(indexDelta(null, "1.0")).toBeNull();
     expect(indexDelta("x", "1.0")).toBeNull();
   });
@@ -750,9 +761,10 @@ describe("DecisionCard", () => {
     const plain = text(html);
     expect(plain).toContain("No legal place for either set lowers the index.");
     expect(plain).not.toContain("Keep this move");
-    // No figure: no index label, no attribution caption.
+    // No figure: no index label; the paragraph (scale, attribution, limit) still shows with no click.
     expect(plain).not.toContain("Clash Budget Index");
-    expect(plain).not.toContain("Selected and scored by this app’s index. ");
+    expect(html).not.toContain("data-index-block");
+    expect(text(working(html).outside)).toContain(`${INDEX_SCALE} Selected and scored by this app’s index. A reading, not a verdict.`);
     expect(html).not.toContain("data-shared-time");
     expect(html).not.toContain("data-pair-strip");
     // The only drawing left is the toggle's chevron.
@@ -785,6 +797,7 @@ describe("Keep this move, confirmed in place", () => {
   it("says Kept in your plan. with a link to the plan, in ink, under each copy of the button once the plan holds the move", () => {
     const html = card({ kept: { move: true, change: false } });
     expect(KEPT_IN_PLAN).toBe("Kept in your plan.");
+    expect(KEPT_AGREE).toBe("Nothing moves until the acts’ teams agree.");
     expect(SEE_YOUR_PLAN).toBe("See your plan");
     // Two live regions, one per width: the early copy's inside its lg:hidden wrapper, the row's max-lg:hidden.
     const notices = [
@@ -792,7 +805,7 @@ describe("Keep this move, confirmed in place", () => {
     ].map((m) => m[0]);
     expect(notices).toHaveLength(2);
     for (const notice of notices) {
-      expect(text(notice)).toBe("Kept in your plan. See your plan");
+      expect(text(notice)).toBe("Kept in your plan. Nothing moves until the acts’ teams agree. See your plan");
       expect(notice).toMatch(/<a href="#your-plan" class="[^"]*\bmin-h-11\b[^"]*">See your plan<\/a>/);
       // Ink, never green or vermilion; no box, no pill, no id.
       expect(notice).toContain("text-foreground");
@@ -847,51 +860,100 @@ describe("Keep this move, confirmed in place", () => {
 });
 
 describe("the index scale in the card", () => {
-  it("prints the scale inside the index block, before the attribution, which stays the block's last line, on a published and an invented day", () => {
+  it("prints the scale, the attribution and the limit as one paragraph ending the index block, on a published and an invented day", () => {
     expect(INDEX_SCALE).toBe("A score, not money: 100 = the average random valid timetable of this lineup. Lower is better.");
     for (const preset of [tinyPreset(), tinyPreset({ synthetic: true })]) {
       const html = renderToStaticMarkup(createElement(DecisionCard, { copy: copy({}, preset), onOpenMove: () => null }));
       const block = /<div data-index-block=""[\s\S]*?A reading, not a verdict\.<\/p><\/div>/.exec(html)?.[0] ?? "";
       expect(text(block)).toMatch(
-        /lower is better A score, not money: 100 = the average random valid timetable of this lineup\. Lower is better\. Selected and scored by this app’s index\. A reading, not a verdict\.$/,
+        /index points A score, not money: 100 = the average random valid timetable of this lineup\. Lower is better\. Selected and scored by this app’s index\. A reading, not a verdict\.$/,
       );
+      // Under the label: the figure with its change, then the one paragraph.
+      expect(block.match(/<p[ >]/g)).toHaveLength(4);
       expect(text(working(html).outside)).toContain(INDEX_SCALE);
+    }
+  });
+
+  it("says 'Lower is better' exactly once, and the attribution with its limit, in every state of the card", () => {
+    const states = [
+      renderToStaticMarkup(createElement(DecisionCard, { copy: copy() })),
+      renderToStaticMarkup(createElement(DecisionCard, { copy: copy(), onOpenMove: () => null, kept: { move: false, change: false } })),
+      renderToStaticMarkup(createElement(DecisionCard, { copy: copy(), onOpenMove: () => null, kept: { move: true, change: false } })),
+      renderToStaticMarkup(createElement(DecisionCard, { copy: copy({ move: null }), onOpenMove: () => null })),
+      renderToStaticMarkup(createElement(DecisionCard, { copy: copy({}, tinyPreset({ synthetic: true })), onOpenMove: () => null })),
+    ];
+    for (const html of states) {
+      const outside = text(working(html).outside);
+      expect(outside.match(/lower is better/gi)).toHaveLength(1);
+      expect(outside).toContain("100 = the average random valid timetable");
+      expect(outside).toContain("Selected and scored by this app’s index. A reading, not a verdict.");
+      // One paragraph, shown at every width (no width-hidden class on it).
+      const paragraph = /<p data-index-scale="" class="([^"]*)">/.exec(html)?.[1] ?? "";
+      expect(paragraph).not.toBe("");
+      expect(paragraph).not.toMatch(/hidden/);
+      expect(html.match(/data-index-scale=""/g)).toHaveLength(1);
     }
   });
 });
 
 describe("the hidden clash in the card", () => {
-  it("says the card's own clash is a hidden clash, in the Hidden wall's words, in ink, outside the working", () => {
-    expect(HIDDEN_CLASH_LINE).toBe(
-      "A hidden clash: the acts' main genre tags differ, but their taste overlap is among the day's highest.",
-    );
+  it("says the card's own clash is a hidden clash, concretely, in ink, under the heading and above the index, outside the working", () => {
     const card = copy();
     expect(isHiddenDecision(card)).toBe(true);
-    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: card, onOpenMove: () => null }));
-    expect(text(working(html).outside)).toContain(HIDDEN_CLASH_LINE);
-    const line = /<p data-hidden-line="" class="([^"]*)">/.exec(html)?.[1] ?? "";
-    expect(line).not.toBe("");
-    expect(line).not.toMatch(/prov-qloo|text-primary|teal/);
-    // After the drawing, above the action row.
-    expect(html.indexOf("data-hidden-line")).toBeGreaterThan(html.indexOf("</figure>"));
-    expect(html.indexOf("data-hidden-line")).toBeLessThan(html.lastIndexOf(">Keep this move<"));
+    const taste = tasteOverlapOf(card);
+    expect(taste).toMatch(/^\d{1,3}$/);
+    const html = renderToStaticMarkup(
+      createElement(DecisionCard, { copy: card, onOpenMove: () => null, hiddenCount: 4, genres: ["Garage Rock", "Folk Pop"] }),
+    );
+    const line = `A hidden clash, 1 of 4 on this day: main genres differ (Garage Rock, Folk Pop), yet their taste overlap ranks ${taste} of 100 on this bill, among the day’s highest.`;
+    expect(text(working(html).outside)).toContain(line);
+    const classes = /<p data-hidden-line="" class="([^"]*)">/.exec(html)?.[1] ?? "";
+    expect(classes).not.toBe("");
+    expect(classes).not.toMatch(/prov-qloo|text-primary|teal/);
+    // After the heading, before the index block and the drawing.
+    expect(html.indexOf("data-hidden-line")).toBeGreaterThan(html.indexOf("</h2>"));
+    expect(html.indexOf("data-hidden-line")).toBeLessThan(html.indexOf("data-index-block"));
+    expect(html.indexOf("data-hidden-line")).toBeLessThan(html.indexOf("<figure"));
+    // No lift or complaint-share figure beside it: that counts a different population.
+    expect(line).not.toMatch(/%|lift/);
+  });
+
+  it("keeps the board's definition, and drops the count without hiddenCount and the genres unless both are saved", () => {
+    const card = copy();
+    const taste = tasteOverlapOf(card);
+    const bare = text(renderToStaticMarkup(createElement(DecisionCard, { copy: card })));
+    expect(bare).toContain(
+      `A hidden clash: main genres differ, yet their taste overlap ranks ${taste} of 100 on this bill, among the day’s highest.`,
+    );
+    expect(bare).not.toContain("1 of");
+    expect(hiddenClashLine({ count: 0, genres: ["Rock", null], taste: "88" })).toBe(
+      "A hidden clash: main genres differ, yet their taste overlap ranks 88 of 100 on this bill, among the day’s highest.",
+    );
+    expect(hiddenClashLine({ count: 1, genres: ["Rock", "Jazz"], taste: null })).toBe(
+      "A hidden clash, 1 of 1 on this day: main genres differ (Rock, Jazz), yet their taste overlap is among the day’s highest.",
+    );
+    // The board's Hidden label means the same: main genre tags differ, taste overlap among the day's highest.
+    expect(LABEL_META.hidden.explain).toBe("The acts' main genre tags differ, but their taste overlap is among the day's highest.");
   });
 
   it("says nothing of the kind for a pair without the Hidden label", () => {
     const card = copy({}, tinyPreset({ label: null }));
     expect(isHiddenDecision(card)).toBe(false);
-    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: card, onOpenMove: () => null }));
+    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: card, onOpenMove: () => null, hiddenCount: 3 }));
     expect(text(html)).not.toContain("A hidden clash");
     expect(html).not.toContain("data-hidden-line");
   });
 
-  it("says the same on the invented day, naming no source", () => {
+  it("says the day and the overlap are invented on the invented day, naming no source", () => {
     const card = copy({}, tinyPreset({ synthetic: true }));
     expect(isInventedDecision(card)).toBe(true);
     expect(isInventedDecision(copy())).toBe(false);
-    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: card }));
-    expect(text(html)).toContain(HIDDEN_CLASH_LINE);
-    expect(HIDDEN_CLASH_LINE).not.toMatch(/qloo/i);
+    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: card, hiddenCount: 2, genres: ["Rock", "Jazz"] }));
+    const line = /<p data-hidden-line=""[^>]*>([^<]*)<\/p>/.exec(html)?.[1] ?? "";
+    expect(line).toBe(
+      `A hidden clash, 1 of 2 on this invented day: main genres differ (Rock, Jazz), yet their invented taste overlap ranks ${tasteOverlapOf(card)} of 100 on this bill, among the day’s highest.`,
+    );
+    expect(line).not.toMatch(/qloo/i);
   });
 });
 
@@ -928,6 +990,25 @@ describe("the saved reading and the live re-check in the working", () => {
     );
     expect(text(invented)).not.toContain("Saved Qloo reading");
     expect(invented).not.toContain('data-provenance="recorded"');
+  });
+
+  it("puts the saved reading's build date on the dateline of a published day, in UTC, and never on the invented day", () => {
+    // 00:13 UTC is still the day before in Arizona: the date is the UTC one, by the working's own formatter.
+    const late = { builtAt: "2026-10-03T00:13:00+00:00", requests: 12 };
+    expect(datelineWithReading("Tiny Fest · Saturday · published timetable", late, false)).toBe(
+      "Tiny Fest, Saturday · published timetable · saved Qloo reading built 3 Oct 2026",
+    );
+    expect(datelineWithReading("Tiny Fest · Saturday · published timetable", null, false)).toBe("Tiny Fest, Saturday · published timetable");
+    const dateline = (html: string) =>
+      text(/<p class="text-\[0\.8125rem\] leading-5 font-semibold text-muted-foreground">([^<]*)<\/p>/.exec(html)?.[1] ?? "");
+    const published = renderToStaticMarkup(createElement(DecisionCard, { copy: copy(), saved: late }));
+    expect(dateline(published)).toBe("Tiny Fest, Saturday · published timetable · saved Qloo reading built 3 Oct 2026");
+    // The working keeps the full line with the count.
+    expect(text(working(published).region)).toContain("Saved Qloo reading of this day: built 3 Oct 2026 from 12 saved Qloo responses.");
+    expect(dateline(renderToStaticMarkup(createElement(DecisionCard, { copy: copy() })))).toBe("Tiny Fest, Saturday · published timetable");
+    const invented = renderToStaticMarkup(createElement(DecisionCard, { copy: copy({}, tinyPreset({ synthetic: true })), saved: late }));
+    expect(dateline(invented)).toMatch(/^Invented day/);
+    expect(text(invented)).not.toMatch(/qloo/i);
   });
 
   it("offers the re-check only while the server answers live pair checks and the page passes the drawer's opener", () => {
@@ -1037,10 +1118,11 @@ describe("the side-by-side comparison in the card", () => {
     expect(plain).not.toContain("Stage-fit flags, now → after");
     expect(plain).not.toContain("Costliest clash after");
     expect(plain).not.toContain(STAGE_FIT_GLOSS);
-    // ...but one sentence under the table still says what each change leads to, from the same figures.
+    // ...but one sentence under the table still says what each change leads to, from the same figures,
+    // with no walk through unchanged flag counts.
     const consequence =
-      "Move one set: stage-fit flags go 1 → 1, then the costliest clash is Ed Sheeran-ish and Fay Wray, 45 minutes, 1.2 index points; " +
-      "keep the two apart: stage-fit flags go 1 → 2, then the costliest clash is Cy Twombly and Di Vine, 30 minutes, 9.5 index points.";
+      "Move one set: the costliest clash after is Ed Sheeran-ish and Fay Wray, 45 minutes, 1.2 index points; " +
+      "keep the two apart: adds 1 stage-fit flag, then the costliest clash is Cy Twombly and Di Vine, 30 minutes, 9.5 index points.";
     expect(plain).toContain(consequence);
     expect(plain.indexOf(consequence)).toBeGreaterThan(plain.indexOf("Clash Budget Index, before → after"));
     expect(plain.indexOf(consequence)).toBeLessThan(plain.indexOf("How this was chosen"));
@@ -1096,7 +1178,18 @@ describe("the side-by-side comparison in the card", () => {
     const rows = tradeoff.rows;
     const only = (ids: string[]) => ({ ...tradeoff, rows: rows.filter((row) => !["flags", "costliest"].includes(row.id) || ids.includes(row.id)) });
     expect(consequenceLine(only([]))).toBeNull();
-    expect(consequenceLine(only(["flags"]))).toBe("Move one set: stage-fit flags go 1 → 1; keep the two apart: stage-fit flags go 1 → 2.");
+    // No walk through flag counts ("go 1 → 1"): only a change that adds flags says so.
+    expect(consequenceLine(only(["flags"]))).toBe("Keep the two apart: adds 1 stage-fit flag.");
+    const noneAdded = {
+      ...tradeoff,
+      rows: rows.filter((row) => row.id !== "costliest").map((row) => (row.id === "flags" ? { ...row, rule: "2 → 2" } : row)),
+    };
+    expect(consequenceLine(noneAdded)).toBeNull();
+    const moveAdds = { ...tradeoff, rows: rows.map((row) => (row.id === "flags" ? { ...row, move: "0 → 3", rule: "1 → 1" } : row)) };
+    expect(consequenceLine(moveAdds)).toBe(
+      "Move one set: adds 3 stage-fit flags, then the costliest clash is Ed Sheeran-ish and Fay Wray, 45 minutes, 1.2 index points; keep the two apart: the costliest clash after is Cy Twombly and Di Vine, 30 minutes, 9.5 index points.",
+    );
+    for (const variant of [tradeoff, moveAdds, noneAdded]) expect(consequenceLine(variant) ?? "").not.toMatch(/flags go/);
     const cleared = {
       ...tradeoff,
       rows: rows.map((row) => (row.id === "costliest" ? { ...row, move: NO_PRICED_CLASH } : row)).filter((row) => row.id !== "flags"),
@@ -1110,14 +1203,14 @@ describe("the side-by-side comparison in the card", () => {
       rows: rows.map((row) => (row.id === "costliest" ? { ...row, rule: row.move } : row)),
     };
     expect(consequenceLine(same)).toBe(
-      "Move one set: stage-fit flags go 1 → 1; keep the two apart: 1 → 2; either way the costliest clash after is Ed Sheeran-ish and Fay Wray, 45 minutes, 1.2 index points.",
+      "Keep the two apart: adds 1 stage-fit flag; either way the costliest clash after is Ed Sheeran-ish and Fay Wray, 45 minutes, 1.2 index points.",
     );
     const none = {
       ...tradeoff,
       rows: rows.map((row) => (row.id === "costliest" ? { ...row, move: NO_PRICED_CLASH, rule: NO_PRICED_CLASH } : row)),
     };
     expect(consequenceLine(none)).toBe(
-      "Move one set: stage-fit flags go 1 → 1; keep the two apart: 1 → 2; either way no priced clash is left on this day.",
+      "Keep the two apart: adds 1 stage-fit flag; either way no priced clash is left on this day.",
     );
   });
 
@@ -1198,6 +1291,22 @@ describe("the side-by-side comparison in the card", () => {
     const plain = text(renderToStaticMarkup(createElement(DecisionCard, { copy: copy({ rule: null }) })));
     expect(plain).not.toContain("The two changes side by side");
     expect(plain).not.toContain("Move one set Keep the two apart");
+  });
+});
+
+describe("why this move and not a bigger gain", () => {
+  it("says in the working, beside line 2, that the move is chosen by clash, not by gain, and only with a move", () => {
+    expect(MOVE_CHOICE_LINE).toBe(
+      "Chosen by clash, not by gain: the lowest-index single move for the day’s costliest clash that has one. A move for another clash can lower the index more; Try a move prices the legal places of other sets.",
+    );
+    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: copy(), onOpenMove: () => null }));
+    const { region, outside } = working(html);
+    expect(text(region)).toContain(MOVE_CHOICE_LINE);
+    expect(text(region).indexOf(MOVE_CHOICE_LINE)).toBeGreaterThan(text(region).indexOf(copy().moveLine));
+    expect(text(outside)).not.toContain("Chosen by clash");
+    const none = renderToStaticMarkup(createElement(DecisionCard, { copy: copy({ move: null }) }));
+    expect(text(none)).not.toContain("Chosen by clash");
+    expect(MOVE_CHOICE_LINE).not.toMatch(/best|optimal|beats|predicts|proves/i);
   });
 });
 
@@ -1375,7 +1484,7 @@ describe("the hero", () => {
     const html = await hero(false);
     const plain = text(html);
     expect(plain).toContain("Paste your own draft grid");
-    expect(plain).toContain("About a minute. Nothing leaves your browser unless you ask for prices.");
+    expect(plain).toContain("About a minute. Nothing leaves your browser unless you ask to compare audiences.");
     // The secondary button: outline (a 1.5 px ink edge, no fill), 44 px (the default size, the same height as
     // "Keep this move"), with a trailing arrow and no fill, so the card's "Keep this move" stays the one solid button.
     expect(html).toMatch(/<a(?=[^>]*data-variant="outline")(?=[^>]*data-size="default")(?=[^>]*href="\/check")[^>]*>Paste your own draft grid<svg/);

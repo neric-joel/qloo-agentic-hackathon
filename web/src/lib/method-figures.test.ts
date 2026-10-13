@@ -16,6 +16,8 @@ import {
   formatAuc,
   formatCount,
   exploratoryReading,
+  formatDiff,
+  formatDiffInterval,
   formatInterval,
   formatP,
   formatPct,
@@ -23,6 +25,7 @@ import {
   formatWithin,
   methodRow,
   numberWord,
+  tasteInPriceReading,
 } from "./method-figures";
 import { PUBLIC_SOURCES } from "./public-sources";
 
@@ -170,6 +173,75 @@ describe("method figures", () => {
     const html = renderToStaticMarkup(createElement(MethodPage)).replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ");
     expect(html).toContain("the 68 pairs come from 42 complaints, so the real uncertainty is wider than that p suggests.");
     expect(html).toContain(countsNote());
+  });
+
+  it("pins the taste-inside-the-price figures as literals (round 32, exploratory)", () => {
+    expect(METHOD_FIGURES.tasteInPrice).toEqual({
+      fullPrice: { auc: 0.746, auc95: [0.675, 0.812] },
+      popularity: 0.722,
+      pairedVsPopularity: { diff: 0.024, interval: [-0.074, 0.136] },
+      shuffled: { mean: 0.652, range95: [0.593, 0.706], shuffles: 1000 },
+      tasteRemoved: { auc: 0.754, auc95: [0.69, 0.828] },
+      pairedVsTasteRemoved: { diff: -0.009, interval: [-0.102, 0.079] },
+      festivals: [
+        {
+          label: "Glastonbury 2025",
+          complaintPairs: 14,
+          complaints: 8,
+          read: { popularity: 0.563, tasteRemoved: 0.671, fullPrice: 0.871 },
+        },
+        {
+          label: "Four US festivals",
+          complaintPairs: 54,
+          complaints: 34,
+          read: { popularity: 0.768, tasteRemoved: 0.779, fullPrice: 0.715 },
+        },
+        { label: "Riot Fest 2026, one of the four", complaintPairs: 5, complaints: 3, read: null },
+      ],
+      glastonburyTasteAdds: { diff: 0.201, interval: [0.111, 0.277] },
+      usTasteAdds: { diff: -0.065, interval: [-0.163, 0.025] },
+      locationRequests: 347,
+    });
+  });
+
+  it("agrees with itself: the festival rows add up, each difference matches its AUCs, and the readings follow the intervals", () => {
+    const t = METHOD_FIGURES.tasteInPrice;
+    // The same popularity AUC as the backtest table; the Glastonbury row's pairs and complaints are the table's.
+    expect(t.popularity).toBe(methodRow("popularity").auc);
+    const [glasto, us, riot] = t.festivals;
+    expect(glasto.complaintPairs + us.complaintPairs).toBe(backtest.scoredPairs);
+    expect(glasto.complaints + us.complaints).toBe(backtest.clusters);
+    expect(glasto.complaints).toBe(backtest.glastonbury.namedClashes);
+    expect(riot.complaintPairs).toBeLessThan(us.complaintPairs);
+    // Each paired difference is its two pooled AUCs' difference, to rounding (the figures are rounded separately).
+    expect(Math.abs(t.fullPrice.auc - t.popularity - t.pairedVsPopularity.diff)).toBeLessThanOrEqual(0.0011);
+    expect(Math.abs(t.fullPrice.auc - t.tasteRemoved.auc - t.pairedVsTasteRemoved.diff)).toBeLessThanOrEqual(0.0011);
+    expect(Math.abs(glasto.read!.fullPrice - glasto.read!.tasteRemoved - t.glastonburyTasteAdds.diff)).toBeLessThanOrEqual(0.0011);
+    expect(Math.abs(us.read!.fullPrice - us.read!.tasteRemoved - t.usTasteAdds.diff)).toBeLessThanOrEqual(0.0011);
+    // Every estimate sits inside its own interval.
+    for (const [value, [low, high]] of [
+      [t.fullPrice.auc, t.fullPrice.auc95],
+      [t.tasteRemoved.auc, t.tasteRemoved.auc95],
+      [t.shuffled.mean, t.shuffled.range95],
+      [t.pairedVsPopularity.diff, t.pairedVsPopularity.interval],
+      [t.pairedVsTasteRemoved.diff, t.pairedVsTasteRemoved.interval],
+      [t.glastonburyTasteAdds.diff, t.glastonburyTasteAdds.interval],
+      [t.usTasteAdds.diff, t.usTasteAdds.interval],
+    ] as const) {
+      expect(low).toBeLessThanOrEqual(value);
+      expect(value).toBeLessThanOrEqual(high);
+    }
+    // What the page says follows the intervals: neither advantage was established.
+    expect(tasteInPriceReading()).toEqual({ tasteAddsIncludesZero: true, tasteAddsAboveZero: false, popularityIncludesZero: true });
+    expect(
+      tasteInPriceReading({ pairedVsTasteRemoved: { interval: [0.01, 0.2] }, pairedVsPopularity: { interval: [0.01, 0.2] } }),
+    ).toEqual({ tasteAddsIncludesZero: false, tasteAddsAboveZero: true, popularityIncludesZero: false });
+  });
+
+  it("prints paired differences signed", () => {
+    expect(formatDiff(0.024)).toBe("+0.024");
+    expect(formatDiff(-0.009)).toBe("-0.009");
+    expect(formatDiffInterval([-0.102, 0.079])).toBe("-0.102 to +0.079");
   });
 
   it("pins the denominators", () => {
@@ -397,7 +469,12 @@ describe("/method page", () => {
     const text = pageText();
     const label = text.indexOf("The Hidden label on the timetable uses a stricter line than this count");
     expect(label).toBeGreaterThan(text.indexOf("Hidden clashes are examples, not detections."));
-    expect(text).toContain("taste overlap in the day's top tenth, with no shared genre tag, where the count above uses the top quarter.");
+    // Round 32 (V6): the label's genre test is the engine's (backend/app/schedule/metrics.py, clash_label): the two
+    // acts' main genre tags differ. The count above it still uses no shared genre tag.
+    expect(text).toContain(
+      "uses a stricter line than this count for taste overlap, the day's top tenth where the count above uses the top quarter, and a looser one for genre: the two acts' main genre tags differ.",
+    );
+    expect(text).toContain("Of 185 pairs with top-quarter taste overlap and no shared genre tag");
   });
 
   it("describes the live re-check after the provenance labels, with no figure but its request count", () => {
@@ -435,22 +512,24 @@ describe("/method page", () => {
     expect(section).toContain(
       "The brief page prints this day's costliest clashes, the day's Clash Budget Index and any moves you kept, using only figures the timetable page already shows.",
     );
-    // It agrees with the home page's pilot offer: one brief back, free, with the same limits.
+    // It agrees with the home page's pilot offer (round 32): a walk through a published day's brief, with the same limits.
     expect(section).toContain(
-      "It is for evaluating this entry. The pilot on the home page sends one back, free, to a festival that sends its bill, with the same limits: no Qloo tags or identifiers, and not for redistribution.",
+      "It is for evaluating this entry. The pilot on the home page walks a programmer through a published day's brief, with the same limits: no Qloo tags or identifiers, and not for redistribution.",
     );
     expect(section).not.toContain("it is not offered to festivals");
     expect(section.match(/\d/g)).toBeNull();
   });
 
-  it("opens with five short-version rows (popularity and the moves check share one), the fourth saying what the measure is good for", () => {
+  it("opens with five short-version rows (popularity's result and the moves check one each), the last saying what the measure is", () => {
     const html = renderToStaticMarkup(createElement(MethodPage));
     const box = html.match(/<section aria-labelledby="short-heading"[\s\S]*?<\/section>/)?.[0] ?? "";
     expect(box.match(/<li/g)).toHaveLength(5);
     const text = pageText();
     expect(text).toContain(
-      "It ranks a day's clashes and tests moves against timetable rules. Taste overlap is a rank, not attendance; our check did not find complained-about clashes better than popularity.",
+      "It ranks a day's clashes and tests moves against timetable rules. Taste overlap is a rank, not attendance.",
     );
+    // Round 32 (D7): the popularity result is said once in the short version, not repeated here.
+    expect(text).not.toContain("our check did not find complained-about clashes better than popularity");
     // The failed gate still comes first.
     expect(text.indexOf("The test we set before building failed.")).toBeLessThan(text.indexOf("It ranks a day's clashes"));
   });
@@ -544,16 +623,16 @@ describe("/method exploratory result", () => {
     expect(text).toContain("so it is exploratory");
   });
 
-  it("puts the fifth bullet in the short version, with the failed test above it and a link to the full comparison", () => {
+  it("puts the exploratory answer in the short version's popularity row, with the failed test above it and a link to the full comparison", () => {
     const html = renderToStaticMarkup(createElement(MethodPage));
     const box = html.match(/<section aria-labelledby="short-heading"[\s\S]*?<\/section>/)?.[0] ?? "";
     const text = textOf(box);
     expect(text).toContain(
-      "An exploratory follow-up checked the same data after the test failed. The results do not establish an advantage over popularity. See the full comparison below .",
+      "and exploratory follow-ups on the same data did not establish an advantage over popularity for the app's full price. See the full comparison below .",
     );
     expect(box).toMatch(/<a href="#tested"[^>]*>See the full comparison below<\/a>/);
     expect(text.indexOf("The test we set before building failed.")).toBeLessThan(
-      text.indexOf("An exploratory follow-up"),
+      text.indexOf("exploratory follow-ups on the same data"),
     );
     // The test section below holds the full table; here AUC appears only in the line on what the same test showed,
     // directly after the failed test (round 31).

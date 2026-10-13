@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { ArrowRight, Check, CornerDownLeft, History, LoaderCircle, RotateCcw, SkipForward, X } from "lucide-react";
 
 import { ErrorState, MockBadge, ProvenanceChip, TraceDrawer, useAgentRun } from "@/components/kernel";
@@ -16,6 +16,7 @@ import {
   suggestedPrompts,
   textBlocks,
   type ClashExplain,
+  type ClashReply,
   type Exchange,
   type InlineSegment,
   type MoveOptions,
@@ -24,20 +25,32 @@ import {
 } from "@/lib/agent-session";
 import { panelMode, type AgentStatus } from "@/lib/agent-status";
 import { formatOverlap } from "@/lib/clashes";
-import { agentDataLine, explainPrompt } from "@/lib/credit";
+import { agentDataLine, explainPrompt, usedTitle } from "@/lib/credit";
 import { isRecord } from "@/lib/events";
 import { formatLatency, humanizeIdentifier, pluralize } from "@/lib/format";
 import { clockMinutes } from "@/lib/moves";
 import type { Festival, Preset } from "@/lib/preset";
 import { replayFinalState, type RecordedRun } from "@/lib/recorded-run";
 import type { RunResult, ToolCallState } from "@/lib/run-state";
-import { isRuleStackStep, sameStep, type StackMove, type StackStep } from "@/lib/stack";
+import {
+  MAX_STACK,
+  encodeMoves,
+  isRuleStackStep,
+  moveCount,
+  movedActs,
+  sameStep,
+  type PlanAnswer,
+  type StackMove,
+  type StackStep,
+} from "@/lib/stack";
 import { formatClock } from "@/lib/timetable";
 import { cn } from "@/lib/utils";
 
 import { BudgetMove, scaleRange, signedDelta, type ScaleRange } from "./budget-move";
 import { RecordedNotice, RecordedRuns, recordedQlooCalls } from "./recorded-runs";
 import { AgentSkeleton } from "./skeletons";
+import type { SeedMode } from "./try-a-move";
+import { checkPlan } from "./use-moves";
 import { useRecordings } from "./use-recordings";
 
 const TOOL_LABELS: Record<string, string> = {
@@ -113,14 +126,67 @@ function countWord(n: number): string {
 }
 
 /**
- * The one line about the recordings' Qloo use, read from the recordings: that none asked Qloo when every
- * run's saved count is 0, else null (each run then says its own count). Never on the invented day.
+ * The one line about the recordings' Qloo use, read from the recordings: that none sent a new Qloo request
+ * when every run's saved count is 0, else null (each run then says its own count). The engine they test moves
+ * with scores with the day's saved Qloo reading (backend/app/runs.py:124-127 puts the preset's matrix into the
+ * run's state; backend/app/agent/clash_tools.py:45 reads it and :164 scores with it). Never on the invented day.
  */
 export function recordingsQlooLine(runs: readonly RecordedRun[], synthetic = false): string | null {
   if (synthetic || runs.length === 0 || runs.some((run) => recordedQlooCalls(run) !== 0)) return null;
   return runs.length === 1
-    ? "This recorded run did not ask Qloo: it tests moves with the timetable engine."
-    : `None of these ${countWord(runs.length)} recorded runs asked Qloo: they test moves with the timetable engine.`;
+    ? "This recorded run sent no new Qloo request: it tests moves with the timetable engine, which scores with this day’s saved Qloo reading."
+    : `None of these ${countWord(runs.length)} recorded runs sent a new Qloo request: they test moves with the timetable engine, which scores with this day’s saved Qloo reading.`;
+}
+
+/** The trace trigger of a recorded run that sent no Qloo request: the count is the label, read from the recording. */
+export const ZERO_REQUESTS_LABEL = "Qloo requests in this run: 0";
+
+/**
+ * Under a recorded run that sent no Qloo request and priced every place it tested: where the taste in those
+ * prices came from. The run's state holds the preset's saved matrix (backend/app/runs.py:124-127,
+ * `published_state`), every tool reads it from there (backend/app/agent/clash_tools.py:45, `_state`) and
+ * scores with it (:164, `score_festival(festival, matrix, config)`; try_move :301/:315, find_moves :471).
+ */
+export const SAVED_READING_LINE =
+  "Every place it tested was scored with this day’s saved Qloo reading (taste overlap and popularity); it sent no new request.";
+
+/**
+ * True when a run's tool results priced at least one place and every place it tested was priced: an allowed
+ * try_move, a find_moves list with places, or suggested moves, and no move the rules refused (a refused move
+ * is not priced, so "every place it tested was scored" would not hold).
+ */
+export function pricedEveryPlace(reply: Pick<ClashReply, "whatIfs" | "moveOptions" | "reslots"> | null): boolean {
+  if (!reply) return false;
+  const priced =
+    reply.whatIfs.some((whatIf) => whatIf.allowed) ||
+    reply.moveOptions.some((options) => options.movable && options.options.length > 0) ||
+    reply.reslots.some((reslot) => reslot.moves.length > 0);
+  return priced && reply.whatIfs.every((whatIf) => whatIf.allowed);
+}
+
+/**
+ * What a recorded run's trace says about Qloo, read from that recording at render time: with 0 requests the
+ * trigger is "Qloo requests in this run: 0", and the saved-reading line shows when the run priced every place
+ * it tested. A run with requests keeps the drawer's own label and its count; a live run and the invented day
+ * get neither (the invented day credits no Qloo).
+ */
+export function recordedQloo(
+  recording: RecordedRun | undefined,
+  reply: Pick<ClashReply, "whatIfs" | "moveOptions" | "reslots"> | null,
+  synthetic = false,
+): { label: string | null; savedReading: boolean } {
+  if (!recording || synthetic || recordedQlooCalls(recording) !== 0) return { label: null, savedReading: false };
+  return { label: ZERO_REQUESTS_LABEL, savedReading: pricedEveryPlace(reply) };
+}
+
+/**
+ * Under a run whose tested place moves another set than the decision card's: why their index changes differ.
+ * The card works on the day's costliest clash a move can lower (backend/app/decision.py:1-4); a run looks for
+ * the lowest-index place for the set it was asked about. Null when the run tested no place, or the same set.
+ */
+export function runVersusCard(place: Pick<AgentPlace, "act" | "move"> | null, cardActId: string | null): string | null {
+  if (!place || !cardActId || place.move.actId === cardActId) return null;
+  return `This run looked for a lower-index place for ${place.act}; the decision card works on the day’s costliest clash that a move can lower, so their index changes differ.`;
 }
 
 /** A place an agent run tested and the engine found legal, as the plan keeps it, with what to print. */
@@ -496,43 +562,154 @@ export function planHolds(steps: readonly StackStep[], move: StackMove): boolean
   return steps.some((step) => !isRuleStackStep(step) && sameStep(step, move));
 }
 
+/**
+ * How Keep this place hands its place to the plan: `replace` makes it the whole plan (the decision card's
+ * path); `add` puts it after the kept steps the engine just priced it with (`base`). Shaped as "Try a move"
+ * reads a seed (`SeedMode`, try-a-move.tsx), so the page can pass it straight through.
+ */
+export type KeepChoice = SeedMode;
+
+/** The page's keep path: hands a place to the plan, with how; returns any note on steps it replaced. */
+export type KeepPlace = (move: StackMove, choice?: KeepChoice) => string | null;
+
 /** The press behind Keep this place: it hands the run's tested place, unchanged, to the page's keep path. */
-export function keepPress(place: AgentPlace, onKeep: (move: StackMove) => string | null): () => string | null {
-  return () => onKeep(place.move);
+export function keepPress(
+  place: AgentPlace,
+  onKeep: KeepPlace,
+  choice: KeepChoice = { mode: "replace" },
+): () => string | null {
+  return () => onKeep(place.move, choice);
+}
+
+/** "kept move" when every step is a single move, else "kept step" (a kept change moves two sets). */
+function keptWord(steps: readonly StackStep[]): string {
+  return steps.every((step) => !isRuleStackStep(step)) ? "kept move" : "kept step";
+}
+
+/** What Add found before anything changed: the choice to hand to the plan, or why it is not added. */
+export type AddCheck =
+  | { kind: "ready"; choice: KeepChoice; count: number }
+  | { kind: "rejected"; reason: string; retry: boolean };
+
+/**
+ * Whether a tested place can be added to the plan, checked before anything changes: the plan must not move
+ * its set already and must have room, and then the timetable engine prices the COMBINED plan (the kept
+ * steps, then this place: `check`, the page's own /whatif) and must accept it. Ready: the choice to hand to
+ * the plan, with the steps it was priced on. Otherwise the reason in words, and whether trying again could
+ * help; nothing is kept.
+ */
+export async function checkAdd(
+  kept: readonly StackStep[],
+  place: Pick<AgentPlace, "act" | "move">,
+  check: (steps: readonly StackStep[]) => Promise<PlanAnswer>,
+): Promise<AddCheck> {
+  if (movedActs(kept).has(place.move.actId)) {
+    return {
+      kind: "rejected",
+      reason: `Not added: your plan already moves ${place.act}, and a plan moves each set once. Your plan is unchanged.`,
+      retry: false,
+    };
+  }
+  if (moveCount(kept) + 1 > MAX_STACK) {
+    return {
+      kind: "rejected",
+      reason: `Not added: your plan already holds ${MAX_STACK} moves, the most it can. Your plan is unchanged.`,
+      retry: false,
+    };
+  }
+  const steps = [...kept, place.move];
+  const answer = await check(steps);
+  if (answer.status === "ready") {
+    return { kind: "ready", choice: { mode: "add", base: encodeMoves(kept) }, count: steps.length };
+  }
+  if (answer.status === "invalid") {
+    return {
+      kind: "rejected",
+      reason: `Not added: with your kept moves in place, the timetable engine finds this is no longer a legal place for ${place.act}. Your plan is unchanged.`,
+      retry: false,
+    };
+  }
+  return {
+    kind: "rejected",
+    reason: "Not added: your plan could not be priced with this place just now. Your plan is unchanged.",
+    retry: true,
+  };
+}
+
+/**
+ * What the status says once the plan holds the place, read from what the plan really holds (`kept`) against
+ * what it held before the press (`before`): "Added: 2 kept moves." when every earlier step is still there,
+ * "Replaced your 1 kept move." when they went. Null for a plan that was empty.
+ */
+export function keepNote(before: readonly StackStep[], kept: readonly StackStep[]): string | null {
+  if (before.length === 0) return null;
+  const stayed = before.every((step) => kept.some((held) => sameStep(held, step)));
+  return stayed
+    ? `Added: ${pluralize(kept.length, keptWord(kept))}.`
+    : `Replaced your ${pluralize(before.length, keptWord(before))}.`;
 }
 
 /**
  * Under a finished run whose own tool results hold a place the engine found legal: the place, and Keep
  * this place, which hands it to the plan through the same path as the decision card's Keep this move (the
- * plan's own /whatif prices it again). Nothing is kept until it is pressed. "Kept in your plan." (ink, in
- * a status region) shows only once the plan holds the place, and focus then moves to its "See your plan"
- * link, which takes the visitor to the plan.
+ * plan's own /whatif prices it again). Nothing is kept until it is pressed. With an empty plan it is one
+ * button; when the plan already holds kept steps it offers "Add to your plan" (first) and "Replace your
+ * plan": Add is priced with the kept steps first (`checkAdd`) and changes nothing if the engine refuses
+ * it, saying why and leaving Replace. "Kept in your plan." (ink, in a status region) shows only once the
+ * plan holds the place, with what happened ("Added: 2 kept moves."), and focus then moves to its "See your
+ * plan" link, which takes the visitor to the plan.
  */
-function KeepThisPlace({
+export function KeepThisPlace({
   place,
   kept,
   onKeep,
+  check,
 }: {
   place: AgentPlace;
   /** The steps the plan holds (priced), so "Kept" is said only for a place the plan really holds. */
   kept: readonly StackStep[];
-  onKeep: (move: StackMove) => string | null;
+  onKeep: KeepPlace;
+  /** Prices a whole plan before Add keeps anything (the page's /whatif). */
+  check: (steps: readonly StackStep[]) => Promise<PlanAnswer>;
 }) {
-  // The press, its replaced-steps note, and whether the plan has held the place since: once it has and then
-  // lets it go (Undo, Start over, another keep), the press is spent and the button is back.
-  const [pressed, setPressed] = useState<{ note: string | null; held: boolean } | null>(null);
+  // The press, what the plan held before it, and whether the plan has held the place since: once it has and
+  // then lets it go (Undo, Start over, another keep), the press is spent and the buttons are back.
+  const [pressed, setPressed] = useState<{ before: readonly StackStep[]; held: boolean } | null>(null);
+  // An Add being checked, or refused, for the plan it was checked against (a changed plan clears it).
+  const [adding, setAdding] = useState<
+    { base: string; state: "checking" } | { base: string; state: "rejected"; reason: string; retry: boolean } | null
+  >(null);
+  const labelId = useId();
   const linkRef = useRef<HTMLAnchorElement | null>(null);
+  const replaceRef = useRef<HTMLButtonElement | null>(null);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
   const held = planHolds(kept, place.move);
   const delta = budgetDelta(place.before, place.after);
   if (pressed && held && !pressed.held) setPressed({ ...pressed, held: true });
   if (pressed && !held && pressed.held) setPressed(null);
+  const keptKey = encodeMoves(kept);
+  const addState = adding && adding.base === keptKey ? adding : null;
+  const rejected = addState?.state === "rejected" ? addState : null;
+  const checking = addState?.state === "checking";
+  // The plan already holds kept steps, and not this place: Add or Replace.
+  const choose = kept.length > 0 && !held;
 
   // Once the plan holds the place this press sent, focus moves to the way there (never on a plan that
-  // already held it before any press).
+  // already held it before any press). A refused Add moves focus to Replace, the way still open.
   const announced = pressed !== null && held;
   useEffect(() => {
     if (announced) linkRef.current?.focus();
   }, [announced]);
+  const refusedKey = rejected ? `${rejected.base}|${rejected.reason}` : null;
+  useEffect(() => {
+    if (refusedKey) replaceRef.current?.focus();
+  }, [refusedKey]);
 
   function seePlan(event: MouseEvent<HTMLAnchorElement>) {
     const plan = document.getElementById(PLAN_ANCHOR);
@@ -542,6 +719,30 @@ function KeepThisPlace({
     plan.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
     plan.focus({ preventScroll: true });
   }
+
+  function replace() {
+    setAdding(null);
+    setPressed({ before: kept, held: false });
+    keepPress(place, onKeep, { mode: "replace" })();
+  }
+
+  async function add() {
+    if (checking) return;
+    const base = kept;
+    const key = encodeMoves(base);
+    setAdding({ base: key, state: "checking" });
+    const outcome = await checkAdd(base, place, check);
+    if (!alive.current) return;
+    if (outcome.kind === "rejected") {
+      setAdding({ base: key, state: "rejected", reason: outcome.reason, retry: outcome.retry });
+      return;
+    }
+    setAdding(null);
+    setPressed({ before: base, held: false });
+    keepPress(place, onKeep, outcome.choice)();
+  }
+
+  const note = pressed && held ? keepNote(pressed.before, kept) : null;
 
   return (
     <div data-agent-keep className="border-t border-border pt-4">
@@ -565,12 +766,34 @@ function KeepThisPlace({
       <p className="mt-1 text-sm text-muted-foreground">
         Nothing changes until you keep it; your plan then prices it again against the published timetable.
       </p>
-      {held && pressed ? null : (
+      {held && pressed ? null : choose ? (
+        <div role="group" aria-labelledby={labelId} className="mt-3">
+          <p id={labelId} className="text-sm">
+            <span className="font-semibold text-foreground">Keep this place</span>
+            <span className="text-muted-foreground">: your plan already holds {pluralize(kept.length, keptWord(kept))}.</span>
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {rejected && !rejected.retry ? null : (
+              <Button type="button" variant="outline" aria-disabled={checking || undefined} onClick={add}>
+                {checking ? <LoaderCircle aria-hidden="true" className="motion-safe:animate-spin" /> : null}
+                Add to your plan
+              </Button>
+            )}
+            <Button ref={replaceRef} type="button" variant="ghost" onClick={replace}>
+              Replace your plan
+            </Button>
+          </div>
+        </div>
+      ) : (
         <Button
           type="button"
           variant="outline"
           className="mt-3"
-          onClick={() => setPressed({ note: keepPress(place, onKeep)(), held: false })}
+          onClick={() => {
+            // Here the plan is empty or already holds this place, so the press replaces nothing.
+            setPressed({ before: [], held: false });
+            keepPress(place, onKeep, { mode: "replace" })();
+          }}
         >
           Keep this place
         </Button>
@@ -579,7 +802,7 @@ function KeepThisPlace({
         {pressed && held ? (
           <>
             <span className="font-semibold text-foreground">Kept in your plan.</span>
-            {pressed.note ? <span className="text-foreground"> {pressed.note}</span> : null}{" "}
+            {note ? <span className="text-foreground"> {note}</span> : null}{" "}
             <a
               ref={linkRef}
               href={`#${PLAN_ANCHOR}`}
@@ -591,11 +814,18 @@ function KeepThisPlace({
           </>
         ) : pressed ? (
           <span className="text-muted-foreground">Sent to your plan to be priced.</span>
+        ) : checking ? (
+          <span className="text-muted-foreground">Pricing your plan with this place added.</span>
+        ) : rejected ? (
+          <span className="text-foreground">{rejected.reason}</span>
         ) : null}
       </p>
     </div>
   );
 }
+
+/** Without a checker nothing can be added: the add is refused as not priced, and nothing is kept. */
+const checkNothing = (): Promise<PlanAnswer> => Promise.resolve({ status: "error" });
 
 /** An exchange in the panel: a replayed one keeps the recorded run it plays. */
 type PanelExchange = Exchange & { recording?: RecordedRun };
@@ -608,6 +838,9 @@ function ExchangeView({
   day,
   kept = [],
   onKeepPlace,
+  check = checkNothing,
+  cardActId = null,
+  synthetic = false,
   onRetry,
   onSkip,
   onWatchRecorded,
@@ -623,7 +856,13 @@ function ExchangeView({
   /** The steps the plan holds, so Keep this place can say when its place is kept. */
   kept?: readonly StackStep[];
   /** Keeps a tested place through the page's keep path; absent, no Keep this place is offered. */
-  onKeepPlace?: (move: StackMove) => string | null;
+  onKeepPlace?: KeepPlace;
+  /** Prices a whole plan before Add keeps anything (the page's /whatif). */
+  check?: (steps: readonly StackStep[]) => Promise<PlanAnswer>;
+  /** The set the decision card moves, so a run that moved another set can say why the two differ. */
+  cardActId?: string | null;
+  /** The invented day: no Qloo wording. */
+  synthetic?: boolean;
   onRetry: () => void;
   /** Finishes a replay at once. */
   onSkip: () => void;
@@ -635,13 +874,18 @@ function ExchangeView({
   const { state, recording } = exchange;
   const reply = useMemo(() => readClashReply(state.results), [state.results]);
   // The place to keep comes only from the finished run's own tool results, never from its text.
-  const place = useMemo(
-    () => (state.status === "done" && onKeepPlace ? keepableMove(state.results, festival, day) : null),
-    [state.status, state.results, festival, day, onKeepPlace],
+  const tested = useMemo(
+    () => (state.status === "done" ? keepableMove(state.results, festival, day) : null),
+    [state.status, state.results, festival, day],
   );
+  const place = onKeepPlace ? tested : null;
   const running = state.status === "running";
   const text = reply?.text || state.text;
   const qlooCalls = state.summary?.qlooCalls ?? state.toolCalls.reduce((sum, call) => sum + call.requests.length, 0);
+  // A recorded run's Qloo use, read from its own recording: "Qloo requests in this run: 0" and, when it priced
+  // every place it tested, where that taste came from. A run with requests keeps the drawer's label and count.
+  const qloo = state.status === "done" ? recordedQloo(recording, reply, synthetic) : { label: null, savedReading: false };
+  const versus = runVersusCard(tested, cardActId);
 
   return (
     <li id={`agent-${exchange.id}`} className="space-y-4">
@@ -713,7 +957,9 @@ function ExchangeView({
           </div>
         ) : null}
 
-        {place && onKeepPlace ? <KeepThisPlace place={place} kept={kept} onKeep={onKeepPlace} /> : null}
+        {versus ? <p className="max-w-prose text-sm text-muted-foreground">{versus}</p> : null}
+
+        {place && onKeepPlace ? <KeepThisPlace place={place} kept={kept} onKeep={onKeepPlace} check={check} /> : null}
 
         {state.status === "error" && state.error ? (
           <div>
@@ -740,6 +986,8 @@ function ExchangeView({
 
         {state.status === "cancelled" ? <p className="text-sm text-muted-foreground">Stopped.</p> : null}
 
+        {qloo.savedReading ? <p className="max-w-prose text-sm text-muted-foreground">{SAVED_READING_LINE}</p> : null}
+
         {state.status !== "running" && (state.toolCalls.length > 0 || state.summary) ? (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
             {state.summary ? (
@@ -754,6 +1002,10 @@ function ExchangeView({
               qlooCalls={qlooCalls}
               triggerVariant="ghost"
               triggerClassName="h-8 px-2 text-xs"
+              triggerLabel={qloo.label ?? usedTitle(synthetic)}
+              countInLabel={qloo.label !== null}
+              title={usedTitle(synthetic)}
+              synthetic={synthetic}
               description={
                 recording
                   ? "The Qloo requests this run made when it was recorded. They are listed from the saved stream; none were made just now."
@@ -884,6 +1136,25 @@ export function AgentLimits({ synthetic = false }: { synthetic?: boolean }) {
   );
 }
 
+/**
+ * The section's grid places from 1024 px (two rows, `auto 1fr`; one column below it, in source order: side,
+ * run, picker). Before any run plays: the side column (heading, can/cannot list) spans both rows on the left,
+ * the run sits top right and the picker under it, so the two columns stay level. While and after a run plays
+ * (`playing`): the run spans both rows on the right and the picker moves under the side column, sticky under
+ * the site header (64 px) and the section nav (44 px), so no column stands empty beside the replay.
+ */
+export function agentLayout(playing: boolean, aside = true): { side: string; run: string; picker: string; pickerInner: string } {
+  return {
+    side: cn("min-w-0 lg:col-span-5 lg:col-start-1 lg:row-start-1", !playing && "lg:row-span-2"),
+    run: cn("min-w-0 lg:col-span-7 lg:col-start-6 lg:row-start-1 lg:mt-0", playing && "lg:row-span-2", aside ? "mt-10" : "mt-5"),
+    picker: cn(
+      "mt-10 min-w-0 lg:row-start-2 lg:mt-8",
+      playing ? "lg:col-span-5 lg:col-start-1 lg:self-stretch" : "lg:col-span-7 lg:col-start-6",
+    ),
+    pickerInner: playing ? "lg:sticky lg:top-32" : "",
+  };
+}
+
 /** Why the live agent is off, said plainly wherever the panel stands in for it. */
 const AGENT_OFF =
   "The live agent is off here to keep this demo free to run; its answers come from a language model. Prices, clashes and receipts above work without it.";
@@ -959,6 +1230,7 @@ export function AgentPanel({
   agentStatus = "unknown",
   keptSteps = [],
   onKeepPlace,
+  cardActId = null,
 }: {
   preset: Preset;
   day: number;
@@ -966,10 +1238,13 @@ export function AgentPanel({
   /** The steps the kept plan holds (priced), so a run's Keep this place says when its place is kept. */
   keptSteps?: readonly StackStep[];
   /**
-   * Keeps a place a run tested through the page's keep path (the decision card's), returning the note on
-   * any steps it replaced. Absent: no run offers Keep this place.
+   * Keeps a place a run tested through the page's keep path (the decision card's), with how (`choice`:
+   * replace the plan, or add after the kept steps it was priced with), returning the note on any steps it
+   * replaced. Absent: no run offers Keep this place.
    */
-  onKeepPlace?: (move: StackMove) => string | null;
+  onKeepPlace?: KeepPlace;
+  /** The set the decision card's move moves, so a run that moved another set says why their changes differ. */
+  cardActId?: string | null;
 }) {
   const run = useAgentRun({ endpoint: "/api/runs" });
   const recordings = useRecordings(preset.id);
@@ -1016,6 +1291,8 @@ export function AgentPanel({
   }, [preset, day, asked]);
   const busy = run.isRunning;
   const replaying = current?.recording !== undefined;
+  const presetId = preset.id;
+  const check = useMemo(() => (steps: readonly StackStep[]) => checkPlan(presetId, steps), [presetId]);
 
   useEffect(() => {
     if (!current) return;
@@ -1101,6 +1378,7 @@ export function AgentPanel({
           ? "The agent could not answer."
           : "";
 
+  const synthetic = preset.synthetic === true;
   const conversation =
     all.length > 0 ? (
       <ol aria-label="Conversation" aria-busy={busy} className="space-y-8">
@@ -1114,6 +1392,9 @@ export function AgentPanel({
             day={day}
             kept={keptSteps}
             onKeepPlace={onKeepPlace}
+            check={check}
+            cardActId={cardActId}
+            synthetic={synthetic}
             onRetry={run.retry}
             onSkip={skip}
             onWatchRecorded={runs.length > 0 ? () => play(runs[0]) : undefined}
@@ -1123,7 +1404,6 @@ export function AgentPanel({
       </ol>
     ) : null;
 
-  const synthetic = preset.synthetic === true;
   // The recordings' Qloo use, read from the recordings: one line when none asked Qloo, else each run's own
   // count on its row. The invented day names no Qloo request either way.
   const qlooLine = recordingsQlooLine(runs, synthetic);
@@ -1136,6 +1416,29 @@ export function AgentPanel({
   // The side column, under the heading: the rules said so far, the capabilities (live agent only) and what
   // the agent can and cannot do. Start over sits with the latest run's own controls, not here.
   const aside = mode !== "checking";
+  // A run is on show (playing or played): from 1024 px the run picker then moves to the side column, under the
+  // can/cannot list, and stays in view as the answer scrolls (sticky under the site header and section nav),
+  // so neither column stands empty beside a replay. Before any run it sits under the still transcript, so the
+  // two columns stay level. It is one element whose grid place changes, never re-mounted, so a pressed Replay
+  // keeps focus. On a phone it follows the run, after the can/cannot list and the run.
+  const playing = all.length > 0;
+  const layout = agentLayout(playing, aside);
+  const picker =
+    mode !== "checking" && runs.length > 0 ? (
+      <div data-agent-picker data-beside-run={playing ? "" : undefined} className={layout.picker}>
+        <div className={layout.pickerInner}>
+          {mode === "live" ? recorded : recordedOff}
+          {mode === "live" ? (
+            qlooLine ? <p className="mt-3 max-w-prose text-sm text-muted-foreground">{qlooLine}</p> : null
+          ) : (
+            <p className="mt-3 max-w-prose text-sm text-muted-foreground">
+              {qlooLine ? `${qlooLine} ` : ""}
+              {NEVER_CHANGES}
+            </p>
+          )}
+        </div>
+      </div>
+    ) : null;
 
   let main: ReactNode;
   if (mode === "checking") {
@@ -1154,16 +1457,7 @@ export function AgentPanel({
         {mode === "off-recorded" && runs[0] && !conversation ? (
           <RecordedTranscript run={runs[0]} disabled={busy} onReplay={() => play(runs[0])} />
         ) : null}
-        {mode === "off-recorded" ? (
-          <div className="mt-8">
-            {recordedOff}
-            <p className="mt-3 max-w-prose text-sm text-muted-foreground">
-              {qlooLine ? `${qlooLine} ` : ""}
-              {NEVER_CHANGES}
-            </p>
-          </div>
-        ) : null}
-        {conversation ? <div className="mt-10">{conversation}</div> : null}
+        {conversation ? <div className="mt-8">{conversation}</div> : null}
       </>
     );
   } else {
@@ -1233,29 +1527,47 @@ export function AgentPanel({
           to keep the demo free.
         </p>
 
-        {runs.length > 0 ? (
-          <div className="mt-12">
-            {recorded}
-            {qlooLine ? <p className="mt-3 max-w-prose text-sm text-muted-foreground">{qlooLine}</p> : null}
-          </div>
-        ) : null}
       </>
     );
   }
 
   return (
     <section id="agent" aria-labelledby="agent-heading">
+      {/* From 1024 px two columns: on the left the heading and what the agent can and cannot do; on the right the
+          off notice and the run (a still transcript, or the replay). The run picker sits under the transcript
+          before any run plays, and under the can/cannot list (sticky) while and after one does. On a phone one
+          column in source order: the heading, the can/cannot list, the run, then the picker. */}
       <div className="container-page grid gap-x-12 py-10 sm:py-12 lg:grid-cols-12 lg:grid-rows-[auto_1fr] lg:items-start">
-        <div className="lg:col-span-5">
+        <div data-agent-side className={layout.side}>
           <AgentHeading
             isMock={run.isMock}
             synthetic={synthetic}
             off={agentStatus === "off" ? (mode === "off" ? "none" : "recorded") : null}
             lede={off || agentStatus === "off" ? offLede(mode !== "off", synthetic) : undefined}
           />
+
+          {aside ? (
+            <aside data-agent-limits className="mt-8 min-w-0 space-y-8">
+              {rules.length > 0 ? (
+                <div>
+                  <h3 className="pb-2 text-[0.8125rem] leading-5 font-semibold text-foreground">Your rules</h3>
+                  <ul className="mt-4 space-y-1.5 text-sm">
+                    {rules.map((rule) => (
+                      <li key={rule} className="flex gap-2">
+                        <Check aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-foreground" />
+                        {rule}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {mode === "live" ? <Capabilities synthetic={synthetic} /> : null}
+              <AgentLimits synthetic={synthetic} />
+            </aside>
+          ) : null}
         </div>
 
-        <div className="mt-5 min-w-0 lg:col-span-7 lg:col-start-6 lg:row-span-2 lg:row-start-1 lg:mt-0">
+        <div data-agent-run className={layout.run}>
           {main}
           {mode !== "checking" ? (
             <p role="status" aria-live="polite" className="sr-only">
@@ -1264,25 +1576,7 @@ export function AgentPanel({
           ) : null}
         </div>
 
-        {aside ? (
-          <aside className="mt-10 min-w-0 space-y-8 lg:col-span-5 lg:row-start-2 lg:mt-8">
-            {rules.length > 0 ? (
-              <div>
-                <h3 className="pb-2 text-[0.8125rem] leading-5 font-semibold text-foreground">Your rules</h3>
-                <ul className="mt-4 space-y-1.5 text-sm">
-                  {rules.map((rule) => (
-                    <li key={rule} className="flex gap-2">
-                      <Check aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-foreground" />
-                      {rule}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-            {mode === "live" ? <Capabilities synthetic={synthetic} /> : null}
-            <AgentLimits synthetic={synthetic} />
-          </aside>
-        ) : null}
+        {picker}
       </div>
     </section>
   );

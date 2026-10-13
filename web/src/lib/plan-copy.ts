@@ -53,7 +53,8 @@ export function rangeLead(range: ScaleRange): string | null {
  * Where a plan's index sits against that band: "This plan scores inside that range.", "...below
  * that range." or "This plan scores 0.3 index points above that range." When the plan is above it
  * and the published timetable is too, the published gap follows, so a plan 0.3 above the band after
- * a 7-point drop never reads as a plan that failed: "The published timetable is 7.7 above it." When
+ * a 7-point drop never reads as a plan that failed: "By this index, the published timetable sits 7.7
+ * points above that range." When
  * the plan's index is higher than the published timetable's, the range sentence gives way to a plain one,
  * so a plan that raises the index never reads as good news: "This plan’s index is 88.8, 2.3 higher than
  * the published timetable’s 86.5." (the standalone form adds the band: "The middle 80% of random valid
@@ -94,7 +95,7 @@ export function planVerdict(
       : `This plan ${clause}.`,
   ];
   if (verdict === "above" && published !== null && rangeVerdict(published, range) === "above") {
-    parts.push(`The published timetable is ${gapText(published, high)} above it.`);
+    parts.push(`By this index, the published timetable sits ${gapText(published, high)} points above that range.`);
   }
   return parts.join(" ");
 }

@@ -148,6 +148,53 @@ export const METHOD_FIGURES = {
     gap: 0.088,
     gapInterval: [-0.098, 0.254],
   },
+  /**
+   * Taste inside the full price: a second exploratory follow-up on the same 68 scored pairs, from scripts in the
+   * entry's private backtest folder (not in this repository; saved data only, no request sent), run after the gate
+   * failed. Every AUC is pooled over the festival days with the same within-day ranks as the table above; every
+   * interval is 95%.
+   *
+   * - fullPrice: the price this app uses (taste overlap x share of the shorter set shared x combined draw x rarity
+   *   factor, which is 1 here), interval by resampling whole festival days.
+   * - pairedVsPopularity: full price minus popularity, same resample for both.
+   * - shuffled: the full price with taste overlap dealt out at random among each day's pairs, `shuffles` times: the
+   *   mean and the middle 95% of the shuffles (a range of shuffles, not an interval).
+   * - tasteRemoved: the same price with taste overlap held the same for every pair, so only shared time and draw
+   *   are left.
+   * - pairedVsTasteRemoved: full price minus the taste-removed price, resampled by festival day.
+   * - festivals: AUCs by festival, Glastonbury against the four US festivals pooled; Riot Fest (one of the four)
+   *   has too few complaints to read alone, so the page prints its counts only.
+   * - glastonburyTasteAdds / usTasteAdds: full price minus taste-removed price at Glastonbury (resampled by
+   *   complaint, since it has three days) and over the four US festivals (resampled by festival day).
+   * - locationRequests: what re-asking the US festival days' audience rankings with each festival's city would
+   *   cost (one request per usable act per day; nothing was sent).
+   */
+  tasteInPrice: {
+    fullPrice: { auc: 0.746, auc95: [0.675, 0.812] },
+    popularity: 0.722,
+    pairedVsPopularity: { diff: 0.024, interval: [-0.074, 0.136] },
+    shuffled: { mean: 0.652, range95: [0.593, 0.706], shuffles: 1000 },
+    tasteRemoved: { auc: 0.754, auc95: [0.69, 0.828] },
+    pairedVsTasteRemoved: { diff: -0.009, interval: [-0.102, 0.079] },
+    festivals: [
+      {
+        label: "Glastonbury 2025",
+        complaintPairs: 14,
+        complaints: 8,
+        read: { popularity: 0.563, tasteRemoved: 0.671, fullPrice: 0.871 },
+      },
+      {
+        label: "Four US festivals",
+        complaintPairs: 54,
+        complaints: 34,
+        read: { popularity: 0.768, tasteRemoved: 0.779, fullPrice: 0.715 },
+      },
+      { label: "Riot Fest 2026, one of the four", complaintPairs: 5, complaints: 3, read: null },
+    ],
+    glastonburyTasteAdds: { diff: 0.201, interval: [0.111, 0.277] },
+    usTasteAdds: { diff: -0.065, interval: [-0.163, 0.025] },
+    locationRequests: 347,
+  },
   coverage: {
     /** Acts across the five festivals tested with a usable Qloo signal (strong or weak). */
     usableActs: 449,
@@ -262,6 +309,35 @@ export function exploratoryReading(
     pAboveBar: figures.p > figures.pBar,
     /** The interval of popularity's AUC minus taste overlap's holds zero. */
     gapIncludesZero: low <= 0 && 0 <= high,
+  };
+}
+
+/** "+0.024", "-0.009": a paired difference in AUC, always signed. */
+export function formatDiff(value: number): string {
+  return `${value < 0 ? "-" : "+"}${formatAuc(Math.abs(value))}`;
+}
+
+/** "-0.074 to +0.136": the interval of a paired difference, each end signed. */
+export function formatDiffInterval([low, high]: readonly [number, number]): string {
+  return `${formatDiff(low)} to ${formatDiff(high)}`;
+}
+
+/**
+ * What the taste-inside-the-price figures say, read from the figures so the page can never contradict them: whether
+ * the interval of the full price minus the taste-removed price holds zero (then the check did not establish that
+ * taste adds to time and draw), and the same for the full price minus popularity.
+ */
+export function tasteInPriceReading(
+  figures: {
+    readonly pairedVsTasteRemoved: { readonly interval: readonly [number, number] };
+    readonly pairedVsPopularity: { readonly interval: readonly [number, number] };
+  } = METHOD_FIGURES.tasteInPrice,
+) {
+  const holdsZero = ([low, high]: readonly [number, number]) => low <= 0 && 0 <= high;
+  return {
+    tasteAddsIncludesZero: holdsZero(figures.pairedVsTasteRemoved.interval),
+    tasteAddsAboveZero: figures.pairedVsTasteRemoved.interval[0] > 0,
+    popularityIncludesZero: holdsZero(figures.pairedVsPopularity.interval),
   };
 }
 

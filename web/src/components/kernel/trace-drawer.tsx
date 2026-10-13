@@ -81,6 +81,11 @@ export type TraceDrawerProps = {
   triggerClassName?: string;
   /** The trigger's text. Defaults to "How Qloo was used". */
   triggerLabel?: string;
+  /**
+   * The trigger's text already states the count ("Qloo requests in this run: 0"), so the count is not printed
+   * again beside it, and the accessible name is the text alone. Off by default.
+   */
+  countInLabel?: boolean;
   /** Leaves the ruled trigger's trailing arrow off, for a trigger set as a plain text link. Its text and name do not change. */
   hideIcon?: boolean;
   /** The drawer's title. Defaults to "How Qloo was used"; an invented day names where its figures came from instead. */
@@ -110,6 +115,7 @@ export function TraceDrawer({
   triggerVariant = "outline",
   triggerClassName,
   triggerLabel = "How Qloo was used",
+  countInLabel = false,
   hideIcon = false,
   title = "How Qloo was used",
   synthetic = false,
@@ -169,7 +175,12 @@ export function TraceDrawer({
       <SheetTrigger asChild>
         {/* The count is part of the accessible name through aria-label, not a hidden span: a hidden span is read
             as its own word, with a space before its comma ("How Qloo was used , 0 requests"). */}
-        {ruled ? (
+        {countInLabel ? (
+          <Button variant={ruled ? "ruled" : triggerVariant} className={triggerClassName}>
+            <span>{triggerLabel}</span>
+            {ruled && !hideIcon ? <ArrowRight aria-hidden="true" /> : null}
+          </Button>
+        ) : ruled ? (
           <Button variant="ruled" className={triggerClassName} aria-label={`${triggerLabel}, ${requestCount}`}>
             <span>
               {triggerLabel} <span aria-hidden="true">&middot;</span>{" "}
@@ -262,7 +273,7 @@ export function TraceDrawer({
                   <ToolHeading call={call} suffix=" total" />
                   <ol className="mt-4">
                     {items.map((item) => (
-                      <RequestItem key={item.ordinal} item={item} />
+                      <RequestItem key={item.ordinal} item={item} synthetic={synthetic} />
                     ))}
                   </ol>
                 </section>

@@ -33,14 +33,18 @@ test.describe("section rail", () => {
     expect([...tops]).toEqual([...tops].sort((a, b) => (a as number) - (b as number)));
   });
 
-  test("a day without hidden-clash examples has no Hidden clashes link", async ({ page }) => {
+  test("a day with no hidden-clash examples of its own still has the section: its own Hidden count, and another day's examples, named", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.riot.id);
 
     await expect(home.railLink("Timetable")).toBeVisible();
     await expect(home.railLink("Try a move")).toBeVisible();
-    await expect(home.railLink("Hidden clashes")).toHaveCount(0);
-    await expect(home.hiddenWall).toHaveCount(0);
+    await expect(home.railLink("Hidden clashes")).toHaveAttribute("href", "#hidden-wall");
+    await expect(home.hiddenWall).toBeVisible();
+    // The section counts this day's own Hidden labels, and says which day its sourced examples are saved with.
+    await expect(home.hiddenWall).toContainText(/On this day, \d+ of the \d+ ranked clashes (carries|carry) the Hidden label/);
+    await expect(home.hiddenWall).toContainText(" sourced examples, saved with " + DAYS.glastonbury.title + ". ");
+    await expect(home.hiddenWall).toContainText(/The other (one is|\d+ are) not saved with that day\./);
   });
 
   test("each link scrolls its section into view and becomes the current one", async ({ page }) => {

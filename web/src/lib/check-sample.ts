@@ -14,6 +14,7 @@
  */
 
 import { formatClock, normalizeName, parseGrid, type CheckInput, type CheckSet } from "./check";
+import type { SavedRanking } from "./check-price";
 import { gridText } from "./check-trial";
 import { numberWord } from "./method-figures";
 
@@ -170,11 +171,24 @@ export function dropSampleRules(pairs: string, sampleRules: readonly string[], g
 
 /**
  * "Check a published day": one published festival day from this app's API (`GET /api/presets/{id}`) as
- * the sheet. Only the public timetable is read (act names, stages, start and end times, locks) with the
- * day's own changeover, curfew and never-overlap pairs; nothing Qloo-derived is copied. The day's billing
- * rules and stage hours are not rules this page checks, so the label says so.
+ * the sheet. The fields get only the public timetable (act names, stages, start and end times, locks) with
+ * the day's own changeover, curfew and never-overlap pairs; nothing Qloo-derived is copied into them. The
+ * day's billing rules and stage hours are not rules this page checks, so the label says so.
+ *
+ * Kept beside the fields, in memory only, from the same answer: the saved day's ranked clashes as act names
+ * (costliest first, the order the timetable page ranks them), the acts it marks as having no usable signal,
+ * and its counts of overlapping pairs with and without a usable signal. Compare audience overlap reads the
+ * first two to choose its pairs; the label reads the counts. No taste value is read.
  */
-export type PublishedInput = { input: CheckInput; title: string; label: string };
+export type PublishedInput = {
+  input: CheckInput;
+  title: string;
+  label: string;
+  /** The saved day's ranked clashes and its no-signal acts; null when the answer carries none. */
+  ranking?: SavedRanking | null;
+  /** The saved day's overlapping pairs where both acts have a usable signal, and the others; null when absent. */
+  pairCounts?: { scored: number; unscored: number } | null;
+};
 
 /** The label above the results and on the brief while the checked grid is a published day. */
 export function publishedLabel(title: string): string {
@@ -260,6 +274,8 @@ export function publishedDayInput(json: unknown): PublishedInput | null {
   return {
     title,
     label: publishedLabel(title),
+    ranking: savedRanking(preset.report, acts, day),
+    pairCounts: pairCountsOf(preset.report),
     input: {
       grid,
       changeover:
@@ -268,6 +284,52 @@ export function publishedDayInput(json: unknown): PublishedInput | null {
       pairs: pairs.join("\n"),
     },
   };
+}
+
+function asCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+/**
+ * The saved day's ranked clashes on `day`, costliest first, as act names, and the acts its coverage marks as
+ * having no usable signal; null when the answer has no ranked clash for that day.
+ */
+function savedRanking(report: unknown, acts: ReadonlyMap<string, string>, day: number): SavedRanking | null {
+  const saved = asRecord(report);
+  if (!saved) return null;
+  const pairs = (Array.isArray(saved.clashes) ? (saved.clashes as unknown[]) : []).flatMap((item) => {
+    const clash = asRecord(item);
+    if (!clash || asMinutes(clash.day) !== day) return [];
+    const a = acts.get(asText(asRecord(clash.a)?.act_id) ?? "");
+    const b = acts.get(asText(asRecord(clash.b)?.act_id) ?? "");
+    return a && b && a !== b ? [{ a, b }] : [];
+  });
+  if (pairs.length === 0) return null;
+  const unscored = asRecord(saved.coverage)?.unscored;
+  const noSignal = (Array.isArray(unscored) ? (unscored as unknown[]) : []).flatMap((item) => {
+    const name = acts.get(asText(asRecord(item)?.act_id) ?? "");
+    return name ? [name] : [];
+  });
+  return { pairs, noSignal };
+}
+
+/** The saved day's overlapping pairs with a usable signal for both acts, and the others; null when absent. */
+function pairCountsOf(report: unknown): { scored: number; unscored: number } | null {
+  const metrics = asRecord(asRecord(report)?.metrics);
+  const scored = asCount(metrics?.scored_concurrent_pairs);
+  const unscored = asCount(metrics?.unscored_concurrent_pairs);
+  return scored === null || unscored === null ? null : { scored, unscored };
+}
+
+/**
+ * The published day's pair counts, said once in its load line, and only when they add up to the overlaps
+ * this page found: "79 pairs share time; the timetable page ranks the 68 where both acts have a usable Qloo
+ * signal." (The build counts a concurrent pair as priced only when both acts are scored, and the page ranks
+ * the priced ones.) Null when the counts are missing or do not match.
+ */
+export function publishedPairsLine(shared: number, counts: PublishedInput["pairCounts"]): string | null {
+  if (!counts || counts.unscored === 0 || counts.scored + counts.unscored !== shared) return null;
+  return `${shared} pairs share time; the timetable page ranks the ${counts.scored} where both acts have a usable Qloo signal.`;
 }
 
 /** True when every field holds exactly what "Check a published day" filled in. */

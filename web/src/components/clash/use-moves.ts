@@ -97,6 +97,16 @@ function loadPlan(presetId: string, moves: readonly StackStep[], actId: string |
 }
 
 /**
+ * Prices a whole plan with the timetable engine (`POST /api/presets/{id}/whatif`, with no picked set) before
+ * anything keeps it: the answer is shared with `usePlan`, so a plan this checked is shown at once once kept.
+ * "invalid" when the engine refuses it. No language model, no Qloo call, and nothing is kept here.
+ */
+export function checkPlan(presetId: string, moves: readonly StackStep[]): Promise<PlanAnswer> {
+  if (moves.length === 0) return Promise.resolve({ status: "error" });
+  return loadPlan(presetId, moves, null);
+}
+
+/**
  * The picked set's legal places and the kept moves' plan, priced by the timetable engine.
  *
  * With no kept moves and a picked set it asks `GET /api/presets/{id}/moves` (cacheable, as before);

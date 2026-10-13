@@ -6,20 +6,24 @@ import { SyntheticContext } from "@/components/site/synthetic-context";
 import { qlooCredits } from "@/lib/credit";
 import { PAYER_GUESS, PILOT_TERMS, type Demand } from "@/lib/demand";
 import { METHOD_FIGURES } from "@/lib/method-figures";
+import { PUBLIC_SOURCES } from "@/lib/public-sources";
 import { PUBLIC_VOICES } from "@/lib/public-voices";
 
 import { TasteSection } from "./why-qloo";
 import {
   BacktestBars,
+  COMPLAINT_SOURCES,
   COMPLAINTS_ELSEWHERE,
   FIGURE_DOMAIN,
   FIGURE_TICKS,
   FailedTestNote,
   VOICES_LIMIT,
   WHY_THIS_MATTERS_ID,
+  PRESS_OUTLETS,
   WhyThisMatters,
   along,
   complaintCaption,
+  isForumThread,
 } from "./why-this-matters";
 
 // Every name and figure below is invented for the test, except the published figures the blocks read
@@ -45,9 +49,9 @@ function withoutDisclosures(html: string): string {
 }
 
 const FAILED =
-  "Our test failed: taste overlap put 46.8% of complained-about clashes in the top quarter of their day, below our 60% bar. Popularity, also a Qloo field, did better. The exploratory follow-up did not establish an advantage over popularity.";
+  "Our test failed: taste overlap put 46.8% of complained-about clashes in the top quarter of their day, below our 60% bar. Popularity, also a Qloo field, did better. It reached 57.8%. The exploratory follow-up did not establish an advantage over popularity.";
 const SECOND_OPINION =
-  "So the taste reading is a second opinion beside time and draw: it is one of the four parts of the price of each clash, the part Qloo adds, and never the verdict on its own. It is nearly unrelated to popularity (r = 0.08), so it orders a day differently from draw alone. Where it disagrees with time and draw is where we ask you to look.";
+  "So the taste reading is a second opinion beside time and draw: it is one of the four parts of the price of each clash, the part Qloo adds, and never the verdict on its own. It is nearly unrelated to popularity (r = 0.08).";
 
 describe("FailedTestNote", () => {
   it("prints the failed pre-set test and what it taught us, with no AUC jargon, and links to the test on /method", () => {
@@ -59,7 +63,10 @@ describe("FailedTestNote", () => {
     expect(plain).not.toMatch(/\bAUC\b/);
     expect(html).toContain('href="/method#tested"');
     expect(plain).toContain(SECOND_OPINION);
-    expect(plain).toMatch(/where we ask you to look\. How we know$/);
+    expect(plain).toMatch(/\(r = 0\.08\)\. How we know$/);
+    // Round 32 (V3): the taste-removed check did not establish that taste adds to time and draw, so no
+    // "Exploratory:" sentence about taste adding something is added here.
+    expect(plain).not.toMatch(/Exploratory:|adds something|taste adds/);
     // Round 31: the price does include taste, so the note no longer says it is kept out of a verdict.
     expect(plain).not.toContain("never folded into a verdict");
     // The correlation is the figures module's, never typed.
@@ -76,7 +83,8 @@ describe("WhyThisMatters", () => {
     expect(html).toContain(`id="${WHY_THIS_MATTERS_ID}"`);
     expect(plain).toContain("Who has complained, and what nobody has tested");
     expect(plain).toContain("45 clashes that fans or the press complained about at 5 festivals");
-    expect(plain).toContain("86 pairs of acts, median 50 minutes");
+    expect(plain).toContain("86 pairs, median 50 minutes, and how the lists lean");
+    expect(plain).toContain("Press lists lean toward headliners, which flatters any taste-based method.");
     expect(plain).not.toMatch(/\bAUC\b/);
     expect(plain).toContain("Whether programmers would use or pay for this has not been tested.");
     expect(plain).not.toContain("They do not show that anyone would use or pay for this.");
@@ -95,8 +103,8 @@ describe("WhyThisMatters", () => {
     );
     expect(visible).toContain("Who would pay is not known.");
     expect(visible).toContain("Pilot offer");
-    expect(visible).toContain("Send one day’s draft or published bill.");
-    expect(visible.indexOf("Send one day")).toBeGreaterThan(visible.indexOf("Pilot offer"));
+    expect(visible).toContain("Walk through the Glastonbury 2025 Sunday brief with me");
+    expect(visible.indexOf("Walk through")).toBeGreaterThan(visible.indexOf("Pilot offer"));
     expect(visible).toContain("Contact is on the Devpost page.");
     // Three voices print in the open; the fourth and the sentence that limits them wait in one disclosure.
     expect(visible).toContain("The team had expected different audiences, and the clash drew criticism.");
@@ -104,9 +112,11 @@ describe("WhyThisMatters", () => {
     expect(visible).not.toContain("Builds the Portola lineup in a spreadsheet that holds mock set times.");
     // The rest of each finding is in its own disclosure, still in the server HTML.
     const plain = text(renderToStaticMarkup(createElement(WhyThisMatters)));
-    expect(plain).toContain("86 pairs of acts, median 50 minutes. Press lists lean toward headliners, which flatters any taste-based method.");
     expect(plain).toContain(
-      "Festival schedulers such as Festival Pro and Lineup Ninja check double bookings and changeovers. We found none that reads audience overlap (our search, October 2026).",
+      "86 pairs, median 50 minutes, and how the lists lean Press lists lean toward headliners, which flatters any taste-based method.",
+    );
+    expect(plain).toContain(
+      "Festival Pro and Lineup Ninja Both check double bookings and changeovers. We found none that reads audience overlap (our search, October 2026).",
     );
   });
 
@@ -176,17 +186,16 @@ describe("WhyThisMatters", () => {
 
   it("closes the last column with the pilot offer, its limits from the constant, and no contact until the owner adds one", () => {
     const plain = text(renderToStaticMarkup(createElement(WhyThisMatters)));
-    // The label, then the offer, word for word: one day, a draft or published bill, its longest overlaps priced
-    // with Qloo, a brief sent back, the bill limit and window, the success test. The bill limit is said once.
-    expect(plain).toContain(
-      "Pilot offer Send one day’s draft or published bill. I will price its longest overlaps with Qloo and send back a brief, for up to 10 bills while this entry is open. Success: a programmer moves a set, or keeps one on purpose.",
-    );
-    // The request arithmetic and the caveat sit in a closed disclosure with a 10px-rounded summary, still in the server HTML.
+    // Round 32 (V4): the label, then the offer, word for word. It offers only what costs no Qloo request: a walk
+    // through a published day's brief, and rule checks on the festival's own draft that run in the browser.
+    expect(plain).toContain("Pilot offer Walk through the Glastonbury 2025 Sunday brief with me and say where it matches how your team would set those times. Your own draft can go through Check a draft grid, whose rule checks run in your browser and send nothing. Success: you say which suggestion you would take or turn down, and why.");
+    // No promise to price or brief a new bill.
+    expect(plain).not.toMatch(/Send one day|I will price|send back a brief|up to \d+ bills/);
+    // What pricing a new bill would cost, true and conditional, with no offer, in a closed disclosure with a
+    // 10px-rounded summary, still in the server HTML.
     const html = renderToStaticMarkup(createElement(WhyThisMatters));
-    expect(html).toMatch(/<details(?![^>]*\bopen\b)[^>]*><summary class="[^"]*\brounded-md\b[^"]*">(?:<span[^>]*>)*About 40 Qloo requests per <\/span><span class="whitespace-nowrap"><span[^>]*>bill</);
-    expect(plain).toContain(
-      "About 40 Qloo requests per bill Each bill costs about 40 Qloo requests, so ten use about 400 of the 10,000 shared this month. One answer is not a market.",
-    );
+    expect(html).toMatch(/<details(?![^>]*\bopen\b)[^>]*><summary class="[^"]*\brounded-md\b[^"]*">(?:<span[^>]*>)*About 40 Qloo requests per bill, only with the festival’s <\/span><span class="whitespace-nowrap"><span[^>]*>OK</);
+    expect(plain).toContain("About 40 Qloo requests per bill, only with the festival’s OK Pricing a new bill is not offered: comparing its longest overlaps takes about 40 Qloo requests of the 10,000 shared this month, and a full-day reading took 104 and 70. Either needs the festival’s OK. One answer is not a market.");
     expect(plain).toContain("Contact is on the Devpost page.");
     expect(plain.indexOf("Pilot offer")).toBeGreaterThan(plain.indexOf("Who would pay is not known."));
     // The owner has not said bills are deleted after the run, so the page does not say it.
@@ -206,19 +215,12 @@ describe("WhyThisMatters", () => {
     // The chart is on /method only.
     expect(html).not.toContain("<figure");
     expect(html).not.toContain("data-bar-value");
-    const line = html.match(/<p data-test-line="true"[^>]*>[\s\S]*?<\/p>/)?.[0] ?? "";
-    // Only figures already in METHOD_FIGURES.backtest: popularity's and taste overlap's shares, each in mono.
-    expect(text(line).replace(" .", ".")).toBe(
-      "Popularity scored higher than taste overlap on this test: it put 57.8% of these clashes in the top quarter of their day, taste overlap 46.8%. See the full test",
-    );
-    expect(line).toContain('<span class="font-mono tabular-nums">57.8%</span>');
-    expect(line).toContain('<span class="font-mono tabular-nums">46.8%</span>');
-    expect(text(line).match(/\d+(\.\d+)?%/g)).toEqual(["57.8%", "46.8%"]);
-    expect(line).toMatch(/<a [^>]*href="\/method#tested"/);
-    // Folded with the pairs and minutes, under a summary that names them; the failed test itself is visible in
-    // FailedTestNote.
-    expect(withoutDisclosures(html)).not.toContain("data-test-line");
-    expect(html).toMatch(/<summary[^>]*>(?:<span[^>]*>)*86 pairs, median 50 minutes, and the complaint <\/span><span class="whitespace-nowrap"><span[^>]*>test</);
+    // Round 32: the complaint test's shares are said once, in FailedTestNote (46.8% and popularity's 57.8%), which
+    // links to the full test; this section no longer repeats them in its fold.
+    expect(html).not.toContain("data-test-line");
+    expect(text(html)).not.toMatch(/57\.8%|46\.8%/);
+    expect(text(renderToStaticMarkup(createElement(FailedTestNote)))).toContain("It reached 57.8%.");
+    expect(html).toMatch(/<summary[^>]*>(?:<span[^>]*>)*86 pairs, median 50 minutes, and how the lists <\/span><span class="whitespace-nowrap"><span[^>]*>lean</);
   });
 
   it("sets no all-caps kicker anywhere in the section: each finding opens with an 18px semibold conclusion, the pilot's head 16px", () => {
@@ -233,10 +235,10 @@ describe("WhyThisMatters", () => {
     // the words that turns 180 degrees on open, the turn animated only under motion-safe. The 44px row stays.
     const summaries = [...html.matchAll(/<summary[^>]*>([\s\S]*?)<\/summary>/g)].map((m) => text(m[1]));
     expect(summaries).toEqual([
-      "86 pairs, median 50 minutes, and the complaint test",
+      "86 pairs, median 50 minutes, and how the lists lean",
       "Danny Bell, Goldenvoice, and what these sources show",
       "Festival Pro and Lineup Ninja",
-      "About 40 Qloo requests per bill",
+      "About 40 Qloo requests per bill, only with the festival’s OK",
     ]);
     for (const generic of ["One more source", "Pilot limits", "More details"]) expect(html).not.toContain(`>${generic}<`);
     expect(html).not.toContain("data-fold-mark");
@@ -373,9 +375,9 @@ describe("WhyThisMatters", () => {
     // at the offer's first line. Its size, weight and tone are inherited (no class of its own but the spacing), so
     // the promise is never set larger or heavier than "Who would pay is not known.", which is also plain body text.
     const offer = pilot.match(/<div data-pilot-offer="true"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? "";
-    expect(offer).toMatch(/^<h3 class="text-base leading-snug font-semibold">Pilot offer<\/h3><p class="mt-2 lg:mt-0">Send one day’s draft or published bill\./);
+    expect(offer).toMatch(/^<h3 class="text-base leading-snug font-semibold">Pilot offer<\/h3><p class="mt-2 lg:mt-0">Walk through the Glastonbury 2025 Sunday brief with me/);
     expect(offer).not.toContain("Contact");
-    expect(offer).not.toMatch(/text-(lg|xl|2xl)|font-(medium|semibold|bold)[^"]*">Send/);
+    expect(offer).not.toMatch(/text-(lg|xl|2xl)|font-(medium|semibold|bold)[^"]*">Walk/);
     expect(html).toContain('<p class="mt-2">Our search, October 2026: absence of evidence only. Who would pay is not known.</p>');
     // Columns 6 to 12 (the voices' x), in the offer's row, so the link's words are level with the offer's first line
     // (the 44px line pulled up 10px from 1024px, where nothing sits above it in these columns): while /check is live
@@ -390,10 +392,10 @@ describe("WhyThisMatters", () => {
     expect(html).toMatch(/<div data-why-col="voices" class="min-w-0 lg:col-span-7 lg:col-start-6 /);
     expect(next).not.toMatch(/lg:items-end|lg:self-end|lg:w-\[20rem\]|justify-end/);
     expect(next).toMatch(
-      /<details class="group cc-disclosure border-t-0!"><summary class="cc-disclosure-summary group\/fold rounded-md font-medium! hover:no-underline! justify-start">(?:<span[^>]*>)*About 40 Qloo requests per <\/span><span class="whitespace-nowrap"><span[^>]*>bill/,
+      /<details class="group cc-disclosure border-t-0!"><summary class="cc-disclosure-summary group\/fold rounded-md font-medium! hover:no-underline! justify-start">(?:<span[^>]*>)*About 40 Qloo requests per bill, only with the festival’s <\/span><span class="whitespace-nowrap"><span[^>]*>OK/,
     );
     expect(text(pilot)).toBe(
-      "Pilot offer Send one day’s draft or published bill. I will price its longest overlaps with Qloo and send back a brief, for up to 10 bills while this entry is open. Success: a programmer moves a set, or keeps one on purpose. Check a draft grid · Contact is on the Devpost page. About 40 Qloo requests per bill Each bill costs about 40 Qloo requests, so ten use about 400 of the 10,000 shared this month. One answer is not a market.",
+      "Pilot offer Walk through the Glastonbury 2025 Sunday brief with me and say where it matches how your team would set those times. Your own draft can go through Check a draft grid, whose rule checks run in your browser and send nothing. Success: you say which suggestion you would take or turn down, and why. Check a draft grid · Contact is on the Devpost page. About 40 Qloo requests per bill, only with the festival’s OK Pricing a new bill is not offered: comparing its longest overlaps takes about 40 Qloo requests of the 10,000 shared this month, and a full-day reading took 104 and 70. Either needs the festival’s OK. One answer is not a market.",
     );
     expect(pilot.match(/<a /g)).toHaveLength(1);
     expect(pilot).not.toContain("<button");
@@ -503,10 +505,12 @@ describe("the complaint overlap figure", () => {
     const { pairsVerified, medianMinutes, rangeMinutes } = METHOD_FIGURES.complaints;
     const figure = figureOf(html);
     expect(figure).not.toBe("");
-    // Placement: after the conclusion, before the fold "86 pairs, median 50 minutes, and the complaint test".
+    // Placement: after the conclusion and who the complaints come from, before the fold "86 pairs, median 50
+    // minutes, and how the lists lean".
     const at = html.indexOf("<div data-complaint-figure");
     expect(at).toBeGreaterThan(html.indexOf("had a verified overlap in time.</p>"));
-    expect(at).toBeLessThan(html.indexOf("86 pairs, median 50 minutes, and the complaint"));
+    expect(at).toBeGreaterThan(html.indexOf("<p data-why-sources"));
+    expect(at).toBeLessThan(html.indexOf("86 pairs, median 50 minutes, and how the lists"));
     expect(at).toBeLessThan(html.indexOf('data-why-col="voices"'));
     // The caption, exactly, and the accessible name from the same caption plus the range and the median.
     const caption = `Overlap range and median across ${pairsVerified} verified pairs.`;
@@ -645,7 +649,7 @@ describe("the failed test and why this matters, as the home page composes them",
 describe("forward-looking lines with no claim (round 31)", () => {
   it("follows Who would pay is not known. with our untested guess, in the open, before the pilot", () => {
     expect(PAYER_GUESS).toBe(
-      "Our guess, not yet tested: the festival, through its head of programming, once per edition, before set times go out. The pilot below is how we will find out.",
+      "Our guess, not yet tested: the festival’s head of programming, once per edition, before set times go out.",
     );
     const html = renderToStaticMarkup(createElement(WhyThisMatters));
     const visible = text(withoutDisclosures(html));
@@ -674,7 +678,7 @@ describe("forward-looking lines with no claim (round 31)", () => {
     const html = renderToStaticMarkup(createElement(WhyThisMatters));
     const visible = text(withoutDisclosures(html));
     expect(visible).toContain(
-      `45 clashes that fans or the press complained about at 5 festivals had a verified overlap in time. ${COMPLAINTS_ELSEWHERE}`,
+      `45 clashes that fans or the press complained about at 5 festivals had a verified overlap in time. ${COMPLAINT_SOURCES} ${COMPLAINTS_ELSEWHERE}`,
     );
     // Muted on paper, an existing pair, with no new kicker.
     expect(html).toContain(`<p data-why-elsewhere="true" class="mt-2 text-muted-foreground">${COMPLAINTS_ELSEWHERE}</p>`);
@@ -699,5 +703,31 @@ describe("the failed-test note on the invented day (round 31)", () => {
     // A published day keeps the words the hero test pins.
     const real = text(renderToStaticMarkup(createElement(FailedTestNote, { synthetic: false })));
     expect(real).toContain(SECOND_OPINION);
+  });
+});
+
+describe("who the complaints come from (round 32, V5)", () => {
+  it("names the mixed sources in one sentence true of every listed page, with no attendance or wish claim", () => {
+    expect(COMPLAINT_SOURCES).toBe(
+      "They come from four Reddit threads and six press articles (NME, Time Out, Vice, SF Chronicle, Lambgoat, EDM Identity).",
+    );
+    // The counts are the public pages': four forum threads, six articles, ten in all.
+    expect(PUBLIC_SOURCES.filter(isForumThread)).toHaveLength(4);
+    expect(PUBLIC_SOURCES.filter((url) => !isForumThread(url))).toHaveLength(PRESS_OUTLETS.length);
+    // Every article's host is one of the outlets named, and every outlet named has an article.
+    const hosts = PUBLIC_SOURCES.filter((url) => !isForumThread(url)).map((url) => new URL(url).hostname.replace(/^www\./, ""));
+    const outletOf: Record<string, (typeof PRESS_OUTLETS)[number]> = {
+      "vice.com": "Vice",
+      "sfchronicle.com": "SF Chronicle",
+      "edmidentity.com": "EDM Identity",
+      "timeout.com": "Time Out",
+      "nme.com": "NME",
+      "lambgoat.com": "Lambgoat",
+    };
+    expect(hosts.map((host) => outletOf[host]).sort()).toEqual([...PRESS_OUTLETS].sort());
+    // Not every source is a fan who wanted to see both acts: the sentence claims nothing of the kind.
+    expect(COMPLAINT_SOURCES).not.toMatch(/wanted to see|both acts|attend|same crowd|same people|fans at stake/i);
+    const html = renderToStaticMarkup(createElement(WhyThisMatters));
+    expect(html).toContain(`<p data-why-sources="true" class="mt-2">${COMPLAINT_SOURCES}</p>`);
   });
 });

@@ -19,6 +19,7 @@ import {
   briefSteps,
   briefTitle,
   briefTradeoff,
+  clashesCaption,
   clashesTitle,
   coverageSentence,
   dayFigures,
@@ -33,6 +34,7 @@ import {
   planVerdictSentence,
   savedDate,
   sourceHosts,
+  stageChangeText,
   heavyPlan,
   tableClashes,
   tableOnPaper,
@@ -372,7 +374,7 @@ describe("the plan's verdict in the brief", () => {
 
   it("states the band in the same sentence, since the plan is read before the day's own band", () => {
     expect(planVerdictSentence({ publishedBudget: 116.71, budget: 109.3 }, band)).toBe(
-      "The middle 80% of random valid timetables of this lineup score 92 to 109; this plan scores 0.3 index points above that range. The published timetable is 7.7 above it.",
+      "The middle 80% of random valid timetables of this lineup score 92 to 109; this plan scores 0.3 index points above that range. By this index, the published timetable sits 7.7 points above that range.",
     );
     expect(planVerdictSentence({ publishedBudget: 116.71, budget: 100 }, band)).toBe(
       "The middle 80% of random valid timetables of this lineup score 92 to 109; this plan scores inside that range.",
@@ -973,5 +975,49 @@ describe("the printed baseline", () => {
       .replace(/&#x27;|&#39;/g, "'")
       .replace(/\s+/g, " ");
     if (tradeoff) expect(text).toContain("The comparison is about Act Four and Act Five");
+  });
+});
+
+describe("the brief's table caption and stage changes (round 32, V7)", () => {
+  it("says costliest first only when there are two rows or more to order", () => {
+    expect(clashesCaption(5)).toBe("The five costliest clashes on this day, costliest first");
+    expect(clashesCaption(2, true)).toBe("The two costliest clashes on the published day, before these moves, costliest first");
+    expect(clashesCaption(1)).toBe("The costliest clash on this day");
+    expect(clashesCaption(1, true)).toBe("The costliest clash on the published day, before these moves");
+  });
+
+  it("names a change that moves a set to another stage, for production to sign off", () => {
+    expect(stageChangeText(0, 2)).toBeNull();
+    expect(stageChangeText(1, 1)).toBe("changes stage: needs production sign-off");
+    expect(stageChangeText(2, 2)).toBe("both change stage: needs production sign-off");
+    expect(stageChangeText(3, 3)).toBe("all change stage: needs production sign-off");
+    expect(stageChangeText(1, 2)).toBe("one changes stage: needs production sign-off");
+    expect(stageChangeText(2, 3)).toBe("two change stage: needs production sign-off");
+  });
+
+  it("says so in the comparison's Sets moved row, in the column whose change moves a stage, and nowhere else", () => {
+    const preset = makePreset();
+    // The fixture's card move changes stage; its keep-apart change does not.
+    const moved = briefTradeoff(preset, parseDecision(decisionRaw()), [CARD_MOVE], 0)!;
+    const sets = moved.tradeoff.rows.find((row) => row.id === "sets")!;
+    expect(sets.move).toBe("1 (Act Two); changes stage: needs production sign-off");
+    expect(sets.rule).toBe("2 (Act One and Act Three)");
+    for (const row of moved.tradeoff.rows.filter((r) => r.id !== "sets")) {
+      expect(`${row.move} ${row.rule}`).not.toContain("sign-off");
+    }
+    // A keep-apart change that moves both sets to other stages says so in its own column.
+    const raw = decisionRaw();
+    const rule = raw.rule as { fixes: Record<string, unknown>[] };
+    const both = decisionRaw({
+      move: { ...(raw.move as Record<string, unknown>), stage_changed: false },
+      rule: { ...rule, fixes: [{ ...rule.fixes[0], stage_changes: 2 }] },
+    });
+    const keep = briefTradeoff(preset, parseDecision(both), [CARD_MOVE], 0)!;
+    const keepSets = keep.tradeoff.rows.find((row) => row.id === "sets")!;
+    expect(keepSets.move).toBe("1 (Act Two)");
+    expect(keepSets.rule).toBe("2 (Act One and Act Three); both change stage: needs production sign-off");
+    // The card's own table is untouched: the note is the brief's.
+    const card = buildDecisionCopy(preset, parseDecision(both))?.tradeoff;
+    expect(card?.rows.find((row) => row.id === "sets")?.rule).toBe("2 (Act One and Act Three)");
   });
 });

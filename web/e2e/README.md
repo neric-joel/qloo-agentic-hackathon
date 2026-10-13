@@ -20,20 +20,20 @@ the local one with no language model and with live Qloo features off; the suite 
 
 | File | Journey |
 | --- | --- |
-| `home.spec.ts`, `invented-day.spec.ts` | Home on each saved day and on the invented example day; switching days |
+| `home.spec.ts`, `invented-day.spec.ts` | Home on each saved day and on the invented example day; switching days; the home page length at 1440 px |
 | `hero.spec.ts`, `rail.spec.ts` | The decision card, "Keep this move" kept in place and "See your plan"; the section rail |
 | `timetable.spec.ts`, `hidden-clashes.spec.ts` | The board, the key, the clash drawer; the hidden-clash examples |
 | `try-a-move.spec.ts`, `keep-apart.spec.ts` | Pick a set, legal places, keep, undo; "Keep two sets apart" |
-| `recorded-runs.spec.ts` | "Recorded agent runs" with the model off, replay, and "Keep this place" into the plan and the brief |
+| `recorded-runs.spec.ts` | "Recorded agent runs" with the model off, replay, the column beside a run, and "Keep this place" (with Add or Replace once a plan exists) into the plan and the brief |
 | `sections.spec.ts`, `honesty.spec.ts` | What Qloo changes, who has complained, sources; the two required honesty lines |
-| `check.spec.ts`, `check-price.spec.ts` | `/check`: paste, rule breaks, shared time, decisions, print, a published day; "Compare audience overlap" in saved mode |
+| `check.spec.ts`, `check-price.spec.ts` | `/check`: paste, rule breaks, shared time, decisions, print, a published day, Find a change (same stage first, the kept-on-purpose fold); "Compare audience overlap" in saved mode, a published day's costliest clashes |
 | `brief.spec.ts`, `print.spec.ts` | `/brief` and print media |
 | `method.spec.ts` | `/method`: the failed pre-set test, the backtest table, the Qloo endpoints |
 | `theme.spec.ts`, `intro.spec.ts` | The theme control; the opening curtain, once per visitor |
 | `reduced-motion.spec.ts` | Under reduced motion: no curtain, end states at once, no smooth scroll |
 | `navigation.spec.ts`, `keyboard.spec.ts` | Header, footer, 404 page; keyboard paths and focus |
 | `layout.spec.ts`, `health.spec.ts` | No sideways scroll; every page loads clean and well formed |
-| `network-safety.spec.ts` | The browser talks to this site only and spends no Qloo or model call |
+| `network-safety.spec.ts` | The browser talks to this site only and spends no Qloo or model call; the guard itself blocks a live-mode price |
 
 `pages/` holds page objects (locators by role and label, never `data-testid`), `helpers.ts` small shared checks,
 and `fixtures.ts` the shared `test`.
@@ -62,7 +62,8 @@ Wait for the page, not the clock: `home.goto()` and `check.goto()` return once t
 A test for behaviour the app gets wrong is kept and marked `test.fail()` with a comment that names the defect and how to
 reproduce it. When the app is fixed the test starts to pass, Playwright reports it, and the mark comes off.
 
-Open: none. Fixed and unmarked in round 31: D1 (the rail's last link), D2 (focus on the day tabs), D3 (dark-theme
+Open: D5 (round 32), the home page at 1440 px is taller than the 7,000 px ceiling in `home.spec.ts` ("home page
+length"; the measured height is attached to the test as an annotation). Fixed and unmarked in round 31: D1 (the rail's last link), D2 (focus on the day tabs), D3 (dark-theme
 print of `/` and `/method`) and D4 (the footer's "MIT licence" and "Source code" links now open in a new tab with
 `rel="noopener noreferrer"`, `health.spec.ts`).
 

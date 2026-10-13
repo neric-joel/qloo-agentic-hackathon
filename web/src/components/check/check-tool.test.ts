@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import { parseGrid, removePairLine, runCheck, type PairSuggestion } from "@/lib/check";
 import { breakDecisionId } from "@/lib/check-decisions";
-import { PRICE_COPY, priceBody, priceRequest, thirdParty } from "@/lib/check-price";
+import { PRICE_COPY, parsePriceAnswer, priceBody, priceRequest, thirdParty } from "@/lib/check-price";
 import {
   SAMPLE_GRID,
   SAMPLE_RULES,
@@ -16,13 +16,15 @@ import {
   isPublishedInput,
   keepSampleRules,
   publishedDayInput,
+  publishedPairsLine,
 } from "@/lib/check-sample";
 
 import { RULE_LABELS } from "@/lib/check";
 
 import { BOTH_LOCKED, CheckResults, RESULT_IDS, breakMarks, lockNote, nextStep } from "./check-results";
 import { CheckPrice } from "./check-price";
-import { CheckReview } from "./check-review";
+import { CheckBrief } from "./check-brief";
+import { CheckReview, ruleBreaksValue } from "./check-review";
 import { BreakStrip } from "./check-break-strip";
 import {
   BreakItem,
@@ -1461,5 +1463,217 @@ describe("round 31: Check a published day (C8)", () => {
     expect(source).toContain("Check a published day: {publishedDay.title}");
     // The published label is shown above the results and printed on the brief.
     expect(source).toMatch(/published: run\.published \?\? null/);
+  });
+});
+
+describe("round 32: a published day compares its own costliest clashes, values first (K1, K3, K5, K8)", () => {
+  // An invented published day in the route's shape, with an invented saved ranking: every name, count and
+  // value here is invented for the test.
+  const day = {
+    id: "harbor-2031-fri",
+    title: "Harbor 2031, Friday",
+    synthetic: false,
+    festival: {
+      stages: [
+        { id: "n", name: "North" },
+        { id: "s", name: "South" },
+        { id: "e", name: "East" },
+      ],
+      acts: [
+        { id: "a", name: "Ash Meadow" },
+        { id: "b", name: "Brass Lantern" },
+        { id: "c", name: "Cedar Bloom" },
+        { id: "d", name: "Delta Choir" },
+        { id: "e", name: "Echo Field" },
+        { id: "f", name: "Flint Harbor" },
+      ],
+      timetable: [
+        { act_id: "a", day: 0, stage_id: "n", start: 1080, end: 1140, locked: false },
+        { act_id: "b", day: 0, stage_id: "s", start: 1095, end: 1140, locked: false },
+        { act_id: "c", day: 0, stage_id: "e", start: 1110, end: 1170, locked: true },
+        { act_id: "d", day: 0, stage_id: "n", start: 1160, end: 1230, locked: true },
+        { act_id: "e", day: 0, stage_id: "s", start: 1155, end: 1200, locked: false },
+        { act_id: "f", day: 0, stage_id: "e", start: 1185, end: 1230, locked: false },
+      ],
+      constraints: { changeover_minutes: 10, curfew: {}, no_clash_with: [], billing_rules: [] },
+    },
+    report: {
+      metrics: { scored_concurrent_pairs: 5, unscored_concurrent_pairs: 3 },
+      coverage: { unscored: [{ act_id: "e", name: "Echo Field", reason: "no_signal" }] },
+      clashes: [
+        { rank: 1, day: 0, a: { act_id: "d" }, b: { act_id: "c" } },
+        { rank: 2, day: 0, a: { act_id: "e" }, b: { act_id: "f" } },
+        { rank: 3, day: 0, a: { act_id: "b" }, b: { act_id: "a" } },
+        { rank: 4, day: 0, a: { act_id: "f" }, b: { act_id: "d" } },
+        { rank: 5, day: 0, a: { act_id: "a" }, b: { act_id: "c" } },
+      ],
+    },
+  };
+  const built = publishedDayInput(day);
+  if (!built) throw new Error("not built");
+  const outcome = runCheck(built.input);
+  if (!outcome.ok) throw new Error("refused");
+
+  it("keeps the saved day's ranking, its no-signal acts and its pair counts beside the fields", () => {
+    expect(built.ranking?.pairs).toEqual([
+      { a: "Delta Choir", b: "Cedar Bloom" },
+      { a: "Echo Field", b: "Flint Harbor" },
+      { a: "Brass Lantern", b: "Ash Meadow" },
+      { a: "Flint Harbor", b: "Delta Choir" },
+      { a: "Ash Meadow", b: "Cedar Bloom" },
+    ]);
+    expect(built.ranking?.noSignal).toEqual(["Echo Field"]);
+    expect(built.pairCounts).toEqual({ scored: 5, unscored: 3 });
+    // The fields themselves carry the timetable only.
+    expect(JSON.stringify(built.input)).not.toMatch(/rank|clash|scored/i);
+    expect(publishedDayInput({ ...day, report: undefined })?.ranking ?? null).toBeNull();
+  });
+
+  it("says once how the overlaps found become the ranked ones, only when the counts add up (K5)", () => {
+    expect(outcome.report.shared).toHaveLength(8);
+    expect(publishedPairsLine(outcome.report.shared.length, built.pairCounts)).toBe(
+      "8 pairs share time; the timetable page ranks the 5 where both acts have a usable Qloo signal.",
+    );
+    expect(publishedPairsLine(7, built.pairCounts)).toBeNull();
+    expect(publishedPairsLine(5, { scored: 5, unscored: 0 })).toBeNull();
+    expect(publishedPairsLine(8, null)).toBeNull();
+  });
+
+  it("compares the saved day's costliest clashes in its order, passing over both-locked and no-signal pairs (K1)", () => {
+    const request = priceRequest(outcome.report, built.ranking) as NonNullable<ReturnType<typeof priceRequest>>;
+    expect(request.basis).toBe("saved_ranking");
+    expect(request.overlaps.map((o) => `${o.a} × ${o.b}`)).toEqual([
+      "Brass Lantern × Ash Meadow",
+      "Flint Harbor × Delta Choir",
+      "Ash Meadow × Cedar Bloom",
+    ]);
+    expect(request.skipped.map((o) => o.reason)).toEqual(["locked", "no_signal"]);
+    const body = JSON.parse(priceBody(request, "saved")) as { acts: string[]; mode: string };
+    expect(body.mode).toBe("saved");
+    expect(body.acts).toHaveLength(6);
+    // The same grid pasted (no ranking) keeps its longest-first rule.
+    expect(priceRequest(outcome.report)?.basis).toBe("longest");
+  });
+
+  const request = priceRequest(outcome.report, built.ranking) as NonNullable<ReturnType<typeof priceRequest>>;
+  const route = {
+    mode: "saved",
+    source: "saved_day",
+    preset_id: "harbor-2031-fri",
+    fetched_at: "2031-01-01T00:00:00Z",
+    coverage: { acts: 6, priced: 5, unpriced: ["Echo Field"], matched: 6, no_signal: ["Echo Field"], ambiguous: [] },
+    comparator: { kind: "saved_day", acts: 5 },
+    pairs: [
+      { a: "Brass Lantern", b: "Ash Meadow", status: "priced", taste_overlap: 0.31, pair_rank: 2, reason: null },
+      { a: "Flint Harbor", b: "Delta Choir", status: "priced", taste_overlap: 0.77, pair_rank: 1, reason: null },
+      { a: "Ash Meadow", b: "Cedar Bloom", status: "unpriced", taste_overlap: null, pair_rank: null, reason: "not_ranked_on_saved_day" },
+    ],
+    requests_used: 0,
+    scope_note: "x",
+  };
+  const answer = parsePriceAnswer(route, request, "saved");
+  if (!answer) throw new Error("unread");
+  const props = {
+    request,
+    noOverlap: false,
+    order: "minutes" as const,
+    onOrder: () => {},
+    onPrice: () => {},
+    stale: false,
+    published: true,
+  };
+
+  it("draws the source line, the values and the order sentence first, then one count line and a closed fold (K3)", () => {
+    const html = renderToStaticMarkup(createElement(CheckPrice, { ...props, state: { phase: "ready", answer } }));
+    const page = text(html);
+    const at = (words: string) => {
+      const index = page.indexOf(words);
+      expect(index, words).toBeGreaterThanOrEqual(0);
+      return index;
+    };
+    const order = [
+      at("Compared using a saved festival day. No Qloo request was sent."),
+      at("Brass Lantern × Ash Meadow: 45 min shared. Taste overlap 31 / 100, ranked 2 of 2."),
+      at("Taste overlap changes the order of the 2 compared overlaps: Flint Harbor × Delta Choir moves from 2nd to 1st."),
+      at("which already includes taste overlap: a worked example, not a test."),
+      at("3 overlaps not compared: both sets locked (1), no usable Qloo signal (1), no reading served for the pair (1)."),
+      at("Why these were not compared (3)"),
+    ];
+    expect(order).toEqual([...order].sort((x, y) => x - y));
+    // No grey line before the first value.
+    const head = html.slice(0, html.indexOf("Brass Lantern × Ash Meadow: 45 min"));
+    expect(head).not.toContain("text-muted-foreground");
+    // The fold is closed and lists each overlap with its reason in words.
+    const fold = html.slice(html.indexOf('<details class="group cc-disclosure'), html.indexOf("</details>"));
+    expect(fold).not.toMatch(/<details[^>]* open/);
+    expect(text(fold)).toContain("Delta Choir × Cedar Bloom: 10 min shared. Not compared: both sets are locked, so neither can move; the next clash in the saved day’s ranking is compared instead.");
+    expect(text(fold)).toContain("Echo Field × Flint Harbor: 15 min shared. Not compared: the saved day marks an act of this pair as having no usable Qloo signal, so it was not sent.");
+    expect(text(fold)).toContain(
+      "Ash Meadow × Cedar Bloom: 30 min shared. Not compared: both acts are on the saved day, but this demo serves readings only for the pairs its timetable page shows, and this pair is not one of them. Shown by minutes only.",
+    );
+    // The intro says how the pairs were chosen, and the "not sent" line is gone: every act name was sent.
+    expect(page).toContain("for the saved day’s 3 costliest clashes that can move");
+    expect(page).toContain("we send the 6 act names and the pairs");
+    expect(page).not.toMatch(/are not sent and not compared/);
+  });
+
+  it("before the press, counts the passed-over pairs under the button, with the same fold", () => {
+    const page = text(renderToStaticMarkup(createElement(CheckPrice, { ...props, state: { phase: "idle" } })));
+    expect(page.indexOf(PRICE_COPY.button)).toBeLessThan(page.indexOf("2 overlaps not compared: both sets locked (1), no usable Qloo signal (1)."));
+    expect(page).toContain("Why these were not compared (2)");
+  });
+
+  it("prints no worked-example line for a pasted grid", () => {
+    const pasted = priceRequest(outcome.report) as NonNullable<ReturnType<typeof priceRequest>>;
+    const pastedAnswer = parsePriceAnswer(
+      {
+        ...route,
+        pairs: pasted.overlaps.map((o, i) => ({ a: o.a, b: o.b, status: "priced", taste_overlap: 0.1 * (i + 1), pair_rank: pasted.overlaps.length - i, reason: null })),
+      },
+      pasted,
+      "saved",
+    );
+    if (!pastedAnswer) throw new Error("unread");
+    const page = text(renderToStaticMarkup(createElement(CheckPrice, { ...props, request: pasted, published: false, state: { phase: "ready", answer: pastedAnswer } })));
+    expect(page).not.toContain("a worked example, not a test");
+  });
+
+  it("prints the same order on the brief: values, order sentence, worked example, then what was not compared", () => {
+    const page = text(
+      renderToStaticMarkup(
+        createElement(CheckBrief, { report: outcome.report, applied: [], decisions: [], price: answer, priceSkipped: request.skipped, preview: true }),
+      ),
+    );
+    expect(page).toContain("Taste overlap compared (the saved day’s 3 costliest clashes that can move)");
+    expect(page.indexOf("Flint Harbor × Delta Choir: 45 min shared.")).toBeLessThan(page.indexOf("a worked example, not a test"));
+    expect(page.indexOf("a worked example, not a test")).toBeLessThan(page.indexOf("3 overlaps not compared"));
+    expect(page).toContain("Delta Choir × Cedar Bloom: 10 min shared. Not compared: both sets are locked");
+  });
+
+  it("reads 0 for rule breaks with nothing to review, never 0 of 0 reviewed (K8)", () => {
+    const counts = { sets: 6, stages: 3, breaks: 0, breaksReviewed: 0, pairs: 8, pairsDecided: 0, kept: 0, notChanging: 0, changed: 0, openBreaks: 0, openPairs: 8 };
+    expect(ruleBreaksValue(counts)).toBe("0");
+    expect(ruleBreaksValue({ breaks: 3, breaksReviewed: 1 })).toBe("3 · 1 of 3 reviewed");
+    const html = renderToStaticMarkup(
+      createElement(CheckReview, {
+        counts,
+        sample: false,
+        price: { phase: "idle" },
+        searched: 0,
+        applied: 0,
+        stale: false,
+        onPrint: () => {},
+        onCopy: () => {},
+        onDownload: () => {},
+        canShare: true,
+        share: null,
+      }),
+    );
+    expect(text(html)).toContain("Rule breaks 0 Overlaps");
+    expect(text(html)).not.toContain("0 of 0 reviewed");
+    // The printed brief says the same: "Rule breaks: 0." and "Rule breaks (0)", never "0 of 0".
+    const brief = text(renderToStaticMarkup(createElement(CheckBrief, { report: outcome.report, applied: [], decisions: [], price: null, preview: true })));
+    expect(brief).toContain("Rule breaks: 0.");
+    expect(brief).not.toContain("0 of 0");
   });
 });

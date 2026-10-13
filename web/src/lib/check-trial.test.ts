@@ -107,8 +107,17 @@ describe("the sample: each planted break gets a result", () => {
         /^\d+ (within 3 hours )?found, \d+ shown: each ends it, adds no rule break and makes none larger, ranked by total start-time minutes moved, with any that create a longer overlap than they end last\. [\d,]+ candidates? tested\./,
       );
       expect(result.changes).toHaveLength(Math.min(TRIAL_LIMITS.shown, result.found));
+      // The shown count adds the next same-stage changes listed after the first five (R32 K6).
+      const more = result.sameStageMore ?? [];
+      for (const change of more) {
+        expect(change.stageChanges).toBe(0);
+        expect(judge(report, target, change)).toBe("valid");
+      }
+      expect(result.changes.filter((c) => c.stageChanges === 0).length + more.length).toBeLessThanOrEqual(
+        Math.max(TRIAL_LIMITS.sameStage, result.changes.filter((c) => c.stageChanges === 0).length),
+      );
       expect(result.summary).toContain(
-        `${result.found} ${result.largeOmitted > 0 ? "within 3 hours " : ""}found, ${result.changes.length} shown`,
+        `${result.found} ${result.largeOmitted > 0 ? "within 3 hours " : ""}found, ${result.changes.length + more.length} shown`,
       );
     }
   });
@@ -828,7 +837,9 @@ describe("the words", () => {
 
   it("uses none of the words the page avoids, in the fixed copy or in any sentence it writes", () => {
     const report = sample();
-    const sentences: string[] = [...Object.values(TRIAL_COPY)];
+    const sentences: string[] = Object.values(TRIAL_COPY).flatMap((value) =>
+      typeof value === "function" ? [value(1), value(3)] : [value],
+    );
     for (const item of report.breaks) {
       const result = findChange(report, targetOfBreak(item));
       sentences.push(result.summary);

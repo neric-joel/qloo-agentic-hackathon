@@ -68,7 +68,7 @@ test.describe("hidden clashes", () => {
     await expect(wall).toContainText(/Showing 8 of \d+ sourced examples\. The other \d+ are not saved with this day\./);
     await expect(wall).toContainText("Both ranks run 0 to 100 within that day’s clashes");
     // The wall is part of the page, not a claim of detection: it names the pairs as called-out, with sources.
-    await expect(wall).toContainText("Clashes the press or fans called out");
+    await expect(wall).toContainText("pairs the press or fans called out that have no genre tag in common");
   });
 
   test("a hidden clash on the board is marked, and opens like any other", async ({ page }) => {

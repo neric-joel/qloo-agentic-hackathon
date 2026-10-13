@@ -27,7 +27,8 @@ import {
 import { buildDecisionCopy, type Decision } from "@/lib/decision";
 import { pluralize } from "@/lib/format";
 import { drawerRank, drawerRankOf } from "@/lib/lenses";
-import type { PairClash, Preset, PresetSummary } from "@/lib/preset";
+import { MOCK_STREAM_ENABLED } from "@/lib/mock-stream";
+import { parsePreset, type Evidence, type PairClash, type Preset, type PresetSummary } from "@/lib/preset";
 import type { RulePreview } from "@/lib/rule-fix";
 import type { ServerSummary } from "@/lib/server-summary";
 import { isRuleStackStep, sameStep, seedOutcome, type PlanPreview, type StackStep } from "@/lib/stack";
@@ -39,7 +40,7 @@ import { ClashDrawer } from "./clash-drawer";
 import { ClashList, liveClashRow } from "./clash-list";
 import { CoverageMeter } from "./coverage-meter";
 import { DecisionCard, DecisionCardSkeleton } from "./decision-card";
-import { HiddenWall } from "./hidden-wall";
+import { HiddenWall, type HiddenDay } from "./hidden-wall";
 import { MoreDetails } from "./more-details";
 import { PresetSources } from "./preset-sources";
 import { SummaryBoard, SummaryScore } from "./server-summary";
@@ -86,7 +87,7 @@ function replacedNote(plan: readonly StackStep[], seed: StackStep): string | nul
 }
 
 /** Beside the paste action: what it costs the visitor, and what leaves the browser. */
-export const HERO_MICROCOPY = "About a minute. Nothing leaves your browser unless you ask for prices.";
+export const HERO_MICROCOPY = "About a minute. Nothing leaves your browser unless you ask to compare audiences.";
 
 /**
  * One muted 14 px note at the foot of the pitch column: the paste's cost (when /check is live) and the
@@ -559,6 +560,7 @@ export function ClashControl({
       preset={preset.value}
       agentStatus={agentStatus}
       serverDecision={summary && summary.id === preset.value.id ? summary.decisionData : null}
+      presets={list.value}
       picker={<PresetPicker presets={list.value} selectedId={selectedId} onChange={choosePreset} />}
     />
   );
@@ -596,6 +598,51 @@ function PresetPicker({
   );
 }
 
+/** Sourced examples saved with another festival day, and that day's title. */
+type BorrowedWall = { forId: string; evidence: Evidence; title: string };
+
+/**
+ * The hidden-clash examples are cross-festival (each names its own festival and day), but a build saves
+ * them with one festival day. A published day with none of its own shows another published day's, read
+ * from the saved preset (a GET of a saved file: no Qloo request). Never on the invented day, which credits
+ * nothing to Qloo, and never in mock mode. Null until found, or when no day has any.
+ */
+function useBorrowedWall(presets: readonly PresetSummary[], preset: Preset): BorrowedWall | null {
+  const own = (preset.evidence?.hidden_wall.length ?? 0) > 0;
+  const skip = own || preset.synthetic === true || MOCK_STREAM_ENABLED;
+  const [found, setFound] = useState<BorrowedWall | null>(null);
+  const others = presets
+    .filter((item) => item.id !== preset.id && item.synthetic !== true)
+    .map((item) => item.id)
+    .join("|");
+  useEffect(() => {
+    if (skip || others === "") return;
+    const controller = new AbortController();
+    const forId = preset.id;
+    void (async () => {
+      for (const id of others.split("|")) {
+        try {
+          const response = await fetch(`/api/presets/${encodeURIComponent(id)}`, {
+            signal: controller.signal,
+            headers: { Accept: "application/json" },
+          });
+          if (!response.ok) continue;
+          const other = parsePreset(await response.json());
+          if (controller.signal.aborted) return;
+          if (other.synthetic !== true && other.evidence && other.evidence.hidden_wall.length > 0) {
+            setFound({ forId, evidence: other.evidence, title: other.title });
+            return;
+          }
+        } catch {
+          if (controller.signal.aborted) return;
+        }
+      }
+    })();
+    return () => controller.abort();
+  }, [skip, others, preset.id]);
+  return !skip && found !== null && found.forId === preset.id ? found : null;
+}
+
 type Highlight = { kind: "set"; id: string } | { kind: "clash"; key: string } | null;
 
 type DrawerState = { clash: PairClash | null; open: boolean; trigger: HTMLElement | null };
@@ -606,6 +653,7 @@ function PresetView({
   preset,
   agentStatus,
   serverDecision,
+  presets,
   picker,
 }: {
   intro: ReactNode;
@@ -614,6 +662,8 @@ function PresetView({
   agentStatus: AgentStatus;
   /** The decision the server already holds for this preset's first day, so the card needs no request. */
   serverDecision: Decision | null;
+  /** Every festival day the server has, so a day with no hidden-clash examples can show another's. */
+  presets: readonly PresetSummary[];
   picker: ReactNode;
 }) {
   const days = useMemo(() => daysWithSets(preset), [preset]);
@@ -655,8 +705,23 @@ function PresetView({
   );
   const recordings = useRecordings(preset.id);
   const twins = preset.evidence?.twins ?? [];
-  // The wall's hero link and jump entry only when the day has examples to show.
-  const hasWall = (preset.evidence?.hidden_wall?.length ?? 0) > 0;
+  // The day's clashes that carry the Hidden label, from the ranked list the board draws its marks from.
+  // `hiddenClashes.length` is the one Hidden-label count for the day: the board's, the section's and the
+  // hero card's.
+  const hiddenClashes = useMemo(() => ranked.filter((clash) => clash.label === "hidden"), [ranked]);
+  const hiddenDay = useMemo<HiddenDay>(
+    () => ({
+      ranked: ranked.length,
+      hidden: hiddenClashes.map((clash) => ({ rank: clash.rank, a: clash.a.name, b: clash.b.name })),
+    }),
+    [ranked.length, hiddenClashes],
+  );
+  // The examples: the day's own, else another published day's.
+  const borrowed = useBorrowedWall(presets, preset);
+  const wallEvidence = (preset.evidence?.hidden_wall.length ?? 0) > 0 ? preset.evidence : (borrowed?.evidence ?? null);
+  // The section, and its jump entry, are on every day with ranked clashes: the label's definition and the
+  // day's count stand without examples.
+  const hasWall = ranked.length > 0 || (wallEvidence?.hidden_wall.length ?? 0) > 0;
   const index = report.metrics.clash_budget_index;
   const decisionState = useDecision(preset.id, day, serverDecision);
   const decisionCopy = useMemo(
@@ -721,6 +786,12 @@ function PresetView({
           (clash.a.act_id === decisionClash.bId && clash.b.act_id === decisionClash.aId),
       ) ?? null)
     : null;
+  // The hidden-clash line's facts, only while the card is for the day on show: the board's own Hidden
+  // count for that day, and the card pair's two saved main genres (in the card's own order).
+  const cardHiddenCount = decisionClash ? hiddenClashes.length : undefined;
+  const cardGenres = decisionClash
+    ? [decisionClash.aId, decisionClash.bId].map((id) => festival.acts.find((act) => act.id === id)?.genre ?? null)
+    : null;
 
   return (
     <>
@@ -784,6 +855,8 @@ function PresetView({
                     : { builtAt: preset.built_at, requests: preset.requests.length }
                 }
                 onOpenPair={decisionPair ? (trigger) => openClash(decisionPair, trigger) : undefined}
+                hiddenCount={cardHiddenCount}
+                genres={cardGenres}
               />
             ) : decisionState.status === "loading" ? (
               <DecisionCardSkeleton />
@@ -824,7 +897,14 @@ function PresetView({
             synthetic={synthetic}
           />
         }
-        wall={<HiddenWall evidence={preset.evidence} synthetic={synthetic} />}
+        wall={
+          <HiddenWall
+            evidence={wallEvidence}
+            synthetic={synthetic}
+            day={ranked.length > 0 ? hiddenDay : null}
+            savedWith={borrowed ? borrowed.title : null}
+          />
+        }
         why={
           // The problem, the pilot and what is not known, after the hidden clashes and before the board.
           <WhyThisMatters />
@@ -841,7 +921,7 @@ function PresetView({
                   {festival.city ? `, ${festival.city}` : ""}
                 </p>
                 <h2 id="board-heading" className="type-title mt-1.5 scroll-mt-16 md:scroll-mt-26">
-                  Where the clash budget goes: {festival.stages.length} stages, {views.length} sets
+                  Where the clashes fall: {festival.stages.length} stages, {views.length} sets
                 </h2>
               </div>
               <div className="flex min-w-0 flex-col items-start gap-2 lg:items-end">
@@ -1001,11 +1081,13 @@ function PresetView({
             day={day}
             agentStatus={agentStatus}
             keptSteps={keptSteps}
-            onKeepPlace={(move) => {
-              // The agent proposes, the programmer keeps: the same seed path as the card's Keep this move,
-              // which replaces the plan and has the plan's own /whatif price it again.
-              const note = replacedNote(keptSteps, move);
-              setSeedStep((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, step: move, from: "agent" }));
+            cardActId={decisionCopy?.seedMove?.actId ?? null}
+            onKeepPlace={(move, choice) => {
+              // The agent proposes, the programmer keeps: the same seed path as the card's Keep this move.
+              // Add (checked whole by /whatif in the panel first) keeps the plan's steps; Replace replaces
+              // them and says so. The plan's own /whatif prices it again either way.
+              const note = choice?.mode === "add" ? null : replacedNote(keptSteps, move);
+              setSeedStep((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, step: move, from: "agent", ...(choice ?? {}) }));
               return note;
             }}
           />

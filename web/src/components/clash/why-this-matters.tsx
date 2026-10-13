@@ -7,6 +7,7 @@ import { CHECK_LIVE } from "@/lib/check-flag";
 
 import { DEMAND, PAYER_GUESS, PILOT, PILOT_CONTACT, PILOT_TERMS, type Demand } from "@/lib/demand";
 import { METHOD_FIGURES, formatCount, formatPct, methodRow, numberWord, type MethodId } from "@/lib/method-figures";
+import { PUBLIC_SOURCES } from "@/lib/public-sources";
 import { PUBLIC_VOICES, type PublicVoice } from "@/lib/public-voices";
 import { cn } from "@/lib/utils";
 
@@ -120,16 +121,16 @@ function contactHref(contact: string): string {
  * reply: it says what would count as success and that one answer is not a market.
  */
 function PilotOffer({ contact, terms }: { contact: string | null; terms: string | null }) {
-  const { bills, requestsPerBill, monthlyRequests } = PILOT;
+  const { requestsPerBill, monthlyRequests, fullDayRequests } = PILOT;
   return (
     <div data-pilot className="border-t border-border pt-8">
       <div className="max-w-[68ch] lg:grid lg:max-w-none lg:grid-cols-12 lg:grid-rows-[auto_auto] lg:gap-x-12 lg:gap-y-2">
         <div data-pilot-offer className="lg:col-span-5 lg:row-span-2 lg:grid lg:grid-rows-subgrid">
           <h3 className="text-base leading-snug font-semibold">Pilot offer</h3>
           <p className="mt-2 lg:mt-0">
-            Send one day&rsquo;s draft or published bill. I will price its longest overlaps with Qloo and send back a
-            brief, for up to {bills} bills while this entry is open. Success: a programmer moves a set, or keeps one
-            on purpose.
+            Walk through the {PILOT_DAY} brief with me and say where it matches how your team would set those
+            times. Your own draft can go through Check a draft grid, whose rule checks run in your browser and send
+            nothing. Success: you say which suggestion you would take or turn down, and why.
           </p>
         </div>
         {/* While /check is live the column opens on its action: the link (16px semibold ink, its arrow, a 44px
@@ -165,11 +166,15 @@ function PilotOffer({ contact, terms }: { contact: string | null; terms: string 
               )}
             </p>
           </div>
-          <Fold summaryClassName="justify-start" summary={`About ${requestsPerBill} Qloo requests per bill`}>
+          <Fold
+            summaryClassName="justify-start"
+            summary={`About ${requestsPerBill} Qloo requests per bill, only with the festival’s OK`}
+          >
             <p className="pb-1 text-muted-foreground">
-              Each bill costs about {requestsPerBill} Qloo requests, so {numberWord(bills)} use about{" "}
-              {formatCount(bills * requestsPerBill)} of the {formatCount(monthlyRequests)} shared this month. One
-              answer is not a market.
+              Pricing a new bill is not offered: comparing its longest overlaps takes about {requestsPerBill} Qloo
+              requests of the {formatCount(monthlyRequests)} shared this month, and a full-day reading took{" "}
+              {fullDayRequests[0]} and {fullDayRequests[1]}. Either needs the festival&rsquo;s OK. One answer is not a
+              market.
             </p>
           </Fold>
         </div>
@@ -199,6 +204,27 @@ function minutesAt(minutes: number): string {
  * other festivals and days (a few name sets on the two published days, so "none" would not be true).
  */
 export const COMPLAINTS_ELSEWHERE = "Most of these complaints are about other festivals and days, not the days this app shows.";
+
+/** The published day the zero-request pilot walks through: its brief exists and costs no Qloo request. */
+export const PILOT_DAY = "Glastonbury 2025 Sunday";
+
+/** The press outlets among the public pages the complaints come from (`PUBLIC_SOURCES`), as printed. */
+export const PRESS_OUTLETS = ["NME", "Time Out", "Vice", "SF Chronicle", "Lambgoat", "EDM Identity"] as const;
+
+/** A public page that is a forum thread rather than a press article. */
+export function isForumThread(url: string): boolean {
+  return new URL(url).hostname.replace(/^www\./, "") === "reddit.com";
+}
+
+/**
+ * Who the complaints come from, in one sentence true of every listed source: forum threads and press articles,
+ * named. No claim about who attended or wanted to see both acts. The counts are read from `PUBLIC_SOURCES`.
+ */
+export const COMPLAINT_SOURCES = (() => {
+  const threads = PUBLIC_SOURCES.filter(isForumThread).length;
+  const articles = PUBLIC_SOURCES.length - threads;
+  return `They come from ${numberWord(threads)} Reddit threads and ${numberWord(articles)} press articles (${PRESS_OUTLETS.join(", ")}).`;
+})();
 
 /** The complaint figure's caption, built from the pair count. */
 export function complaintCaption(pairsVerified: number): string {
@@ -498,26 +524,6 @@ export function BacktestBars({
   );
 }
 
-/**
- * The complaint test in one sentence, with taste overlap's and popularity's shares in mono and a link to the full
- * test on /method. The chart itself is drawn on /method only, so the home page does not repeat it.
- */
-function TestLine() {
-  const taste = methodRow("taste");
-  const popularity = methodRow("popularity");
-  return (
-    <p data-test-line className="mt-3">
-      Popularity scored higher than taste overlap on this test: it put{" "}
-      <span className="font-mono tabular-nums">{formatPct(popularity.topQuarterPct)}</span> of these clashes in the top
-      quarter of their day, taste overlap <span className="font-mono tabular-nums">{formatPct(taste.topQuarterPct)}</span>.{" "}
-      <Link href="/method#tested" className={cn(LINK, "inline-flex items-center gap-1")}>
-        See the full test
-        <ArrowRight aria-hidden="true" className="size-3.5" />
-      </Link>
-    </p>
-  );
-}
-
 /** A voice's source links, printed as the attribution's own links after the name. */
 function VoiceLinks({ voice }: { voice: PublicVoice }) {
   return (
@@ -614,6 +620,7 @@ export function FailedTestNote({
 }) {
   const { backtest } = METHOD_FIGURES;
   const taste = methodRow("taste");
+  const popularity = methodRow("popularity");
   // Nothing on the invented day credits Qloo, so there the price's fourth part is named for what it is.
   const part =
     synthetic === undefined ? (
@@ -630,13 +637,13 @@ export function FailedTestNote({
         <p className="max-w-prose">
           Our test failed: taste overlap put {formatPct(taste.topQuarterPct)} of complained-about clashes in the top
           quarter of their day, below our {backtest.bar.topQuarterPct}% bar. Popularity, also a Qloo field, did
-          better. The exploratory follow-up did not establish an advantage over popularity.
+          better. It reached {formatPct(popularity.topQuarterPct)}. The exploratory follow-up did not establish an
+          advantage over popularity.
         </p>
         <p className="max-w-prose">
           So the taste reading is a second opinion beside time and draw: it is one of the four parts of the price of
           each clash, {part}, and never the verdict on its own. It is nearly unrelated to popularity (r ={" "}
-          {backtest.popularityCorrelation}), so it orders a day differently from draw alone. Where it disagrees with
-          time and draw is where we ask you to look.{" "}
+          {backtest.popularityCorrelation}).{" "}
           <Link href="/method#tested" className={LINK}>
             How we know
           </Link>
@@ -686,21 +693,18 @@ export function WhyThisMatters({
               {complaints.clustersVerified} clashes that fans or the press complained about at {complaints.festivals}{" "}
               festivals had a verified overlap in time.
             </p>
+            <p data-why-sources className="mt-2">
+              {COMPLAINT_SOURCES}
+            </p>
             <p data-why-elsewhere className="mt-2 text-muted-foreground">
               {COMPLAINTS_ELSEWHERE}
             </p>
             <ComplaintFigure />
             <Fold
               className="mt-2"
-              summary={`${complaints.pairsVerified} pairs, median ${complaints.medianMinutes} minutes, and the complaint test`}
+              summary={`${complaints.pairsVerified} pairs, median ${complaints.medianMinutes} minutes, and how the lists lean`}
             >
-              <div className="pb-3">
-                <p>
-                  {complaints.pairsVerified} pairs of acts, median {complaints.medianMinutes} minutes. Press lists lean
-                  toward headliners, which flatters any taste-based method.
-                </p>
-                <TestLine />
-              </div>
+              <p className="pb-3">Press lists lean toward headliners, which flatters any taste-based method.</p>
             </Fold>
           </div>
 
@@ -718,8 +722,8 @@ export function WhyThisMatters({
             </p>
             <Fold className="mt-2" summary="Festival Pro and Lineup Ninja">
               <p className="pb-3">
-                Festival schedulers such as Festival Pro and Lineup Ninja check double bookings and changeovers. We
-                found none that reads audience overlap (our search, October 2026).
+                Both check double bookings and changeovers. We found none that reads audience overlap (our search,
+                October 2026).
               </p>
             </Fold>
             <DemandLine demand={demand} />

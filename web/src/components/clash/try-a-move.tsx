@@ -17,6 +17,7 @@ import {
   currentPlacement,
   movableSets,
   placementOf,
+  nextRankedPair,
   startingSets,
   type ClashChanges,
   type KeptClash,
@@ -71,8 +72,42 @@ export const YOUR_PLAN_ID = "your-plan";
 /** Who handed "Try a move" a step to keep: the decision card or a tested place from an agent run. */
 export type SeedSource = "card" | "agent";
 
+/**
+ * How a seeded step meets a plan that already holds steps: `replace` (the default, as before) makes it the
+ * whole plan; `add` puts it after the kept steps, and only when the plan still holds exactly `base` (the
+ * steps, encoded, that the timetable engine priced together with it before the press). Otherwise the plan
+ * is left exactly as it was: an add is never partial and never turns into a replace.
+ */
+export type SeedMode = { mode: "add"; base: string } | { mode: "replace" };
+
 /** A step handed in from outside the section; a new `nonce` keeps it, the same one does nothing. */
-export type SeedStep = { nonce: number; step: StackStep; from?: SeedSource };
+export type SeedStep = { nonce: number; step: StackStep; from?: SeedSource; mode?: "add" | "replace"; base?: string };
+
+/** The plan card's next step: "Next: A × B, the next clash in the published day's ranking". */
+export function nextLabel(pair: { a: string; b: string }): string {
+  return `Next: ${pair.a} × ${pair.b}, the next clash in the published day’s ranking`;
+}
+
+/**
+ * What a seeded step does to the plan: the steps the plan then holds, or null to leave it exactly as it was.
+ * A step the plan already holds changes nothing. `replace` (the default) makes the step the whole plan. `add`
+ * puts it after the kept steps only when the plan still holds exactly `base` (the steps the timetable engine
+ * priced together with it), it moves no set the plan already moves, and the plan has room; otherwise nothing
+ * changes, so an add is never partial and never a silent replace.
+ */
+export function seededPlan(
+  moves: readonly StackStep[],
+  seed: { step: StackStep; mode?: "add" | "replace"; base?: string },
+): readonly StackStep[] | null {
+  if (seedOutcome(moves, seed.step).kind === "same") return null;
+  if (seed.mode !== "add") return [seed.step];
+  const moved = movedActs(moves);
+  const fits =
+    seed.base === encodeMoves(moves) &&
+    stepMoves(seed.step).every((move) => !moved.has(move.actId)) &&
+    moveCount(moves) + stepMoves(seed.step).length <= MAX_STACK;
+  return fits ? [...moves, seed.step] : null;
+}
 
 /** No step held: shared so its identity never changes. */
 const NO_STEPS: readonly StackStep[] = [];
@@ -1004,7 +1039,7 @@ export function TryAMove({
   onRulePreview?: (preview: RulePreview | null) => void;
   /**
    * The decision card's move or change, or an agent run's tested place: a new `nonce` makes it the kept
-   * plan; the same one does nothing. Neither source scrolls the page or moves focus: the source says
+   * plan (or adds it to the plan, `mode: "add"`, see `seededPlan`); the same one does nothing. Neither source scrolls the page or moves focus: the source says
    * "Kept in your plan." itself and offers the way here.
    */
   seedStep?: SeedStep | null;
@@ -1088,6 +1123,13 @@ export function TryAMove({
     }
     return startingSets(ranked, isLocked).filter((set) => !moved.has(set.actId));
   }, [moves.length, state.plan, sets, ranked, isLocked, moved]);
+
+  // After the first kept step: the next clash in the published day's ranking that no kept step addresses (the
+  // plan's own ranking is not recomputed for it), and the set in it that may move.
+  const nextPair = useMemo(
+    () => (moves.length > 0 ? nextRankedPair(ranked, moved, (id) => isLocked(id) || !sets.some((set) => set.actId === id && !set.locked)) : null),
+    [moves.length, ranked, moved, isLocked, sets],
+  );
 
   // The set the picker opens on, so the section never arrives empty: the decision card's move when it
   // is still a set that may move, else the first set to start with. Only shown; a starting set's places
@@ -1221,25 +1263,28 @@ export function TryAMove({
   const [focus, setFocus] = useState<{
     nonce: number;
     delay: number;
-    target: "plan" | "plan-here" | "picker";
+    target: "plan" | "plan-here" | "picker" | "picker-shown";
   }>({
     nonce: 0,
     delay: 900,
     target: "plan",
   });
-  function focusOn(target: "plan" | "plan-here" | "picker", delay = 0) {
+  function focusOn(target: "plan" | "plan-here" | "picker" | "picker-shown", delay = 0) {
     setFocus((previous) => ({ nonce: previous.nonce + 1, delay, target }));
   }
 
   // A move or change seeded by the decision card (or a place an agent run tested) becomes the kept plan:
   // state adjusted while rendering, as React advises for a prop that changes. A plan that already holds it
-  // is left as it is; one that does not is replaced, and the notice above the plan says so. The plan is
+  // is left as it is; one that does not is replaced, and the notice above the plan says so, unless the seed
+  // asks to add (`seededPlan`): then it goes after the kept steps the engine priced it with, or nothing changes. The plan is
   // priced as any kept step is (this section's own `/whatif` request), which re-checks it against the
   // published timetable. Nothing scrolls and focus stays where it is: the source announces the keep and
   // offers "See your plan" (#your-plan), so the visitor is never carried off the card they pressed.
   const seedNonce = seedStep?.nonce ?? 0;
   const seedStepValue = seedStep?.step ?? null;
   const seedFrom = seedStep?.from ?? "card";
+  const seedAdds = seedStep?.mode === "add";
+  const seedBase = seedStep?.base ?? null;
   const [handledSeed, setHandledSeed] = useState(0);
   if (
     seedStepValue &&
@@ -1252,18 +1297,23 @@ export function TryAMove({
   ) {
     const outcome = seedOutcome(moves, seedStepValue);
     setHandledSeed(seedNonce);
-    if (outcome.kind !== "same") {
-      const next = [seedStepValue];
+    const next = seededPlan(moves, { step: seedStepValue, mode: seedAdds ? "add" : "replace", base: seedBase ?? undefined });
+    if (next) {
       setMoves(next);
       setPicked(null);
       setPlanNews({ moves: encodeMoves(next), picked: null });
-      // Only the card's own plan offers the way back to the card.
-      setFromCard(seedFrom === "card");
-      setNotice(
-        outcome.kind === "replace"
-          ? `Replaced your earlier ${pluralize(outcome.dropped, "kept step")} with this ${isRuleStackStep(seedStepValue) ? "change" : "move"}. Start over clears the plan.`
-          : null,
-      );
+      if (seedAdds) {
+        // Added after the kept steps: the plan card lists them all; nothing was replaced.
+        setNotice(null);
+      } else {
+        // Only the card's own plan offers the way back to the card.
+        setFromCard(seedFrom === "card");
+        setNotice(
+          outcome.kind === "replace"
+            ? `Replaced your earlier ${pluralize(outcome.dropped, "kept step")} with this ${isRuleStackStep(seedStepValue) ? "change" : "move"}. Start over clears the plan.`
+            : null,
+        );
+      }
     }
   }
   // Keep the tab's plan in step with the moves, whichever way they changed.
@@ -1292,6 +1342,18 @@ export function TryAMove({
     const show = () => {
       if (focus.target === "picker") {
         selectRef.current?.focus();
+        return;
+      }
+      if (focus.target === "picker-shown") {
+        // The picker now shows the next pair's set: the picker column (with the tested place beside it from
+        // 1024 px) is brought clear of the sticky header and nav when it fits the screen, else the field alone;
+        // then the field takes focus.
+        const select = selectRef.current;
+        if (!select) return;
+        const column = select.closest<HTMLElement>("[data-move-picker]");
+        const fits = column !== null && column.getBoundingClientRect().height < window.innerHeight - 160;
+        (fits ? column : select).scrollIntoView({ block: fits ? "start" : "center", behavior: reduce ? "auto" : "smooth" });
+        select.focus({ preventScroll: true });
         return;
       }
       if (focus.target === "plan") {
@@ -1372,6 +1434,13 @@ export function TryAMove({
     setPicked(id);
     setAllFor(key);
     focusPlaces.current = key;
+  }
+
+  /** "Next: A × B": opens this section on that pair's movable set; focus goes to the picker that now shows it. */
+  function openNext(actId: string) {
+    setPicked(actId);
+    setNotice(null);
+    focusOn("picker-shown");
   }
 
   function startOver() {
@@ -1695,6 +1764,7 @@ export function TryAMove({
                 onStartOver={startOver}
                 backToDecision={fromCard}
                 cardMove={cardMove}
+                next={nextPair ? { label: nextLabel(nextPair), onPress: () => openNext(nextPair.actId) } : null}
               />
             ) : state.status === "error" && !actId ? (
               <PlanError onRetry={state.retry} onStartOver={startOver} />

@@ -336,7 +336,8 @@ export function ChangeCard({
         {flags ? ` · ${flags}` : ""}
       </p>
       {flags ? <p className="mt-0.5 text-xs text-muted-foreground lg:text-[0.8125rem]">{STAGE_FIT_GLOSS}</p> : null}
-      {fix.stageChanges > 0 ? <p className="mt-0.5 text-sm text-muted-foreground">{STAGE_SIGN_OFF}</p> : null}
+      {/* A fact production must act on: ink, medium weight, plain text (no badge). */}
+      {fix.stageChanges > 0 ? <p className="mt-0.5 text-sm font-medium text-foreground">{STAGE_SIGN_OFF}</p> : null}
       <p className="mt-0.5 text-sm">Adds no rule break; ends this overlap.</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <Button
@@ -357,7 +358,8 @@ export function ChangeCard({
             aria-describedby={keepState === "full" ? roomId : undefined}
             onClick={onKeep}
           >
-            {keepState === "kept" ? null : <Check aria-hidden="true" />}
+            {/* The check marks a change the plan holds, never one that is only offered. */}
+            {keepState === "kept" ? <Check aria-hidden="true" /> : null}
             {keepState === "kept" ? "Kept in your plan" : "Keep this change"}
           </Button>
         ) : null}

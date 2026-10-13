@@ -1,4 +1,4 @@
-import { DAYS, HONESTY, requireSavedDays } from "./helpers";
+import { DAYS, HONESTY, requireSavedDays, scrollThrough } from "./helpers";
 import { expect, test } from "./fixtures";
 import { HomePage } from "./pages/home-page";
 
@@ -16,6 +16,8 @@ for (const day of Object.values(DAYS)) {
       await expect(home.heading).toBeVisible();
       await expect(home.hero).toContainText("equal-length clashes can cost very different amounts");
       await expect(home.hero).toContainText("a rank, not attendance");
+      // The lede says the app scores each clash; the card says the score is not money.
+      await expect(home.hero).toContainText("Clash Control scores each by its audiences’ taste overlap, from Qloo data (a rank, not attendance).");
 
       // The decision card: a dateline naming the day, the receipt as its heading, the score and its caveat.
       await expect(home.card).toContainText(`${day.title} · published timetable`);
@@ -42,6 +44,9 @@ for (const day of Object.values(DAYS)) {
 
       const dial = page.getByRole("figure").filter({ hasText: "Clash Budget Index" });
       await expect(dial.getByText(before, { exact: true }).first()).toBeVisible();
+      // The day against random valid timetables, said by this index and in a neutral form, beside "Lower is better".
+      await expect(dial).toContainText(/By this index, the published timetable scores \d+% (above|below) the average random valid timetable\./);
+      await expect(dial).toContainText("Lower is better");
     });
 
     test("says it is a reading, and that neither festival uses Clash Control", async ({ page }) => {
@@ -55,6 +60,28 @@ for (const day of Object.values(DAYS)) {
     });
   });
 }
+
+test.describe("home page length", () => {
+  test.beforeEach(async ({ page }) => requireSavedDays(page));
+
+  /** A ceiling with margin over the 6,800 px target at 1440 px: it catches growth, it does not pin a pixel. */
+  const CEILING = 7_000;
+
+  test(`at 1440 px the home page is at most ${CEILING.toLocaleString("en-US")} px tall`, async ({ page, isPhone }) => {
+    test.skip(isPhone, "The length budget is measured at 1440 px.");
+    // Known defect D5 (round 32): the page measures about 7,980 px at 1440 x 900 on Glastonbury, over this
+    // ceiling (home lane budget L1). Repro: open /?preset=glastonbury-2025-sun at 1440 x 900, wait for the
+    // board, read document.documentElement.scrollHeight. Remove this mark when the page fits.
+    test.fail(true, "D5: the home page is taller than the 7,000 px ceiling at 1440 px");
+    const home = new HomePage(page);
+    await home.goto(DAYS.glastonbury.id);
+    await scrollThrough(page);
+
+    const height = await page.evaluate(() => document.documentElement.scrollHeight);
+    test.info().annotations.push({ type: "home height at 1440", description: `${height} px` });
+    expect(height, `home height at 1440: ${height} px`).toBeLessThanOrEqual(CEILING);
+  });
+});
 
 test.describe("switching festival day", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));

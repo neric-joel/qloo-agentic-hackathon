@@ -18,29 +18,44 @@ function costliestClause(cell: string, then: boolean): string {
   return `${lead}the costliest clash ${then ? "is" : "after is"} ${cell}`;
 }
 
+/** "adds 2 stage-fit flags" when a "1 → 3" cell rises; null when it does not, or is not two counts. */
+function addedFlags(cell: string | undefined): string | null {
+  const counts = cell ? /^(\d+) → (\d+)$/.exec(cell) : null;
+  if (!counts) return null;
+  const added = Number(counts[2]) - Number(counts[1]);
+  return added > 0 ? `adds ${added} stage-fit ${added === 1 ? "flag" : "flags"}` : null;
+}
+
 /**
- * What the compact table leaves out, as one sentence under it: the stage-fit flags and the costliest
- * clash after each change, read from the same rows the brief prints (never a figure of its own). Null
- * when the route sent neither row.
+ * What the compact table leaves out, as one sentence under it: the costliest clash after each change,
+ * and a change that adds stage-fit flags, read from the same rows the brief prints (never a figure of its
+ * own). It does not walk through unchanged flag counts: the app does not weigh stage fit (the brief says
+ * so). Null when there is nothing to say.
  */
 export function consequenceLine(tradeoff: Tradeoff): string | null {
   const flags = tradeoff.rows.find((row) => row.id === "flags");
   const costliest = tradeoff.rows.find((row) => row.id === "costliest");
-  if (!flags && !costliest) return null;
   const rule = tradeoff.ruleHead.charAt(0).toLowerCase() + tradeoff.ruleHead.slice(1);
-  // The same clash left after both changes is said once.
-  if (flags && costliest && costliest.move === costliest.rule) {
-    const after =
+  // The same clash left after both changes is said once, at the end.
+  const same = costliest !== undefined && costliest.move === costliest.rule;
+  const column = (side: "move" | "rule") => {
+    const added = addedFlags(flags?.[side]);
+    return [added, costliest && !same ? costliestClause(costliest[side], Boolean(added)) : null].filter(Boolean).join(", ");
+  };
+  const parts = [
+    column("move") ? `${tradeoff.moveHead}: ${column("move")}` : null,
+    column("rule") ? `${rule}: ${column("rule")}` : null,
+  ].filter(Boolean);
+  if (costliest && same) {
+    parts.push(
       costliest.move === NO_PRICED_CLASH
         ? "either way no priced clash is left on this day"
-        : `either way the costliest clash after is ${costliest.move}`;
-    return `${tradeoff.moveHead}: stage-fit flags go ${flags.move}; ${rule}: ${flags.rule}; ${after}.`;
+        : `either way the costliest clash after is ${costliest.move}`,
+    );
   }
-  const column = (side: "move" | "rule") =>
-    [flags ? `stage-fit flags go ${flags[side]}` : null, costliest ? costliestClause(costliest[side], Boolean(flags)) : null]
-      .filter(Boolean)
-      .join(", ");
-  return `${tradeoff.moveHead}: ${column("move")}; ${rule}: ${column("rule")}.`;
+  if (parts.length === 0) return null;
+  const line = parts.join("; ");
+  return `${line.charAt(0).toUpperCase()}${line.slice(1)}.`;
 }
 
 /**
@@ -49,8 +64,8 @@ export function consequenceLine(tradeoff: Tradeoff): string | null {
  * stacked (the row's label, then each change on a line of its own, with the change's name before it), so
  * nothing needs a horizontal scroll at 320 px. It reads no figure of its own: every cell is text from
  * `buildTradeoff`. `print` sets the compact sizes the brief uses on paper. `compact` is the decision card's
- * shorter table: no stage-fit or costliest-clash row (one sentence under the table states both, from the
- * same rows), no note under the index row and no footnote (the card states its attribution and limits
+ * shorter table: no stage-fit or costliest-clash row (one sentence under the table states the costliest
+ * clash after, and any change that adds stage-fit flags, from the same rows), no note under the index row and no footnote (the card states its attribution and limits
  * elsewhere); the brief prints the full table. `hideHeading` is for a table whose heading is already shown
  * by what holds it (the card's disclosure summary): the heading stays for screen readers only.
  */

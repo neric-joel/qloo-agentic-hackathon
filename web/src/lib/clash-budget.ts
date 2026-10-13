@@ -1,7 +1,7 @@
 /**
  * The Clash Budget Index: 100 x a timetable's total clash regret / the mean regret of random valid
- * timetables of the same lineup. 100 means "as costly as a random valid arrangement"; lower is
- * better. It counts only what clashes cost: taste overlap, time shared and draw. Helpers here place
+ * timetables of the same lineup. 100 means "as much taste-overlap cost as a random valid arrangement";
+ * lower is better. It counts only what clashes cost: taste overlap, time shared and draw. Helpers here place
  * it on the dial and put it into words.
  */
 
@@ -67,13 +67,17 @@ export function rangePosition(
 }
 
 /**
- * "17% more taste-overlap cost than the average random valid timetable", "14% less ...", or "level
- * with the average random valid timetable".
+ * Where the day sits against random valid timetables, as a reading of the index rather than a verdict
+ * on the festival: "By this index, the published timetable scores 17% above the average random valid
+ * timetable", "... 14% below ...", or "... scores level with ...". The index is taste-overlap cost, so
+ * above means more of it; every caller sets "Lower is better" beside the sentence. On the invented day
+ * the timetable is called invented, not published.
  */
-export function describeVsRandom(index: number): string {
+export function describeVsRandom(index: number, synthetic = false): string {
   const delta = Math.round(index - 100);
-  if (delta === 0) return "level with the average random valid timetable";
-  return `${Math.abs(delta)}% ${delta > 0 ? "more" : "less"} taste-overlap cost than the average random valid timetable`;
+  const lead = `By this index, the ${synthetic ? "invented" : "published"} timetable scores`;
+  if (delta === 0) return `${lead} level with the average random valid timetable`;
+  return `${lead} ${Math.abs(delta)}% ${delta > 0 ? "above" : "below"} the average random valid timetable`;
 }
 
 /** How far the random valid timetables behind the index may move each set. */

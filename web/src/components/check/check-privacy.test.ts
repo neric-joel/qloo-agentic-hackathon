@@ -395,7 +395,7 @@ describe("the page and its results", () => {
               label: item.text,
               running: false,
               progress: null,
-              result: { ...result, changes },
+              result: { ...result, changes, sameStageMore: [] },
             },
             onFind: () => {},
             onApply: () => {},

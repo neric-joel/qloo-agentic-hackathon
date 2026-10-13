@@ -249,6 +249,34 @@ export function clashesTitle(count: number, withMoves = false): string {
   return withMoves ? `${base} on the published day, before these moves` : base;
 }
 
+/**
+ * The table's caption for screen readers: its title, "on this day" without a plan, and "costliest first" only
+ * when there are two rows or more to order.
+ */
+export function clashesCaption(count: number, withMoves = false): string {
+  const title = clashesTitle(count, withMoves);
+  const where = withMoves ? title : `${title} on this day`;
+  return count >= 2 ? `${where}, costliest first` : where;
+}
+
+/** Said in a change's cell when it moves a set to another stage: the brief does not weigh stage fit. */
+export const STAGE_SIGN_OFF = "needs production sign-off";
+
+/**
+ * "changes stage: needs production sign-off" for one set, "both change stage: …" or "two change stage: …" for more,
+ * from how many of the change's `sets` move to another stage; null when none does.
+ */
+export function stageChangeText(stageChanges: number, sets: number): string | null {
+  if (!(stageChanges > 0)) return null;
+  const who =
+    sets === 1 && stageChanges === 1
+      ? "changes stage"
+      : stageChanges === sets
+        ? `${sets === 2 ? "both" : "all"} change stage`
+        : `${numberWord(stageChanges)} ${stageChanges === 1 ? "changes" : "change"} stage`;
+  return `${who}: ${STAGE_SIGN_OFF}`;
+}
+
 /** The day's ranked clashes labelled hidden, costliest first, as "A and B". */
 export function hiddenNames(preset: Pick<Preset, "report">, day: number): string[] {
   return topClashes(preset.report.clashes, day, Number.POSITIVE_INFINITY)
@@ -481,7 +509,7 @@ export function briefSteps(
  * Where the plan's index sits against the middle 80% of random valid timetables, with the band stated
  * in the same sentence because the plan is read before the day's own band: "The middle 80% of random
  * valid timetables of this lineup score 92 to 109; this plan scores 5.3 index points above that
- * range. The published timetable is 7.7 above it." When the plan's index is higher than the
+ * range. By this index, the published timetable sits 7.7 points above that range." When the plan's index is higher than the
  * published one, a plain sentence says so. Null without a band.
  */
 export function planVerdictSentence(
@@ -546,11 +574,21 @@ export function briefTradeoff(
   };
   if (!held.move && !held.change) return null;
   const alone = steps.length > 1;
+  // A change that moves a set to another stage says so in its "Sets moved" cell: the brief does not weigh stage fit,
+  // so the stage change is named for production to sign off.
+  const first = decision.rule?.fixes[0];
+  const ruleStage = first ? stageChangeText(first.stageChanges, first.setsMoved) : null;
+  const moveStage = decision.move?.stageChanged ? stageChangeText(1, 1) : null;
+  const withStage = (cell: string, note: string | null) => (note ? `${cell}; ${note}` : cell);
   return {
     tradeoff: {
       ...copy.tradeoff,
       // The brief does not weigh stage fit (TO_DECIDE says so), so it prints no stage-fit row; the card keeps it.
-      rows: copy.tradeoff.rows.filter((row) => row.id !== "flags"),
+      rows: copy.tradeoff.rows
+        .filter((row) => row.id !== "flags")
+        .map((row) =>
+          row.id === "sets" ? { ...row, move: withStage(row.move, moveStage), rule: withStage(row.rule, ruleStage) } : row,
+        ),
       heading: alone ? TRADEOFF_HEADING_ALONE : copy.tradeoff.heading,
       footnote: TRADEOFF_NOTE_BRIEF,
     },

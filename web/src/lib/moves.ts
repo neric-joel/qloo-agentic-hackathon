@@ -174,6 +174,29 @@ export function startingSets(
   return picked;
 }
 
+/** A clash of the published day's ranking to open next, by name, and the set in it that may move. */
+export type NextPair = { a: string; b: string; actId: string };
+
+/**
+ * The first clash in the published day's ranking (`ranked`, costliest first, as the page already holds it)
+ * that no kept step addresses (neither of its sets is in `moved`) and that has a set free to move (the first
+ * of its two sets that `cannotMove` does not hold). The ranking is the published day's, not the plan's: it is
+ * never recomputed after the plan, so this is "the next clash in the published day's ranking", not the next
+ * costliest clash with the plan. Null when none is left.
+ */
+export function nextRankedPair(
+  ranked: readonly PairClash[],
+  moved: ReadonlySet<string>,
+  cannotMove: (actId: string) => boolean,
+): NextPair | null {
+  for (const clash of ranked) {
+    if (moved.has(clash.a.act_id) || moved.has(clash.b.act_id)) continue;
+    const mover = [clash.a, clash.b].find((side) => !cannotMove(side.act_id));
+    if (mover) return { a: clash.a.name, b: clash.b.name, actId: mover.act_id };
+  }
+  return null;
+}
+
 /** "19:45" -> 1185. Hours may pass 23 for a set after midnight. Null when it is not a time. */
 export function clockMinutes(text: string): number | null {
   const match = /^(\d{1,2}):([0-5]\d)$/.exec(text.trim());

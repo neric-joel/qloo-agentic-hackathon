@@ -1,6 +1,9 @@
+import type { Locator } from "@playwright/test";
+
 import { DAYS, HONESTY, literal, requireSavedDays } from "./helpers";
 import { expect, test } from "./fixtures";
 import { HomePage } from "./pages/home-page";
+import { TryAMove } from "./pages/try-a-move";
 
 /** The hero decision: one costed clash, one tested move, and "Keep this move", which keeps it in your plan in place. */
 
@@ -19,6 +22,10 @@ test.describe("hero decision", () => {
     const scale = home.card.getByText("A score, not money: 100 = the average random valid timetable of this lineup. Lower is better.");
     await expect(scale).toBeVisible();
     await expect(scale).toBeInViewport();
+    // "Lower is better" is said once in the card, in the index's own paragraph.
+    expect((await home.card.innerText()).split("Lower is better").length - 1, "\"Lower is better\" once in the card").toBe(1);
+    // The dateline says which saved Qloo reading the card is built from (a date, not a figure).
+    await expect(home.card).toContainText(/ · published timetable · saved Qloo reading built \d{1,2} [A-Z][a-z]{2} \d{4}/);
     // The drawing says what its three kinds of line mean.
     await expect(home.card.getByRole("figure")).toContainText("Solid: where the sets play now. Dashed: tested. Hatched: time shared.");
     // The same drawing in words, for a screen reader: where each set plays now and tested, and what is shared.
@@ -29,7 +36,7 @@ test.describe("hero decision", () => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
-    await expect(home.hero).toContainText("About a minute. Nothing leaves your browser unless you ask for prices.");
+    await expect(home.hero).toContainText("About a minute. Nothing leaves your browser unless you ask to compare audiences.");
     await home.pasteLink.click();
     await expect(page).toHaveURL(/\/check$/);
     await expect(page.getByRole("heading", { level: 1, name: "Check a draft grid against your rules" })).toBeVisible();
@@ -63,7 +70,8 @@ test.describe("hero decision", () => {
 
     // The card confirms in place, in ink, and moves focus to the way to the plan, not to the page.
     await expect(home.keptNotice).toBeVisible();
-    await expect(home.keptNotice).toHaveText(/^Kept in your plan\.\s*See your plan$/);
+    // It says that nothing changes on the real timetable until the acts' teams agree.
+    await expect(home.keptNotice).toHaveText(/^Kept in your plan\.\s*Nothing moves until the acts’ teams agree\.\s*See your plan$/);
     await expect(home.seeYourPlan).toHaveAttribute("href", "#your-plan");
     await expect(home.seeYourPlan).toBeFocused();
     await expect(home.cardAnnouncement).toHaveText(new RegExp(`^Testing ${literal(mover)} at \\d{2}:\\d{2}\\.`));
@@ -156,5 +164,57 @@ test.describe("hero decision", () => {
     await expect(home.keptNotice).toBeVisible();
     await expect(home.plan.getByRole("list", { name: "Kept moves" }).getByRole("listitem")).toHaveCount(1);
     await expect(home.plan.getByRole("link", { name: "Open as a one-page brief" })).toHaveAttribute("href", /preset=riot-fest-2026-sun/);
+  });
+
+  test("the card reads in order: dateline, heading, hidden line, three-rank line, index, then Keep this move", async ({ page }) => {
+    const home = new HomePage(page);
+    await home.goto(DAYS.glastonbury.id);
+
+    const top = async (locator: Locator) => (await locator.boundingBox())?.y ?? Number.NaN;
+    const kicker = home.card.getByText(/ · saved Qloo reading built /);
+    const hidden = home.card.getByText(/^A hidden clash, 1 of \d+ on this day: main genres differ/);
+    const ranks = home.card.getByText(/^Time alone ranks this pair #\d+, time and draw \(Qloo popularity\) #\d+, with taste #\d+\./);
+    const index = home.card.getByText("Clash Budget Index", { exact: true });
+    const scale = home.card.getByText(/^A score, not money: 100 = the average random valid timetable of this lineup\. Lower is better\./);
+    for (const part of [kicker, hidden, ranks, index, scale]) await expect(part).toBeVisible();
+    const ys = [await top(kicker), await top(home.cardHeading), await top(hidden), await top(ranks), await top(index), await top(scale), await top(home.keepMove)];
+    expect(ys, "dateline, heading, hidden line, rank line, index, scale and Keep this move, top to bottom").toEqual([...ys].sort((a, b) => a - b));
+    // Who scored it, and that it is a reading, in the index's own paragraph.
+    await expect(home.card.locator("[data-index-block]")).toContainText("Selected and scored by this app’s index. A reading, not a verdict.");
+  });
+
+  test("on a phone, Keep this move is on the first screen and pressing it does not scroll", async ({ page, isPhone }) => {
+    test.skip(!isPhone, "The first-screen rule is measured at 390 x 844.");
+    const home = new HomePage(page);
+    await home.goto(DAYS.glastonbury.id);
+
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+    const box = await home.keepMove.boundingBox();
+    expect(box, "Keep this move is drawn").not.toBeNull();
+    expect(box?.y ?? -1, "Keep this move starts on the page").toBeGreaterThanOrEqual(0);
+    expect((box?.y ?? 0) + (box?.height ?? 0), "Keep this move ends above y = 844").toBeLessThanOrEqual(844);
+    await home.keepMove.click();
+    await expect(home.keptNotice).toBeVisible();
+    expect(await page.evaluate(() => window.scrollY), "the press leaves the page where it was").toBe(0);
+  });
+
+  test("after the card's move is kept, the plan offers the next clash in the published day's ranking, and opens it in Try a move", async ({ page }) => {
+    const home = new HomePage(page);
+    const move = new TryAMove(page);
+    await home.goto(DAYS.glastonbury.id);
+
+    await expect(home.plan.getByRole("button", { name: /^Next: / })).toHaveCount(0);
+    await home.keepMove.click();
+    await expect(move.kept).toHaveCount(1);
+    const next = home.plan.getByRole("button", { name: /^Next: .+ × .+, the next clash in the published day’s ranking$/ });
+    await expect(next).toBeVisible();
+    const [, a = "", b = ""] = /^Next: (.+) × (.+), the next clash/.exec((await next.innerText()).trim()) ?? [];
+    // The kept move's own clash is addressed, so it is not the next one.
+    expect([a, b].sort()).not.toEqual(["Katy J Pearson", "Sprints"]);
+    await next.click();
+    // Try a move now has one of that clash's two sets picked.
+    await expect
+      .poll(() => move.select.evaluate((select: HTMLSelectElement) => select.selectedOptions[0]?.textContent ?? ""))
+      .toMatch(new RegExp(`^\\d{2}:\\d{2} (${literal(a)}|${literal(b)})`));
   });
 });

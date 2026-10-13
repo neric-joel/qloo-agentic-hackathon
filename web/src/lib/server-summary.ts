@@ -46,7 +46,7 @@ export type ServerSummary = {
   synthetic: boolean;
   /** The Clash Budget Index, rounded to a whole number; null when the day has none. */
   index: number | null;
-  /** The dial's sentence for the index ("17% more taste-overlap cost than ..."); null without one. */
+  /** The dial's sentence for the index ("By this index, the published timetable scores 17% above ..."); null without one. */
   vsRandom: string | null;
   /** The hero's one-line figure for narrow screens (`figureLine`); null without an index. */
   figure: string | null;
@@ -65,11 +65,12 @@ export type ServerSummary = {
 };
 
 /**
- * The hero's one-line figure for narrow screens, the same sentence the dial prints:
- * "117 on the Clash Budget Index: 17% more taste-overlap cost than .... Lower is better."
+ * The hero's one-line figure for narrow screens, the same sentence the dial prints: "117 on the Clash
+ * Budget Index. By this index, the published timetable scores 17% above the average random valid
+ * timetable. Lower is better."
  */
-export function figureLine(index: number): string {
-  return `${Math.round(index)} on the Clash Budget Index: ${describeVsRandom(index)}. Lower is better.`;
+export function figureLine(index: number, synthetic = false): string {
+  return `${Math.round(index)} on the Clash Budget Index. ${describeVsRandom(index, synthetic)}. Lower is better.`;
 }
 
 /** "A and B", "A and B; C and D". */
@@ -127,8 +128,8 @@ export function summarize(preset: Preset, decision: Decision | null = null): Ser
     title: preset.title,
     synthetic: preset.synthetic === true,
     index,
-    vsRandom: raw === null || index === null ? null : describeVsRandom(raw),
-    figure: raw === null || index === null ? null : figureLine(raw),
+    vsRandom: raw === null || index === null ? null : describeVsRandom(raw, preset.synthetic === true),
+    figure: raw === null || index === null ? null : figureLine(raw, preset.synthetic === true),
     clashes,
     evidence: evidenceSentence(preset),
     description: describeDay(preset, day, index, clashes),

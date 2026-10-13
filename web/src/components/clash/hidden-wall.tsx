@@ -1,4 +1,5 @@
 import { ExternalLink } from "lucide-react";
+import Link from "next/link";
 
 import { ProvenanceChip } from "@/components/kernel";
 import {
@@ -178,8 +179,13 @@ function WallGrid({
   );
 }
 
-/** The wall's count line: how many sourced examples it shows, and that the rest were not saved. */
-export function wallCount(shown: number, total: number): string {
+/**
+ * The wall's count line: how many sourced examples it shows, and that the rest were not saved. With
+ * `savedWith`, the examples were borrowed from another festival day (this day has none of its own), and
+ * the line names that day.
+ */
+export function wallCount(shown: number, total: number, savedWith: string | null = null): string {
+  if (savedWith) return borrowedCount(shown, total, savedWith);
   if (shown >= total) return pluralize(shown, "sourced example");
   const rest = total - shown;
   return (
@@ -188,19 +194,83 @@ export function wallCount(shown: number, total: number): string {
   );
 }
 
+/** The count line for another day's examples: the same count, naming the day they are saved with. */
+function borrowedCount(shown: number, total: number, savedWith: string): string {
+  if (shown >= total) return `${pluralize(shown, "sourced example")}, saved with ${savedWith}`;
+  const rest = total - shown;
+  return (
+    `Showing ${shown} of ${total} sourced examples, saved with ${savedWith}. ` +
+    (rest === 1 ? "The other one is not saved with that day." : `The other ${rest} are not saved with that day.`)
+  );
+}
+
 /** The wall's caveats, word for word wherever they are set. */
 const NOT_A_TEST = "These are examples with their sources, not a test of how well the measure spots such clashes.";
 const RANK_SCALE = "Both ranks run 0 to 100 within that day’s clashes, not on the timetable’s draw scale.";
 
 /**
- * Sourced examples of hidden clashes: pairs the press or fans called out where the two acts share
- * no genre tag but their taste overlap is among the highest of that day. Shown as examples with
- * their sources, not as proof that the measure detects such clashes.
+ * The board's Hidden label, defined once and true to `clash_label` in backend/app/schedule/metrics.py: the
+ * two acts' main genre tags differ and their taste overlap is at or above the 90th percentile of every
+ * pair of priced acts on the bill.
  */
-export function HiddenWall({ evidence, synthetic = false }: { evidence: Evidence | null; synthetic?: boolean }) {
+export const HIDDEN_DEFINITION =
+  "On the timetable, Hidden means the acts’ main genre tags differ while their taste overlap is among the day’s highest (the top tenth of the bill’s priced pairs).";
+
+/** The sourced examples go further than the label: no genre tag in common at all, and called out in public. */
+export const WALL_LEAD =
+  "The sourced examples below go further: pairs the press or fans called out that have no genre tag in common, yet their taste overlap is among the highest of that day.";
+
+/** Where /method gives the complaint rate for pairs like the examples (a different population from the label). */
+export const LIMITS_LINK = { href: "/method#limits", label: "How often such pairs drew complaints" } as const;
+
+/** The day's own Hidden-labelled clashes, as the board ranks them. */
+export type HiddenDay = {
+  /** How many clashes the day ranks in all. */
+  ranked: number;
+  /** The ranked clashes that carry the Hidden label, costliest first. */
+  hidden: readonly { rank: number; a: string; b: string }[];
+};
+
+/** At most this many Hidden pairs are named in the day line; more are given as a count. */
+const NAMED_MAX = 2;
+
+/**
+ * How many of the day's ranked clashes carry the Hidden label, as a base rate beside the definition:
+ * "On this day, 5 of the 15 ranked clashes carry the Hidden label.", naming one or two pairs with their
+ * rank, or "No clash on this day carries the Hidden label."
+ */
+export function hiddenDayLine(day: HiddenDay): string {
+  const count = day.hidden.length;
+  if (count === 0) return "No clash on this day carries the Hidden label.";
+  const of = `On this day, ${count} of the ${day.ranked} ranked clashes ${count === 1 ? "carries" : "carry"} the Hidden label`;
+  if (count > NAMED_MAX) return `${of}.`;
+  const names = day.hidden.map((pair) => `${pair.a} × ${pair.b} (#${pair.rank})`).join(" and ");
+  return `${of}: ${names}.`;
+}
+
+/**
+ * The Hidden clashes section: the board's definition of the label and how many of the day's ranked
+ * clashes carry it, then sourced examples of hidden clashes, pairs the press or fans called out where
+ * the two acts share no genre tag but their taste overlap is among the highest of that day. Shown as
+ * examples with their sources, not as proof that the measure detects such clashes. A day with no
+ * examples of its own can show another day's (`savedWith` names that day). With neither the examples
+ * nor the day's line there is nothing to show, and no section.
+ */
+export function HiddenWall({
+  evidence,
+  synthetic = false,
+  day = null,
+  savedWith = null,
+}: {
+  evidence: Evidence | null;
+  synthetic?: boolean;
+  /** The day's Hidden-labelled clashes, from the same ranked list the board draws. */
+  day?: HiddenDay | null;
+  /** The festival day the examples are saved with, when it is not the day on show. */
+  savedWith?: string | null;
+}) {
   const items = evidence?.hidden_wall ?? [];
-  // A day with no sourced examples has nothing to show: the section, its link and its nav entry stay out.
-  if (items.length === 0) return null;
+  if (items.length === 0 && day === null) return null;
   const total = evidence?.hidden_wall_total ?? items.length;
   return (
     <section id="hidden-wall" aria-labelledby="hidden-wall-heading">
@@ -209,42 +279,62 @@ export function HiddenWall({ evidence, synthetic = false }: { evidence: Evidence
       <div className="container-page pt-16 pb-10 lg:pt-20 lg:pb-12">
         <h2 id="hidden-wall-heading" className="type-title">
           {/* Every wall item is a called-out pair with no genre tag in common: the build keeps only those. */}
-          Hidden clashes: {pluralize(items.length, "called-out pair")} with no genre tag in common
+          {items.length > 0
+            ? `Hidden clashes: ${pluralize(items.length, "called-out pair")} with no genre tag in common`
+            : "Hidden clashes"}
         </h2>
-        <p className="mt-2 max-w-[70ch] text-[0.9375rem] leading-[1.55]">
-          Clashes the press or fans called out where the acts share no genre tag, yet their taste overlap is
-          among the highest of that day.
-        </p>
+        {/* The label's definition and the day's count first, then the examples' own rule and, after it, the link
+            to the complaint rate for pairs like the examples: an inline text action whose 12px of padding above
+            and below gives it a 44px hit area without opening the line. */}
+        {/* From 1024px the two sit side by side, each at a readable measure, so the intro stays four lines. */}
+        <div className="mt-2 grid max-w-[70ch] gap-y-2 text-[0.9375rem] leading-[1.55] lg:max-w-none lg:grid-cols-2 lg:gap-x-12">
+          {day ? (
+            <p data-hidden-definition="">
+              {HIDDEN_DEFINITION} {hiddenDayLine(day)}
+            </p>
+          ) : null}
+          {items.length > 0 ? (
+            <p>
+              {WALL_LEAD}{" "}
+              <Link
+                href={LIMITS_LINK.href}
+                className="rounded-sm py-3 font-semibold text-foreground underline decoration-border-strong decoration-1 underline-offset-4 hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring print:no-underline"
+              >
+                {LIMITS_LINK.label}
+              </Link>
+            </p>
+          ) : null}
+        </div>
 
         {/* The caveat that qualifies the finding sits in the finding's column, under the shared-minutes key; the
             count closes the exhibit (after the source details below 1024px, across both halves from 1024px); the
             rank scale and the broad-tags note close the pair's source details, word for word. On paper the
             switcher is left out and the whole caveat prints in one block, above every example as a card. */}
-        <TasteRing
-          items={items}
-          synthetic={synthetic}
-          badge={<ProvenanceChip provenance="recorded" size="sm" synthetic={synthetic} />}
-          aside={<p className="max-w-[60ch] text-[0.8125rem] leading-relaxed text-muted-foreground">{NOT_A_TEST}</p>}
-          closing={
-            <p className="text-[0.8125rem] leading-relaxed font-medium text-muted-foreground">
-              {wallCount(items.length, total)}
-            </p>
-          }
-          notes={
-            <p data-wall-notes className="text-[0.8125rem] leading-relaxed text-muted-foreground">
-              {RANK_SCALE} {BROAD_TAGS_NOTE}
-            </p>
-          }
-          footnote={
-            <div className="max-w-[90ch] space-y-1.5 text-[0.8125rem] leading-relaxed text-muted-foreground">
-              <p className="font-medium">{wallCount(items.length, total)}</p>
-              <p className="text-muted-foreground">
-                {NOT_A_TEST} {RANK_SCALE} {BROAD_TAGS_NOTE}
-              </p>
-            </div>
-          }
-        />
-        <WallGrid items={items} synthetic={synthetic} className="mt-6 hidden print:grid" />
+        {items.length > 0 ? (
+          <>
+            <TasteRing
+              items={items}
+              synthetic={synthetic}
+              badge={<ProvenanceChip provenance="recorded" size="sm" synthetic={synthetic} />}
+              aside={<p className="max-w-[60ch] text-[0.8125rem] leading-relaxed text-muted-foreground">{NOT_A_TEST}</p>}
+              closing={<p className="text-[0.8125rem] leading-relaxed font-medium text-muted-foreground">{wallCount(items.length, total, savedWith)}</p>}
+              notes={
+                <p data-wall-notes className="text-[0.8125rem] leading-relaxed text-muted-foreground">
+                  {RANK_SCALE} {BROAD_TAGS_NOTE}
+                </p>
+              }
+              footnote={
+                <div className="max-w-[90ch] space-y-1.5 text-[0.8125rem] leading-relaxed text-muted-foreground">
+                  <p className="font-medium">{wallCount(items.length, total, savedWith)}</p>
+                  <p className="text-muted-foreground">
+                    {NOT_A_TEST} {RANK_SCALE} {BROAD_TAGS_NOTE}
+                  </p>
+                </div>
+              }
+            />
+            <WallGrid items={items} synthetic={synthetic} className="mt-6 hidden print:grid" />
+          </>
+        ) : null}
       </div>
     </section>
   );

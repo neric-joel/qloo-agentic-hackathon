@@ -4,12 +4,11 @@ import { describe, expect, it } from "vitest";
 
 import { qlooCredits } from "@/lib/credit";
 import type { Lenses } from "@/lib/lenses";
-import { parsePreset, type Act, type Twin } from "@/lib/preset";
+import { parsePreset, type Act, type PairClash, type Twin } from "@/lib/preset";
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
 
-import { placeText } from "./taste-lens";
+import { otherHalfPair, placeText } from "./taste-lens";
 import {
-  biggestTasteMover,
   changesLine,
   concurrentPairs,
   drawGloss,
@@ -27,7 +26,6 @@ import {
   WHAT_QLOO_ID,
   WhatQlooChanges,
   WhatQlooPointer,
-  moverLine,
   type SharedPair,
 } from "./why-qloo";
 
@@ -406,13 +404,23 @@ describe("TasteSection", () => {
     gap: 0.7,
   };
   const CLASH = { aId: "one", bId: "two", aName: "Act One", bName: "Act Two" };
+  /**
+   * The failed test's pinned words, up to "did better" (the evidence lane owns what follows it, such as
+   * popularity's own figure).
+   */
   const FAILED =
-    "Our test failed: taste overlap put 46.8% of complained-about clashes in the top quarter of their day, below our 60% bar. Popularity, also a Qloo field, did better. The exploratory follow-up did not establish an advantage over popularity.";
+    "Our test failed: taste overlap put 46.8% of complained-about clashes in the top quarter of their day, below our 60% bar. Popularity, also a Qloo field, did better";
   /** The one sentence of the failed test that names Qloo: it is about the published festivals' test. */
-  const FAILED_QLOO_SENTENCE = "Popularity, also a Qloo field, did better.";
+  const FAILED_QLOO_SENTENCE = /^Popularity, also a Qloo field, did better[ .]/;
 
   function render(
-    props: Partial<{ clash: typeof CLASH | null; lenses: Lenses | null; twins: Twin[]; synthetic: boolean }> = {},
+    props: Partial<{
+      clash: typeof CLASH | null;
+      lenses: Lenses | null;
+      twins: Twin[];
+      synthetic: boolean;
+      ranked: PairClash[];
+    }> = {},
   ): string {
     return renderToStaticMarkup(
       createElement(TasteSection, {
@@ -421,7 +429,7 @@ describe("TasteSection", () => {
         pairs: PAIRS,
         twins: props.twins ?? [TWIN],
         acts: ACTS,
-        ranked: [],
+        ranked: props.ranked ?? [],
         onOpen: () => {},
         synthetic: props.synthetic,
       }),
@@ -508,42 +516,57 @@ describe("TasteSection", () => {
     expect(visible).toContain(READINGS_CAPTION);
   });
 
-  it("names the day's biggest taste mover from the same lens lists when taste leaves the card's pair where it was", () => {
-    // In the fixture, Act Seven and Act Eight move furthest: #1 on time and draw, #19 with taste.
-    expect(biggestTasteMover(lenses())).toEqual({ a: "Act Seven", b: "Act Eight", from: 1, to: 19 });
-    expect(moverLine({ a: "Act Seven", b: "Act Eight", from: 1, to: 19 })).toBe(
-      "In this day’s two rankings, taste moves Act Seven × Act Eight the most: from #1 to #19.",
+  it("says the other half of what taste does: the costliest pair on time and draw that falls furthest with taste, a candidate to keep", () => {
+    // In the fixture, Act Seven and Act Eight fall furthest: #1 on time and draw, #19 with taste.
+    expect(otherHalfPair(lenses())).toMatchObject({ a: "Act Seven", b: "Act Eight", from: 1, to: 19 });
+    const line =
+      "Taste also lowers some clashes: Act Seven × Act Eight ranks #1 on time and draw but #19 with taste. Lower priority by this index; a candidate to keep.";
+    // On both kinds of day: when taste moves the card's own pair, and when it leaves it where it was.
+    for (const clash of [CLASH, { ...CLASH, aId: "three", bId: "four" }]) {
+      const visible = withoutDisclosures(render({ clash }));
+      expect(text(visible)).toContain(line);
+      expect(visible.match(/data-other-half=""/g)).toHaveLength(1);
+      expect(visible).not.toMatch(/data-other-half=""[^>]*class="[^"]*(prov-qloo|text-primary)/);
+      // Visible, after the bold line and before the disclosures and the failed test.
+      expect(text(visible).indexOf(line)).toBeGreaterThan(text(visible).indexOf("Same timetable"));
+      expect(visible.indexOf("data-other-half")).toBeLessThan(visible.indexOf("What the failed test taught us."));
+    }
+    // It replaces the old mover sentence: never both.
+    expect(text(render({ clash: { ...CLASH, aId: "three", bId: "four" } }))).not.toContain("the most:");
+    // Never "how many people", never a verdict.
+    expect(line).not.toMatch(/same crowd|same people|overlap little|costs little|fine to keep|fans/i);
+  });
+
+  it("adds the pair's own taste overlap only when the page holds that pair's reading", () => {
+    const pair = { a: { act_id: "eight", name: "Act Eight" }, b: { act_id: "seven", name: "Act Seven" }, audience_overlap: 0.12 } as unknown as PairClash;
+    expect(text(render({ ranked: [pair] }))).toContain(
+      "Taste also lowers some clashes: Act Seven × Act Eight ranks #1 on time and draw but #19 with taste (taste overlap 12 of 100 on this bill). Lower priority by this index; a candidate to keep.",
     );
-    const line = "In this day’s two rankings, taste moves Act Seven × Act Eight the most: from #1 to #19.";
-    const unchanged = withoutDisclosures(render({ clash: { ...CLASH, aId: "three", bId: "four" } }));
-    expect(text(unchanged)).toContain(line);
-    expect(unchanged).toMatch(/<p data-taste-mover="" class="[^"]*">/);
-    expect(unchanged).not.toMatch(/data-taste-mover=""[^>]*class="[^"]*(prov-qloo|text-primary)/);
-    // Visible, after the readings caption and before the disclosures.
-    expect(text(unchanged).indexOf(line)).toBeGreaterThan(text(unchanged).indexOf(READINGS_CAPTION));
-    // Not when taste moves the card's own pair: the bold line already says what taste changes.
-    expect(text(render())).not.toContain("taste moves Act Seven");
-    // Not without a pair that changes place.
+    expect(text(render({ ranked: [] }))).not.toContain("(taste overlap");
+  });
+
+  it("renders nothing when no costly pair falls with taste", () => {
     const still = lenses({
-      with_taste: [{ a: "Act Three", b: "Act Four", a_id: "three", b_id: "four", rank: 2, rank_without_taste: 2 }],
-      without_taste: [{ a: "Act Three", b: "Act Four", a_id: "three", b_id: "four", rank: 2, rank_with_taste: 2 }],
+      without_taste: [
+        { a: "Act Three", b: "Act Four", a_id: "three", b_id: "four", rank: 2, rank_with_taste: 2 },
+        { a: "Act Seven", b: "Act Eight", a_id: "seven", b_id: "eight", rank: 4, rank_with_taste: 1 },
+        { a: "Act Five", b: "Act Six", a_id: "five", b_id: "six", rank: 5, rank_with_taste: null },
+      ],
     });
-    expect(biggestTasteMover(still)).toBeNull();
-    expect(text(render({ clash: { ...CLASH, aId: "three", bId: "four" }, lenses: still }))).not.toContain("the most:");
-    // Ties go to the pair placed higher with taste.
-    expect(
-      biggestTasteMover({
-        with_taste: [
-          { a: "A", b: "B", a_id: "a", b_id: "b", rank: 5, rank_without_taste: 9 },
-          { a: "C", b: "D", a_id: "c", b_id: "d", rank: 2, rank_without_taste: 6 },
-        ],
-        without_taste: [],
-      }),
-    ).toEqual({ a: "C", b: "D", from: 6, to: 2 });
-    // On the invented day the line names no source.
-    const invented = text(render({ clash: { ...CLASH, aId: "three", bId: "four" }, synthetic: true }));
-    expect(invented).toContain(line);
+    expect(otherHalfPair(still)).toBeNull();
+    const html = render({ lenses: still });
+    expect(html).not.toContain("data-other-half");
+    expect(text(html)).not.toContain("Taste also lowers");
+  });
+
+  it("says it is invented on the invented day and credits no source", () => {
+    const plain = text(render({ synthetic: true }));
+    const line =
+      "On this invented day, taste also lowers some clashes: Act Seven × Act Eight ranks #1 on time and draw but #19 with taste. Lower priority by this index; a candidate to keep.";
+    expect(plain).toContain(line);
     expect(qlooCredits(line)).toEqual([]);
+    const pair = { a: { act_id: "seven", name: "Act Seven" }, b: { act_id: "eight", name: "Act Eight" }, audience_overlap: 0.3 } as unknown as PairClash;
+    expect(text(render({ synthetic: true, ranked: [pair] }))).toContain("(invented taste overlap 30 of 100 on this bill)");
   });
 
   it("still renders its heading and the failed test, visible, with no clash and no lens data", () => {
@@ -579,7 +602,9 @@ describe("TasteSection", () => {
       expect(text(withoutDisclosures(html))).toContain(FAILED);
       // The one Qloo sentence left is the failed test's, about the published festivals' test; nothing
       // credits Qloo for the invented day's readings, pairs or rankings.
-      expect(qlooCredits(plain)).toEqual([FAILED_QLOO_SENTENCE]);
+      const credits = qlooCredits(plain);
+      expect(credits).toHaveLength(1);
+      expect(credits[0]).toMatch(FAILED_QLOO_SENTENCE);
       expect(qlooCredits(plain.replace(FAILED, ""))).toEqual([]);
     }
     const plain = text(render({ synthetic: true }));

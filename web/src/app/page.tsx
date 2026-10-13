@@ -23,7 +23,7 @@ function Intro({ synthetic = false }: { synthetic?: boolean }) {
         Which clash is worth moving?
       </h1>
       <p className="mt-5 max-w-[32rem] text-[1.0625rem] leading-[1.5] text-foreground max-sm:mt-4">
-        For heads of programming: equal-length clashes can cost very different amounts. Clash Control prices each
+        For heads of programming: equal-length clashes can cost very different amounts. Clash Control scores each
         by its audiences’ taste overlap
         {synthetic ? " (an invented rank, not attendance)" : ", from Qloo data (a rank, not attendance)"}.
       </p>

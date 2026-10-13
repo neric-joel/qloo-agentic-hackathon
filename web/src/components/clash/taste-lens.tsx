@@ -172,6 +172,50 @@ function LensList({
   );
 }
 
+/** A pair taste overlap moves down: its names and ids, its place on time and draw and with taste. */
+export type OtherHalfPair = { a: string; b: string; aId: string; bId: string; from: number; to: number };
+
+/** One key per unordered pair of act ids, for `otherHalfPair`'s exclusion list. */
+export function pairKeyOf(aId: string, bId: string): string {
+  return [aId, bId].sort().join("|");
+}
+
+/**
+ * The other half of what taste does: among the day's costliest clashes on time and draw (the lens's
+ * draw-and-time list), the pair whose place falls furthest once taste overlap counts. `from` is its place
+ * on time and draw, `to` its place with taste; both are read from the lens data, never computed. A pair
+ * the taste ranking leaves unranked is skipped, and so is any pair in `exclude` (keys from `pairKeyOf`).
+ * Ties go to the pair placed higher on time and draw. Null when no listed pair falls.
+ */
+export function otherHalfPair(
+  lenses: Pick<Lenses, "without_taste">,
+  exclude: ReadonlySet<string> = new Set(),
+): OtherHalfPair | null {
+  let best: OtherHalfPair | null = null;
+  for (const entry of lenses.without_taste) {
+    if (entry.rank_with_taste === null || exclude.has(pairKeyOf(entry.a_id, entry.b_id))) continue;
+    const fall = entry.rank_with_taste - entry.rank;
+    if (fall <= 0) continue;
+    const bestFall = best ? best.to - best.from : 0;
+    if (!best || fall > bestFall || (fall === bestFall && entry.rank < best.from)) {
+      best = { a: entry.a, b: entry.b, aId: entry.a_id, bId: entry.b_id, from: entry.rank, to: entry.rank_with_taste };
+    }
+  }
+  return best;
+}
+
+/**
+ * "Taste also lowers some clashes: A × B ranks #9 on time and draw but #31 with taste (taste overlap 12
+ * of 100 on this bill). Lower priority by this index; a candidate to keep." The parenthesis only with the
+ * pair's own taste overlap from page data (`overlap`, already formatted 0 to 100). It says where the pair
+ * ranks, nothing about how many people it shares. On the invented day it says so and credits no source.
+ */
+export function otherHalfLine(pair: Pick<OtherHalfPair, "a" | "b" | "from" | "to">, overlap: string | null, synthetic = false): string {
+  const reading = overlap === null ? "" : ` (${synthetic ? "invented taste overlap" : "taste overlap"} ${overlap} of 100 on this bill)`;
+  const lead = synthetic ? "On this invented day, taste also lowers some clashes" : "Taste also lowers some clashes";
+  return `${lead}: ${pair.a} × ${pair.b} ranks #${pair.from} on time and draw but #${pair.to} with taste${reading}. Lower priority by this index; a candidate to keep.`;
+}
+
 function apartLine(apart: readonly LensApart[]): string {
   return apart.map((pair) => `${pair.a} and ${pair.b}`).join("; ");
 }

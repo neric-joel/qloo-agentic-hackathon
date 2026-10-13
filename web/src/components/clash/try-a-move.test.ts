@@ -19,6 +19,7 @@ import {
   TestedPlace,
   TryAMove,
   bestPlace,
+  nextLabel,
   placeChanges,
   starterPairsOf,
   stripDomain,
@@ -28,6 +29,7 @@ import {
 } from "./try-a-move";
 import { clashParts, clashWords, listedPlace, moveCheck, sharedMinutesByName, splitKept, type MoveCheck } from "./use-moves";
 import { ChangeCard, SAME_STAGE_FIRST, STAGE_SIGN_OFF, sameStageFirst } from "./keep-apart";
+import { ScratchPlan } from "./scratch-plan";
 
 /** The visible words. */
 const text = (html: string) =>
@@ -859,6 +861,46 @@ describe("the kept plan's anchor and the seeds from outside the section", () => 
     expect(html).toContain('id="your-plan"');
   });
 
+  it("offers the next clash in the published day's ranking under a plan, as one plain text action", () => {
+    const store = new Map([[planStorageKey(tiny.id), encodeMoves([kept])]]);
+    vi.stubGlobal("window", {
+      sessionStorage: { getItem: (key: string) => store.get(key) ?? null, setItem: () => {}, removeItem: () => {} },
+    });
+    // The label names the pair and says whose ranking it is; never "costliest" after the plan.
+    expect(nextLabel({ a: "Act One", b: "Act Two" })).toBe("Next: Act One × Act Two, the next clash in the published day’s ranking");
+    expect(nextLabel({ a: "Act One", b: "Act Two" })).not.toMatch(/costliest/);
+    const plan = {
+      publishedBudget: 104.2,
+      budget: 100.1,
+      steps: [{ act: "Bo Diddly Squat", actId: "bo", move: "Bo Diddly Squat: moved", stage: "Side", stageId: "side", day: 0, start: "22:05", end: "23:35", budgetAfter: 100.1 }],
+      clashes: [],
+      options: null,
+    };
+    const onPress = vi.fn();
+    const card = (next: { label: string; onPress: () => void } | null) =>
+      renderToStaticMarkup(
+        createElement(ScratchPlan, {
+          preset: tiny,
+          day: 0,
+          plan,
+          moves: [kept],
+          range: { low: 92, high: 109 },
+          onUndo: () => {},
+          onStartOver: () => {},
+          next,
+        }),
+      );
+    const label = nextLabel({ a: "Ann Arbor", b: "Cy Twombly" });
+    const html = card({ label, onPress });
+    // A ruled text button (44px tall), not a pill or badge, and only when there is a next clash.
+    expect(html).toMatch(new RegExp(`<button[^>]*data-variant="ruled"[^>]*>${label}`));
+    expect(html).toMatch(/<button[^>]*class="[^"]*min-h-11[^"]*"[^>]*>Next:/);
+    expect(card(null)).not.toContain("Next:");
+    // The section reads it from the published ranking with the kept moves skipped (nextRankedPair, lib/moves.test.ts).
+    const source = readFileSync(join(__dirname, "try-a-move.tsx"), "utf8");
+    expect(source).toContain("nextRankedPair(ranked, moved,");
+  });
+
   it("neither scrolls nor moves focus for a card's or an agent's seed", () => {
     const source = readFileSync(join(__dirname, "try-a-move.tsx"), "utf8");
     const seeded = source.slice(source.indexOf("const seedFrom ="), source.indexOf("// Keep the tab's plan in step"));
@@ -919,7 +961,7 @@ describe("Keep two sets apart: a stage change says it needs sign-off", () => {
     expect(STAGE_SIGN_OFF).toBe("Changes stage: needs production sign-off");
     expect(row(fix(1, "21:00", "Main"))).toContain(STAGE_SIGN_OFF);
     expect(row(fix(0, "21:00"))).not.toContain("Changes stage");
-    // Muted words on the row's paper, with no chip.
+    // Ink words, medium weight, on the row's paper: a fact production acts on, not small grey print, and no chip.
     const html = renderToStaticMarkup(
       createElement(ChangeCard, {
         fix: fix(1, "21:00", "Main"),
@@ -935,7 +977,35 @@ describe("Keep two sets apart: a stage change says it needs sign-off", () => {
         buttonRef: () => {},
       }),
     );
-    expect(html).toContain(`<p class="mt-0.5 text-sm text-muted-foreground">${STAGE_SIGN_OFF}</p>`);
+    expect(html).toContain(`<p class="mt-0.5 text-sm font-medium text-foreground">${STAGE_SIGN_OFF}</p>`);
+    expect(html).not.toMatch(/text-muted-foreground">Changes stage/);
+  });
+
+  it("shows the check on Keep this change only once the plan holds the change", () => {
+    const button = (keepState: "ready" | "kept" | "full") => {
+      const html = renderToStaticMarkup(
+        createElement(ChangeCard, {
+          fix: fix(1, "21:00", "Main"),
+          n: 1,
+          before: 104.2,
+          dayLabel: () => null,
+          pressed: false,
+          keepState,
+          roomText: null,
+          note: null,
+          onPreview: () => {},
+          onKeep: () => {},
+          buttonRef: () => {},
+        }),
+      );
+      const label = keepState === "kept" ? "Kept in your plan" : "Keep this change";
+      return html.slice(html.lastIndexOf("<button", html.indexOf(label)), html.indexOf(label));
+    };
+    // Before it is pressed: the words alone.
+    expect(button("ready")).not.toContain("lucide-check");
+    expect(button("full")).not.toContain("lucide-check");
+    // Kept: the check beside "Kept in your plan".
+    expect(button("kept")).toContain("lucide-check");
   });
 
   it("lists same-stage changes before stage changes, each group in the route's own order", () => {

@@ -1,5 +1,7 @@
+import type { Locator } from "@playwright/test";
+
 import { expect, test } from "./fixtures";
-import { listDays, requireSavedDays } from "./helpers";
+import { DAYS, listDays, requireSavedDays } from "./helpers";
 import { CheckPage } from "./pages/check-page";
 
 /**
@@ -39,6 +41,16 @@ function recordPriceBodies(page: import("@playwright/test").Page): Body[] {
     if (request.url().endsWith("/api/price-grid")) sent.push(JSON.parse(request.postData() ?? "{}") as Body);
   });
   return sent;
+}
+
+/** The compared overlaps, one row each (the overlaps not compared wait in a fold of their own). */
+function compared(check: CheckPage) {
+  return check.priceSection.getByRole("list", { name: "Compared overlaps" }).getByRole("listitem");
+}
+
+/** The closed fold that names each overlap not compared and why. */
+function notComparedFold(check: CheckPage) {
+  return check.priceSection.locator("details").filter({ has: check.page.locator("summary", { hasText: /^Why (this was|these were) not compared \(\d+\)$/ }) });
 }
 
 test.describe("compare audience overlap, from a saved day", () => {
@@ -113,12 +125,17 @@ test.describe("compare audience overlap, from a saved day", () => {
     await expect(check.priceSection).toContainText("8 acts sent: 8 matched, 8 with a usable signal.");
 
     // Counts and wording only: no taste value or rank from the saved day is written into this test.
-    const rows = check.priceSection.getByRole("listitem");
-    await expect(rows).toHaveCount(5);
+    const rows = compared(check);
+    await expect(rows).toHaveCount(4);
     await expect(rows.filter({ hasText: /Taste overlap \d{1,3} \/ 100, ranked \d of 4\./ })).toHaveCount(4);
-    // The overlap without a reading says why, in words, and is listed by minutes only.
-    await expect(rows.filter({ hasText: "Nadine Shah × Geordie Greep" })).toContainText(/Not compared: .+\. Shown by minutes only\./);
-    await expect(check.priceSection).toContainText("The overlap without a reading is listed last, by minutes only.");
+    // The overlap without a reading is counted in one line, and says why in words inside a closed fold.
+    await expect(check.priceSection).toContainText("1 overlap not compared: no reading served for the pair (1).");
+    const fold = notComparedFold(check);
+    await expect(fold.locator("summary")).toHaveText("Why this was not compared (1)");
+    await expect(fold).toHaveJSProperty("open", false);
+    await fold.locator("summary").click();
+    await expect(fold.getByRole("listitem")).toHaveCount(1);
+    await expect(fold.getByRole("listitem").filter({ hasText: "Nadine Shah × Geordie Greep" })).toContainText(/Not compared: \S.+\./);
     await expect(check.priceSection).toContainText("each is a rank among the acts on that day’s lineup of 36 acts, not among the acts you pasted, and not attendance.");
   });
 
@@ -165,7 +182,7 @@ test.describe("compare audience overlap, names no saved day has", () => {
 });
 
 test.describe("compare audience overlap on a published day", () => {
-  test("Check a published day, then Compare: every pair sent is priced or says why not, in saved mode only", async ({ page, guard }) => {
+  test("Check a published day, then Compare: every pair sent is compared or says why not, in saved mode only", async ({ page, guard }) => {
     // Counts only: no taste value or rank from the saved day is written into this test. A clone without the
     // built days serves only the invented one, so there is no published day to check.
     const days = await listDays(page);
@@ -185,14 +202,69 @@ test.describe("compare audience overlap on a published day", () => {
     expect(sent.every((body) => body.mode === "saved"), "the published day compares in saved mode only").toBe(true);
     const pairsSent = sent[0].pairs.length;
 
-    const rows = check.priceSection.getByRole("listitem");
+    const rows = compared(check);
     const priced = rows.filter({ hasText: /Taste overlap \d{1,3} \/ 100(, ranked \d+ of \d+|, the only pair compared)\./ });
-    const reasoned = rows.filter({ hasText: /Not compared: \S.+\./ });
     await expect(priced.first()).toBeVisible();
-    const [total, pricedCount, reasonedCount] = [await rows.count(), await priced.count(), await reasoned.count()];
-    expect(pricedCount, "at least one pair is priced from the saved day").toBeGreaterThanOrEqual(1);
-    expect(pricedCount + reasonedCount, "every listed pair is priced or says why not").toBe(total);
-    expect(total - (await rows.filter({ hasText: "both sets are locked" }).count()), "every pair sent is listed").toBeGreaterThanOrEqual(pairsSent);
+    const pricedCount = await priced.count();
+    expect(pricedCount, "at least one pair is compared from the saved day").toBeGreaterThanOrEqual(1);
+    expect(pricedCount, "every compared row carries its value").toBe(await rows.count());
+    // The overlaps not compared are counted in one line and named, with a reason in words, in a closed fold.
+    const fold = notComparedFold(check);
+    let sentReasoned = 0;
+    if ((await fold.count()) > 0) {
+      await expect(fold).toHaveJSProperty("open", false);
+      await fold.locator("summary").click();
+      const items = fold.getByRole("listitem");
+      for (const item of await items.all()) await expect(item).toContainText(/Not compared: \S.+\./);
+      // A pair with both sets locked is passed over before sending; every other one in the fold was sent.
+      sentReasoned = await items.filter({ hasNotText: "both sets are locked" }).count();
+    }
+    expect(pricedCount + sentReasoned, "every pair sent is compared or says why not").toBe(pairsSent);
     expect(guard.spending).toEqual([]);
+  });
+
+  test("on Glastonbury, the saved day's costliest clashes that can move are compared, the card's pair first, and the page says how they were chosen", async ({ page, guard }) => {
+    // Counts and act names only. The card's pair (Sprints and Katy J Pearson) is the saved day's costliest clash.
+    await requireSavedDays(page);
+    const sent = recordPriceBodies(page);
+    const check = new CheckPage(page);
+    await check.goto();
+
+    await expect(check.publishedButton).toHaveAccessibleName(`Check a published day: ${DAYS.glastonbury.title}`);
+    await check.publishedButton.click();
+    await expect(check.page.getByText(/^Published timetable: /).first()).toBeVisible();
+    await check.priceButton.click();
+    await expect(check.priceSection).toContainText("Compared using a saved festival day. No Qloo request was sent.");
+
+    // What left the browser: one saved-mode body of act names and pairs, at least 5 and at most 10 pairs, the card's pair first.
+    expect(sent).toHaveLength(1);
+    expect(sent[0].mode).toBe("saved");
+    expect(Object.keys(sent[0]).sort()).toEqual(["acts", "mode", "pairs"]);
+    expect(sent[0].pairs.length).toBeGreaterThanOrEqual(5);
+    expect(sent[0].pairs.length).toBeLessThanOrEqual(10);
+    expect([...sent[0].pairs[0]].sort()).toEqual(["Katy J Pearson", "Sprints"]);
+    expect(sent[0].acts, "every act of the day is sent in saved mode").toHaveLength(new Set(sent[0].acts).size);
+    expect(sent[0].acts.length).toBeGreaterThan(25);
+    expect(guard.spending, "nothing in a live mode").toEqual([]);
+
+    // At least five pairs come back compared, the card's pair among them.
+    const rows = compared(check);
+    await expect(rows.first()).toBeVisible();
+    expect(await rows.count()).toBeGreaterThanOrEqual(5);
+    await expect(rows.filter({ hasText: /^Sprints × Katy J Pearson: \d+ min shared\. Taste overlap \d{1,3} \/ 100, ranked \d+ of \d+\.$/ })).toHaveCount(1);
+    // The order sentence is computed from what came back, and how the pairs were picked is disclosed.
+    await expect(check.priceSection.getByText(/^Taste overlap (does not change|changes) the order of the \d+ compared overlaps/)).toBeVisible();
+    const disclosure = check.priceSection.getByText(
+      "These pairs are the saved day's costliest by this app's index, which already includes taste overlap: a worked example, not a test.",
+    );
+    await expect(disclosure).toBeVisible();
+    // Values first: the compared rows, then the disclosure, then the one line that counts what was not compared, then its fold.
+    const countLine = check.priceSection.getByText(/^\d+ overlaps? not compared: .+\.$/);
+    await expect(countLine).toBeVisible();
+    const fold = notComparedFold(check);
+    await expect(fold).toHaveJSProperty("open", false);
+    const top = async (locator: Locator) => (await locator.boundingBox())?.y ?? Number.NaN;
+    const order = [await top(rows.first()), await top(rows.last()), await top(disclosure), await top(countLine), await top(fold)];
+    expect(order, "values, disclosure, count line and fold, top to bottom").toEqual([...order].sort((a, b) => a - b));
   });
 });

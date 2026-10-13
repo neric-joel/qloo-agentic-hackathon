@@ -165,3 +165,14 @@ describe("the sheet's limits and sign-off (screen and print)", () => {
     }
   });
 });
+
+describe("the table's caption (round 32, V7)", () => {
+  it("says costliest first only when the table orders two rows or more", () => {
+    const html = renderToStaticMarkup(createElement(BriefContent, { preset: published(), day: 0, plan: null }));
+    const caption = html.match(/<p id="brief-clashes-caption" class="sr-only">([^<]*)<\/p>/)?.[1] ?? "";
+    const rows = (html.match(/<table[\s\S]*?<\/table>/)?.[0].match(/<tr/g) ?? []).length - 1;
+    expect(caption).not.toBe("");
+    expect(caption.endsWith(", costliest first")).toBe(rows >= 2);
+    expect(caption.startsWith(rows === 1 ? "The costliest clash" : "The ")).toBe(true);
+  });
+});

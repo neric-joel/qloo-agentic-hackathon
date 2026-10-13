@@ -47,6 +47,10 @@ test.describe("what Qloo changes", () => {
     await home.goto(DAYS.glastonbury.id);
 
     await expect(home.whatQloo).toContainText("Qloo changes which clash rises to the top. It does not prove #1 is the right clash to move.");
+    // The other half: a clash taste puts lower, which a programmer may choose to keep. It never says "costs little".
+    const lowers = home.whatQloo.getByText(/^Taste also lowers some clashes: .+ × .+ ranks #\d+ on time and draw but #\d+ with taste\. Lower priority by this index; a candidate to keep\.$/);
+    await expect(lowers).toBeVisible();
+    await expect(home.whatQloo).not.toContainText(/costs little|fine to keep/);
     await expect(home.whatQloo.getByRole("heading", { level: 3, name: "What the failed test taught us." })).toBeVisible();
     await expect(home.whatQloo).toContainText("Our test failed: taste overlap put 46.8% of complained-about clashes in the top quarter of their day, below our 60% bar.");
     await expect(home.whatQloo).toContainText("Popularity, also a Qloo field, did better.");
@@ -79,8 +83,13 @@ test.describe("what Qloo changes", () => {
     await home.goto(DAYS.riot.id);
 
     await expect(home.whatQloo).toContainText(/Taste agrees with time and draw: #\d+ either way\./);
-    // The day's biggest taste mover is named from the two rankings, when they hold one.
-    await expect(home.whatQloo).toContainText(/In this day’s two rankings, taste moves .+ × .+ the most: from #\d+ to #\d+\./);
+    // Here taste names a clash it lowers instead: one the time-and-draw ranking puts high and taste puts low.
+    const lowers = home.whatQloo.getByText(/^Taste also lowers some clashes: Pierce the Veil × Elvis Costello & The Imposters ranks #\d+ on time and draw but #\d+ with taste\./);
+    await expect(lowers).toBeVisible();
+    const [, onDraw, withTaste] = /ranks #(\d+) on time and draw but #(\d+) with taste/.exec(await lowers.innerText()) ?? [];
+    expect(Number(withTaste), "taste ranks it lower").toBeGreaterThan(Number(onDraw));
+    await expect(lowers).toContainText("Lower priority by this index; a candidate to keep.");
+    await expect(home.whatQloo).not.toContainText(/In this day’s two rankings, taste moves/);
     await expect(home.whatQloo).toContainText("Same timetable, ranked three ways. This shows what taste changes; it does not prove the taste ranking is better.");
   });
 });
@@ -125,22 +134,32 @@ test.describe("who has complained, and what nobody has tested", () => {
     const schedulers = disclosure(section, /^Festival Pro and Lineup Ninja/);
     await schedulers.locator("summary").click();
     await expect(schedulers).toContainText("We found none that reads audience overlap (our search, October 2026).");
-    const cost = disclosure(section, /^About 40 Qloo requests per bill/);
+    const cost = disclosure(section, /^About 40 Qloo requests per bill, only with the festival’s OK$/);
+    await expect(cost).toHaveJSProperty("open", false);
     await cost.locator("summary").click();
-    await expect(cost).toContainText("Each bill costs about 40 Qloo requests, so ten use about 400 of the 10,000 shared this month. One answer is not a market.");
-    const complaints = disclosure(section, /^86 pairs, median 50 minutes/);
+    await expect(cost).toContainText("Pricing a new bill is not offered: comparing its longest overlaps takes about 40 Qloo requests of the 10,000 shared this month");
+    await expect(cost).toContainText("Either needs the festival’s OK. One answer is not a market.");
+    const complaints = disclosure(section, /^86 pairs, median 50 minutes, and how the lists lean$/);
     await complaints.locator("summary").click();
-    await expect(complaints).toContainText("Popularity scored higher than taste overlap on this test: it put 57.8% of these clashes in the top quarter of their day, taste overlap 46.8%.");
+    await expect(complaints).toContainText("Press lists lean toward headliners, which flatters any taste-based method.");
+    // Where the complaints come from, said as counts of public pages, with no claim about who attended.
+    await expect(section).toContainText(/They come from \w+ Reddit threads and \w+ press articles \(.+\)\./);
+    await expect(section).toContainText("Most of these complaints are about other festivals and days, not the days this app shows.");
+    // The failed test and the popularity result are stated once on the page, in What Qloo changes, not repeated here.
+    await expect(home.whatQloo).toContainText("Popularity, also a Qloo field, did better. It reached 57.8%.");
+    await expect(section).not.toContainText("57.8%");
   });
 
-  test("the pilot offer asks for a bill and points to the check page", async ({ page }) => {
+  test("the pilot offer asks for a walk-through of the saved brief and points to the check page", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
     const section = home.whyThisMatters;
     await expect(section.getByRole("heading", { level: 3, name: "Pilot offer" })).toBeVisible();
-    await expect(section).toContainText("Send one day’s draft or published bill.");
-    await expect(section).toContainText("Success: a programmer moves a set, or keeps one on purpose.");
+    // A zero-quota offer: the saved Glastonbury brief, and the browser-only check for a programmer's own draft.
+    await expect(section).toContainText("Walk through the Glastonbury 2025 Sunday brief with me and say where it matches how your team would set those times.");
+    await expect(section).toContainText("Your own draft can go through Check a draft grid, whose rule checks run in your browser and send nothing.");
+    await expect(section).toContainText("Success: you say which suggestion you would take or turn down, and why.");
     await expect(section).toContainText("Contact is on the Devpost page.");
     await section.getByRole("link", { name: "Check a draft grid" }).click();
     await expect(page).toHaveURL(/\/check$/);

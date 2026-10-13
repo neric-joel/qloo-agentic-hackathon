@@ -1,5 +1,5 @@
 import { DAYS, requireSavedDays, scrollThrough } from "./helpers";
-import { expect, test, isOwnHost } from "./fixtures";
+import { expect, test, isOwnHost, spendsQuota } from "./fixtures";
 import { CheckPage } from "./pages/check-page";
 import { HomePage } from "./pages/home-page";
 import { TryAMove } from "./pages/try-a-move";
@@ -110,5 +110,54 @@ test.describe("the browser only talks to this site", () => {
       const body = await (await page.request.get(url)).text();
       expect(body, `${url} embeds no secret`).not.toMatch(/QLOO_API_KEY|ANTHROPIC_API_KEY|AI_GATEWAY_API_KEY|x-api-key/i);
     }
+  });
+});
+
+test.describe("the network guard itself", () => {
+  /** A request as the guard sees it: a URL, a method and a body. */
+  const request = (path: string, body?: unknown) => ({
+    url: () => new URL(path, process.env.BASE_URL ?? "http://localhost:3000").toString(),
+    method: () => "POST",
+    postData: () => (body === undefined ? null : JSON.stringify(body)),
+  });
+
+  test("treats grid pricing as spending unless it is in saved mode, and the agent, pair and run routes always", () => {
+    expect(spendsQuota(request("/api/price-grid", { acts: ["A", "B"], pairs: [["A", "B"]], mode: "saved" }))).toBe(false);
+    expect(spendsQuota(request("/api/price-grid", { acts: ["A", "B"], pairs: [["A", "B"]], mode: "live" }))).toBe(true);
+    expect(spendsQuota(request("/api/price-grid", { acts: ["A", "B"], pairs: [["A", "B"]] })), "no mode is not saved mode").toBe(true);
+    expect(spendsQuota(request("/api/price-grid")), "no body").toBe(true);
+    expect(spendsQuota({ ...request("/api/price-grid"), postData: () => "{not json" }), "a body that does not parse").toBe(true);
+    for (const path of ["/api/runs", "/api/pair", "/api/pair/check", "/api/baseline", "/api/agent"]) expect(spendsQuota(request(path)), path).toBe(true);
+    for (const path of ["/api/presets", "/api/health", "/api/presets/x/whatif"]) expect(spendsQuota(request(path)), path).toBe(false);
+  });
+
+  test.describe("in the browser", () => {
+    // A request the guard blocks is reported by the browser as a failed load.
+    test.use({ ignoreConsole: [/ERR_BLOCKED_BY_CLIENT|Failed to fetch/] });
+
+    test("a live-mode grid price is blocked before it leaves the browser and recorded", async ({ page, guard }) => {
+      // Backstop: this server also refuses live pricing on its own, so even a broken guard spends nothing here.
+      const health = (await (await page.request.get("/api/health")).json()) as { price_grid_live?: boolean };
+      test.skip(health.price_grid_live !== false, "This server has live pricing on; the probe runs only where it is off.");
+      await page.goto("/method", { waitUntil: "domcontentloaded" });
+
+      const outcome = await page.evaluate(async () => {
+        try {
+          const response = await fetch("/api/price-grid", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ acts: [], pairs: [], mode: "live" }),
+          });
+          return `answered ${response.status}`;
+        } catch {
+          return "blocked";
+        }
+      });
+      expect(outcome, "the request never reached the server").toBe("blocked");
+      expect(guard.spending).toHaveLength(1);
+      expect(guard.spending[0]).toMatch(/^POST .+\/api\/price-grid$/);
+      // The one blocked probe is this test's own; anything else the guard records still fails the test.
+      guard.spending.splice(0, 1);
+    });
   });
 });

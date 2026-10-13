@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Lenses } from "@/lib/lenses";
 
-import { lensLead, TasteLens } from "./taste-lens";
+import { lensLead, otherHalfLine, otherHalfPair, pairKeyOf, TasteLens } from "./taste-lens";
 
 // Every name and figure below is invented for the test.
 function lenses(overrides: Partial<Lenses> = {}): Lenses {
@@ -180,5 +180,45 @@ describe("TasteLens motion (M6)", () => {
       ["cc-lens-row", 200],
       ["cc-lens-row", 0],
     ]);
+  });
+});
+
+describe("otherHalfPair", () => {
+  it("picks the draw-and-time pair whose place falls furthest once taste counts, read from the lens data", () => {
+    expect(otherHalfPair(lenses())).toEqual({ a: "Act Seven", b: "Act Eight", aId: "seven", bId: "eight", from: 1, to: 17 });
+  });
+
+  it("skips pairs that rise, stay or go unranked with taste, and breaks a tie toward the higher place on time and draw", () => {
+    const value = lenses({
+      without_taste: [
+        { a: "A", b: "B", a_id: "a", b_id: "b", rank: 6, rank_with_taste: 10 },
+        { a: "C", b: "D", a_id: "c", b_id: "d", rank: 2, rank_with_taste: 6 },
+        { a: "E", b: "F", a_id: "e", b_id: "f", rank: 1, rank_with_taste: null },
+        { a: "G", b: "H", a_id: "g", b_id: "h", rank: 3, rank_with_taste: 1 },
+      ],
+    });
+    expect(otherHalfPair(value)).toMatchObject({ a: "C", b: "D", from: 2, to: 6 });
+    expect(otherHalfPair(lenses({ without_taste: [] }))).toBeNull();
+  });
+
+  it("leaves out excluded pairs in either act order, so a pair resting on a missing reading can be dropped", () => {
+    expect(pairKeyOf("eight", "seven")).toBe(pairKeyOf("seven", "eight"));
+    expect(otherHalfPair(lenses(), new Set([pairKeyOf("eight", "seven")]))).toBeNull();
+  });
+});
+
+describe("otherHalfLine", () => {
+  it("says where the pair ranks, with its taste overlap only when given, and names no source on the invented day", () => {
+    const pair = { a: "Act Seven", b: "Act Eight", from: 1, to: 17 };
+    expect(otherHalfLine(pair, null)).toBe(
+      "Taste also lowers some clashes: Act Seven × Act Eight ranks #1 on time and draw but #17 with taste. Lower priority by this index; a candidate to keep.",
+    );
+    expect(otherHalfLine(pair, "8")).toContain("#17 with taste (taste overlap 8 of 100 on this bill).");
+    const invented = otherHalfLine(pair, "8", true);
+    expect(invented).toMatch(/^On this invented day, taste also lowers some clashes:/);
+    expect(invented).toContain("(invented taste overlap 8 of 100 on this bill)");
+    for (const line of [otherHalfLine(pair, null), invented]) {
+      expect(line).not.toMatch(/qloo|same crowd|costs little|overlap little|fine to keep|fans/i);
+    }
   });
 });

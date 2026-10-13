@@ -44,12 +44,14 @@ describe("the dial's settle", () => {
       renderToStaticMarkup(createElement(BudgetDial, { index: 116.71, baseline: BASELINE, compact: true, synthetic })),
     )?.[0] ?? "";
     const published = caption(false).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-    expect(published).toContain(
-      "The published timetable, against random valid timetables of this lineup: 100 is their average, and lower is better.",
-    );
+    expect(published).toContain("By this index, the published timetable scores 17% above the average random valid timetable.");
+    expect(published).toContain("Lower is better; 100 is the average of random valid timetables of this lineup.");
     expect(published).toContain("It counts only what clashes cost");
+    // The timetable and its average are named once, in the sentence, not again in the explanation.
+    expect(published.match(/published timetable/g)).toHaveLength(1);
     expect(published.split(" ").length).toBeLessThanOrEqual(45);
-    expect(caption(true)).toContain("The invented timetable, against random valid timetables");
+    expect(caption(true)).toContain("By this index, the invented timetable scores");
+    expect(caption(true)).not.toContain("published");
     // The Derived chip stays with the figure, worded for the day it reads.
     expect(plain(false)).toContain("Derived");
     expect(plain(true)).toContain("Derived");
@@ -192,13 +194,13 @@ describe("the dial's shading", () => {
 
   it("keeps 'lower is better' in the board's caption, under a hairline across the block's own width", () => {
     expect(html).toMatch(/<figcaption class="mt-4 border-t border-border pt-4"/);
-    expect(html).toContain("and lower is better.");
+    expect(html).toContain("Lower is better; 100 is the average of random valid timetables of this lineup.");
   });
 
   it("sets the sentence at 15px semibold over a 13px muted explanation on a 1.625 line, never clamped", () => {
     const caption = /<figcaption[\s\S]*?<\/figcaption>/.exec(html)?.[0] ?? "";
     expect(caption).toContain(
-      '<p class="text-[0.9375rem] leading-snug font-semibold">17% more taste-overlap cost than the average random valid timetable.</p>',
+      '<p class="text-[0.9375rem] leading-snug font-semibold">By this index, the published timetable scores 17% above the average random valid timetable.</p>',
     );
     expect(caption).toContain('<p data-index-explain="" class="mt-2 text-[0.8125rem] leading-relaxed text-muted-foreground">');
     expect(caption).not.toMatch(/line-clamp|truncate|overflow-hidden/);

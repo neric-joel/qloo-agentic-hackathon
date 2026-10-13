@@ -40,6 +40,8 @@ test.describe("invented example day", () => {
     await home.showWorking.click();
     await expect(home.working).toBeVisible();
     await expect(home.card).not.toContainText("Saved Qloo reading");
+    // The dateline names no saved Qloo reading here either, and nothing in the card credits Qloo.
+    await expect(home.card).not.toContainText(/saved Qloo reading|Qloo requests in this run/i);
     await expect(home.card.getByRole("button", { name: /^Re-check this pair with Qloo/ })).toHaveCount(0);
     await expect(home.board.getByRole("button")).toHaveCount(24);
     expect(day.served.some((line) => line.endsWith("/decision"))).toBe(true);

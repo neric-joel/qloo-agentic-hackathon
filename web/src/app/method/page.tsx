@@ -16,8 +16,11 @@ import {
   formatAuc,
   formatCount,
   exploratoryReading,
+  formatDiff,
+  formatDiffInterval,
   formatInterval,
   countsNote,
+  tasteInPriceReading,
   formatP,
   formatPct,
   formatWholePct,
@@ -36,7 +39,7 @@ export const metadata = {
     "What Clash Control's taste overlap is, what we tested it against, and where it fell short.",
 } satisfies Metadata;
 
-const { backtest, complaints, coverage, exploratory, index, liveCheck, moves, price, scale, symmetry } =
+const { backtest, complaints, coverage, exploratory, index, liveCheck, moves, price, scale, symmetry, tasteInPrice } =
   METHOD_FIGURES;
 const reading = exploratoryReading();
 const taste = methodRow("taste");
@@ -52,8 +55,7 @@ const [tasteLow, tasteHigh] = taste.auc95 ?? [taste.auc, taste.auc];
 const HELD_LINE =
   `In the same test, taste overlap ranked complained-about clashes above random (AUC ${formatAuc(taste.auc)}, ` +
   `${scale.intervalPct}% interval ${formatInterval([tasteLow, tasteHigh])}, which stays above ${scale.auc.chance}) ` +
-  `and above genre tags (${formatAuc(genre.auc)}), though the two intervals overlap widely. Popularity did better ` +
-  `(${formatAuc(popularity.auc)}), and the exploratory follow-up did not establish an advantage over popularity. ` +
+  `and above genre tags (${formatAuc(genre.auc)}), though the two intervals overlap widely. ` +
   `Taste overlap is nearly unrelated to popularity (correlation ${backtest.popularityCorrelation}).`;
 
 /**
@@ -322,22 +324,22 @@ function ShortVersion() {
           <li className={SHORT_ROW}>{HELD_LINE}</li>
           <li className={SHORT_ROW}>
             Popularity did better. On the same test, popularity, another Qloo field, reached{" "}
-            {formatPct(popularity.topQuarterPct)}. The check on suggested moves failed too: taste-overlap
-            suggestions differed from popularity-only ones by {moves.measuredPoints} index points (one point
-            is {scale.indexPointPct}% of the average random timetable&rsquo;s cost); the bar was{" "}
-            {moves.barPoints}.
-          </li>
-          <li className={SHORT_ROW}>
-            It ranks a day&rsquo;s clashes and tests moves against timetable rules. Taste overlap is a
-            rank, not attendance; our check did not find complained-about clashes better than popularity.
-          </li>
-          <li className={SHORT_ROW}>
-            An exploratory follow-up checked the same data after the test failed. The results do not
-            establish an advantage over popularity.{" "}
+            {formatPct(popularity.topQuarterPct)}, and exploratory
+            follow-ups on the same data did not establish an advantage over popularity for the app&rsquo;s
+            full price.{" "}
             <a href="#tested" className={TEXT_LINK}>
               See the full comparison below
             </a>
             .
+          </li>
+          <li className={SHORT_ROW}>
+            The check on suggested moves failed too: taste-overlap suggestions differed from popularity-only
+            ones by {moves.measuredPoints} index points (one point is {scale.indexPointPct}% of the average
+            random timetable&rsquo;s cost); the bar was {moves.barPoints}.
+          </li>
+          <li className={SHORT_ROW}>
+            It ranks a day&rsquo;s clashes and tests moves against timetable rules. Taste overlap is a
+            rank, not attendance.
           </li>
         </ul>
       </div>
@@ -710,6 +712,128 @@ function Exploratory() {
   );
 }
 
+/** The anchor of the taste-inside-the-price block, for links that point at it. */
+const TASTE_IN_PRICE_ID = "taste-in-price";
+
+/** Said when the interval of the full price minus the taste-removed price holds zero. */
+const TASTE_ADDS_NOT_ESTABLISHED = "This check did not establish that taste adds to time and draw.";
+
+/**
+ * Taste inside the full price, the second exploratory follow-up, in the open under its own heading: the full price
+ * against popularity, against the same price with taste overlap held the same for every pair (time and draw only),
+ * and against shuffled taste values; then the same by festival, Glastonbury against the four US festivals. Every
+ * figure is read from `METHOD_FIGURES.tasteInPrice`, and what each interval says is read from the figures
+ * (`tasteInPriceReading`), so the words can never contradict the numbers. The heading is neutral: it names what was
+ * checked, not a gain. A ruled table like the backtest's, on paper; no colour carries a value.
+ */
+function TasteInPrice() {
+  const { fullPrice, popularity: pop, pairedVsPopularity, shuffled, tasteRemoved, pairedVsTasteRemoved } =
+    tasteInPrice;
+  const said = tasteInPriceReading();
+  return (
+    <div id={TASTE_IN_PRICE_ID} aria-labelledby={`${TASTE_IN_PRICE_ID}-heading`} role="group" className="scroll-mt-24 pt-4">
+      <h3 id={`${TASTE_IN_PRICE_ID}-heading`} className="text-lg leading-snug font-semibold break-words">
+        Taste inside the full price (exploratory)
+      </h3>
+      <div className="mt-2 space-y-3">
+        <p>
+          Run after the test failed, on the same {backtest.scoredPairs} scored pairs, so it is exploratory. The full
+          price, which multiplies taste overlap by shared time and draw, scored AUC {formatAuc(fullPrice.auc)}{" "}
+          (interval {formatInterval(fullPrice.auc95)}); popularity alone scored {formatAuc(pop)}. The difference is{" "}
+          {formatDiff(pairedVsPopularity.diff)} (interval {formatDiffInterval(pairedVsPopularity.interval)}), so the
+          full price did not establish an advantage over popularity.
+        </p>
+        <p>
+          With taste taken out, every pair given the same taste overlap so that only shared time and draw are left,
+          the price scored {formatAuc(tasteRemoved.auc)} (interval {formatInterval(tasteRemoved.auc95)}). The full
+          price minus that is {formatDiff(pairedVsTasteRemoved.diff)} (interval{" "}
+          {formatDiffInterval(pairedVsTasteRemoved.interval)}).{" "}
+          {said.tasteAddsIncludesZero ? <strong className="font-semibold">{TASTE_ADDS_NOT_ESTABLISHED}</strong> : null}{" "}
+          With the taste values shuffled among each day&rsquo;s pairs, {formatCount(shuffled.shuffles)} times, the full
+          price fell to {formatAuc(shuffled.mean)} on average ({scale.intervalPct}% of shuffles between{" "}
+          {formatAuc(shuffled.range95[0])} and {formatAuc(shuffled.range95[1])}). So the price depends on the real
+          taste values, which is not the same as taste adding to time and draw.
+        </p>
+        <TasteByFestival />
+        <p>
+          At {tasteInPrice.festivals[0].label}, adding taste raised the price&rsquo;s AUC by{" "}
+          {formatAuc(tasteInPrice.glastonburyTasteAdds.diff)} (interval{" "}
+          {formatDiffInterval(tasteInPrice.glastonburyTasteAdds.interval)}, resampled by complaint); over the{" "}
+          {numberWord(backtest.usFestivals)} US festivals it lowered it by{" "}
+          {formatAuc(Math.abs(tasteInPrice.usTasteAdds.diff))} (interval{" "}
+          {formatDiffInterval(tasteInPrice.usTasteAdds.interval)}). US complaints mostly name the day&rsquo;s biggest
+          acts, which popularity already ranks well. Location is untested: these rankings were made without a
+          location, and asking again for the US festival days with each festival&rsquo;s city would cost{" "}
+          {formatCount(tasteInPrice.locationRequests)} Qloo requests.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The taste-inside-the-price figures by festival, as a ruled table on paper like the backtest's: popularity, the
+ * price with taste taken out (time and draw) and the full price, Glastonbury against the four US festivals pooled.
+ * A festival with too few complaints to read alone (Riot Fest) prints its counts and says so, with no AUC.
+ */
+function TasteByFestival() {
+  return (
+    <figure className="my-4">
+      <figcaption id="taste-by-festival-caption" className={`text-sm text-muted-foreground ${CAPTION_MEASURE}`}>
+        AUC by festival, exploratory ({scale.auc.chance} means no better than chance)
+      </figcaption>
+      <div
+        role="region"
+        aria-labelledby="taste-by-festival-caption"
+        tabIndex={0}
+        className="mt-3 overflow-x-auto rounded-lg border border-surface-edge px-4"
+      >
+        <table aria-labelledby="taste-by-festival-caption" className="w-full min-w-[19rem] border-collapse text-left text-sm">
+          <thead>
+            <tr className="border-b border-border align-bottom text-xs sm:text-sm">
+              <th scope="col" className="py-3 pr-3 font-semibold sm:pr-4">
+                Festivals
+              </th>
+              <th scope="col" className="px-2 py-3 text-right font-semibold sm:px-4">
+                Popularity
+              </th>
+              <th scope="col" className="px-2 py-3 text-right font-semibold sm:px-4">
+                Time and draw
+              </th>
+              <th scope="col" className="py-3 pl-2 text-right font-semibold sm:pl-4">
+                Full price
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {tasteInPrice.festivals.map((row) => (
+              <tr key={row.label}>
+                <th scope="row" className="py-3 pr-3 font-normal sm:pr-4">
+                  <span className="block">{row.label}</span>
+                  <span className="block text-xs text-muted-foreground sm:text-sm">
+                    {row.complaintPairs} pairs from {row.complaints} complaints
+                  </span>
+                </th>
+                {row.read ? (
+                  <>
+                    <td className="px-2 py-3 text-right tabular-nums sm:px-4">{formatAuc(row.read.popularity)}</td>
+                    <td className="px-2 py-3 text-right tabular-nums sm:px-4">{formatAuc(row.read.tasteRemoved)}</td>
+                    <td className="py-3 pl-2 text-right tabular-nums sm:pl-4">{formatAuc(row.read.fullPrice)}</td>
+                  </>
+                ) : (
+                  <td colSpan={3} className="py-3 pl-2 text-right sm:pl-4">
+                    Not interpreted: too few complaints to read alone
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </figure>
+  );
+}
+
 /** The forum threads by their id, named so the four links read apart. */
 const THREAD_LABELS: Readonly<Record<string, string>> = {
   "1sk3vor": "Coachella 2026 - Reddit discussion",
@@ -915,6 +1039,7 @@ export default function MethodPage() {
         </p>
         <p>The exploratory follow-up did not establish an advantage over popularity.</p>
         <Exploratory />
+        <TasteInPrice />
         <Sources />
       </Section>
 
@@ -929,9 +1054,9 @@ export default function MethodPage() {
             {formatPct(backtest.hidden.basePct)} for all pairs).
           </li>
           <li>
-            The Hidden label on the timetable uses a stricter line than this count: taste overlap in
-            the day&rsquo;s top tenth, with no shared genre tag, where the count above uses the top
-            quarter.
+            The Hidden label on the timetable uses a stricter line than this count for taste overlap, the
+            day&rsquo;s top tenth where the count above uses the top quarter, and a looser one for genre: the
+            two acts&rsquo; main genre tags differ.
           </li>
           <li>
             A plan of kept moves is scored by the same measure the places are found with, so it shows
@@ -1034,8 +1159,8 @@ export default function MethodPage() {
           <p>
             The brief page prints this day&rsquo;s costliest clashes, the day&rsquo;s Clash Budget Index
             and any moves you kept, using only figures the timetable page already shows. It is for
-            evaluating this entry. The pilot on the home page sends one back, free, to a festival that sends its
-            bill, with the same limits: no Qloo tags or identifiers, and not for redistribution.
+            evaluating this entry. The pilot on the home page walks a programmer through a published day&rsquo;s
+            brief, with the same limits: no Qloo tags or identifiers, and not for redistribution.
           </p>
         </SubBlock>
       </Section>

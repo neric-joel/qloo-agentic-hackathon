@@ -26,7 +26,7 @@ describe("planVerdict", () => {
 
   it("adds the published gap when the published timetable is above the band too", () => {
     expect(planVerdict(109.3, 116.71, range)).toBe(
-      "This plan scores 0.3 index points above that range. The published timetable is 7.7 above it.",
+      "This plan scores 0.3 index points above that range. By this index, the published timetable sits 7.7 points above that range.",
     );
   });
 
@@ -65,7 +65,7 @@ describe("planVerdict", () => {
 
   it("can state the band in the same sentence, for a reader who has not seen it", () => {
     expect(planVerdict(109.3, 116.71, range, { standalone: true })).toBe(
-      "The middle 80% of random valid timetables of this lineup score 92 to 109; this plan scores 0.3 index points above that range. The published timetable is 7.7 above it.",
+      "The middle 80% of random valid timetables of this lineup score 92 to 109; this plan scores 0.3 index points above that range. By this index, the published timetable sits 7.7 points above that range.",
     );
     expect(planVerdict(88.8, 86.5, range, { standalone: true })).toBe(
       "This plan’s index is 88.8, 2.3 higher than the published timetable’s 86.5. The middle 80% of random valid timetables of this lineup score 92 to 109.",

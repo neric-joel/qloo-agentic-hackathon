@@ -55,8 +55,14 @@ describe("summarize", () => {
     expect(summary.id).toBe("tiny-fest-sat");
     expect(summary.title).toBe("Tiny Fest, Saturday");
     expect(summary.index).toBe(104);
-    expect(summary.vsRandom).toMatch(/^4% more taste-overlap cost than the average random/);
-    expect(summary.figure).toBe(`104 on the Clash Budget Index: ${summary.vsRandom}. Lower is better.`);
+    expect(summary.vsRandom).toBe("By this index, the published timetable scores 4% above the average random valid timetable");
+    expect(summary.figure).toBe(`104 on the Clash Budget Index. ${summary.vsRandom}. Lower is better.`);
+  });
+
+  it("calls an invented day's timetable invented in the index sentence", () => {
+    const summary = summarize(parsePreset({ ...rawTinyPreset(), synthetic: true }));
+    expect(summary.vsRandom).toBe("By this index, the invented timetable scores 4% above the average random valid timetable");
+    expect(summary.figure).not.toContain("published");
   });
 
   it("lists the five costliest clashes through the page's formatters", () => {
@@ -183,7 +189,10 @@ describe("the decision card in the summary", () => {
 
 describe("figureLine", () => {
   it("is the dial's sentence on one line", () => {
-    expect(figureLine(86.4)).toMatch(/^86 on the Clash Budget Index: 14% less taste-overlap cost than .+\. Lower is better\.$/);
+    expect(figureLine(86.4)).toBe(
+      "86 on the Clash Budget Index. By this index, the published timetable scores 14% below the average random valid timetable. Lower is better.",
+    );
+    expect(figureLine(117, true)).toContain("the invented timetable scores 17% above");
   });
 });
 

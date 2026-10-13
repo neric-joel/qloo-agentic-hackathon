@@ -54,6 +54,12 @@ test.describe("keep two sets apart", () => {
       return { movesStage: /\(moves to /.test(text), says: text.includes("Changes stage: needs production sign-off") };
     }));
     for (const change of signOff) expect(change.says, "a stage-changing change asks for sign-off, and only it").toBe(change.movesStage);
+    // The sign-off line is a fact production must act on: plain text in ink at medium weight, not a muted note.
+    const signOffLine = keep.area.getByText("Changes stage: needs production sign-off").first();
+    if ((await signOffLine.count()) > 0) {
+      const weight = await signOffLine.evaluate((element) => Number(getComputedStyle(element).fontWeight));
+      expect(weight, "medium weight or more").toBeGreaterThanOrEqual(500);
+    }
     const firstStageChange = signOff.findIndex((change) => change.movesStage);
     if (firstStageChange >= 0) expect(signOff.slice(firstStageChange).every((change) => change.movesStage), "same-stage changes first").toBe(true);
     // Within each group, smallest change first: fewest sets, then the fewest minutes moved.
@@ -94,7 +100,10 @@ test.describe("keep two sets apart", () => {
     await keep.find.click();
     const first = keep.changes.first();
     const [, from, to] = /Index (\d+\.\d) → (\d+\.\d)/.exec(await first.innerText()) ?? [];
-    await first.getByRole("button", { name: "Keep this change" }).click();
+    // An offered change carries no check mark: the mark is for a change the plan holds.
+    const offer = first.getByRole("button", { name: "Keep this change" });
+    await expect(offer.locator("svg")).toHaveCount(0);
+    await offer.click();
 
     await expect(move.plan).toBeVisible();
     await expect(move.kept).toHaveCount(1);
@@ -102,6 +111,8 @@ test.describe("keep two sets apart", () => {
     await expect(move.kept.first()).toContainText(`${from} → ${to}`);
     await expect(move.kept.first()).toContainText("Confirmed: after this plan they share no time, and the plan adds no rule break.");
     await expect(first.getByRole("button", { name: "Kept in your plan" })).toBeVisible();
+    await expect(first.getByRole("button", { name: "Kept in your plan" }).locator("svg")).toHaveCount(1);
+    await expect(keep.changes.getByRole("button", { name: "Keep this change" }).locator("svg")).toHaveCount(0);
     await expect(move.announcement.last()).toHaveText(new RegExp(`^Plan: 1 kept step\\. Clash Budget Index ${from} to ${to}, `));
   });
 

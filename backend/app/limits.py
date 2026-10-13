@@ -1,4 +1,5 @@
-"""Caps on agent runs and live pair checks, so a public demo can't run up the model bill or the Qloo month.
+"""Caps on agent runs, live pair checks and live grid pricing, so a public demo can't run up the model bill
+or the Qloo month.
 
 Counts live in memory per server instance: a soft guard in front of the provider's own spend limit, which is
 the hard stop. When a cap is hit the request is refused with a short reason. A visitor is the address the
@@ -43,6 +44,19 @@ PAIR_MESSAGES = LimitMessages(
     hour="Too many live checks this hour. Please try again later.",
     day="You have reached today's limit of live checks. Please try again tomorrow.",
     global_day="Live checks have reached today's limit. Please try again tomorrow.",
+)
+
+_PRICE_GRID_TODAY = (
+    "Live pricing has reached today's limit. Your rule results are unchanged, and a saved day prices without "
+    "a limit."
+)
+PRICE_GRID_MESSAGES = LimitMessages(
+    hour=(
+        "Live pricing has reached this hour's limit. Your rule results are unchanged, and a saved day prices "
+        "without a limit."
+    ),
+    day=_PRICE_GRID_TODAY,
+    global_day=_PRICE_GRID_TODAY,
 )
 
 

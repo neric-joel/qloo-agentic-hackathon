@@ -336,6 +336,18 @@ def _rank(vector: dict, moves: list[dict]) -> tuple[int, int]:
     return sum(_shift(vector, move) for move in moves), gained
 
 
+def _tier(vector: dict, target: dict, moves: list[dict]) -> int:
+    """1 when the change leaves an overlap longer than the one it ends (the page lists those last), else 0."""
+    if target["kind"] == "break" and target["rule"] in (3, 4):
+        return 0  # a changeover or curfew break ends no overlap, so the page ranks it without this tier
+    before = _shared_by_pair(Layout.from_festival(build_festival(vector)))
+    after = _shared_by_pair(Layout.from_festival(build_festival(vector, _placements(vector, moves))))
+    (s1, e1), (s2, e2) = (vector["resolved"][row - 1] for row in target["rows"])
+    ended = max(0, min(e1, e2) - max(s1, s2))
+    longest = max((minutes for pair, minutes in after.items() if minutes > before.get(pair, 0)), default=0)
+    return int(longest > ended)
+
+
 @pytest.mark.parametrize(("vector", "trial"), RECORDED, ids=[_id(p) for p in RECORDED])
 def test_the_change_the_page_lists_first_is_the_engines_best_by_the_pages_ranking(
     vector: dict, trial: dict
@@ -344,7 +356,10 @@ def test_the_change_the_page_lists_first_is_the_engines_best_by_the_pages_rankin
     ordinary = [c for c in candidates if all(_shift(vector, m) <= LARGE_SHIFT for m in c)]
     pool = ordinary or candidates
     recorded = trial["change"]["moves"]
-    assert _rank(vector, recorded) == min(_rank(vector, c) for c in pool)
+    target = trial["target"]
+    assert (_tier(vector, target, recorded), *_rank(vector, recorded)) == min(
+        (_tier(vector, target, c), *_rank(vector, c)) for c in pool
+    )
     if ordinary:
         assert all(_shift(vector, m) <= LARGE_SHIFT for m in recorded)
 

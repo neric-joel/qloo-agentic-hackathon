@@ -1,8 +1,8 @@
 """The request-body caps of ``BodyLimit``: ``POST /api/runs`` (256 KB) and ``POST /api/schedule/score``
-(512 KB) next to the what-if route and the pair check (16 KB). A body over its route's cap is a readable 413
-before anything parses it or takes a slot, also when it is chunked or the client keeps sending; a body within
-the cap reaches the route unchanged. Synthetic days only; no Qloo request is possible (the client is
-overridden by one that fails on any use).
+(512 KB) next to the what-if route, the pair check and grid pricing (16 KB). A body over its route's cap is a
+readable 413 before anything parses it or takes a slot, also when it is chunked or the client keeps sending; a
+body within the cap reaches the route unchanged. Synthetic days only; no Qloo request is possible (the client
+is overridden by one that fails on any use).
 
 The real-socket tests need ``uvicorn``, which is not a project dependency: run them with
 ``uv run --with uvicorn pytest tests/test_body_cap.py`` (without it they are skipped)."""
@@ -240,7 +240,8 @@ def test_get_and_other_posts_are_not_capped_and_the_older_routes_keep_their_16_k
     assert client.get("/api/schedule/demo").status_code == 200
     pair = client.post("/api/pair", content=b" " * (16 * 1024 + 1), headers=JSON)
     plan = client.post("/api/presets/x/whatif", content=b" " * (16 * 1024 + 1), headers=JSON)
-    assert pair.status_code == plan.status_code == 413
+    grid = client.post("/api/price-grid", content=b" " * (16 * 1024 + 1), headers=JSON)
+    assert pair.status_code == plan.status_code == grid.status_code == 413
     other = client.post("/api/presets/x/whatif", content=padded({"moves": []}, 16 * 1024), headers=JSON)
     assert other.status_code != 413  # within its cap: the route's own answer (the preset is unknown)
 
@@ -374,7 +375,9 @@ def raw_exchange(port: int, path: str, body: bytes, chunked: bool) -> str:
     return data.split(b"\r\n")[0].decode() if data else "closed with no answer"
 
 
-@pytest.mark.parametrize("path", ["/api/runs", "/api/schedule/score", "/api/presets/x/whatif"])
+@pytest.mark.parametrize(
+    "path", ["/api/runs", "/api/schedule/score", "/api/presets/x/whatif", "/api/price-grid"]
+)
 def test_a_3_mb_body_gets_a_readable_413_from_a_real_uvicorn_with_common_clients(path):
     """httpx (declared and chunked), urllib and a raw socket, five times each: every one reads the 413."""
     app.dependency_overrides[get_qloo] = NoQloo

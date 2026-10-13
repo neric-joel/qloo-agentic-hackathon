@@ -15,6 +15,8 @@ from .config import Settings, get_settings
 from .decision import router as decision_router
 from .decision import warm as warm_decisions
 from .deps import get_qloo
+from .gridprice import BodyLimitWithPriceGrid, NoStoreOnPriceGridRoute, live_enabled
+from .gridprice import router as price_grid_router
 from .limits import RunLimiter, visitor_key
 from .pair import NoStoreOnPairRoute
 from .pair import router as pair_router
@@ -25,7 +27,6 @@ from .qloo.client import QlooClient
 from .recordings import router as recordings_router
 from .runs import ClashInput, ExploreInput, RunRequest, SessionError, clash_state, execute_run
 from .schedule.api import router as schedule_router
-from .whatif import BodyLimit
 from .whatif import router as whatif_router
 
 MAX_ERRORS = 10  # validation errors returned in one 422 body
@@ -67,8 +68,10 @@ app.include_router(pair_router)
 app.include_router(whatif_router)
 app.include_router(audit_router)
 app.include_router(decision_router)
+app.include_router(price_grid_router)
 app.add_middleware(NoStoreOnPairRoute)
-app.add_middleware(BodyLimit)  # outermost: a body over its route's cap is a 413 unread
+app.add_middleware(NoStoreOnPriceGridRoute)
+app.add_middleware(BodyLimitWithPriceGrid)  # outermost: a body over its route's cap is a 413 unread
 install_probe(app, get_settings())
 
 _limiter: RunLimiter | None = None
@@ -113,6 +116,7 @@ async def health(request: Request, settings: Annotated[Settings, Depends(get_set
         "qloo_key_configured": bool(settings.qloo_api_key),
         "llm_configured": llm_configured(settings, dict(request.headers)),
         "pair_check": settings.pair_check_enabled and bool(settings.qloo_api_key),
+        "price_grid_live": live_enabled(settings),
     }
 
 

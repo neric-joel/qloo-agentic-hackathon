@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     pair_checks_per_day: int = 60
     qloo_quota_floor: int = 1500
 
+    # Grid pricing, live (POST /api/price-grid with mode "live"): off unless switched on; each answer sends
+    # at most 35 Qloo requests (one search per act, one ranking per pair act), so the caps below allow about
+    # 140 a day. Caps are per server instance. The saved mode never calls Qloo and has no cap.
+    price_grid_enabled: bool = False
+    price_grid_per_visitor_hour: int = 1
+    price_grid_per_visitor_day: int = 2
+    price_grid_global_per_day: int = 4
+
     # What-if compute (GET /moves and POST /whatif together): caps on computed answers, per server
     # instance. If every visitor shares one address behind the proxy, set the per-visitor numbers equal to
     # the global one.

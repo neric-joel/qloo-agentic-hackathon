@@ -246,7 +246,7 @@ def test_health_reports_configuration():
     with TestClient(app) as client:
         body = client.get("/api/health").json()
     assert body["status"] == "ok"
-    assert set(body) == {"status", "qloo_key_configured", "llm_configured", "pair_check"}
+    assert set(body) == {"status", "qloo_key_configured", "llm_configured", "pair_check", "price_grid_live"}
 
 
 def test_backend_omits_effort_for_haiku_and_enables_fallback_for_sonnet():

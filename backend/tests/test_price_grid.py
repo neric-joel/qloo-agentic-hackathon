@@ -435,6 +435,45 @@ def test_the_built_days_price_the_pairs_their_home_page_ranks_with_no_qloo_reque
     assert isinstance(answer["taste_overlap"], float) and answer["pair_rank"] == 1
 
 
+@pytest.mark.skipif(not any(REAL_PRESETS.glob("*.json")), reason="no built presets (a clean clone has none)")
+def test_the_published_days_costliest_movable_clashes_price_from_the_saved_day_with_no_request():
+    """What /check sends after "Check a published day": every act name of the day and its ranked clashes,
+    costliest first, both-locked pairs passed over, at most 10, in saved mode. Each is priced, with no Qloo
+    request; on Glastonbury 2025 Sunday the first is Sprints x Katy J Pearson. Names, statuses and counts
+    only: no value is read or asserted."""
+    from app.presets import _load_all
+
+    days = _load_all(str(REAL_PRESETS))
+    serve(REAL_PRESETS)  # Qloo and the limiter both fail on any use
+    checked = 0
+    for preset in days.values():
+        report = preset.report if isinstance(preset.report, dict) else None
+        if preset.synthetic or report is None:
+            continue
+        slots = {slot.act_id: slot for slot in preset.festival.timetable}
+        day = min(slot.day for slot in slots.values())
+        names = {act.id: act.name for act in preset.festival.acts}
+        acts = [names[act_id] for act_id, slot in slots.items() if slot.day == day]
+        clashes = [c for c in report.get("clashes", []) if c["day"] == day]
+        movable = [
+            c for c in clashes if not (slots[c["a"]["act_id"]].locked and slots[c["b"]["act_id"]].locked)
+        ]
+        pairs = [[names[c["a"]["act_id"]], names[c["b"]["act_id"]]] for c in movable[:10]]
+        if len(acts) > gridprice.SAVED_MAX_ACTS or not pairs:
+            continue
+        with TestClient(app) as client:
+            response = price(client, acts, pairs)
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["source"] == "saved_day" and body["preset_id"] == preset.id
+        assert body["requests_used"] == 0
+        assert [pair["status"] for pair in body["pairs"]] == ["priced"] * len(pairs), preset.id
+        if preset.id == "glastonbury-2025-sun":
+            assert pairs[0] == ["Sprints", "Katy J Pearson"] and len(pairs) == 10
+        checked += 1
+    assert checked >= 1
+
+
 def test_a_name_two_acts_of_the_day_share_is_ambiguous_never_matched_and_never_priced(tmp_path):
     raw = write_real_day(tmp_path)
     acts = raw["festival"]["acts"]
@@ -515,8 +554,14 @@ def test_the_body_checks_refuse_with_a_code_and_never_touch_qloo(tmp_path, body,
         {"acts": ["A", "B", "C", "D"], "pairs": [["A", "B"]], "mode": "saved", "times": ["12:00"]},
         {"acts": ["A", "B", "C", "D"], "pairs": [["A", "B"]], "mode": "maybe"},
         {"acts": ["A", "B", "C", "D"], "pairs": [["A", "B"]]},
-        {"acts": [f"Act {n}" for n in range(26)], "pairs": [["Act 0", "Act 1"]], "mode": "saved"},
-        {"acts": ["A", "B", "C", "D"], "pairs": [["A", "B"]] * 6, "mode": "saved"},
+        {"acts": [f"Act {n}" for n in range(61)], "pairs": [["Act 0", "Act 1"]], "mode": "saved"},
+        {"acts": ["A", "B", "C", "D"], "pairs": [["A", "B"]] * 11, "mode": "saved"},
+        {"acts": [f"Act {n}" for n in range(26)], "pairs": [["Act 0", "Act 1"]], "mode": "live"},
+        {
+            "acts": [f"Act {n}" for n in range(8)],
+            "pairs": [["Act 0", f"Act {n}"] for n in range(1, 7)],
+            "mode": "live",
+        },
         {"acts": ["A", "B", "C", "D"], "pairs": [], "mode": "saved"},
         {"acts": ["A", "B", "C", "D"], "pairs": [["A", "B", "C"]], "mode": "saved"},
         {"acts": ["A", "B", "C", "D" * 81], "pairs": [["A", "B"]], "mode": "saved"},
@@ -531,6 +576,123 @@ def test_a_body_outside_the_schema_is_a_422_that_echoes_nothing(tmp_path, body):
     assert response.status_code == 422 and no_store(response)
     assert isinstance(response.json()["detail"], list)
     assert "Act 1" not in response.text and "12:00" not in response.text and "DDDD" not in response.text
+
+
+@pytest.mark.parametrize(
+    ("acts", "pairs"),
+    [
+        ([f"Act {n}" for n in range(26)], [["Act 0", "Act 1"]]),
+        ([f"Act {n}" for n in range(8)], [["Act 0", f"Act {n}"] for n in range(1, 7)]),
+    ],
+)
+def test_a_live_body_over_the_live_caps_is_a_422_before_qloo_the_floor_or_the_limiter(tmp_path, acts, pairs):
+    """Live keeps 25 acts and 5 pairs (the saved caps are larger): 26 acts, or 6 pairs, is refused by the
+    schema, with live pricing switched on, before anything is reserved, limited or asked."""
+    fake = FakeQloo()
+    qloo = fake.client()
+    serve(tmp_path, qloo, NoLimiter(), price_grid_enabled=True)
+    with TestClient(app) as client:
+        response = price(client, acts, pairs, mode="live")
+    assert response.status_code == 422 and no_store(response), response.text
+    assert isinstance(response.json()["detail"], list)
+    assert "Act 1" not in response.text
+    assert fake.seen == [] and qloo._reserved == 0
+    assert (gridprice.MAX_ACTS, gridprice.MAX_PAIRS, gridprice.MAX_NEED) == (25, 5, 35)
+
+
+class RefusingTransport(httpx.AsyncBaseTransport):
+    """An HTTP transport that raises on any request: a saved answer must never send one."""
+
+    def __init__(self) -> None:
+        self.asked = 0
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        self.asked += 1
+        raise AssertionError("a saved answer sent an HTTP request")
+
+
+def test_a_saved_body_of_39_acts_and_10_pairs_prices_with_no_request(tmp_path):
+    """The saved caps: a published day's whole lineup (39 names here) and 10 pairs, priced from the saved day
+    with ``requests_used`` 0. The Qloo client's transport raises on any request and the limiter fails on any
+    use, so nothing could have been fetched: the saved path never falls back to live."""
+    festival, matrix = synthetic_festival(23, days=2, acts=50)
+    festival = festival.model_copy(
+        update={"acts": [act.model_copy(update={"qloo_id": f"q:{act.id}"}) for act in festival.acts]}
+    )
+    report = score_festival(festival, matrix).model_dump(mode="json")
+    raw = {
+        "id": "big-day",
+        "title": "Big Day",
+        "built_at": "2026-06-01T10:00:00Z",
+        "festival": festival.model_dump(mode="json"),
+        "matrix": matrix.model_dump(mode="json"),
+        "report": report,
+        "requests": [],
+        "evidence": {"receipts": {}},
+    }
+    (tmp_path / "big-day.json").write_text(json.dumps(raw), encoding="utf-8")
+    from app.presets import Preset
+
+    preset = Preset.model_validate(raw)
+    names = {act.id: act.name for act in preset.festival.acts}
+    on_day = {slot.act_id for slot in preset.festival.timetable}
+    scheduled = [act.name for act in preset.festival.acts if act.id in on_day][:39]
+    assert len(scheduled) == 39
+    shown = sorted((sorted(pair) for pair in taste_pairs(preset)), key=tuple)
+    sent = set(scheduled)
+    pairs = [[names[a], names[b]] for a, b in shown if {names[a], names[b]} <= sent][:10]
+    assert len(pairs) == 10
+    transport = RefusingTransport()
+    qloo = QlooClient("test-key", transport=transport, backoff=0, max_rps=None)
+    serve(tmp_path, qloo, NoLimiter(), price_grid_enabled=True)  # live on: saved still never asks
+    with TestClient(app) as client:
+        response = price(client, scheduled, pairs)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert_allowlisted(body)
+    assert body["mode"] == "saved" and body["source"] == "saved_day" and body["requests_used"] == 0
+    assert body["coverage"]["acts"] == 39 and len(body["pairs"]) == 10
+    assert all(pair["status"] == "priced" for pair in body["pairs"])
+    assert transport.asked == 0 and qloo._reserved == 0
+
+
+def test_a_saved_pair_the_day_cannot_answer_is_unpriced_with_its_reason_and_never_fetched(tmp_path):
+    """The saved path never falls back to live: a name no saved day holds and a pair the page never ranks
+    come back unpriced with their reasons, with live pricing on and a transport that refuses every request."""
+    raw = write_real_day(tmp_path)
+    from app.presets import Preset
+
+    preset = Preset.model_validate(raw)
+    shown = taste_pairs(preset)
+    names = {act.id: act.name for act in preset.festival.acts}
+    scored = [act.id for act in preset.festival.acts if preset.matrix.coverage_of(act.id) != "none"]
+    never = next(
+        (x, y) for i, x in enumerate(scored) for y in scored[i + 1 :] if frozenset((x, y)) not in shown
+    )
+    acts = [names[act_id] for act_id in scored] + ["Nobody Pasted This"]
+    pairs = [[names[never[0]], names[never[1]]], [names[scored[0]], "Nobody Pasted This"]]
+    transport = RefusingTransport()
+    qloo = QlooClient("test-key", transport=transport, backoff=0, max_rps=None)
+    serve(tmp_path, qloo, NoLimiter(), price_grid_enabled=True)
+    with TestClient(app) as client:
+        response = price(client, acts, pairs)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["requests_used"] == 0 and transport.asked == 0
+    assert [pair["reason"] for pair in body["pairs"]] == ["not_ranked_on_saved_day", "no_signal"]
+
+
+def test_the_largest_saved_body_fits_under_the_body_limit():
+    largest = {
+        "acts": [f"{n:02d}" + "x" * 78 for n in range(gridprice.SAVED_MAX_ACTS)],
+        "pairs": [
+            [f"{n:02d}" + "x" * 78, f"{n + 10:02d}" + "x" * 78] for n in range(gridprice.SAVED_MAX_PAIRS)
+        ],
+        "mode": "saved",
+    }
+    text = json.dumps(largest).encode()
+    assert len(text) < 8 * 1024
+    gridprice.GridPriceRequest.model_validate_json(text)
 
 
 def test_only_a_json_post_is_read_and_every_answer_is_no_store(tmp_path):

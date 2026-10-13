@@ -1,9 +1,11 @@
 """Grid pricing: the taste overlap of a pasted grid's longest overlaps, by act name, with no language model.
 
 ``POST /api/price-grid`` with the JSON body ``{"acts": [...], "pairs": [["A", "B"], ...], "mode": ...}`` takes
-the act names of one pasted day (4 to 25) and up to 5 of its pairs, and nothing else: no times, stages or
-rules. It answers each pair's taste overlap, the build's rank-normalised value from 0 to 1, and its rank among
-the priced pairs sent. Its fields and refusals follow the price-grid contract (kept outside this repository).
+the act names of one pasted day and some of its pairs, and nothing else: no times, stages or rules. A live
+body holds 4 to 25 names and up to 5 pairs; a saved body, which sends no Qloo request, up to 60 names and
+10 pairs. It answers each pair's taste overlap, the build's rank-normalised value from 0 to 1, and its rank
+among the priced pairs sent. Its fields and refusals follow the price-grid contract (kept outside this
+repository).
 
 ``mode: "saved"`` matches the names to a saved festival day, or to the invented example day, which is always a
 candidate, and reads the values the day was built with. It never calls Qloo and never takes a limiter slot.
@@ -22,6 +24,9 @@ below the floor. The order is as in ``pair.py``: switched off, the body's checks
 floor, the limiter, then Qloo; every refusal before Qloo costs nothing and the reservation is given back on
 every path.
 
+The saved mode never falls back to live: a pair or act the saved day cannot answer is answered as unpriced
+with its reason, and nothing is fetched.
+
 Names are never logged (counts and the preset id only) and nothing is stored. The answer carries no
 affinity, entity id, act id, popularity, tag or request record. Every response, refusals included, is
 ``Cache-Control: no-store``. Only a JSON body is read and there is no GET.
@@ -37,7 +42,7 @@ from typing import Annotated, Any, Literal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -95,6 +100,8 @@ MIN_ACTS = 4
 MAX_ACTS = 25
 MAX_PAIRS = 5
 MAX_NEED = MAX_ACTS + 2 * MAX_PAIRS  # 35
+SAVED_MAX_ACTS = 60  # a saved answer sends no Qloo request, so a whole published day's names fit
+SAVED_MAX_PAIRS = 10
 SAVED_SHARE = 0.8  # the share of the sent names a saved day must hold
 QLOO_TIMEOUT_SECONDS = 25.0  # for every request of one answer together
 CONCURRENCY = 6
@@ -128,6 +135,7 @@ PAUSED = (
     "Live pricing is paused to protect this demo's monthly Qloo allowance. Your rule results are unchanged."
 )
 NO_ANSWER = "Qloo did not answer in time; nothing was priced."
+LIVE_TOO_MANY = f"A live answer takes at most {MAX_ACTS} acts and {MAX_PAIRS} pairs."
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=NAME_LENGTH)]
 Source = Literal["saved_day", "invented_day", "qloo_live"]
@@ -135,13 +143,22 @@ Reason = Literal["ambiguous", "no_signal", "not_ranked_on_saved_day"]
 
 
 class GridPriceRequest(BaseModel):
-    """The body: the pasted day's act names, the pairs to price, and the mode. Nothing else is accepted."""
+    """The body: the pasted day's act names, the pairs to price, and the mode. Nothing else is accepted.
+
+    The schema takes the saved caps (60 names, 10 pairs); a live body over the live caps (25 names, 5 pairs)
+    is refused by the validator below with the same framework 422, before the route runs."""
 
     model_config = ConfigDict(extra="forbid")
 
-    acts: list[Name] = Field(min_length=1, max_length=MAX_ACTS)
-    pairs: list[tuple[Name, Name]] = Field(min_length=1, max_length=MAX_PAIRS)
+    acts: list[Name] = Field(min_length=1, max_length=SAVED_MAX_ACTS)
+    pairs: list[tuple[Name, Name]] = Field(min_length=1, max_length=SAVED_MAX_PAIRS)
     mode: Literal["saved", "live"]
+
+    @model_validator(mode="after")
+    def live_caps(self) -> GridPriceRequest:
+        if self.mode == "live" and (len(self.acts) > MAX_ACTS or len(self.pairs) > MAX_PAIRS):
+            raise ValueError(LIVE_TOO_MANY)
+        return self
 
 
 class GridCoverage(BaseModel):
@@ -212,8 +229,9 @@ class NoStoreOnPriceGridRoute:
 
 
 class BodyLimitWithPriceGrid(BodyLimit):
-    """``BodyLimit`` with the grid pricing route under the same 16 KB cap as the pair check. The largest legal
-    body (25 names and 5 pairs of 80 characters) is under 3 KB, or 9 KB in 3-byte characters."""
+    """``BodyLimit`` with the grid pricing route under the same 16 KB cap as the pair check. The largest live
+    body (25 names and 5 pairs of 80 characters) is under 3 KB, or 9 KB in 3-byte characters; the largest
+    saved body (60 names and 10 pairs of 80 characters) is under 8 KB in 1-byte characters."""
 
     def _limit_for(self, scope: Scope) -> int | None:
         if scope["type"] == "http" and scope["method"] == "POST":
@@ -478,7 +496,8 @@ async def price_grid(
     qloo: Annotated[QlooClient, Depends(get_qloo)],
     limiter: Annotated[RunLimiter, Depends(get_price_grid_limiter)],
 ) -> GridPrice:
-    """Price up to 5 pairs of a pasted day by taste overlap, from a saved day or (opt-in) from Qloo now.
+    """Price up to 10 pairs (saved) or 5 (live) of a pasted day by taste overlap, from a saved day or (opt-in)
+    from Qloo now.
 
     A saved answer never touches Qloo or the limiter. A live one is refused before the limiter and the limiter
     before Qloo, so a refused answer costs nothing; the reservation is given back on every path."""

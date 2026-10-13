@@ -12,12 +12,12 @@ Taste overlap is a rank from 0 to 100 among the acts compared for this bill. It 
 - **Try a move.** Pick a set; the engine lists every legal start on a 5-minute grid and prices each one. Keep a move to stack the next test on top of it.
 - **Keep two sets apart.** Pick two sets that share time. The search covers single places for either set and swaps with one other set, each checked for a new rule break. A kept rule change becomes one tested step of the plan.
 - **One-page brief.** `/brief` prints the day's figures and the kept plan.
-- **Check a grid (`/check`).** Paste one day of a draft timetable and list its rule breaks and the sets that share time. It runs in the browser: nothing pasted is sent anywhere, and it shows no Qloo-derived value for pasted acts.
+- **Check a grid (`/check`).** Paste one day of a draft timetable and list its rule breaks and the sets that share time. Rule checks run in your browser; nothing is sent unless you press Compare audience overlap. That sends the act names and up to five pairs, nothing else, to `POST /api/price-grid`: when the acts are on a saved festival day it compares them from that day with no Qloo request; otherwise, and only if `PRICE_GRID_ENABLED` is set, it can ask Qloo live under tight caps. Names are not stored or logged.
 - **How we know (`/method`).** The backtest against press-flagged clashes, including the pre-set test that failed and the exploratory follow-up run afterwards.
 - **Live pair check.** For one displayed pair, the server asks Qloo again and shows the fresh reading beside the saved one. In the code it is off unless `PAIR_CHECK_ENABLED` is set and a Qloo key is present, and it stops calling Qloo when the month's remaining allowance falls below `QLOO_QUOTA_FLOOR`. Whether it is on in the public deployment is a deployment setting, not something this repository fixes.
 - **Agent.** An optional agent explains a clash, tests a move or records a rule through the same engine. In the code it has no language-model provider unless one is configured, and live runs answer 503 until then. Whether the public deployment has one, and in which windows, is a deployment setting. Recorded runs replay without a model call, with their captured status shown.
 
-The backend computes the figures on `/`, `/brief` and in the plan, move and rule routes. `/check` is the exception: it runs in the browser and calls no backend. Qloo returns popularity and audience affinities; it does not return the taste-overlap rank, the clash price or the index.
+The backend computes the figures on `/`, `/brief` and in the plan, move and rule routes. `/check` is the exception: its rule checks run in the browser, and it calls the backend only when Compare audience overlap is pressed. Qloo returns popularity and audience affinities; it does not return the taste-overlap rank, the clash price or the index.
 
 ## Qloo usage
 
@@ -34,10 +34,11 @@ The code calls three Qloo endpoints and no others. The API key stays on the back
 | Building the Glastonbury 2025 Sunday preset | 104 (45 `/search`, 36 `/v2/insights`, 23 `/v2/analysis/compare`) |
 | Building the Riot Fest 2026 Sunday preset | 70 (39 `/search`, 31 `/v2/insights`) |
 | One live pair check | 3 requests (two `/v2/insights`, one `/v2/analysis/compare`), private, never retried |
+| One live grid price (`/check`, off unless `PRICE_GRID_ENABLED`) | Up to 35 requests (one `/search` per act, one `/v2/insights` per act in a priced pair), private, never retried; capped at 1 per visitor-hour, 2 per visitor-day and 4 a day |
 | One `explain_clash` agent tool call | 1 (`/v2/analysis/compare`), only when both acts have a Qloo id |
-| Everything else (decision, moves, rule search, plans, brief, `/check`, recorded runs) | 0 |
+| Everything else (decision, moves, rule search, plans, brief, `/check` rule checks and saved-day pricing, recorded runs) | 0 |
 
-The preset counts are the lengths of each preset's saved `requests` list: client request records, one per call the build made through the Qloo client. A call answered from the cache may send no HTTP request and a retried call may send several, so a record is not a count of HTTP requests. The live pair check's three requests are exact: they are private and retries are off. An agent run is capped at 12 Qloo requests (`AGENT_MAX_QLOO_CALLS_PER_RUN`). A generic explore scenario for the agent (`ALLOW_EXPLORE`, off by default) calls `/search` and `/v2/insights` once per lookup within that cap. Qloo's month allowance is shared across all of this, so the live pair check and the agent's Qloo-backed tools stop calling Qloo below the quota floor.
+The preset counts are the lengths of each preset's saved `requests` list: client request records, one per call the build made through the Qloo client. A call answered from the cache may send no HTTP request and a retried call may send several, so a record is not a count of HTTP requests. The live pair check's three requests are exact: they are private and retries are off. An agent run is capped at 12 Qloo requests (`AGENT_MAX_QLOO_CALLS_PER_RUN`). A generic explore scenario for the agent (`ALLOW_EXPLORE`, off by default) calls `/search` and `/v2/insights` once per lookup within that cap. Qloo's month allowance is shared across all of this, so the live pair check, live grid pricing and the agent's Qloo-backed tools stop calling Qloo below the quota floor.
 
 ## Run it locally
 
@@ -84,7 +85,7 @@ The backend tests use fakes and `httpx.MockTransport`; none calls Qloo or a mode
 
 - `backend/app/schedule/`: the timetable engine. Layout and rule checks, scoring, the Clash Budget Index baseline (random valid timetables), the move search and the rule search.
 - `backend/app/qloo/`: the Qloo client (cache, retries, request records, an allowance guard) and the construction of taste overlap from affinity rankings.
-- `backend/app/presets.py`, `decision.py`, `whatif.py`, `audit.py`, `pair.py`, `recordings.py`: the read-only API over saved days, plus `POST /api/pair` and `POST /api/presets/{id}/whatif`. The full overlap matrix stays on the server. Computed move and plan answers share caps of 300 per visitor-hour, 1,500 per visitor-day and 5,000 per day (`WHATIF_PER_VISITOR_HOUR`, `WHATIF_PER_VISITOR_DAY`, `WHATIF_PER_DAY` in `backend/app/config.py`); a plan already computed costs nothing to ask again.
+- `backend/app/presets.py`, `decision.py`, `whatif.py`, `audit.py`, `pair.py`, `gridprice.py`, `recordings.py`: the read-only API over saved days, plus `POST /api/pair`, `POST /api/price-grid` and `POST /api/presets/{id}/whatif`. The full overlap matrix stays on the server. Computed move and plan answers share caps of 300 per visitor-hour, 1,500 per visitor-day and 5,000 per day (`WHATIF_PER_VISITOR_HOUR`, `WHATIF_PER_VISITOR_DAY`, `WHATIF_PER_DAY` in `backend/app/config.py`); a plan already computed costs nothing to ask again.
 - `backend/app/agent/`, `runs.py`: the optional agent and its tools, which call the same engine.
 - `web/`: a Next.js 16 app (App Router, Tailwind v4). Pages: `/`, `/method`, `/brief`, `/check`. `next.config.ts` rewrites `/api/*` to the backend; `src/proxy.ts` signs the caller's address for the API's per-visitor caps.
 

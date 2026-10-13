@@ -40,3 +40,6 @@ npm-debug.log*
 Thumbs.db
 .vercel
 .env*
+
+# Test runner caches
+.vitest/

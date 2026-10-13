@@ -1,6 +1,7 @@
 import asyncio
 
 import httpx
+import pytest
 
 from app.qloo.client import QlooClient
 from app.qloo.overlap import (
@@ -253,3 +254,36 @@ def test_rank_position_counts_only_strictly_higher_scores():
     assert [rank_position(scores, key) for key in "abcd"] == [(1, 4), (2, 4), (2, 4), (4, 4)]
     assert rank_position(scores, "missing") is None
     assert rank_position({}, "a") is None
+
+
+@pytest.mark.parametrize("city", ["Lantern City", None])
+async def test_a_city_reaches_every_ranking_chunks_included_and_no_search_and_none_without_it(city):
+    """The location signal: with a city every /v2/insights request carries it (a 60-act lineup is ranked in
+    chunks), searches never do, and without a city no request carries one."""
+    from app.lineups.overlap_matrix import qloo_overlap
+    from app.schedule.synthetic import synthetic_festival
+
+    festival, _ = synthetic_festival(4, days=3, acts=60)
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        params = request.url.params
+        if request.url.path == "/search":
+            name = params["query"]
+            found = [{"name": name, "entity_id": f"id:{name}", "popularity": 0.8}]
+            return httpx.Response(200, json={"results": found})
+        entities = [
+            {"entity_id": cid, "name": cid, "query": {"affinity": 0.5}}
+            for cid in params["filter.results.entities"].split(",")
+        ]
+        return httpx.Response(200, json={"results": {"entities": entities}})
+
+    client = QlooClient("k", backoff=0, max_rps=None, transport=httpx.MockTransport(handler))
+    await qloo_overlap(client, festival, city=city)
+    await client.aclose()
+    rankings = [r for r in seen if r.url.path == "/v2/insights"]
+    searches = [r for r in seen if r.url.path == "/search"]
+    assert len(rankings) > len(festival.acts)  # some rows were sent in more than one chunk
+    assert [r.url.params.get("signal.location.query") for r in rankings] == [city] * len(rankings)
+    assert searches and all("signal.location.query" not in r.url.params for r in searches)

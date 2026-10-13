@@ -856,6 +856,110 @@ def test_page_pairs_reads_ranked_clashes_and_receipt_keys_and_skips_anything_els
     assert pair.page_pairs(bare) == set()
 
 
+def test_taste_pairs_adds_twins_the_wall_and_the_two_rankings_lens_and_keeps_to_the_day(day):
+    from app import audit
+
+    checkable = [x for x in day.ids if x in day.qloo_ids and x not in (day.no_signal,)]
+    a, b, c = checkable[:3]
+    twins = [
+        {
+            "act": "Twin",
+            "act_id": a,
+            "shared": {"act": "Shared", "act_id": b, "overlap": 0.5, "draw_pct": 50},
+            "separate": {"act": "Elsewhere", "act_id": "not-on-this-day", "overlap": 0.4, "draw_pct": 40},
+        },
+        "junk",
+        {"act_id": a, "shared": None},
+    ]
+    wall = [
+        {"entity_ids": [day.qloo_ids[a], day.qloo_ids[c]]},
+        {"entity_ids": ["q:another-festival", day.qloo_ids[a]]},
+        {"entity_ids": [day.qloo_ids[a]]},
+        "junk",
+    ]
+    evidence = {**day.preset["evidence"], "twins": twins, "hidden_wall": wall}
+    preset = Preset.model_validate({**day.preset, "evidence": evidence})
+    found = pair.taste_pairs(preset)
+    lens = audit.lenses(preset, 0)
+    lens_pairs = {
+        frozenset((e["a_id"], e["b_id"])) for e in lens["with_taste"] + lens["without_taste"] + lens["apart"]
+    }
+    assert pair.page_pairs(preset) <= found and lens_pairs <= found
+    assert lens_pairs - pair.page_pairs(preset), "the lens ranks pairs beyond the clash list"
+    assert frozenset((a, b)) in found and frozenset((a, c)) in found
+    scheduled = {slot["act_id"] for slot in day.preset["festival"]["timetable"]}
+    assert all(len(p) == 2 and p <= scheduled for p in found)
+    assert found == pair.page_pairs(preset) | lens_pairs | {frozenset((a, b)), frozenset((a, c))}
+
+
+def test_the_live_check_still_refuses_a_pair_only_the_two_rankings_lens_shows(tmp_path, day):
+    """Saved grid pricing answers the lens's pairs; the live re-check keeps to the clash list and receipts."""
+    fake = FakeQloo()
+    serve(tmp_path, fake.client())
+    preset = Preset.model_validate(day.preset)
+    usable = {x for x in day.ids if x not in (day.no_qloo_id, day.no_signal, day.no_row, day.two_rows)}
+    lens_only = sorted(sorted(p) for p in pair.taste_pairs(preset) - pair.page_pairs(preset) if p <= usable)
+    assert lens_only
+    with TestClient(app) as client:
+        response = check(client, *lens_only[0])
+    assert response.status_code == 422 and response.json() == NOT_ON_THE_PAGE
+    assert fake.seen == []
+
+
+def located_day(directory, day: Day, *, rows: str | None, preset: str | None) -> None:
+    """Rewrite the day as built with a location: ``rows`` on every saved ranking, ``preset`` on the preset."""
+    requests = []
+    for request in day.preset["requests"]:
+        params = dict(request["params"])
+        if request["path"] == "/v2/insights" and rows is not None:
+            params["signal.location.query"] = rows
+        requests.append({**request, "params": params})
+    raw = {**day.preset, "requests": requests, "location": preset}
+    (directory / "day.json").write_text(json.dumps(raw), encoding="utf-8")
+
+
+def test_a_check_of_a_day_built_with_a_location_sends_that_location_with_both_rankings(tmp_path, day):
+    located_day(tmp_path, day, rows="Lantern City", preset="Lantern City")
+    fake = FakeQloo()
+    serve(tmp_path, fake.client())
+    with TestClient(app) as client:
+        response = check(client, *day.pair())
+    assert response.status_code == 200, response.text
+    rankings = [r for r in fake.seen if r.url.path == "/v2/insights"]
+    assert len(rankings) == 2
+    assert [r.url.params.get("signal.location.query") for r in rankings] == ["Lantern City"] * 2
+    compare = [r for r in fake.seen if r.url.path == "/v2/analysis/compare"]
+    assert len(compare) == 1 and "signal.location.query" not in compare[0].url.params
+    sent = [r["params"] for r in response.json()["requests"][:2]]
+    assert all(params["signal.location.query"] == "Lantern City" for params in sent)
+
+
+def test_a_check_of_a_day_built_without_a_location_sends_none(tmp_path, day):
+    fake = FakeQloo()
+    serve(tmp_path, fake.client())
+    with TestClient(app) as client:
+        response = check(client, *day.pair())
+    assert response.status_code == 200, response.text
+    assert len(fake.seen) == 3
+    assert all("signal.location.query" not in r.url.params for r in fake.seen)
+
+
+@pytest.mark.parametrize(
+    ("rows", "located"),
+    [(None, "Lantern City"), ("Lantern City", None), ("Other Town", "Lantern City")],
+)
+def test_a_saved_ranking_whose_location_is_not_the_presets_is_refused_and_costs_nothing(
+    tmp_path, day, rows, located
+):
+    located_day(tmp_path, day, rows=rows, preset=located)
+    fake = FakeQloo()
+    serve(tmp_path, fake.client())
+    with TestClient(app) as client:
+        response = check(client, *day.pair())
+    assert response.status_code == 422 and response.json() == {"detail": pair.NO_SAVED_ROWS}
+    assert fake.seen == []
+
+
 def test_hostile_bodies_are_refused_before_any_request_and_echo_nothing(tmp_path, day):
     fake = FakeQloo()
     limiter = counting_limiter()

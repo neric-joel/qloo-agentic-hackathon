@@ -1,25 +1,28 @@
 """Grid pricing (``POST /api/price-grid``): a saved day prices a pasted grid's pairs with no Qloo request and
-no limiter slot, real days only for the pairs their page shows and the invented day exempt and labelled; the
-live mode is off by default, refused before Qloo when it is off, paused or capped, sends at most ``need``
-private requests that are never retried, gives its reservation back on every path, and prices with the build's
-rank arithmetic. Answers hold only the allowlisted keys, every response is ``no-store`` and no name is logged.
-Every preset, name and answer here is synthetic."""
+no limiter slot, real days only for the pairs their home page prints a taste overlap or a taste rank
+for (ranked clashes, receipts and the "Two rankings of this day" lens) and the invented day exempt and
+labelled; the live mode is off by default, refused before Qloo when it is off, paused or capped, sends at
+most ``need`` private requests that are never retried, gives its reservation back on every path, and prices
+with the build's rank arithmetic. Answers hold only the allowlisted keys, every response is ``no-store``
+and no name is logged. Every preset, name and answer here is synthetic, except one check that reads the built
+presets when they are present (act names in, presence and status out, never a value)."""
 
 import asyncio
 import json
 import logging
 import random
+from pathlib import Path
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app import gridprice
+from app import audit, gridprice
 from app.config import Settings, get_settings
 from app.deps import get_price_grid_limiter
 from app.limits import PRICE_GRID_MESSAGES, RunLimiter
 from app.main import app, get_qloo
-from app.pair import page_pairs
+from app.pair import page_pairs, taste_pairs
 from app.presets import synthetic_presets
 from app.qloo.client import QlooClient, normalize_params, request_key
 from app.qloo.overlap import percentiles
@@ -333,7 +336,7 @@ def test_a_real_day_prices_only_the_pairs_its_page_shows(tmp_path):
     from app.presets import Preset
 
     preset = Preset.model_validate(raw)
-    shown = page_pairs(preset)
+    shown = taste_pairs(preset)
     names = {act.id: act.name for act in preset.festival.acts}
     scored = [act.id for act in preset.festival.acts if preset.matrix.coverage_of(act.id) != "none"]
     on_page = next(pair for pair in sorted(shown, key=sorted) if pair <= set(scored))
@@ -362,6 +365,74 @@ def test_a_real_day_prices_only_the_pairs_its_page_shows(tmp_path):
         "pair_rank": None,
         "reason": "not_ranked_on_saved_day",
     }
+
+
+def test_a_real_day_prices_the_pairs_of_its_two_rankings_lens_beyond_its_ranked_clashes(tmp_path):
+    """The home page's "Two rankings of this day" prints a taste rank for pairs outside the ranked clashes
+    (the costliest on draw and time alone, with their rank once taste counts): saved pricing answers them too,
+    with the saved value, and still refuses a pair the page never ranks. No Qloo request, no limiter slot."""
+    raw = write_real_day(tmp_path)
+    serve(tmp_path)  # Qloo and the limiter both fail on any use
+    from app.presets import Preset
+
+    preset = Preset.model_validate(raw)
+    lens = audit.lenses(preset, 0)
+    lens_pairs = {frozenset((e["a_id"], e["b_id"])) for e in lens["with_taste"] + lens["without_taste"]}
+    beyond = sorted((sorted(p) for p in lens_pairs - page_pairs(preset)), key=tuple)
+    assert beyond, "the lens ranks a pair the clash list does not"
+    a, b = beyond[0]
+    shown = taste_pairs(preset)
+    assert lens_pairs | page_pairs(preset) <= shown
+    names = {act.id: act.name for act in preset.festival.acts}
+    scored = [act.id for act in preset.festival.acts if preset.matrix.coverage_of(act.id) != "none"]
+    never = next(
+        (x, y) for i, x in enumerate(scored) for y in scored[i + 1 :] if frozenset((x, y)) not in shown
+    )
+    pairs = [[names[a], names[b]], [names[never[0]], names[never[1]]]]
+    with TestClient(app) as client:
+        response = price(client, [names[act_id] for act_id in scored], pairs)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert_allowlisted(body)
+    assert body["source"] == "saved_day" and body["requests_used"] == 0
+    lens_pair, never_pair = body["pairs"]
+    assert lens_pair["status"] == "priced" and lens_pair["reason"] is None
+    assert lens_pair["taste_overlap"] == round(preset.matrix.value(a, b), 4)
+    assert never_pair["status"] == "unpriced" and never_pair["reason"] == "not_ranked_on_saved_day"
+
+
+REAL_PRESETS = Path(__file__).resolve().parents[1] / "presets"
+# Pairs the shipped home page ranks (the hero pair, and a pair of the "Two rankings of this day" lens); act
+# names only, from the published timetable. The test reads no value from the presets and asserts none.
+HOME_PAGE_PAIRS = [("Sprints", "Katy J Pearson"), ("Olivia Rodrigo", "The Prodigy")]
+
+
+@pytest.mark.skipif(not any(REAL_PRESETS.glob("*.json")), reason="no built presets (a clean clone has none)")
+@pytest.mark.parametrize(("first", "second"), HOME_PAGE_PAIRS)
+def test_the_built_days_price_the_pairs_their_home_page_ranks_with_no_qloo_request(first, second):
+    from app.presets import _load_all
+
+    days = _load_all(str(REAL_PRESETS))
+    preset = next(
+        (day for day in days.values() if {first, second} <= {act.name for act in day.festival.acts}),
+        None,
+    )
+    if preset is None:
+        pytest.skip(f"no built day holds {first} and {second}")
+    serve(REAL_PRESETS)  # the built presets folder; Qloo and the limiter both fail on any use
+    scheduled = {slot.act_id for slot in preset.festival.timetable}
+    on_day = [act.name for act in preset.festival.acts if act.id in scheduled]
+    acts = [first, second] + [name for name in on_day if name not in (first, second)][:20]
+    with TestClient(app) as client:
+        response = price(client, acts, [[first, second]])
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert_allowlisted(body)
+    assert body["source"] == "saved_day" and body["preset_id"] == preset.id
+    assert body["requests_used"] == 0
+    (answer,) = body["pairs"]
+    assert answer["status"] == "priced" and answer["reason"] is None
+    assert isinstance(answer["taste_overlap"], float) and answer["pair_rank"] == 1
 
 
 def test_a_name_two_acts_of_the_day_share_is_ambiguous_never_matched_and_never_priced(tmp_path):

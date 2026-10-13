@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 
 import httpx
 import pytest
@@ -598,3 +599,108 @@ async def test_a_stale_higher_header_is_ignored_for_120_seconds():
     await send_blind(client, 1, "later")
     assert client.month_remaining == 9000
     await client.aclose()
+
+
+# ------------------------------------------------------------- fixtures keep Qloo's request id
+
+
+async def test_a_saved_fixture_keeps_the_request_id_the_latency_and_when_qloo_answered(tmp_path):
+    def ok(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"results": ["saved"]}, headers={"x-qloo-request-id": "req-invented-1"}
+        )
+
+    recorder = make_client(ok, fixtures_dir=tmp_path, record_fixtures=True)
+    with record_requests() as log:
+        await recorder.get("/search", {"query": "Paper Lantern"})
+    await recorder.aclose()
+
+    (saved,) = tmp_path.glob("*.json")
+    record = json.loads(saved.read_text(encoding="utf-8"))
+    assert record["request"] == {"path": "/search", "params": {"query": "Paper Lantern"}}
+    assert record["response"] == {"results": ["saved"]}
+    answered = record["answered"]
+    assert set(answered) == {"request_id", "latency_ms", "fetched_at"}
+    assert answered["request_id"] == "req-invented-1"
+    assert isinstance(answered["latency_ms"], int) and answered["latency_ms"] >= 0
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", answered["fetched_at"])
+    # the live answer's own record is unchanged: Qloo's id, not cached, no saved time
+    assert [(r.request_id, r.cached, r.recorded, r.fetched_at) for r in log] == [
+        ("req-invented-1", False, False, None)
+    ]
+
+
+async def test_a_replayed_fixture_carries_the_saved_request_id_and_time_and_sends_nothing(tmp_path):
+    key = request_key("/search", {"query": "Paper Lantern"})
+    record = {
+        "request": {"path": "/search", "params": {"query": "Paper Lantern"}},
+        "response": {"saved": True},
+        "answered": {"request_id": "req-invented-2", "latency_ms": 321, "fetched_at": "2026-06-01T10:00:00Z"},
+    }
+    (tmp_path / f"{key}.json").write_text(json.dumps(record), encoding="utf-8")
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, json={"saved": False}, headers={"x-qloo-request-id": "req-live"})
+
+    first = make_client(handler, fixtures_dir=tmp_path, fixtures_first=True)
+    no_key = QlooClient(None, fixtures_dir=tmp_path)
+    with record_requests() as log:
+        assert await first.get("/search", {"query": "Paper Lantern"}) == {"saved": True}
+        assert await no_key.get("/search", {"query": "Paper Lantern"}) == {"saved": True}
+    await first.aclose()
+    await no_key.aclose()
+    assert calls == []  # served from the fixture: no request sent
+    assert [(r.status, r.cached, r.recorded, r.request_id, r.fetched_at) for r in log] == [
+        (200, True, False, "req-invented-2", "2026-06-01T10:00:00Z"),
+        (200, False, True, "req-invented-2", "2026-06-01T10:00:00Z"),
+    ]
+
+
+async def test_a_fixture_served_after_a_failure_carries_its_saved_request_id_not_the_failed_one(tmp_path):
+    key = request_key("/search", {"query": "Paper Lantern"})
+    record = {
+        "request": {},
+        "response": {"saved": True},
+        "answered": {"request_id": "req-invented-3", "latency_ms": 12, "fetched_at": "2026-06-02T09:30:00Z"},
+    }
+    (tmp_path / f"{key}.json").write_text(json.dumps(record), encoding="utf-8")
+
+    def down(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, headers={"x-qloo-request-id": "req-failed"})
+
+    client = make_client(down, fixtures_dir=tmp_path, max_retries=0)
+    with record_requests() as log:
+        assert await client.get("/search", {"query": "Paper Lantern"}) == {"saved": True}
+    await client.aclose()
+    assert [(r.recorded, r.request_id, r.fetched_at) for r in log] == [
+        (True, "req-invented-3", "2026-06-02T09:30:00Z")
+    ]
+
+
+@pytest.mark.parametrize(
+    "answered",
+    [None, {}, {"request_id": None, "fetched_at": None}, {"request_id": 7, "fetched_at": ["x"]}, "junk"],
+)
+async def test_an_old_or_odd_fixture_replays_with_no_request_id_and_no_time(tmp_path, answered):
+    key = request_key("/search", {"query": "x"})
+    record = {"request": {}, "response": {"hit": True}}
+    if answered is not None:
+        record["answered"] = answered
+    (tmp_path / f"{key}.json").write_text(json.dumps(record), encoding="utf-8")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("no request may be sent")
+
+    first = make_client(handler, fixtures_dir=tmp_path, fixtures_first=True)
+    no_key = QlooClient(None, fixtures_dir=tmp_path)
+    with record_requests() as log:
+        assert await first.get("/search", {"query": "x"}) == {"hit": True}
+        assert await no_key.get("/search", {"query": "x"}) == {"hit": True}
+    await first.aclose()
+    await no_key.aclose()
+    assert [(r.cached, r.recorded, r.request_id, r.fetched_at) for r in log] == [
+        (True, False, None, None),
+        (False, True, None, None),
+    ]

@@ -3,13 +3,15 @@
 ``POST /api/price-grid`` with the JSON body ``{"acts": [...], "pairs": [["A", "B"], ...], "mode": ...}`` takes
 the act names of one pasted day (4 to 25) and up to 5 of its pairs, and nothing else: no times, stages or
 rules. It answers each pair's taste overlap, the build's rank-normalised value from 0 to 1, and its rank among
-the priced pairs sent. The contract is ``_private/critique/round-9/CONTRACT-price-grid.md``.
+the priced pairs sent. Its fields and refusals follow the price-grid contract (kept outside this repository).
 
 ``mode: "saved"`` matches the names to a saved festival day, or to the invented example day, which is always a
 candidate, and reads the values the day was built with. It never calls Qloo and never takes a limiter slot.
 Under 80% of the names found on every day is a 422 (``not_a_saved_day``). On a real day only the pairs the
-page already shows get a value (the day's ranked clashes and its clash receipts); the invented day is exempt
-and labelled ``invented_day``.
+home page prints a taste overlap or a taste rank for get a value (``pair.taste_pairs``: the day's ranked
+clashes, its clash receipts and twins, and the pairs of its "Two rankings of this day" lens), each the saved
+value the page's own arithmetic reads; any other pair is ``not_ranked_on_saved_day``. The invented day is
+exempt and labelled ``invented_day``.
 
 ``mode: "live"`` asks Qloo now: one ``/search`` per act and one ``/v2/insights`` per pair act, ranking the
 other matched acts for its audience, with the build's rank arithmetic and no comparison request. That is at
@@ -42,7 +44,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from .config import Settings, get_settings
 from .deps import get_price_grid_limiter, get_qloo
 from .limits import RunLimiter, visitor_key
-from .pair import page_pairs
+from .pair import taste_pairs
 from .presets import Preset, Presets, synthetic_presets
 from .qloo.client import QlooClient, RequestRecord, record_requests
 from .qloo.overlap import ARTIST, SEARCH_TAKE, _match, _normalize, percentiles, row_scores
@@ -318,7 +320,7 @@ def price_saved(acts: list[str], pairs: list[tuple[str, str]], days: list[Preset
         raise LookupError("not a saved day")
     preset, found, ambiguous = best
     scored = {name: act for name, act in found.items() if _scored(preset, act)}
-    shown = None if preset.synthetic else page_pairs(preset)
+    shown = None if preset.synthetic else taste_pairs(preset)
     values: dict[tuple[str, str], float] = {}
     reasons: dict[tuple[str, str], Reason] = {}
     for a, b in pairs:

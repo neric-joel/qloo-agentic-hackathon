@@ -46,6 +46,13 @@ class Preset(BaseModel):
     id: str
     title: str
     built_at: str | None = None
+    location: str | None = Field(
+        default=None,
+        description=(
+            "The city every audience ranking of the build was sent with (Qloo's signal.location.query), or "
+            "None when the day was ranked without a location: a global reading, not a local one."
+        ),
+    )
     synthetic: bool = Field(
         default=False,
         description="True for the invented day served when no preset was built: no Qloo data in it.",

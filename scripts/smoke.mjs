@@ -3,14 +3,22 @@
  * Smoke test for a Clash Control deployment. Run it against the CANDIDATE deployment URLs, and only move an
  * alias once every line prints ok.
  *
- *   node scripts/smoke.mjs <web-origin> [--api <api-origin>] [--pair-check on|off|any]
+ *   node scripts/smoke.mjs <web-origin> [--api <api-origin>] [--pair-check on|off|any] [--local]
+ *
+ * Before the judging-window switches, run it with --pair-check off (the live pair check is off on the
+ * server); once PAIR_CHECK_ENABLED is on and the API is redeployed, run it again with --pair-check on.
+ *
+ * --local is for a local or clean-clone run (for example http://localhost:3000 --api http://localhost:8000
+ * --local): one built preset, or none and the invented day, is enough, the invented day may come first, and
+ * no Qloo key is required. A deployment smoke never uses it.
  *
  * Zero dependencies (Node 18 or newer). One line per check; exits 1 when any check fails, 2 on a usage error.
  * Nothing here can reach Qloo or a language model: it reads pages and saved presets, asks for a method that is
- * not allowed, asks the first preset for its lenses and its decision (saved data, no Qloo request, no limiter
- * slot), asks its rule search for one set against itself (refused before any search or slot), and sends an empty
- * body to the pair check and to the what-if route, which fail validation before anything is spent, and a 20 KB
- * padded body to the what-if route, which is refused as too large before it is read.
+ * not allowed, asks the first preset for its lenses and every preset for its decision (saved data, no Qloo
+ * request, no limiter slot), asks the first preset's rule search for one set against itself (refused before any
+ * search or slot), and sends an empty body to the pair check and to the what-if route, which fail validation
+ * before anything is spent, and a 20 KB padded body to the what-if route, which is refused as too large before
+ * it is read.
  */
 
 import { pathToFileURL } from "node:url";
@@ -20,7 +28,10 @@ const PRESET_MIN_BYTES = 50 * 1024;
 const PAIR_CHECK_MODES = ["on", "off", "any"];
 
 const BUDGET_KEYS = ["budget_after", "published_budget"];
+// Index points of the day's costliest clash, rounded to one decimal by the server (backend/app/decision.py).
+const ONE_DECIMAL_KEYS = ["points"];
 const BANNED_KEYS = ["matrix", "affinity", "values"];
+const USAGE = "usage: node scripts/smoke.mjs <web-origin> [--api <api-origin>] [--pair-check on|off|any] [--local]";
 
 class CheckFailed extends Error {}
 
@@ -28,10 +39,20 @@ function expect(condition, message) {
   if (!condition) throw new CheckFailed(message);
 }
 
-/** The first problem in a decision body: a number with decimals that is not a budget, or a key that holds taste data. */
-function decisionProblem(value, key = null) {
+/** At most one decimal place, as the server rounds index points. */
+function oneDecimal(value) {
+  return Math.abs(value * 10 - Math.round(value * 10)) < 1e-9;
+}
+
+/**
+ * The first problem in a decision body: a number with decimals that is not a budget or one-decimal index points,
+ * or a key that holds taste data.
+ */
+export function decisionProblem(value, key = null) {
   if (typeof value === "number") {
-    return Number.isInteger(value) || BUDGET_KEYS.includes(key) ? null : `a decimal number under ${JSON.stringify(key)}`;
+    if (Number.isInteger(value) || BUDGET_KEYS.includes(key)) return null;
+    if (ONE_DECIMAL_KEYS.includes(key) && oneDecimal(value)) return null;
+    return `a decimal number under ${JSON.stringify(key)}`;
   }
   if (Array.isArray(value)) {
     for (const item of value) {
@@ -57,6 +78,7 @@ export async function runSmoke({
   web,
   api = null,
   pairCheck = "any",
+  local = false,
   fetchImpl = fetch,
   timeoutMs = TIMEOUT_MS,
   log = () => {},
@@ -119,12 +141,15 @@ export async function runSmoke({
     expect(page.status === 200, `status ${page.status}`);
   });
 
-  await check("web /api/health is ok with a Qloo key and the expected pair check", async () => {
+  const healthName = local
+    ? "web /api/health is ok with the expected pair check (no Qloo key needed locally)"
+    : "web /api/health is ok with a Qloo key and the expected pair check";
+  await check(healthName, async () => {
     const page = await request(webOrigin, "/api/health");
     expect(page.status === 200, `status ${page.status}`);
     const body = json(page);
     expect(body.status === "ok", `status field is ${JSON.stringify(body.status)}`);
-    expect(body.qloo_key_configured === true, "qloo_key_configured is not true");
+    if (!local) expect(body.qloo_key_configured === true, "qloo_key_configured is not true");
     if (pairCheck !== "any") {
       const want = pairCheck === "on";
       expect(body.pair_check === want, `pair_check is ${JSON.stringify(body.pair_check)}, expected ${want}`);
@@ -132,22 +157,30 @@ export async function runSmoke({
   });
 
   let presetId = null;
-  await check("web /api/presets lists at least 2 presets", async () => {
+  let presetIds = [];
+  const minPresets = local ? 1 : 2;
+  await check(`web /api/presets lists at least ${minPresets} preset${minPresets === 1 ? "" : "s"}`, async () => {
     const page = await request(webOrigin, "/api/presets");
     expect(page.status === 200, `status ${page.status}`);
     const body = json(page);
+    presetIds = Array.isArray(body) ? body.map((item) => item?.id).filter((id) => typeof id === "string") : [];
     presetId = Array.isArray(body) && typeof body[0]?.id === "string" ? body[0].id : null;
-    expect(Array.isArray(body) && body.length >= 2, `${Array.isArray(body) ? body.length : "no"} presets`);
+    expect(Array.isArray(body) && body.length >= minPresets, `${Array.isArray(body) ? body.length : "no"} presets`);
     expect(presetId, "the first preset has no id");
+    expect(presetIds.length === body.length, "a preset has no id");
   });
 
-  await check("web first preset is real (over 50 KB, not the synthetic day) and carries no matrix", async () => {
+  const firstName = local
+    ? "web first preset is real (over 50 KB) or the invented day, and carries no matrix"
+    : "web first preset is real (over 50 KB, not the synthetic day) and carries no matrix";
+  await check(firstName, async () => {
     expect(presetId, "no preset id to read");
     const page = await request(webOrigin, `/api/presets/${encodeURIComponent(presetId)}`);
     expect(page.status === 200, `status ${page.status}`);
-    expect(page.bytes > PRESET_MIN_BYTES, `only ${page.bytes} bytes`);
     const body = json(page);
     expect(!("matrix" in body), "the preset carries a matrix key");
+    if (local && body.synthetic === true) return; // a clean clone serves only the invented day
+    expect(page.bytes > PRESET_MIN_BYTES, `only ${page.bytes} bytes`);
     expect(body.synthetic !== true, "the server is serving the invented fallback day (presets missing?)");
   });
 
@@ -159,14 +192,16 @@ export async function runSmoke({
     expect(body.kind === "lenses", `kind is ${JSON.stringify(body.kind)}`);
   });
 
-  await check("web first preset decision answers 200 with kind decision and no stray decimal", async () => {
-    expect(presetId, "no preset id to read");
-    const page = await request(webOrigin, `/api/presets/${encodeURIComponent(presetId)}/decision`);
-    expect(page.status === 200, `status ${page.status}`);
-    const body = json(page);
-    expect(body.kind === "decision", `kind is ${JSON.stringify(body.kind)}`);
-    const problem = decisionProblem(body);
-    expect(!problem, `the decision holds ${problem}`);
+  await check("web every preset's decision answers 200 with kind decision and no stray decimal", async () => {
+    expect(presetIds.length > 0, "no preset id to read");
+    for (const id of presetIds) {
+      const page = await request(webOrigin, `/api/presets/${encodeURIComponent(id)}/decision`);
+      expect(page.status === 200, `${id}: status ${page.status}`);
+      const body = json(page);
+      expect(body.kind === "decision", `${id}: kind is ${JSON.stringify(body.kind)}`);
+      const problem = decisionProblem(body);
+      expect(!problem, `${id}: the decision holds ${problem}`);
+    }
   });
 
   await check("web first preset rule-fixes with one set against itself is 422", async () => {
@@ -237,10 +272,12 @@ export async function runSmoke({
 }
 
 export function parseArgs(argv) {
-  const options = { web: null, api: null, pairCheck: "any" };
+  const options = { web: null, api: null, pairCheck: "any", local: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === "--api" || arg === "--pair-check") {
+    if (arg === "--local") {
+      options.local = true;
+    } else if (arg === "--api" || arg === "--pair-check") {
       const value = argv[i + 1];
       if (value === undefined || value.startsWith("--")) throw new Error(`${arg} needs a value`);
       i += 1;
@@ -267,7 +304,7 @@ async function main() {
   try {
     options = parseArgs(process.argv.slice(2));
   } catch (error) {
-    console.error(`${error.message}\nusage: node scripts/smoke.mjs <web-origin> [--api <api-origin>] [--pair-check on|off|any]`);
+    console.error(`${error.message}\n${USAGE}\n--pair-check off before the judging-window switches; on after them.`);
     process.exit(2);
   }
   const results = await runSmoke({ ...options, log: (line) => console.log(line) });

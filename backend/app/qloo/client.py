@@ -4,7 +4,9 @@ Features:
 - one shared ``httpx.AsyncClient`` per client instance
 - in-process TTL cache keyed on (path, params) so repeated requests don't spend quota
 - retries with exponential backoff on 429 and 5xx responses (a caller can turn them off per request)
-- optional fixture record/replay so preloaded demo flows keep working if the API is slow or down
+- optional fixture record/replay so preloaded demo flows keep working if the API is slow or down; a saved
+  fixture keeps Qloo's request id, the latency and when Qloo answered, and a replay reports the saved id and
+  time (never an invented id)
 - a fail-closed allowance guard: the requests left in Qloo's month, read from each answer, and a count of
   requests sent since the last answer that said, so callers can pause live requests when either is unsafe
 """
@@ -22,6 +24,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +60,8 @@ class RequestRecord:
     cached: bool = False
     recorded: bool = False
     request_id: str | None = None
+    # A replayed fixture: when Qloo answered the saved request (UTC, ISO 8601, whole seconds), if it was saved
+    fetched_at: str | None = None
 
 
 _request_log: ContextVar[list[RequestRecord] | None] = ContextVar("qloo_request_log", default=None)
@@ -344,25 +349,31 @@ class QlooClient:
     async def _fetch(
         self, path: str, query: dict[str, str], key: str, max_retries: int | None = None
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        if self.fixtures_first and self.api_key and (saved := self._load_fixture(key)) is not None:
-            return saved, {"status": 200, "cached": True}
+        if self.fixtures_first and self.api_key and (saved := self._load_fixture_record(key)) is not None:
+            return saved[0], {"status": 200, "cached": True, **saved[1]}
         if not self.api_key:
-            data = self._load_fixture(key)
-            if data is None:
+            saved = self._load_fixture_record(key)
+            if saved is None:
                 raise QlooError(f"No API key configured and no fixture for {path} {query}")
-            return data, {"status": 200, "recorded": True}
+            return saved[0], {"status": 200, "recorded": True, **saved[1]}
 
+        sent = time.perf_counter()
         try:
             data, status, request_id = await self._request_with_retries(path, query, max_retries)
         except QlooError as exc:
-            fallback = self._load_fixture(key)
+            fallback = self._load_fixture_record(key)
             if fallback is not None:
                 log.warning("Qloo request failed (%s); serving recorded fixture for %s", exc, path)
-                return fallback, {"status": 200, "recorded": True}
+                return fallback[0], {"status": 200, "recorded": True, **fallback[1]}
             raise
 
         if self.record_fixtures:
-            self._save_fixture(key, path, query, data)
+            answered = {
+                "request_id": request_id,
+                "latency_ms": round((time.perf_counter() - sent) * 1000),
+                "fetched_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            }
+            self._save_fixture(key, path, query, data, answered)
         return data, {"status": status, "request_id": request_id}
 
     async def _request_with_retries(
@@ -423,18 +434,37 @@ class QlooClient:
     def _fixture_path(self, key: str) -> Path | None:
         return self.fixtures_dir / f"{key}.json" if self.fixtures_dir else None
 
-    def _load_fixture(self, key: str) -> dict[str, Any] | None:
+    def _load_fixture_record(self, key: str) -> tuple[dict[str, Any], dict[str, str | None]] | None:
+        """A saved response and what was saved about its answer: Qloo's request id and when Qloo answered,
+        each None when the fixture predates them or holds something other than a string. Never invented."""
         path = self._fixture_path(key)
         if path is None or not path.exists():
             return None
-        return json.loads(path.read_text(encoding="utf-8"))["response"]
+        record = json.loads(path.read_text(encoding="utf-8"))
+        answered = record.get("answered")
+        answered = answered if isinstance(answered, dict) else {}
+        saved = {
+            field: value if isinstance(value := answered.get(field), str) and value else None
+            for field in ("request_id", "fetched_at")
+        }
+        return record["response"], saved
 
-    def _save_fixture(self, key: str, path: str, query: dict[str, str], data: dict[str, Any]) -> None:
+    def _save_fixture(
+        self,
+        key: str,
+        path: str,
+        query: dict[str, str],
+        data: dict[str, Any],
+        answered: dict[str, Any] | None = None,
+    ) -> None:
+        """Save a live answer with Qloo's request id, the latency and when Qloo answered (``answered``)."""
         target = self._fixture_path(key)
         if target is None:
             return
         target.parent.mkdir(parents=True, exist_ok=True)
-        record = {"request": {"path": path, "params": query}, "response": data}
+        record: dict[str, Any] = {"request": {"path": path, "params": query}, "response": data}
+        if answered is not None:
+            record["answered"] = answered
         target.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
 
     # ------------------------------------------------------------- endpoints

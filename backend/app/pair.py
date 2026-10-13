@@ -18,7 +18,8 @@ while the requests left in Qloo's month, less those reserved by checks still run
 after 6 requests sent without an answer that said how many are left (for 10 minutes after the last of them).
 Only pairs the page already shows can be checked (the day's ranked clashes and its
 clash receipts), so the saved value it returns is one the page already prints for that pair. No raw affinity
-is served.
+is served. A re-check sends the same location as the preset it re-checks (the saved rows carry it; today's
+presets were ranked without one), so a fresh reading compares like for like.
 """
 
 from __future__ import annotations
@@ -35,6 +36,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from .audit import lenses
 from .config import Settings, get_settings
 from .deps import get_pair_limiter, get_qloo
 from .limits import RunLimiter, visitor_key
@@ -72,6 +74,7 @@ INSIGHTS = "/v2/insights"
 COMPARE = "/v2/analysis/compare"
 CANDIDATES = "filter.results.entities"
 SIGNAL = "signal.interests.entities"
+LOCATION = "signal.location.query"
 
 SWITCHED_OFF = "Live checks are switched off on this server."
 NOT_ON_THIS_DAY = "That set is not on this festival day."
@@ -189,11 +192,55 @@ def page_pairs(preset: Preset) -> set[frozenset[str]]:
     return {pair for pair in pairs if len(pair) == 2}
 
 
+def _id_pair(a: Any, b: Any) -> frozenset[str] | None:
+    return frozenset((a, b)) if isinstance(a, str) and isinstance(b, str) and a != b else None
+
+
+def taste_pairs(preset: Preset) -> set[frozenset[str]]:
+    """Every pair the home page prints a taste overlap or a taste rank for, as act-id pairs.
+
+    That is ``page_pairs`` (the ranked clashes and clash receipts), the two rivals of each same-size twin, the
+    sourced hidden clash whose two acts are both on this day, and, on each day of the timetable, the
+    pairs of the "Two rankings of this day" lens: its 15 costliest pairs with taste overlap and on draw and
+    time alone (each printed with its rank in both views) and the high-overlap pairs it names as never on at
+    the same time. Saved grid pricing answers only these, as the pair check answers only ``page_pairs``: the
+    saved matrix stays on the server (the presets route leaves it out), so no route serves it cell by cell.
+    """
+    pairs = set(page_pairs(preset))
+    evidence = preset.evidence or {}
+    twins = evidence.get("twins")
+    for twin in twins if isinstance(twins, list) else []:
+        if not isinstance(twin, dict):
+            continue
+        for side in ("shared", "separate"):
+            rival = twin.get(side)
+            pair = _id_pair(twin.get("act_id"), rival.get("act_id") if isinstance(rival, dict) else None)
+            if pair:
+                pairs.add(pair)
+    by_qloo = {act.qloo_id: act.id for act in preset.festival.acts if act.qloo_id}
+    wall = evidence.get("hidden_wall")
+    for item in wall if isinstance(wall, list) else []:
+        ids = item.get("entity_ids") if isinstance(item, dict) else None
+        if isinstance(ids, list) and len(ids) == 2 and all(i in by_qloo for i in ids):
+            pair = _id_pair(by_qloo[ids[0]], by_qloo[ids[1]])
+            if pair:
+                pairs.add(pair)
+    for day in sorted({slot.day for slot in preset.festival.timetable}):
+        lens = lenses(preset, day)
+        for entry in [*lens["with_taste"], *lens["without_taste"], *lens["apart"]]:
+            pair = _id_pair(entry.get("a_id"), entry.get("b_id"))
+            if pair:
+                pairs.add(pair)
+    scheduled = {slot.act_id for slot in preset.festival.timetable}
+    return {pair for pair in pairs if pair <= scheduled}
+
+
 def saved_row(preset: Preset, act: Act) -> dict[str, str] | None:
     """The params of the one saved Insights request that ranked the candidates for this act's audience.
 
     None when the act has no Qloo id or there is no such request, or more than one (a lineup scored in chunks,
-    which this check does not support).
+    which this check does not support), or when the row's location is not the one the preset records (a row
+    sent with another location, or none, would not compare like for like).
     """
     if not act.qloo_id:
         return None
@@ -208,6 +255,8 @@ def saved_row(preset: Preset, act: Act) -> dict[str, str] | None:
         return None
     params = rows[0]
     if not all(isinstance(value, str) for value in params.values()) or not params.get(CANDIDATES):
+        return None
+    if params.get(LOCATION) != preset.location:
         return None
     return dict(params)
 

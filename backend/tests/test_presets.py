@@ -125,3 +125,20 @@ def test_an_act_without_popularity_stays_without(tmp_path):
     acts = [loaded.festival.acts[0].model_copy(update={"popularity": None}), *loaded.festival.acts[1:]]
     bare = loaded.model_copy(update={"festival": loaded.festival.model_copy(update={"acts": acts})})
     assert public_copy(bare).festival.acts[0].popularity is None
+
+
+def test_a_preset_says_where_its_rankings_were_located_or_null_for_a_global_reading(tmp_path):
+    write_preset(tmp_path, "global-day", "Global Day")  # built before the field: no location key
+    write_preset(tmp_path, "local-day", "Local Day")
+    raw = json.loads((tmp_path / "local-day.json").read_text(encoding="utf-8"))
+    raw["location"] = "Lantern City"
+    (tmp_path / "local-day.json").write_text(json.dumps(raw), encoding="utf-8")
+    try:
+        with client_for(tmp_path) as client:
+            global_day = client.get("/api/presets/global-day").json()
+            local_day = client.get("/api/presets/local-day").json()
+    finally:
+        app.dependency_overrides.clear()
+    assert global_day["location"] is None
+    assert local_day["location"] == "Lantern City"
+    assert "matrix" not in local_day

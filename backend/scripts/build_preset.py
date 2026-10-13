@@ -5,6 +5,11 @@
 ``--stages main`` keeps the main-tier stages; a comma list picks stages by id. Qloo responses are read from
 and saved to ``--cache`` first, so rebuilding a preset spends no quota. The output holds Qloo-derived data:
 keep it out of version control.
+
+``--location`` (off by default, so the shipped presets rebuild exactly as they were built) sends the
+festival's city with every audience ranking as ``signal.location.query``, for a local reading instead of a
+global one. The rankings are then new requests: a rebuild with it spends quota (about one request per scored
+act). The preset records ``location``: the city sent, or null.
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ from app.lineups.overlap_matrix import qloo_overlap  # noqa: E402
 from app.lineups.timetable import PublishedTimetable, to_festival  # noqa: E402
 from app.qloo.client import QlooClient, record_requests  # noqa: E402
 from app.schedule.metrics import score_festival  # noqa: E402
+from app.schedule.models import Festival  # noqa: E402
 
 DATA = Path(__file__).resolve().parents[1] / "app" / "lineups" / "data"
 
@@ -33,6 +39,15 @@ def load_timetable(festival_id: str) -> PublishedTimetable:
         known = ", ".join(p.stem for p in sorted(DATA.glob("*.json")))
         raise SystemExit(f"unknown festival {festival_id!r}; known: {known}")
     return PublishedTimetable.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def festival_location(festival: Festival, wanted: bool) -> str | None:
+    """The city the rankings are sent with: the festival's city with ``--location``, else None."""
+    if not wanted:
+        return None
+    if not festival.city:
+        raise SystemExit(f"--location needs a city, and {festival.id!r} has none")
+    return festival.city
 
 
 async def build(args: argparse.Namespace) -> dict:
@@ -54,8 +69,9 @@ async def build(args: argparse.Namespace) -> dict:
         record_fixtures=True,
         fixtures_first=True,
     )
+    location = festival_location(festival, args.location)
     with record_requests() as log:
-        festival, matrix, result = await qloo_overlap(client, festival)
+        festival, matrix, result = await qloo_overlap(client, festival, city=location)
     await client.aclose()
 
     report = score_festival(festival, matrix)
@@ -66,6 +82,7 @@ async def build(args: argparse.Namespace) -> dict:
         "id": args.id or festival.id,
         "title": args.title or festival.name,
         "built_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "location": location,
         "festival": festival.model_dump(mode="json"),
         "matrix": matrix.model_dump(mode="json"),
         "report": report.model_dump(mode="json"),
@@ -93,6 +110,11 @@ def main() -> None:
     ap.add_argument("--start-after", default=None, help="drop sets starting before HH:MM")
     ap.add_argument("--id")
     ap.add_argument("--title")
+    ap.add_argument(
+        "--location",
+        action="store_true",
+        help="send the festival's city as signal.location.query with every ranking (off by default)",
+    )
     ap.add_argument("--cache", type=Path, required=True, help="directory for saved Qloo responses")
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args()

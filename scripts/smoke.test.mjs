@@ -4,7 +4,7 @@ import http from "node:http";
 import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { parseArgs, runSmoke } from "./smoke.mjs";
+import { decisionProblem, parseArgs, runSmoke } from "./smoke.mjs";
 
 const SCRIPT = fileURLToPath(new URL("./smoke.mjs", import.meta.url));
 const BIG = "x".repeat(60 * 1024);
@@ -33,15 +33,26 @@ function stubHandler(broken = {}) {
       const list = broken.onePreset ? [{ id: "one" }] : [{ id: "one" }, { id: "two" }];
       return send(200, list, "application/json");
     }
+    if (url === "/api/presets/two/decision" && method === "GET") {
+      // the second day's costliest clash is worth one-decimal index points, as the server rounds them
+      const body = { kind: "decision", published_budget: 98.25, clash: { rank: 1, minutes: 30, points: 5.7 } };
+      if (broken.secondDecisionPoints) body.clash.points = 5.75;
+      return send(broken.secondDecisionStatus ?? 200, body, "application/json");
+    }
     if (url === "/api/presets/one") {
       const body = { id: "one", filler: BIG, ...(broken.matrix ? { matrix: {} } : {}), ...(broken.synthetic ? { synthetic: true } : {}) };
-      return send(200, broken.smallPreset ? { id: "one" } : body, "application/json");
+      const small = { id: "one", ...(broken.synthetic ? { synthetic: true } : {}) };
+      return send(200, broken.smallPreset ? small : body, "application/json");
     }
     if (url === "/api/presets/one/lenses" && method === "GET") {
       return send(broken.lensesStatus ?? 200, { kind: broken.lensesKind ?? "lenses", day: 0 }, "application/json");
     }
     if (url === "/api/presets/one/decision" && method === "GET") {
-      const body = { kind: broken.decisionKind ?? "decision", published_budget: 116.71, clash: { rank: 1, minutes: 45 } };
+      const body = {
+        kind: broken.decisionKind ?? "decision",
+        published_budget: 116.71,
+        clash: { rank: 1, minutes: 45, points: 5.5 },
+      };
       if (broken.decisionFloat) body.clash.draw = 0.8874;
       if (broken.decisionMatrix) body.matrix = [];
       return send(broken.decisionStatus ?? 200, body, "application/json");
@@ -89,6 +100,8 @@ function failures(results) {
   return results.filter((result) => !result.ok).map((result) => result.name);
 }
 
+const DECISION = "web every preset's decision answers 200 with kind decision and no stray decimal";
+
 describe("runSmoke against a stub deployment", () => {
   it("passes on a healthy stub, with one line per check", async () => {
     const origin = await stub();
@@ -131,10 +144,12 @@ describe("runSmoke against a stub deployment", () => {
       [{ synthetic: true }, "web first preset is real (over 50 KB, not the synthetic day) and carries no matrix"],
       [{ lensesStatus: 404 }, "web first preset lenses answer 200 and say kind lenses"],
       [{ lensesKind: "other" }, "web first preset lenses answer 200 and say kind lenses"],
-      [{ decisionStatus: 404 }, "web first preset decision answers 200 with kind decision and no stray decimal"],
-      [{ decisionKind: "lenses" }, "web first preset decision answers 200 with kind decision and no stray decimal"],
-      [{ decisionFloat: true }, "web first preset decision answers 200 with kind decision and no stray decimal"],
-      [{ decisionMatrix: true }, "web first preset decision answers 200 with kind decision and no stray decimal"],
+      [{ decisionStatus: 404 }, DECISION],
+      [{ decisionKind: "lenses" }, DECISION],
+      [{ decisionFloat: true }, DECISION],
+      [{ decisionMatrix: true }, DECISION],
+      [{ secondDecisionStatus: 500 }, DECISION],
+      [{ secondDecisionPoints: true }, DECISION],
       [{ ruleFixesStatus: 200 }, "web first preset rule-fixes with one set against itself is 422"],
       [{ ruleFixesStatus: 404 }, "web first preset rule-fixes with one set against itself is 422"],
       [{ whatifStatus: 200 }, "web POST first preset what-if with a malformed plan is 422"],
@@ -172,17 +187,73 @@ describe("runSmoke against a stub deployment", () => {
   });
 });
 
+describe("--local: a local or clean-clone run", () => {
+  it("accepts one built day, or only the invented day first, and no Qloo key", async () => {
+    for (const broken of [{ onePreset: true }, { onePreset: true, synthetic: true, smallPreset: true }, { noKey: true }]) {
+      const origin = await stub(broken);
+      const lines = [];
+      const results = await runSmoke({ web: origin, api: origin, local: true, log: (line) => lines.push(line) });
+      assert.deepEqual(failures(results), [], JSON.stringify(broken));
+      assert.ok(lines.some((line) => line.includes("lists at least 1 preset")));
+    }
+  });
+
+  it("still fails a matrix, a stray decimal, a wrong pair-check flag and every refusal check", async () => {
+    const cases = [
+      [{ matrix: true }, "web first preset is real (over 50 KB) or the invented day, and carries no matrix"],
+      [{ smallPreset: true }, "web first preset is real (over 50 KB) or the invented day, and carries no matrix"],
+      [{ decisionFloat: true }, DECISION],
+      [{ secondDecisionPoints: true }, DECISION],
+      [{ pairPost: 200 }, "web POST /api/pair with an empty body is 422"],
+      [{ docsOn: true }, "api /docs is off (404)"],
+    ];
+    for (const [broken, name] of cases) {
+      const origin = await stub(broken);
+      const results = await runSmoke({ web: origin, api: origin, local: true });
+      assert.deepEqual(failures(results), [name], JSON.stringify(broken));
+    }
+    const on = await stub({ pairOn: true });
+    assert.equal(failures(await runSmoke({ web: on, local: true, pairCheck: "off" })).length, 1);
+  });
+
+  it("without --local, one preset, the invented day or a missing key each fail", async () => {
+    for (const broken of [{ onePreset: true }, { synthetic: true }, { noKey: true }]) {
+      const origin = await stub(broken);
+      assert.equal(failures(await runSmoke({ web: origin, api: origin })).length, 1, JSON.stringify(broken));
+    }
+  });
+});
+
+describe("decisionProblem", () => {
+  it("allows whole numbers, budgets and one-decimal points, and nothing else", () => {
+    assert.equal(decisionProblem({ clash: { points: 5.5, minutes: 30 }, published_budget: 116.71 }), null);
+    assert.equal(decisionProblem({ points: 12 }), null);
+    assert.match(decisionProblem({ points: 5.55 }), /under "points"/);
+    assert.match(decisionProblem({ clash: { draw: 0.8874 } }), /under "draw"/);
+    assert.match(decisionProblem({ minutes: 4.5 }), /under "minutes"/);
+    assert.match(decisionProblem({ nested: { matrix: [] } }), /"matrix" key/);
+  });
+});
+
 describe("parseArgs", () => {
   it("reads the origin and the options", () => {
     assert.deepEqual(parseArgs(["https://a.example", "--api", "https://b.example", "--pair-check", "on"]), {
       web: "https://a.example",
       api: "https://b.example",
       pairCheck: "on",
+      local: false,
     });
     assert.deepEqual(parseArgs(["http://localhost:3000"]), {
       web: "http://localhost:3000",
       api: null,
       pairCheck: "any",
+      local: false,
+    });
+    assert.deepEqual(parseArgs(["http://localhost:3000", "--api", "http://localhost:8000", "--local"]), {
+      web: "http://localhost:3000",
+      api: "http://localhost:8000",
+      pairCheck: "any",
+      local: true,
     });
   });
 
@@ -233,5 +304,14 @@ describe("the command line", () => {
     const { code, err } = await run([]);
     assert.equal(code, 2);
     assert.match(err, /usage: node scripts\/smoke\.mjs/);
+    assert.match(err, /\[--local\]/);
+    assert.match(err, /--pair-check off before the judging-window switches; on after them/);
+  });
+
+  it("exits 0 with --local against a stub that serves only the invented day", async () => {
+    const invented = await stub({ onePreset: true, synthetic: true, smallPreset: true, noKey: true });
+    const { code, out } = await run([invented, "--api", invented, "--local", "--pair-check", "off"]);
+    assert.equal(code, 0, out);
+    assert.match(out, /smoke: all checks passed/);
   });
 });

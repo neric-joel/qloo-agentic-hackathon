@@ -5,6 +5,11 @@
 
 # Qloo-derived demo data (shipped with deployments, never committed)
 backend/presets/
+# Qloo response fixtures (config.fixtures_dir's default; Qloo-derived, never committed)
+backend/app/qloo/fixtures/
+
+# Private working notes, recordings and research (local only, never committed)
+_private/
 
 # Python
 __pycache__/

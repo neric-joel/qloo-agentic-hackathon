@@ -139,7 +139,7 @@
     "expected": { "engine": "accepts", "double_booked": 0, "same_stage": 0, "changeover": 1, "curfew": 0, "keep_apart": 0, "shared_pairs": 2 },
     "trials": [
       { "target": {"kind": "break", "rule": 3, "rows": [1, 2]}, "change": {"moves": [{"row": 2, "stage": "Side", "start": 1515, "end": 1565}], "shared_pairs_after": 2} },
-      { "target": {"kind": "shared", "rows": [4, 2]}, "change": {"moves": [{"row": 4, "stage": "Side", "start": 1420, "end": 1480}], "shared_pairs_after": 1} }
+      { "target": {"kind": "shared", "rows": [4, 2]}, "change": {"moves": [{"row": 2, "stage": "Side", "start": 1515, "end": 1565}], "shared_pairs_after": 2} }
     ]
   },
   {

@@ -1,18 +1,26 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { buildDecisionCopy, parseDecision } from "@/lib/decision";
-import type { Demand } from "@/lib/demand";
+import { buildDecisionCopy, NO_PRICED_CLASH, parseDecision, sharedTimeline } from "@/lib/decision";
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
 import { parsePreset } from "@/lib/preset";
 import { parseRuleFixes, plannedNote, STAGE_FIT_GLOSS } from "@/lib/rule-fix";
 
-import { DecisionCard } from "./decision-card";
+import { DecisionCard, DecisionCardSkeleton, indexDelta, timelineSpans } from "./decision-card";
 import { ChangeCard, KeepApart } from "./keep-apart";
-import { WhyThisMatters } from "./why-this-matters";
+import { consequenceLine, TradeoffTable } from "./tradeoff-table";
 
 // Every name and figure below is invented for the test.
+
+/** The text the markup itself holds: tags dropped and nothing put between them, as a reader gets it. */
+function realText(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, "")
+    .replace(/&#x27;|&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .trim();
+}
 
 function text(html: string): string {
   return html
@@ -21,6 +29,31 @@ function text(html: string): string {
     .replace(/&amp;/g, "&")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * The "Show the working" region (a div with `data-working`) cut out of the card's markup by counting its
+ * nested divs, the card with that region taken out, and the toggle button that controls it.
+ */
+function working(html: string): { region: string; outside: string; toggle: string } {
+  const marker = html.indexOf('data-working=""');
+  if (marker < 0) return { region: "", outside: html, toggle: "" };
+  const start = html.lastIndexOf("<div", marker);
+  let depth = 0;
+  let at = start;
+  const tag = /<div\b|<\/div>/g;
+  tag.lastIndex = start;
+  for (let m = tag.exec(html); m; m = tag.exec(html)) {
+    depth += m[0] === "</div>" ? -1 : 1;
+    if (depth === 0) {
+      at = m.index + m[0].length;
+      break;
+    }
+  }
+  const region = html.slice(start, at);
+  const id = /\bid="([^"]+)"/.exec(region)?.[1] ?? "";
+  const toggle = new RegExp(`<button[^>]*aria-controls="${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[^>]*>[\\s\\S]*?</button>`).exec(html)?.[0] ?? "";
+  return { region, outside: html.slice(0, start) + " " + html.slice(at), toggle };
 }
 
 const RULE = {
@@ -102,21 +135,58 @@ function copy(overrides: Record<string, unknown> = {}) {
   return built;
 }
 
+/**
+ * The hero strip's lane labels, each as its lines from 640px (the act, then its meta, then its range); under
+ * 640px the same three run as one line, each after a " · " that is hidden from 640px.
+ */
+function laneLabels(figure: string): string[][] {
+  const sep = '<span class="text-\\[0\\.8125rem\\] font-normal text-muted-foreground sm:hidden">\u00a0· </span>';
+  return [
+    ...figure.matchAll(
+      new RegExp(
+        '<p class="min-w-0 text-sm leading-5 font-semibold[^"]*sm:flex sm:min-h-9 sm:flex-col[^"]*"><span>([^<]*)</span>' +
+          `(?:${sep}<span class="text-\\[0\\.8125rem\\] font-normal text-muted-foreground max-sm:whitespace-nowrap sm:text-xs sm:leading-4">([^<]*)</span>)?` +
+          `(?:${sep}<span class="font-mono text-\\[0\\.8125rem\\] font-normal text-muted-foreground tabular-nums max-sm:whitespace-nowrap sm:text-xs sm:leading-4">([^<]*)</span>)?</p>`,
+        "g",
+      ),
+    ),
+  ].map((m) => m.slice(1).filter((line): line is string => line !== undefined));
+}
+
+/**
+ * The three lanes the fixture's own figures give: the staying set (Ann Arbor, RULE.a's place), the moving
+ * set Now (RULE.b's place) and Tested (the move's stage and times, or `testedStage` when a test changes it).
+ */
+function fixtureLanes(testedStage?: string): string[][] {
+  const place = (value: string) => {
+    const [stage, times] = value.split(" ");
+    return { stage, range: times.replace("-", "–") };
+  };
+  const a = place(RULE.a.place);
+  const b = place(RULE.b.place);
+  const move = { stage: "Side", start: "21:30", end: "23:00" };
+  return [
+    [RULE.a.act, a.stage, a.range],
+    [RULE.b.act, `Now · ${b.stage}`, b.range],
+    [RULE.b.act, `Tested · ${testedStage ?? move.stage}`, `${move.start}–${move.end}`],
+  ];
+}
+
 describe("DecisionCard", () => {
-  it("leads with the receipt, then the heading, the index with its attribution, the timeline, and only then the four lines", () => {
+  it("leads with the festival and day as a dateline, then the action as the heading, the index with its one caption, the timeline, and only then rows 1 to 3 with the rule check beside row 3", () => {
     const html = renderToStaticMarkup(createElement(DecisionCard, { copy: copy() }));
     const plain = text(html);
     const order = [
+      "Tiny Fest, Saturday · published timetable",
       "Bo Diddly Squat 60 minutes later:",
-      "One decision on Tiny Fest Saturday, published timetable",
       "104.2 → 98.4",
-      "Selected and scored by this app’s index",
+      "Selected and scored by this app’s index. A reading, not a verdict.",
       "Solid: where the sets play now.",
       "How this was chosen",
       "The costliest clash with a set that has a legal place that lowers the index",
       "Move one set: of the 4 legal places on the 5-minute grid",
       "If a rule says Ann Arbor and Bo Diddly Squat must never overlap:",
-      "Lines 1 and 2 are selected and scored by this app’s index. Line 3 is checked against the timetable’s rules; the index in it is shown for information, not as a verdict. A reading, not a verdict.",
+      "Checked against the timetable’s rules; its index is shown for information.",
     ].map((part) => plain.indexOf(part));
     order.forEach((at, i) => {
       expect(at, `part ${i}`).toBeGreaterThan(-1);
@@ -125,24 +195,259 @@ describe("DecisionCard", () => {
     expect(html).toContain('id="decision-heading"');
     expect(html).toContain('tabindex="-1"');
     expect(html).toContain('aria-hidden="true"');
+    // The heading is the action and its result; the festival and day are not in it.
+    const heading = /<h2[^>]*id="decision-heading"[^>]*>([\s\S]*?)<\/h2>/.exec(html)?.[1] ?? "";
+    expect(text(heading)).toMatch(/^Bo Diddly Squat 60 minutes later: 60 → to 0 minutes shared$/);
+    // No kicker: the dateline is a 13 px semibold sentence-case line with one middot, like the index label
+    // and the disclosure's subhead.
+    expect(html).not.toContain("type-kicker");
+    expect(html).toMatch(/<p class="text-\[0\.8125rem\] leading-5 font-semibold text-muted-foreground[^"]*">Tiny Fest, Saturday · published timetable<\/p>/);
+    expect(html).toMatch(/<p class="text-\[0\.8125rem\] leading-5 font-semibold text-muted-foreground">Clash Budget Index<\/p>/);
+    expect(html).toMatch(/<h3 class="text-\[0\.8125rem\] leading-5 font-semibold[^"]*">How this was chosen<\/h3>/);
   });
 
-  it("keeps the four lines in the server HTML behind a phone disclosure that is open from sm up", () => {
-    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: copy() }));
-    // The button is for phones only and starts closed; the lines hide on a phone, never from sm up.
-    expect(html).toMatch(/<button[^>]*aria-expanded="false"[^>]*class="[^"]*sm:hidden[^"]*"[^>]*>How this was chosen/);
-    expect(html).toMatch(/class="[^"]*max-sm:hidden[^"]*"/);
-    expect(html).toMatch(/class="[^"]*sm:block[^"]*"/);
+  it("draws the final frame in the server HTML: no hero receipt class until the card plays in the browser", () => {
+    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: copy(), onOpenMove: () => null }));
+    expect(html).not.toMatch(/cc-hero-(slot|band|mark)|cc-overlap-band/);
+  });
+
+  it("puts the line about taste (a pointer to the three readings) above the actions, outside the working, only when passed", () => {
+    const readings = createElement("p", null, "Three readings here");
+    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: copy(), onOpenMove: () => {}, readings }));
     const plain = text(html);
-    for (const n of [1, 2, 3, 4]) expect(plain).toContain(`Line ${n}`);
-    expect(plain).toContain("Bar: time shared with Ann Arbor.");
+    expect(plain).toContain("Three readings here");
+    expect(plain.indexOf("Three readings here")).toBeGreaterThan(plain.indexOf("Hatched: time shared."));
+    // Before the action row's "Open this move" (shown from 1024 px); the copy shown below 1024 px sits
+    // above the drawing, so the taste line comes after it there.
+    expect(plain.indexOf("Three readings here")).toBeLessThan(plain.lastIndexOf("Open this move"));
+    expect(plain.indexOf("Open this move")).toBeLessThan(plain.indexOf("Three readings here"));
+    expect(text(working(html).outside)).toContain("Three readings here");
+    expect(html).toMatch(/<div class="mt-4"><p>Three readings here<\/p><\/div>/);
+    expect(text(renderToStaticMarkup(createElement(DecisionCard, { copy: copy() })))).not.toContain("Three readings here");
   });
 
-  it("labels the timeline rows and keeps its type at 13 units", () => {
+  it("keeps rows 1 to 3 and the rule check in a closed disclosure, and the attribution and its limit in one caption outside it", () => {
+    const card = copy();
+    const limits = card.limitsLine ?? "never";
+    expect(card.limitsLine).toBe("Checked against the timetable’s rules; its index is shown for information.");
+    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: card }));
+    // "Show the working" is the card's one disclosure: a button with aria-expanded and aria-controls over a
+    // region that starts closed and carries `hidden`, so nothing in it is in the tab order. The toggle's
+    // label is the title alone; inside is a small "How this was chosen" subhead over rows 1 to 3.
+    expect(html).not.toContain("<details");
+    const { region, outside, toggle } = working(html);
+    expect(region).not.toBe("");
+    expect(toggle).toMatch(/^<button type="button" id="[^"]+" aria-expanded="false" aria-controls="[^"]+"/);
+    expect(realText(toggle)).toBe("Show the working");
+    // A 16 px chevron leads the label; it turns down on open (under motion-safe only).
+    expect(toggle).toMatch(/<svg[^>]*class="[^"]*lucide-chevron-right[^"]*size-4[^"]*motion-safe:transition-transform/);
+    // A 12 px corner and 8 px sides pulled back by 8 px, so the focus ring is a rounded box inside the card.
+    expect(/^<button[^>]*class="([^"]*)"/.exec(toggle)?.[1].split(" ")).toEqual(
+      expect.arrayContaining(["cc-disclosure-summary", "-mx-2", "min-h-11", "rounded-md", "px-2"]),
+    );
+    expect(region).toMatch(/^<div id="[^"]+" role="region" aria-labelledby="[^"]+" data-working="" hidden=""/);
+    expect(/aria-labelledby="([^"]+)"/.exec(region)?.[1]).toBe(/<button[^>]*\bid="([^"]+)"/.exec(toggle)?.[1]);
+    expect(html.match(/data-working=""/g)).toHaveLength(1);
+    const how = region;
+    expect(how).toMatch(/<h3[^>]*>How this was chosen<\/h3>/);
+    // Inside it the rows keep their numbers for screen readers; the rule check sits beside row 3, after it.
+    for (const n of [1, 2, 3]) expect(text(how)).toContain(`Line ${n}`);
+    expect(text(how)).toContain(card.clashLine);
+    expect(text(how)).toContain(card.moveLine);
+    expect(text(how)).toContain(card.ruleLine ?? "never");
+    expect(text(how)).toContain(limits);
+    expect(text(how).indexOf(limits)).toBeGreaterThan(text(how).indexOf(card.ruleLine ?? "never"));
+    const row3 = /<div class="grid grid-cols-\[1rem_minmax\(0,1fr\)\][^"]*"><span[^>]*><span class="sr-only">Line <\/span>3<\/span>[\s\S]*?<\/div><\/div>/.exec(how)?.[0] ?? "";
+    expect(text(row3)).toContain(limits);
+    // With every disclosure taken out, the attribution and its limit are still there, as one caption under
+    // the index figure: no click hides them, and the rule check is not repeated outside.
+    const open = text(outside);
+    expect(open).toContain("Selected and scored by this app’s index. A reading, not a verdict.");
+    expect(open).not.toContain(limits);
+    expect(open.match(/not a verdict/g)).toHaveLength(1);
+    const caption = /<p class="([^"]*)">Selected and scored by this app’s index\. A reading, not a verdict\.<\/p>/.exec(html)?.[1] ?? "";
+    // 13 px under the index line, so it reads directly under the figure on a phone too.
+    expect(caption.split(" ")).toEqual(expect.arrayContaining(["text-[0.8125rem]", "leading-snug", "text-muted-foreground"]));
+    expect(html.indexOf("Selected and scored")).toBeLessThan(html.indexOf("<figure"));
+    // No visible text points at a row the reader cannot see.
+    const plain = text(html);
+    expect(plain).not.toMatch(/Lines 1 and 2|Line 4/);
+    // The rows' "Line n" labels are for screen readers only; the visible text names no line at all.
+    const visible = realText(html.replace(/<span class="sr-only">[^<]*<\/span>/g, ""));
+    expect(visible).not.toMatch(/Line \d|Lines \d/);
+    // The drawing's lanes say "Now" and "Tested" in their muted meta (12 px from 640 px, 13 px under it), in
+    // sentence case, with no row numeral and no mono margin label. Every lane is the same three items: the
+    // act, its role and stage, then its range in mono (three lines from 640 px, one line joined by " · "
+    // under it); the Now lane's range still names where the set ends now.
+    const figure = /<figure[\s\S]*?<\/figure>/.exec(html)?.[0] ?? "";
+    expect(laneLabels(figure)).toEqual(fixtureLanes());
+    expect(laneLabels(figure).map((lines) => lines.length)).toEqual([3, 3, 3]);
+    expect(figure).not.toMatch(/font-mono[^"]*">(1|2)</);
+    expect(figure).not.toMatch(/font-mono[^"]*">(now|tested)</);
+    // One legend line under the strip names the three marks, 12 px under it with no rule above it.
+    expect(plain).toContain("Solid: where the sets play now. Dashed: tested. Hatched: time shared.");
+    expect(html).toMatch(/<figcaption class="mt-3 text-\[0\.8125rem\] leading-snug text-muted-foreground">Solid:/);
+    expect(figure).not.toMatch(/border-t/);
+  });
+
+  it("labels the timeline rows and keeps its type at 12 units or more", () => {
     const html = renderToStaticMarkup(createElement(DecisionCard, { copy: copy() }));
-    expect(html).toContain(">Now<");
-    expect(html).toContain(">Tested<");
+    const figure = /<figure[\s\S]*?<\/figure>/.exec(html)?.[0] ?? "";
+    // Each role names its stage, and each lane its range (the Now lane's end, 22:00, is still said).
+    expect(text(figure)).toContain("Now · Side · 20:30–22:00");
+    expect(text(figure)).toContain("Tested · Side · 21:30–23:00");
+    expect(text(figure)).not.toContain("to 22:00");
+    expect(html).not.toMatch(/type-kicker[^"]*">(now|tested|Now|Tested)</);
     expect(html).not.toMatch(/text-\[(8|9)px\]/);
+  });
+
+  it("says in one plain sentence who clashes, where and when, and what the move leaves, from the card's own figures", () => {
+    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: copy() }));
+    const plain = text(html);
+    // The sentence read in the drawing's place names every lane's stage and range, as its label does.
+    expect(plain).toMatch(
+      /Now: Ann Arbor \(Main, 20:00–21:30\) and Bo Diddly Squat \(Side, 20:30–22:00\) share 20:30–21:30, 60 minutes\. Tested: Bo Diddly Squat 60 minutes later \(Side, 21:30–23:00\) leaves no time shared\./,
+    );
+    // Three lanes: the staying set once with its stage and range, then the moving set Now (with its stage
+    // and range, which still names its end) and Tested (with its stage and tested range), each label's items
+    // joined by " · " (shown under 640 px). Type stays at 12 units or more.
+    expect(plain).toContain(
+      "Ann Arbor · Main · 20:00–21:30 Bo Diddly Squat · Now · Side · 20:30–22:00 60 min shared Bo Diddly Squat · Tested · Side · 21:30–23:00 no time shared",
+    );
+    // The headline states the move, so the strip carries no "Move:" caption and no arrow under it.
+    expect(plain).not.toContain("Move: 60 minutes later");
+    expect(html).not.toContain("cc-hero-arrow");
+    expect(plain).toContain("60 min shared");
+    expect(plain).toContain("no time shared");
+    // The minutes under the bracket: 13 px mono vermilion; no time shared is muted, never vermilion.
+    expect(html).toMatch(/<p data-strip-minutes="" class="[^"]*font-mono text-\[0\.8125rem\] leading-4[^"]*text-primary[^"]*"[^>]*>60 min shared<\/p>/);
+    expect(html).toMatch(/<p data-strip-minutes="" class="[^"]*font-mono text-\[0\.8125rem\] leading-4 text-muted-foreground">no time shared<\/p>/);
+    expect(html).not.toMatch(/text-\[(8|9|10|11)px\]/);
+  });
+
+  it("names the stage the move puts the set on, not the one it leaves", () => {
+    const base = copy();
+    const moved = { ...base, moveLine: base.moveLine.replace(/lowest index is Side /, "lowest index is Main ") };
+    expect(moved.moveLine).not.toBe(base.moveLine);
+    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: moved }));
+    const plain = text(html);
+    expect(plain).toContain("Bo Diddly Squat · Tested · Main · 21:30–23:00");
+    expect(plain).toContain("Bo Diddly Squat · Now · Side · 20:30–22:00");
+    expect(laneLabels(/<figure[\s\S]*?<\/figure>/.exec(html)?.[0] ?? "")).toEqual(fixtureLanes("Main"));
+    expect(plain).toContain("Tested: Bo Diddly Squat 60 minutes later (Main, 21:30–23:00)");
+  });
+
+  it("draws one pair strip of three lanes as geometry only: every word is HTML, the shared time hatched and bracketed, the drawing hidden", () => {
+    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: copy() }));
+    const figure = /<figure[\s\S]*?<\/figure>/.exec(html)?.[0] ?? "";
+    // One PairStrip, with its screen-reader sentence first and the drawing hidden.
+    expect(figure.match(/data-pair-strip=""/g)).toHaveLength(1);
+    expect(figure).toMatch(/<div data-pair-strip="" class="min-w-0"><p class="sr-only">Now: Ann Arbor \(Main, 20:00–21:30\)[^<]*<\/p><div aria-hidden="true"/);
+    // No text inside any SVG, and no type that scales with a viewBox.
+    for (const svg of figure.match(/<svg[\s\S]*?<\/svg>/g) ?? []) expect(svg).not.toMatch(/<text/);
+    expect(figure).not.toContain("viewBox");
+    expect(figure).not.toContain("textLength");
+    // Three lanes in order: the staying set once, then the moving set Now and Tested.
+    const lanes = [...figure.matchAll(/data-strip-lane="(staying|now|tested)"/g)].map((m) => m[1]);
+    expect(lanes).toEqual(["staying", "now", "tested"]);
+    const bars = [...figure.matchAll(/<svg data-strip-bar="(staying|now|tested)"[\s\S]*?<\/svg>/g)];
+    expect(bars.map((bar) => bar[1])).toEqual(["staying", "now", "tested"]);
+    const [staying, now, tested] = bars.map((bar) => bar[0]);
+    // The staying bar: one solid ink capsule (rx = half its 12 px height), never hatched, cut or vermilion.
+    expect(staying).toMatch(/^<svg[^>]*><rect[^>]*height="12" rx="6" fill="var\(--foreground\)"><\/rect><\/svg>$/);
+    expect(staying).not.toMatch(/url\(#|var\(--primary\)|clip-path/);
+    // The overlap mark is the one definition in marks.tsx: a 16 px tile turned 45 degrees holding one 1.5 px
+    // vermilion line at full strength. One pattern for the strip, no wash and no opacity anywhere.
+    const patterns = [...figure.matchAll(/<pattern id="([^"]+)" patternUnits="userSpaceOnUse" width="16" height="16" patternTransform="rotate\(45\)"><line [^>]*stroke="var\(--primary\)" stroke-width="1.5"><\/line><\/pattern>/g)];
+    expect(patterns).toHaveLength(1);
+    expect(figure.match(/<pattern/g)).toHaveLength(1);
+    const id = patterns[0]?.[1] ?? "";
+    expect(id).not.toContain(":");
+    expect(figure).not.toMatch(/fill-opacity|stroke-opacity|opacity="|cc-ink-hatch|cc-hatch-/);
+    // The open bars: card fill first, the window (clipped to the bar's own capsule) next, the ink outline last.
+    for (const bar of [now, tested]) {
+      expect(bar).toMatch(/^<svg[^>]*><rect[^>]*rx="6" fill="var\(--card\)"/);
+      const outline = bar.search(/<rect[^>]*fill="none" stroke="var\(--foreground\)" stroke-width="1.5"/);
+      expect(outline).toBeGreaterThan(-1);
+      const hatchAt = bar.indexOf(`fill="url(#${id})"`);
+      if (hatchAt > -1) expect(hatchAt).toBeLessThan(outline);
+    }
+    const clips = [...now.matchAll(/<clipPath id="([^"]+)"><rect [^>]*rx="6"[^>]*><\/rect><\/clipPath><g clip-path="url\(#([^"]+)\)"/g)];
+    expect(clips).toHaveLength(1);
+    expect(clips[0][2]).toBe(clips[0][1]);
+    // The Now window: its card rect and hatch over the span, the two edge cuts, then the card halo.
+    const nowWindow = /<g clip-path="url\(#[^"]+\)">([\s\S]*?)<\/g><rect[^>]*fill="none" stroke="var\(--foreground\)"/.exec(now)?.[1] ?? "";
+    expect(nowWindow).toMatch(/^<rect[^>]*fill="var\(--card\)"><\/rect><rect[^>]*fill="url\(#/);
+    expect(nowWindow.match(/<line[^>]*stroke="var\(--primary\)" stroke-width="1"/g)).toHaveLength(2);
+    expect(nowWindow).toMatch(/<rect[^>]*rx="6"[^>]*fill="none" stroke="var\(--card\)" stroke-width="4"><\/rect>$/);
+    // Here the move leaves no time shared, so the tested bar has no window; dashed 4 3 means tested.
+    expect(tested).not.toContain("clip-path");
+    expect(tested).toMatch(/<rect[^>]*rx="6"[^>]*fill="none" stroke="var\(--foreground\)" stroke-width="1.5" stroke-dasharray="4 3"/);
+    expect(now).not.toContain("stroke-dasharray");
+    expect(figure).not.toMatch(/stroke="var\(--primary\)"[^>]*stroke-dasharray/);
+    expect(figure).not.toContain('stroke-dasharray="2 3"');
+    expect(figure).not.toContain("cc-hero-ghost");
+    // No vermilion line runs across a bar: every vermilion stroke in a bar is inside its window's clip.
+    for (const bar of [staying, now, tested]) {
+      const bare = bar.replace(/<g clip-path="url\(#[^"]+\)">[\s\S]*?<\/g>(?=<rect[^>]*fill="none" stroke="var\(--foreground\)")/g, "");
+      expect(bare).not.toContain("var(--primary)");
+    }
+    // The bracket under the shared zone: 1 px vermilion with round caps, its own svg 4 px under the bar.
+    const brackets = figure.match(/<div data-strip-bracket=""><svg width="100%" height="6"[\s\S]*?<\/svg>/g) ?? [];
+    expect(brackets).toHaveLength(1);
+    expect(brackets[0]?.match(/<line[^>]*stroke="var\(--primary\)" stroke-width="1" stroke-linecap="round"/g)).toHaveLength(3);
+    expect(brackets[0] ?? "").toContain('class="mt-1 block overflow-visible"');
+    // One axis along the top, in 12 px mono, a tick on every multiple of 30 minutes inside the domain (here
+    // both ends are on the step), over 1 px border-strong ticks: one tick per label, so no tick stands bare.
+    const labels = [...figure.matchAll(/font-mono text-xs leading-4 whitespace-nowrap text-muted-foreground tabular-nums[^"]*"[^>]*>(\d{2}:\d{2})</g)].map((m) => m[1]);
+    expect(labels).toEqual(["20:00", "20:30", "21:00", "21:30", "22:00", "22:30", "23:00"]);
+    const axis = /<div data-strip-axis=""[\s\S]*?<\/svg>/.exec(figure)?.[0] ?? "";
+    expect(axis.match(/<line[^>]*stroke="var\(--border-strong\)" stroke-width="1"/g)).toHaveLength(labels.length);
+    expect(axis).not.toContain("invisible");
+    // One pitch: from 640 px the lanes sit in equal grid rows (8 px apart), every lane with the same room
+    // under its bar. Under 640 px (6 px apart) the staying set, which draws no bracket, takes only its label
+    // and bar (an auto row, no room under it); the two bracketed lanes share one height.
+    expect(figure).toContain(
+      'class="mt-2 grid gap-1.5 max-sm:grid-rows-(--strip-rows) sm:auto-rows-fr sm:gap-2" style="--strip-rows:auto 1fr 1fr"',
+    );
+    const pads = [...figure.matchAll(/<div data-strip-lane="[a-z]+" class="([^"]*)"/g)].map((m) => m[1].split(" ").filter((c) => /pb-/.test(c)).join(" "));
+    expect(pads).toEqual(["sm:pb-1.5", "pb-6.5 sm:pb-1.5", "pb-6.5 sm:pb-1.5"]);
+    // From 640 px every lane and the axis share the 9.5rem label column.
+    expect(figure.match(/sm:grid sm:grid-cols-\[9\.5rem_minmax\(0,1fr\)\]/g)).toHaveLength(4);
+    // Names wrap, never cut: no truncation in the figure.
+    expect(figure).not.toMatch(/\btruncate\b|line-clamp|text-ellipsis/);
+    // The key line under it, word for word.
+    expect(text(/<figcaption[\s\S]*?<\/figcaption>/.exec(figure)?.[0] ?? "")).toBe(
+      "Solid: where the sets play now. Dashed: tested. Hatched: time shared.",
+    );
+  });
+
+  it("reads the published times back from the card's own drawing, so the strip computes nothing new", () => {
+    for (const [fixed, moving, after] of [
+      [{ start: 840, end: 885 }, { start: 840, end: 900 }, { start: 855, end: 915 }],
+      [{ start: 1200, end: 1290 }, { start: 1230, end: 1320 }, { start: 1290, end: 1380 }],
+      [{ start: 1425, end: 1470 }, { start: 1410, end: 1455 }, { start: 1440, end: 1485 }],
+    ]) {
+      const line = sharedTimeline({ name: "A", ...fixed }, { name: "B", ...moving }, after);
+      const spans = line ? timelineSpans(line) : null;
+      const shift = spans ? spans.staying.start - fixed.start : 0;
+      // Past midnight the clock wraps; the spans keep their lengths and their places relative to each other.
+      expect(shift % 1440).toBe(0);
+      expect(spans).toEqual({
+        staying: { start: fixed.start + shift, end: fixed.end + shift },
+        now: { start: moving.start + shift, end: moving.end + shift },
+        tested: { start: after.start + shift, end: after.end + shift },
+      });
+    }
+  });
+
+  it("states the index with a visible label and keeps the attribution under it", () => {
+    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: copy() }));
+    const plain = text(html);
+    const label = plain.indexOf("Clash Budget Index");
+    expect(label).toBeGreaterThan(-1);
+    expect(plain.indexOf("104.2 → 98.4")).toBeGreaterThan(label);
+    expect(plain.indexOf("Selected and scored by this app’s index")).toBeGreaterThan(plain.indexOf("104.2 → 98.4"));
   });
 
   it("has no buttons the page cannot act on, and shows each only with its handler and its seed", () => {
@@ -155,6 +460,90 @@ describe("DecisionCard", () => {
     expect(withHandlers).toContain("Open this move");
     expect(withHandlers).toContain("Try this rule yourself");
     expect(withHandlers).toContain("Open a hidden clash");
+    // "Open a hidden clash" is a ruled line of type with its arrow, and the first line of the working: one
+    // click on "Show the working" shows it.
+    const hiddenHtml = renderToStaticMarkup(
+      createElement(DecisionCard, { copy: copy(), onOpenMove: () => {}, onOpenHidden: () => {} }),
+    );
+    expect(hiddenHtml).toMatch(/<button[^>]*data-variant="ruled"[^>]*>Open a hidden clash<svg/);
+    const hiddenParts = working(hiddenHtml);
+    expect(hiddenParts.region).toMatch(/^<div [^>]*hidden=""[^>]*><div class="mb-4"><button[^>]*data-variant="ruled"[^>]*>Open a hidden clash<svg/);
+    expect(text(hiddenParts.outside)).not.toContain("Open a hidden clash");
+    // The button's row: "Open this move", then the "Show the working" toggle directly after it, left-aligned
+    // and wrapping below the button only when the row has no room.
+    expect(hiddenHtml).toMatch(
+      /<div class="mt-5 min-w-0"><div class="flex w-full flex-wrap items-center justify-start gap-x-6 gap-y-2"><button[^>]*>Open this move<\/button><button type="button"[^>]*aria-controls=/,
+    );
+    // At every width the card reads in source order: the dateline, the headline, the index with its caption
+    // directly after the readings, (below 1024 px) "Open this move", the drawing and its key, the taste
+    // line, the action row and the working, so a phone's first screen shows the action and the clash itself. Nothing carries an order class, so the tab order is
+    // the order seen at every width; the figure holds nothing focusable.
+    const ORDER = /(?:^|\s)(?:[a-z-]+:)*-?order-\d/;
+    const phoneOrdered = [...hiddenHtml.matchAll(/<[a-z0-9]+\b[^>]*\bclass="([^"]*)"[^>]*>/g)].filter((m) => ORDER.test(m[1])).map((m) => m[0]);
+    expect(phoneOrdered).toHaveLength(0);
+    // 12 px under the index block's copy of the button below 640 px, 16 px to 1023 px, 12 px from 1024 px.
+    expect(hiddenHtml).toMatch(/<figure data-shared-time="" class="mt-3 w-full min-w-0 max-lg:mt-4 max-sm:mt-3">/);
+    const figureHtml = /<figure[\s\S]*?<\/figure>/.exec(hiddenHtml)?.[0] ?? "";
+    expect(figureHtml).toContain("Solid: where the sets play now. Dashed: tested. Hatched: time shared.");
+    expect(figureHtml).not.toMatch(/<(a|button|input|select|textarea)\b|tabindex=/);
+    expect(hiddenHtml).toMatch(/<div data-index-block="" class="mt-3">/);
+    for (const pattern of [/<h2[^>]*class="[^"]*"/, /<p class="text-\[0\.8125rem\] leading-5 font-semibold text-muted-foreground">Tiny Fest/]) {
+      expect(pattern.exec(hiddenHtml)?.[0]).not.toMatch(ORDER);
+    }
+    // Source order: dateline, headline, index (readings, then the attribution), the early "Open this move",
+    // drawing, the action row (its own "Open this move"), working.
+    const at = (needle: string) => hiddenHtml.indexOf(needle);
+    expect(at("Tiny Fest, Saturday")).toBeLessThan(at('id="decision-heading"'));
+    expect(at('id="decision-heading"')).toBeLessThan(at("data-index-block"));
+    expect(at("data-index-block")).toBeLessThan(at(">Open this move<"));
+    expect(at(">Open this move<")).toBeLessThan(at("<figure"));
+    expect(at("<figure")).toBeLessThan(hiddenHtml.lastIndexOf(">Open this move<"));
+    expect(hiddenHtml.lastIndexOf(">Open this move<")).toBeLessThan(at("data-working"));
+    // The attribution directly after the readings, inside the index block.
+    const block = /<div data-index-block=""[\s\S]*?A reading, not a verdict\.<\/p><\/div>/.exec(hiddenHtml)?.[0] ?? "";
+    expect(text(block)).toMatch(/104\.2 → 98\.4[\s\S]*Selected and scored by this app’s index\. A reading, not a verdict\.$/);
+    // One dominant action: "Open this move" is the only solid button, in the ink CTA fill; the rule search
+    // is ruled text under it.
+    const handlersHtml = renderToStaticMarkup(
+      createElement(DecisionCard, { copy: copy(), onOpenMove: () => {}, onTryRule: () => {}, onOpenHidden: () => {} }),
+    );
+    // Two copies of it in the markup, one per width class: under the reading below 1024 px (lg:hidden) and
+    // in the action row from 1024 px (max-lg:hidden), so one is displayed at every width.
+    expect(handlersHtml.match(/data-variant="default"/g)).toHaveLength(2);
+    expect(handlersHtml).toMatch(/<button[^>]*data-variant="default"[^>]*>Open this move</);
+    expect(/<button[^>]*data-variant="default"[^>]*>/.exec(handlersHtml)?.[0]).toMatch(/\bbg-cta\b/);
+    expect(handlersHtml).not.toMatch(/bg-primary|data-variant="(soft|link|destructive)"/);
+    expect(handlersHtml).toMatch(/<button[^>]*data-variant="ruled"[^>]*>Try this rule yourself</);
+    expect(handlersHtml).not.toMatch(/data-variant="(outline|ink)"/);
+    expect(handlersHtml.indexOf("Open this move")).toBeLessThan(handlersHtml.indexOf("Try this rule yourself"));
+    // The action row comes after the drawing, which spans the card (no width ceiling).
+    expect(handlersHtml.lastIndexOf("</svg>", handlersHtml.indexOf("</figure>"))).toBeGreaterThan(-1);
+    expect(handlersHtml.indexOf("</figure>")).toBeLessThan(handlersHtml.lastIndexOf("Open this move"));
+    expect(handlersHtml).toMatch(/<figure data-shared-time="" class="[^"]*w-full/);
+    expect(handlersHtml).not.toMatch(/max-w-[(18|24)rem]/);
+    // An open composition on the paper, not a box: one 1 px decorative rule along the top with 20/24 px
+    // above the dateline, and no corner, no surface edge, no card fill, no side padding and no shadow; no
+    // top bar either: no 2 px rule, inset or not, in the receipt or its skeleton, which wears the same frame.
+    const sectionClass = /<section[^>]*class="([^"]*)"/.exec(handlersHtml)?.[1] ?? "";
+    expect(sectionClass).toBe("@container min-w-0 border-t border-border pt-5 sm:pt-6");
+    // Under 640 px the two-line heading gets leading 1.15 (1.1 from type-title elsewhere); its size and words stay.
+    expect(/<h2 id="decision-heading"[^>]*class="([^"]*)"/.exec(handlersHtml)?.[1].split(" ")).toEqual(
+      expect.arrayContaining(["type-title", "max-sm:leading-[1.15]"]),
+    );
+    const skeleton = renderToStaticMarkup(createElement(DecisionCardSkeleton));
+    const skeletonClass = /^<div aria-hidden="true" class="([^"]*)"/.exec(skeleton)?.[1] ?? "";
+    expect(skeletonClass).toBe("border-t border-border pt-5 sm:pt-6");
+    for (const frame of [sectionClass, skeletonClass]) {
+      const classes = frame.split(" ");
+      for (const banned of ["rounded-xl", "border-surface-edge", "bg-card", "border", "p-5", "sm:p-6", "px-5"]) {
+        expect(classes, banned).not.toContain(banned);
+      }
+      expect(frame).not.toMatch(/\brounded-|\bshadow|\bbg-|\bborder-(x|b|l|r)\b/);
+    }
+    expect(handlersHtml).not.toMatch(/shadow|color-mix|\b(bg|border|text|fill|stroke)-[a-z-]+\/(\[|\d)/);
+    expect(handlersHtml).not.toMatch(/\bh-0\.5\b/);
+    expect(renderToStaticMarkup(createElement(DecisionCardSkeleton))).not.toMatch(/\bh-0\.5\b/);
+    expect(handlersHtml).not.toMatch(/rounded-(none|lg|2xl)|border-t-2/);
     expect(withHandlers).not.toContain("Keep this change");
     const noRule = text(
       renderToStaticMarkup(
@@ -164,7 +553,86 @@ describe("DecisionCard", () => {
     expect(noRule).toContain("Open this move");
     expect(noRule).not.toContain("Try this rule yourself");
     expect(noRule).not.toContain("Line 3");
-    expect(noRule).toContain("Line 4");
+    expect(noRule).not.toContain("Line 4");
+    // With no rule row there is no rule-check sentence; the caption still states the limits, outside every
+    // disclosure.
+    expect(copy({ rule: null }).limitsLine).toBeNull();
+    expect(noRule).not.toContain("Checked against the timetable’s rules");
+    const noRuleOpen = text(
+      working(
+        renderToStaticMarkup(
+          createElement(DecisionCard, { copy: copy({ rule: null }), onOpenMove: () => {}, onTryRule: () => {} }),
+        ),
+      ).outside,
+    );
+    expect(noRuleOpen).toContain("Selected and scored by this app’s index. A reading, not a verdict.");
+  });
+
+  it("puts a second Open this move under the reading below 1024 px: after the attribution line, before the figure, one copy per width", () => {
+    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: copy(), onOpenMove: () => {}, onOpenHidden: () => {} }));
+    const moves = [...html.matchAll(/<button[^>]*>Open this move<\/button>/g)].map((m) => ({ tag: m[0], at: m.index ?? -1 }));
+    expect(moves).toHaveLength(2);
+    const [early, row] = moves;
+    // The early copy: a sibling directly after the index block (never inside it), so "A reading, not a
+    // verdict." stays the block's last line, directly under the index; then the figure.
+    const blockEnd = html.indexOf("A reading, not a verdict.</p></div>");
+    expect(blockEnd).toBeGreaterThan(-1);
+    expect(html.slice(blockEnd)).toMatch(
+      /^A reading, not a verdict\.<\/p><\/div><div class="mt-4 lg:hidden max-sm:mt-3"><button[^>]*>Open this move<\/button><\/div><figure data-shared-time=""/,
+    );
+    expect(early.at).toBeGreaterThan(blockEnd);
+    expect(early.at).toBeLessThan(html.indexOf("<figure"));
+    expect(row.at).toBeGreaterThan(html.indexOf("</figure>"));
+    // The same solid button with the same words: auto width (no full-width class), 44 px at least. Below
+    // 1024 px it is displayed (its wrapper lg:hidden), from 1024 px the action row's copy (max-lg:hidden).
+    for (const { tag } of moves) {
+      expect(tag).toMatch(/data-variant="default"/);
+      expect(tag).toMatch(/\bmin-h-11\b/);
+      expect(tag).not.toMatch(/\bid="/);
+    }
+    expect(early.tag).not.toMatch(/w-full|max-lg:hidden/);
+    expect(row.tag).toMatch(/\bmax-lg:hidden\b/);
+    expect(row.tag).not.toMatch(/(?:^|[\s"])lg:hidden\b/);
+    // Without an index block, or without the handler or the seed, there is no early copy.
+    const noIndex = renderToStaticMarkup(createElement(DecisionCard, { copy: { ...copy(), indexBefore: null }, onOpenMove: () => {} }));
+    expect(noIndex.match(/>Open this move<\/button>/g)).toHaveLength(1);
+    expect(noIndex).not.toContain("lg:hidden");
+    expect(renderToStaticMarkup(createElement(DecisionCard, { copy: copy() }))).not.toContain("lg:hidden");
+    // The skeleton holds the same 44 px block in the same place, below 1024 px only.
+    const skeleton = renderToStaticMarkup(createElement(DecisionCardSkeleton));
+    expect(skeleton).toMatch(/<div class="mt-4 flex h-11 items-center lg:hidden max-sm:mt-3"><div class="rounded-sm bg-muted h-11 w-37"><\/div><\/div><div class="mt-3 flex h-62.5 flex-col justify-around max-lg:mt-4 max-sm:mt-3">/);
+  });
+
+  it("titles the disclosure 'Show the working' with no subtitle, and holds line 3 only with a rule line", () => {
+    const summaryOf = (html: string) => working(html).toggle;
+    const withRule = renderToStaticMarkup(createElement(DecisionCard, { copy: copy() }));
+    expect(copy().ruleLine).toBeTruthy();
+    expect(realText(summaryOf(withRule))).toBe("Show the working");
+    expect(text(withRule)).toContain("Line 3");
+    const noRuleCopy = copy({ rule: null });
+    expect(noRuleCopy.ruleLine).toBeFalsy();
+    const noRule = renderToStaticMarkup(createElement(DecisionCard, { copy: noRuleCopy }));
+    expect(realText(summaryOf(noRule))).toBe("Show the working");
+    expect(text(noRule)).not.toContain("Line 3");
+    expect(text(noRule)).toContain("How this was chosen");
+    expect(text(withRule)).not.toMatch(/lines 1 to/);
+  });
+
+  it("says under the index figure what its change means, from the same two readings", () => {
+    const plain = text(renderToStaticMarkup(createElement(DecisionCard, { copy: copy() })));
+    // 104.2 → 98.4: a fall of 5.8, with a real minus sign, before the attribution.
+    expect(plain).toContain("104.2 to 98.4. \u22125.8 index points · lower is better Selected and scored by this app’s index");
+    // Mono for the figure only; "index points" and "lower is better" in the sans, muted.
+    const html = renderToStaticMarkup(createElement(DecisionCard, { copy: copy() }));
+    expect(html).toContain(
+      '<p class="text-[0.8125rem] leading-snug text-muted-foreground"><span class="font-mono tabular-nums">\u22125.8</span> index points · lower is better</p>',
+    );
+    expect(indexDelta("104.2", "98.4")).toBe("\u22125.8 index points · lower is better");
+    expect(indexDelta("116.7", "114.3")).toBe("\u22122.4 index points · lower is better");
+    expect(indexDelta("10.0", "12.5")).toBe("+2.5 index points · lower is better");
+    expect(indexDelta("10.0", "10.0")).toBe("0.0 index points · lower is better");
+    expect(indexDelta(null, "1.0")).toBeNull();
+    expect(indexDelta("x", "1.0")).toBeNull();
   });
 
   it("offers Keep this change only with its handler and a listed change on line 3", () => {
@@ -227,13 +695,16 @@ describe("DecisionCard", () => {
     expect(text(kept)).toContain("the two-set change");
     expect(text(kept)).not.toContain("Keep the two-set change");
     // It is not disabled: a repeat press says "Already in your plan." instead of losing focus.
-    const button = kept.slice(kept.lastIndexOf("<button", kept.indexOf("In your plan")), kept.indexOf("In your plan"));
+    // The button's own "In your plan" (the comparison's column head, above it, says the same of its column).
+    const at = kept.indexOf('In your plan<span class="sr-only">');
+    const button = kept.slice(kept.lastIndexOf("<button", at), at);
     expect(button).not.toBe("");
     expect(button).not.toContain(`disabled=""`);
-    // A quiet state, not a second primary button: no ink fill, and the unkept button is the outline one.
-    expect(button).toContain('data-variant="ghost"');
-    expect(button).not.toContain('data-variant="ink"');
-    expect(html).toContain('data-variant="outline"');
+    // A quiet state, not a second primary button: no fill, no underline, and the unkept one is ruled text.
+    expect(button).toContain('data-variant="ruled"');
+    expect(button).toContain("no-underline");
+    expect(button).not.toContain('data-variant="default"');
+    expect(html).toMatch(/<button[^>]*data-variant="ruled"[^>]*class="[^"]* underline [^"]*"[^>]*>Keep the two-set change/);
   });
 
   it("says so, with no receipt, figure, timeline or move to open, when no place lowers the index", () => {
@@ -243,8 +714,17 @@ describe("DecisionCard", () => {
     const plain = text(html);
     expect(plain).toContain("No legal place for either set lowers the index.");
     expect(plain).not.toContain("Open this move");
+    // No figure: no index label, no attribution caption.
+    expect(plain).not.toContain("Clash Budget Index");
     expect(plain).not.toContain("Selected and scored by this app’s index. ");
-    expect(html).not.toContain("viewBox=\"0 0 288");
+    expect(html).not.toContain("data-shared-time");
+    expect(html).not.toContain("data-pair-strip");
+    // The only drawing left is the toggle's chevron.
+    expect(html.match(/<svg/g)).toHaveLength(1);
+    expect(html).toMatch(/<svg[^>]*lucide-chevron-right/);
+    // The dateline is the heading, set as a title, not a kicker.
+    expect(html).toMatch(/<h2 id="decision-heading"[^>]*class="[^"]*type-title[^"]*">Tiny Fest · Saturday · published timetable<\/h2>/);
+    expect(html).not.toContain("type-kicker");
   });
 
   it("uses none of the words the round forbids", () => {
@@ -267,8 +747,8 @@ describe("the side-by-side comparison in the card", () => {
     costliest_after: { a: "Cy Twombly", b: "Di Vine", minutes: 30, points: 9.5 },
     moves: [TWO_SET_FIX.moves[0]],
   };
-  function compared(kept?: { move: boolean; change: boolean }) {
-    const built = copy({
+  function comparedCopy() {
+    return copy({
       move: {
         act_id: "bo",
         act: "Bo Diddly Squat",
@@ -290,14 +770,23 @@ describe("the side-by-side comparison in the card", () => {
       },
       rule: { ...RULE, fixes_found: 1, fixes: [ONE_SET_FIX] },
     });
-    return renderToStaticMarkup(createElement(DecisionCard, { copy: built, kept }));
   }
+  function compared(kept?: { move: boolean; change: boolean }) {
+    return renderToStaticMarkup(createElement(DecisionCard, { copy: comparedCopy(), kept }));
+  }
+  /** The full table, as the brief prints it: the card's compact table leaves rows and notes to it. */
+  function fullTable() {
+    const tradeoff = comparedCopy().tradeoff;
+    if (!tradeoff) throw new Error("no tradeoff");
+    return renderToStaticMarkup(createElement(TradeoffTable, { tradeoff }));
+  }
+  const NOTE = "Weigh this reading; once you keep a change, the plan receipt below is what your plan does.";
 
-  it("sits under the buttons and above the four lines, with both columns and every row", () => {
+  it("sits under the buttons and above the four lines, with both columns and the card's rows", () => {
     const html = compared();
     const plain = text(html);
     const order = [
-      "One decision on Tiny Fest Saturday",
+      "Tiny Fest, Saturday · published timetable",
       "The two changes side by side",
       "Move one set Keep the two apart",
       "Sets moved",
@@ -305,8 +794,6 @@ describe("the side-by-side comparison in the card", () => {
       "Time the pair shares, before → after",
       "Ends the overlap",
       "Clash Budget Index, before → after",
-      "Stage-fit flags, now → after",
-      "Costliest clash after",
       "How this was chosen",
     ].map((part) => plain.indexOf(part));
     order.forEach((at, i) => {
@@ -318,6 +805,107 @@ describe("the side-by-side comparison in the card", () => {
     // The pair's minutes before and after each change, and a yes or no for whether each ends the overlap.
     expect(plain).toMatch(/Time the pair shares, before → after \d+ → 0 minutes \d+ → 0 minutes/);
     expect(plain).toMatch(/Ends the overlap Yes Yes/);
+    // The card's table is the compact one: stage fit and the costliest clash after are not rows...
+    expect(plain).not.toContain("Stage-fit flags, now → after");
+    expect(plain).not.toContain("Costliest clash after");
+    expect(plain).not.toContain(STAGE_FIT_GLOSS);
+    // ...but one sentence under the table still says what each change leads to, from the same figures.
+    const consequence =
+      "Move one set: stage-fit flags go 1 → 1, then the costliest clash is Ed Sheeran-ish and Fay Wray, 45 minutes, 1.2 index points; " +
+      "keep the two apart: stage-fit flags go 1 → 2, then the costliest clash is Cy Twombly and Di Vine, 30 minutes, 9.5 index points.";
+    expect(plain).toContain(consequence);
+    expect(plain.indexOf(consequence)).toBeGreaterThan(plain.indexOf("Clash Budget Index, before → after"));
+    expect(plain.indexOf(consequence)).toBeLessThan(plain.indexOf("How this was chosen"));
+    // The brief's full table prints the rows, not the sentence.
+    expect(text(fullTable())).not.toContain(consequence);
+  });
+
+  it("leaves Open this move as the one action in view and opens on the other actions, above the comparison", () => {
+    const readings = createElement("p", null, "Taste moves this pair from #3 to #1.");
+    const html = renderToStaticMarkup(
+      createElement(DecisionCard, {
+        copy: comparedCopy(),
+        onOpenMove: () => {},
+        onTryRule: () => {},
+        onKeepChange: () => {},
+        readings,
+      }),
+    );
+    const { region, outside } = working(html);
+    expect(region).not.toBe("");
+    const inside = text(region);
+    for (const part of ["Try this rule yourself", "Keep the single-set change", comparedCopy().changeSummary ?? "never"]) {
+      expect(inside, part).toContain(part);
+      // Under the table and its consequence line, before the lines of how this was chosen.
+      expect(inside.indexOf(part), part).toBeGreaterThan(inside.indexOf("Sets moved"));
+      expect(inside.indexOf(part), part).toBeLessThan(inside.indexOf("How this was chosen"));
+    }
+    // Outside the working only "Open this move" is left to press, beside the toggle that opens it. The
+    // pointer to the three readings stays in view, above the actions, in the tucked state too.
+    const open = outside;
+    expect(text(open)).toContain("Open this move");
+    expect(text(open)).not.toContain("Try this rule yourself");
+    expect(text(open)).toContain("Taste moves this pair");
+    expect(inside).not.toContain("Taste moves this pair");
+    expect(text(open).indexOf("Taste moves this pair")).toBeLessThan(text(open).lastIndexOf("Open this move"));
+    // Three buttons in the markup: "Open this move" under the reading (below 1024 px), the action row's
+    // copy (from 1024 px), the toggle; two are displayed at any width.
+    expect(open.match(/<button/g)).toHaveLength(3);
+    expect(open.match(/>Open this move<\/button>/g)).toHaveLength(2);
+    expect(open).toMatch(/<button type="button"[^>]*aria-expanded="false"[^>]*><svg[\s\S]*?<\/svg><span>Show the working<\/span>/);
+    // "{ATTRIBUTION}. A reading, not a verdict." stays in view in this tucked state as well.
+    expect(text(open)).toContain("Selected and scored by this app’s index. A reading, not a verdict.");
+    expect(inside).not.toContain("A reading, not a verdict");
+    // The keep button is still described by line 3 and by its summary, and both ids are in the markup.
+    const ids = /aria-describedby="([^"]+)"/.exec(html)?.[1]?.split(" ") ?? [];
+    expect(ids).toHaveLength(2);
+    for (const id of ids) expect(html).toContain(`id="${id}"`);
+  });
+
+  it("states the consequence with what the route sent, and when no priced clash is left", () => {
+    const tradeoff = comparedCopy().tradeoff;
+    if (!tradeoff) throw new Error("no tradeoff");
+    const rows = tradeoff.rows;
+    const only = (ids: string[]) => ({ ...tradeoff, rows: rows.filter((row) => !["flags", "costliest"].includes(row.id) || ids.includes(row.id)) });
+    expect(consequenceLine(only([]))).toBeNull();
+    expect(consequenceLine(only(["flags"]))).toBe("Move one set: stage-fit flags go 1 → 1; keep the two apart: stage-fit flags go 1 → 2.");
+    const cleared = {
+      ...tradeoff,
+      rows: rows.map((row) => (row.id === "costliest" ? { ...row, move: NO_PRICED_CLASH } : row)).filter((row) => row.id !== "flags"),
+    };
+    expect(consequenceLine(cleared)).toBe(
+      "Move one set: no priced clash is left on this day; keep the two apart: the costliest clash after is Cy Twombly and Di Vine, 30 minutes, 9.5 index points.",
+    );
+    // The same clash left after both changes is named once.
+    const same = {
+      ...tradeoff,
+      rows: rows.map((row) => (row.id === "costliest" ? { ...row, rule: row.move } : row)),
+    };
+    expect(consequenceLine(same)).toBe(
+      "Move one set: stage-fit flags go 1 → 1; keep the two apart: 1 → 2; either way the costliest clash after is Ed Sheeran-ish and Fay Wray, 45 minutes, 1.2 index points.",
+    );
+    const none = {
+      ...tradeoff,
+      rows: rows.map((row) => (row.id === "costliest" ? { ...row, move: NO_PRICED_CLASH, rule: NO_PRICED_CLASH } : row)),
+    };
+    expect(consequenceLine(none)).toBe(
+      "Move one set: stage-fit flags go 1 → 1; keep the two apart: 1 → 2; either way no priced clash is left on this day.",
+    );
+  });
+
+  it("prints every row, the notes and the footnote in the full table the brief uses", () => {
+    const plain = text(fullTable());
+    const order = [
+      "Clash Budget Index, before → after",
+      "Selected and scored by this app’s index",
+      "Stage-fit flags, now → after",
+      "Costliest clash after",
+      NOTE,
+    ].map((part) => plain.indexOf(part));
+    order.forEach((at, i) => {
+      expect(at, `part ${i}`).toBeGreaterThan(-1);
+      if (i > 0) expect(at).toBeGreaterThan(order[i - 1]);
+    });
     expect(plain).toContain("1 → 1");
     expect(plain).toContain("1 → 2");
     expect(plain).toContain("Ed Sheeran-ish and Fay Wray, 45 minutes, 1.2 index points");
@@ -325,27 +913,24 @@ describe("the side-by-side comparison in the card", () => {
     expect(plain).toContain(STAGE_FIT_GLOSS);
   });
 
-  it("says what each column is, under the heading, and ends with a non-verdict line that shows on a phone", () => {
+  it("says what each column is, under the heading, on a phone too, and leaves the footnote to the brief", () => {
     const html = compared();
     const plain = text(html);
     const subtitle =
       "Each change tested alone on the published day: the first column is the single move with the lowest index; the second is the smallest change this search found that ends the overlap.";
     expect(plain.indexOf(subtitle)).toBeGreaterThan(plain.indexOf("The two changes side by side"));
     expect(plain.indexOf(subtitle)).toBeLessThan(plain.indexOf("Move one set Keep the two apart"));
-    const note = "A reading to weigh, not a verdict; once you keep a change, the plan receipt below is what your plan does.";
-    expect(plain.indexOf(note)).toBeGreaterThan(plain.indexOf("Costliest clash after"));
-    expect(plain.indexOf(note)).toBeLessThan(plain.indexOf("How this was chosen"));
-    // Neither line is in the collapsed disclosure: no `hidden` or `max-sm:hidden` class on its paragraph.
-    for (const line of [subtitle, note]) {
-      const paragraph = html.slice(html.lastIndexOf("<p", html.indexOf(line.slice(0, 30))), html.indexOf(line.slice(0, 30)));
-      expect(paragraph).not.toMatch(/hidden/);
-    }
+    expect(plain).not.toContain(NOTE);
+    // The subtitle is not in the collapsed disclosure: no `hidden` or `max-sm:hidden` class on its paragraph.
+    const paragraph = html.slice(html.lastIndexOf("<p", html.indexOf(subtitle.slice(0, 30))), html.indexOf(subtitle.slice(0, 30)));
+    expect(paragraph).not.toMatch(/hidden/);
   });
 
-  it("keeps the attribution beside the index row and stacks every row on a phone", () => {
+  it("keeps the attribution by the headline index, not under the index row, and stacks every row on a phone", () => {
     const html = compared();
-    // The note is the row right after the index row, in the same group.
-    expect(html).toMatch(/Clash Budget Index, before → after[\s\S]*?Selected and scored by this app’s index[\s\S]*?<\/tbody>/);
+    // The card states the attribution once, beside the headline figure; the compact row has no note.
+    expect(text(html)).toMatch(/104\.2 → 98\.4 .*Selected and scored by this app’s index/);
+    expect(html).not.toMatch(/Clash Budget Index, before → after[\s\S]*?Selected and scored by this app’s index[\s\S]*?<\/tbody>/);
     // A phone stacks it: the table is a block, each cell carries its column's name, and nothing is fixed wide.
     expect(html).toMatch(/<table[^>]*class="[^"]*\bblock\b[^"]*sm:table[^"]*"/);
     expect(html).toContain('data-label="Move one set"');
@@ -354,6 +939,25 @@ describe("the side-by-side comparison in the card", () => {
     // Real table semantics for a screen reader: column and row headers.
     expect(html).toContain('scope="col"');
     expect(html).toContain('scope="row"');
+  });
+
+  it("sits in the one closed 'Show the working' disclosure, under the table's own visible heading", () => {
+    const tradeoff = comparedCopy().tradeoff;
+    if (!tradeoff) throw new Error("no tradeoff");
+    const html = compared();
+    expect(html).not.toContain("<details");
+    const { region: inside, toggle } = working(html);
+    // The title alone: no subtitle naming what it holds.
+    expect(realText(toggle)).toBe("Show the working");
+    expect(inside).toMatch(/^<div [^>]*hidden=""/);
+    // Inside, the two subheads in order: the table's own heading, shown once, then how this was chosen.
+    const heading = new RegExp(`<h3[^>]*>${tradeoff.heading}</h3>`).exec(inside)?.[0] ?? "";
+    expect(heading).not.toBe("");
+    expect(heading).not.toMatch(/sr-only/);
+    expect(inside.split(tradeoff.heading)).toHaveLength(2);
+    expect(inside.indexOf(tradeoff.heading)).toBeLessThan(inside.indexOf("How this was chosen</h3>"));
+    const bareHtml = renderToStaticMarkup(createElement(DecisionCard, { copy: copy({ rule: RULE_RAW }) }));
+    expect(realText(working(bareHtml).toggle)).toBe("Show the working");
   });
 
   it("says which column the plan already holds", () => {
@@ -369,56 +973,19 @@ describe("the side-by-side comparison in the card", () => {
   });
 });
 
-describe("WhyThisMatters", () => {
-  it("prints the complaint figures, the failed pre-set test in the same block and the demand shell", () => {
-    const plain = text(renderToStaticMarkup(createElement(WhyThisMatters)));
-    expect(plain).toContain("Why this matters, and what is not known");
-    expect(plain).toContain("45 clashes that fans or the press complained about at 5 festivals");
-    expect(plain).toContain("86 pairs of acts, median 50 minutes");
-    expect(plain).toContain("The test we set before looking failed. 46.8%");
-    expect(plain).toContain("against a bar of 60%");
-    expect(plain).toContain("AUC of 0.634 on this press-skewed set");
-    expect(plain).toContain("They do not show that anyone would use or pay for this.");
-    expect(plain).toContain("Who would pay is not known.");
-    // Pending: no counts, no quote.
-    expect(plain).not.toMatch(/We asked|One programmer told us/);
-  });
-
-  it("links four public voices to their pages and names no one without a source", () => {
-    const html = renderToStaticMarkup(createElement(WhyThisMatters));
-    expect((html.match(/rel="noopener noreferrer"/g) ?? []).length).toBe(5);
-    for (const host of ["bbc.co.uk", "nme.com", "alpsinc.kr", "abc.net.au", "www.billboard.com"]) expect(html).toContain(host);
-    expect(html).not.toContain("hadnews");
-    expect(html).not.toContain("&quot;");
-    expect(text(html)).toContain("The team had expected different audiences, and the clash drew criticism.");
-  });
-
-  it("prints a counted result or a reply only when the owner's data says so", () => {
-    const none: Demand = { status: "none", asked: 7, dates: "Oct 6 to 17", checkedOn: "Oct 19" };
-    expect(text(renderToStaticMarkup(createElement(WhyThisMatters, { demand: none })))).toContain(
-      "We asked 7 festival programmers between Oct 6 to 17; none had replied by Oct 19.",
-    );
-    const reply: Demand = { status: "reply", asked: 7, replied: 1, dates: "Oct 6 to 17", role: "Programmer", quote: "A made-up reply.", changed: null };
-    const plain = text(renderToStaticMarkup(createElement(WhyThisMatters, { demand: reply })));
-    expect(plain).toContain("One programmer told us");
-    expect(plain).toContain("Asked 7, replied 1.");
-    expect(plain).toContain("Changed because of this reply: Nothing changed.");
-  });
-});
-
 describe("KeepApart", () => {
-  it("renders the form with both selects and a Search button, and no result before a search", () => {
+  it("renders the form with both selects and a Find changes button, and no result before a search", () => {
     const html = renderToStaticMarkup(createElement(KeepApart, { preset: parsePreset(rawTinyPreset()), day: 0 }));
     const plain = text(html);
     expect(plain).toContain("Keep two sets apart");
     expect(plain).toContain(
-      "Pick two sets that share time. The search covers single places on the 5-minute grid for either set, and the two-set changes this search generates. Listed changes end this overlap and add no rule break.",
+      "Choose two overlapping sets. Find the moves that end the overlap without breaking a rule.",
     );
     expect(plain).not.toMatch(/every (place|swap)|keeps all rules/);
     expect(plain).toContain("First set");
     expect(plain).toContain("Second set");
     expect(plain).toContain("(locked)");
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>Search<\/button>/);
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Find changes that end this overlap<\/button>/);
     expect(plain).not.toContain("Smallest changes first");
   });
 });
@@ -499,5 +1066,91 @@ describe("a listed change row", () => {
     );
     expect(html).toContain(`disabled=""`);
     expect(text(html)).toContain("Your plan holds 8 moves");
+  });
+});
+
+describe("the hero", () => {
+  afterEach(() => {
+    vi.doUnmock("@/lib/art");
+    vi.resetModules();
+  });
+
+  async function hero(enabled: boolean): Promise<string> {
+    vi.resetModules();
+    const real = await vi.importActual<typeof import("@/lib/art")>("@/lib/art");
+    vi.doMock("@/lib/art", () => ({
+      ...real,
+      artSlot: (name: keyof typeof real.ART) => (enabled ? { ...real.ART[name], enabled: true } : null),
+    }));
+    const { ClashControlFallback } = await import("./clash-control");
+    const { summarize } = await import("@/lib/server-summary");
+    return renderToStaticMarkup(
+      createElement(ClashControlFallback, { intro: null, summary: summarize(parsePreset(rawTinyPreset())) }),
+    );
+  }
+
+  it("fills the pitch column with the stat sentence, not image slot 1, even once art.ts enables it", async () => {
+    expect(await hero(false)).not.toContain("hero-site-plan");
+    expect(await hero(true)).not.toContain("hero-site-plan");
+    const { ClashControlFallback } = await import("./clash-control");
+    const html = renderToStaticMarkup(
+      createElement(ClashControlFallback, { intro: createElement("h1", null, "Pitch"), stats: createElement("p", null, "Strip") }),
+    );
+    // Below 1024 px the page reads in source order, pitch, card, action, stat sentence, note, so a phone's
+    // first screen shows the clash itself before the paste. From 1024 px the grid's areas set the two
+    // columns; the pitch column is top-aligned with no hole: pitch, action, stat sentence 40 px under it,
+    // note, then a flexible last row that takes the card's spare height.
+    expect(html).toMatch(/<div class="min-w-0 \[grid-area:stats\] lg:mt-10"><p>Strip<\/p><\/div>/);
+    expect(html).toMatch(/\[grid-template-areas:(&#x27;|')pitch\1_\1card\1_\1actions\1_\1stats\1_\1note\1\]/);
+    // The paste action is rendered twice in the actions area, so the order seen is the tab order at every
+    // width: once before the card, display:none below 1024 px, and once directly after it, display:none from
+    // 1024 px. Exactly one copy is shown at any width; neither is hidden by sr-only, visibility, opacity,
+    // aria-hidden or an order class.
+    const paste = await hero(false);
+    const copies = [...paste.matchAll(/<div class="min-w-0 \[grid-area:actions\] ([^"]*)">/g)].map((m) => m[1]);
+    expect(copies).toEqual(["max-lg:hidden", "lg:hidden"]);
+    const at = (needle: string, from = 0) => paste.indexOf(needle, from);
+    const first = at("[grid-area:actions] max-lg:hidden");
+    const second = at("[grid-area:actions] lg:hidden");
+    expect(at("grid-area:pitch")).toBeLessThan(first);
+    expect(first).toBeLessThan(at("grid-area:card"));
+    expect(at("grid-area:card")).toBeLessThan(second);
+    // (This render has no stat sentence, so the note follows the second copy.)
+    expect(second).toBeLessThan(at("grid-area:note"));
+    expect(paste.match(/>Paste your own draft grid</g)).toHaveLength(2);
+    for (const part of [paste.slice(first, at("grid-area:card")), paste.slice(second, at("grid-area:note"))]) {
+      expect(part).toMatch(/<a[^>]*href="\/check"[^>]*>Paste your own draft grid<svg/);
+      for (const [, cls] of part.matchAll(/class="([^"]*)"/g)) {
+        expect(cls).not.toMatch(/(?:^|\s)(?:sr-only|invisible|opacity-0|-?order-\d+)(?:\s|$)/);
+      }
+      expect(part).not.toMatch(/<(div|a|p)[^>]*aria-hidden="true"/);
+    }
+    expect(html).toMatch(/lg:grid-rows-\[auto_auto_auto_auto_1fr\]/);
+    expect(html).toMatch(/lg:\[grid-template-areas:(&#x27;|')pitch_card\1_\1actions_card\1_\1stats_card\1_\1note_card\1_\1\._card\1\]/);
+    // The section's 40 px foot, at every width, is the gap between the card and the jump nav, with no rule.
+    expect(html).toMatch(/<div class="container-page pt-6 pb-10 sm:pt-8 lg:pt-10">/);
+    // Open sections are parted by space, not rules: the timetable frame has no top rule.
+    expect(html).toMatch(/<section aria-label="Timetable"><div class="container-page py-16 lg:py-20/);
+    expect(html).not.toMatch(/<section[^>]*class="[^"]*border-t/);
+    // The note is one 14 px muted paragraph across the column from 1024 px.
+    expect(html).toMatch(/<p class="max-w-\[32rem\] text-sm leading-relaxed text-muted-foreground lg:max-w-none \[grid-area:note\]/);
+    expect(html).toMatch(/class="grid [^"]*items-start/);
+    const order = ["grid-area:pitch", "grid-area:actions", "grid-area:card", "grid-area:stats", "grid-area:note"].map((a) => html.indexOf(a));
+    order.forEach((at, i) => {
+      expect(at, `area ${i}`).toBeGreaterThan(-1);
+      if (i > 0) expect(at).toBeGreaterThan(order[i - 1]);
+    });
+    expect(text(html).indexOf("Pitch")).toBeLessThan(text(html).indexOf("Strip"));
+  });
+
+  it("offers the /check paste as the outline secondary button, with what it costs and what leaves the browser", async () => {
+    const html = await hero(false);
+    const plain = text(html);
+    expect(plain).toContain("Paste your own draft grid");
+    expect(plain).toContain("About a minute. Nothing leaves your browser unless you ask for prices.");
+    // The secondary button: outline (a 1.5 px ink edge, no fill), 44 px (the default size, the same height as
+    // "Open this move"), with a trailing arrow and no fill, so the card's "Open this move" stays the one solid button.
+    expect(html).toMatch(/<a(?=[^>]*data-variant="outline")(?=[^>]*data-size="default")(?=[^>]*href="\/check")[^>]*>Paste your own draft grid<svg/);
+    expect(html).not.toMatch(/<a(?=[^>]*data-variant="(default|ruled|soft)")(?=[^>]*href="\/check")/);
   });
 });

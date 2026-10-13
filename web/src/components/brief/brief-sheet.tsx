@@ -158,11 +158,11 @@ function BackLink({ href }: { href: string }) {
 /** Loading, error and unknown-link states: one short line and the way back. */
 function Notice({ children, href, busy = false }: { children: ReactNode; href: string; busy?: boolean }) {
   return (
-    <div className="container-page max-w-3xl py-16 sm:py-24">
+    <div className="container-page max-w-[60rem] pt-8 pb-12">
       <p className="type-kicker text-muted-foreground">Clash brief</p>
       <p
         role={busy ? "status" : "alert"}
-        className="mt-3 flex items-center gap-2 text-lg leading-snug font-semibold sm:text-xl"
+        className="mt-2 flex max-w-prose items-center gap-2 text-lg leading-snug font-semibold sm:text-xl"
       >
         {busy ? <LoaderCircle aria-hidden="true" className="size-5 animate-spin motion-reduce:animate-none" /> : null}
         {children}
@@ -199,12 +199,17 @@ export function BriefSheet() {
   }
   if (state.status === "error") return <Notice href={back}>Could not load this brief.</Notice>;
   if (state.status === "missing") {
-    return <Notice href="/">This link does not name a festival day on this demo.</Notice>;
+    return (
+      <Notice href="/">
+        This brief link is unavailable. Open the timetable and choose ‘Open as a{" "}
+        <span className="whitespace-nowrap">one-page</span> brief’.
+      </Notice>
+    );
   }
 
   const day = resolveDay(state.preset, dayText);
   if (day === null) {
-    return <Notice href={back}>This festival day has no timetable for the day in this link.</Notice>;
+    return <Notice href={back}>The day in this link has no timetable.</Notice>;
   }
 
   return (
@@ -247,7 +252,7 @@ function Block({
       <h2
         id={id}
         className={cn(
-          "type-kicker border-b-2 border-foreground pb-1.5 print:pb-[1pt] print:text-[10pt]",
+          "type-kicker pb-1.5 print:pb-[1pt] print:text-[10pt]",
           quietInPrint && "print:sr-only",
         )}
       >
@@ -260,7 +265,7 @@ function Block({
 
 function HiddenMark() {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-foreground px-1.5 py-0.5 text-[0.6875rem] leading-none font-semibold whitespace-nowrap print:px-[3pt] print:text-[9pt]">
+    <span className="tag text-foreground print:px-[3pt] print:text-[9pt]">
       <DiamondGlyph className="size-2" />
       Hidden
     </span>
@@ -604,7 +609,7 @@ export function BriefContent({
     <article
       aria-labelledby="brief-heading"
       className={cn(
-        "rounded-xl border border-border bg-card p-5 text-[0.9375rem] leading-relaxed sm:p-8 lg:p-10",
+        "rounded-lg border border-surface-edge bg-card p-5 text-[0.9375rem] leading-relaxed sm:p-8 lg:p-10",
         "print:rounded-none print:border-0 print:bg-transparent print:p-0 print:text-[9pt] print:leading-[1.17]",
         className,
       )}

@@ -1,19 +1,35 @@
 import type { ReactNode } from "react";
-import { CircleAlert, CircleCheck, Clock, History, Radio, Zap } from "lucide-react";
+import { History } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import type { QlooRequestRecord } from "@/lib/events";
 import { describeStatus, formatLatency, isSuccessStatus, summarizeParam } from "@/lib/format";
 import type { TracedRequest } from "@/lib/run-state";
 
-/** Base look of the small status pills in the trace. Each also carries an icon and a text label. */
-export const pill =
-  "inline-flex h-6 shrink-0 items-center gap-1 rounded-full border px-2.5 text-xs leading-none font-semibold whitespace-nowrap [&_svg]:size-3.5 [&_svg]:shrink-0";
+/**
+ * Base look of the small status stamps in the trace: the house `.tag` stamp, its word in its own ink.
+ * Only Recorded carries a glyph (the clock that marks a replay); the other words say their state.
+ */
+export const pill = "tag shrink-0";
+
+/**
+ * A dotted key, path or id that wraps only where it can break cleanly: after each dot (and each slash
+ * of a path), never in the middle of a word. Normal wrapping, no forced breaks.
+ */
+export function dotted(text: string): ReactNode {
+  const parts = text.split(/(?<=[./])/);
+  if (parts.length === 1) return text;
+  return parts.map((part, index) => (
+    <span key={index}>
+      {part}
+      {index < parts.length - 1 ? <wbr /> : null}
+    </span>
+  ));
+}
 
 export function FailedPill({ children }: { children: ReactNode }) {
   return (
-    <span className={cn(pill, "border-destructive/50 bg-danger-bg text-destructive")}>
-      <CircleAlert aria-hidden="true" />
+    <span className={cn(pill, "text-destructive")}>
       {children}
     </span>
   );
@@ -21,17 +37,8 @@ export function FailedPill({ children }: { children: ReactNode }) {
 
 function StatusPill({ status }: { status: number }) {
   const ok = isSuccessStatus(status);
-  const Icon = ok ? CircleCheck : CircleAlert;
   return (
-    <span
-      className={cn(
-        pill,
-        ok
-          ? "border-success/50 bg-success-bg text-success"
-          : "border-destructive/50 bg-danger-bg text-destructive",
-      )}
-    >
-      <Icon aria-hidden="true" />
+    <span className={cn(pill, ok ? "text-success" : "text-destructive")}>
       <span className="sr-only">Status: </span>
       {describeStatus(status)}
     </span>
@@ -40,8 +47,7 @@ function StatusPill({ status }: { status: number }) {
 
 function LatencyPill({ ms }: { ms: number }) {
   return (
-    <span className={cn(pill, "border-border bg-muted text-foreground tabular-nums")}>
-      <Clock aria-hidden="true" />
+    <span className={cn(pill, "text-foreground normal-case tabular-nums")}>
       <span className="sr-only">Latency: </span>
       {formatLatency(ms)}
     </span>
@@ -53,10 +59,7 @@ function SourcePill({ record }: { record: QlooRequestRecord }) {
   if (record.recorded) {
     return (
       <span
-        className={cn(
-          pill,
-          "border-dashed border-prov-recorded-border bg-prov-recorded-bg text-prov-recorded",
-        )}
+        className={cn(pill, "text-prov-recorded")}
         title="Served from a saved response, not a live Qloo call."
       >
         <History aria-hidden="true" />
@@ -67,20 +70,18 @@ function SourcePill({ record }: { record: QlooRequestRecord }) {
   if (record.cached) {
     return (
       <span
-        className={cn(pill, "border-info/50 bg-info-bg text-info")}
+        className={cn(pill, "text-muted-foreground")}
         title="Answered from this app's cache. No new request reached Qloo."
       >
-        <Zap aria-hidden="true" />
         Cached
       </span>
     );
   }
   return (
     <span
-      className={cn(pill, "border-border-strong bg-card text-foreground")}
+      className={cn(pill, "text-foreground")}
       title="A live request to Qloo."
     >
-      <Radio aria-hidden="true" />
       Live
     </span>
   );
@@ -102,7 +103,7 @@ function ParamValue({ value }: { value: string }) {
         <summary className="w-fit cursor-pointer rounded-sm font-sans font-semibold text-foreground select-none">
           Show all {total}
         </summary>
-        <p className="mt-1 break-all">{full}</p>
+        <p className="mt-1 min-w-0 break-words">{full}</p>
       </details>
     </>
   );
@@ -123,11 +124,11 @@ function ParamsTable({ item }: { item: TracedRequest }) {
           <tr key={key} className="border-t border-border first:border-t-0">
             <th
               scope="row"
-              className="w-[40%] py-1.5 pr-3 align-top font-mono font-medium break-words text-muted-foreground"
+              className="w-[40%] min-w-0 py-1.5 pr-3 align-top font-mono font-medium text-muted-foreground"
             >
-              {key}
+              {dotted(key)}
             </th>
-            <td className="py-1.5 align-top font-mono break-all">
+            <td className="min-w-0 py-1.5 align-top font-mono break-words">
               <ParamValue value={value} />
             </td>
           </tr>
@@ -151,11 +152,11 @@ export function RequestItem({ item }: { item: TracedRequest }) {
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
         <span className="font-mono text-xs text-muted-foreground tabular-nums">#{ordinal}</span>
         {/* Every Qloo endpoint this app calls is a GET. */}
-        <h4 className="min-w-0 font-mono text-sm font-bold break-all">
+        <h4 className="min-w-0 font-mono text-sm font-bold">
           <span className="mr-1.5 rounded-sm bg-foreground px-1.5 py-0.5 text-xs text-background">
             GET
           </span>
-          {record.path}
+          {dotted(record.path)}
         </h4>
       </div>
       <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
@@ -168,7 +169,7 @@ export function RequestItem({ item }: { item: TracedRequest }) {
       <p className="mt-2 text-xs text-muted-foreground">
         Request ID{" "}
         {record.request_id ? (
-          <code className="font-mono break-all text-foreground">{record.request_id}</code>
+          <code className="min-w-0 font-mono break-words text-foreground">{dotted(record.request_id)}</code>
         ) : (
           <span>{requestIdNote(record)}</span>
         )}

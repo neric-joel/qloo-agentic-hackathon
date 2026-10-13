@@ -1,7 +1,7 @@
 "use client";
 
-import { FlaskConical } from "lucide-react";
 import { usePathname } from "next/navigation";
+import { TriangleAlert } from "lucide-react";
 
 import { showsSyntheticNotice, SYNTHETIC_NOTICE } from "@/lib/synthetic-notice";
 
@@ -10,12 +10,10 @@ import { useSynthetic } from "./synthetic-context";
 /** The notice itself, in the same strip as the simulated-data banner. */
 export function SyntheticNotice() {
   return (
-    <aside
-      aria-label="Synthetic data notice"
-      className="border-b border-warning/40 bg-warning-bg text-warning"
-    >
-      <p className="container-page flex items-start gap-2 py-2 text-xs leading-snug font-semibold sm:items-center">
-        <FlaskConical aria-hidden="true" className="mt-px size-3.5 shrink-0 sm:mt-0" />
+    <aside aria-label="Synthetic data notice" className="container-page pt-3">
+      {/* One ink-edged card with its warning icon: no hairline across the page and no tinted ground. */}
+      <p className="flex items-start gap-2 rounded-md border border-foreground bg-card px-4 py-2 text-xs leading-snug font-semibold text-foreground">
+        <TriangleAlert aria-hidden="true" className="mt-px size-4 shrink-0" />
         <span>{SYNTHETIC_NOTICE}</span>
       </p>
     </aside>

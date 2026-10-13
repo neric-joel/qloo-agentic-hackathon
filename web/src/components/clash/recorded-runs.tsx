@@ -1,64 +1,72 @@
 import type { ReactNode } from "react";
-import { History, Play } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 
 import { RecordedBadge } from "@/components/kernel";
+import { Button } from "@/components/ui/button";
 import type { RecordedRun } from "@/lib/recorded-run";
+import { cn } from "@/lib/utils";
 
 /** Where the recorded runs sit on the page, for links that point at them. */
 export const RECORDED_RUNS_ID = "agent-recordings";
 
+const DESCRIPTION =
+  "Real agent runs on this festival day, saved as they streamed, with the request ids of any Qloo calls they made. Replaying one makes no live call.";
+
 /**
  * "Watch a recorded run": real agent runs on this festival day, saved as they streamed, with the request ids
  * of any Qloo calls they made.
- * Each button replays one in the panel; nothing is sent anywhere.
+ * A transcript list (an ordered list, with no printed numbers): each row prints the full prompt, and its Replay plays the run in the panel;
+ * nothing is sent anywhere.
  */
 export function RecordedRuns({
   runs,
   onPlay,
   heading = "Watch a recorded run",
+  description = DESCRIPTION,
   disabled = false,
   className,
 }: {
   runs: readonly RecordedRun[];
   onPlay: (run: RecordedRun) => void;
+  /** The label above the runs; null leaves it out where the line before already says it. */
   heading?: ReactNode;
+  /** The line under the heading; null leaves it out where the page already says it (the agent-off heading). */
+  description?: ReactNode;
   disabled?: boolean;
   className?: string;
 }) {
   if (runs.length === 0) return null;
   return (
     <div id={RECORDED_RUNS_ID} className={className}>
-      <p className="type-kicker flex items-center gap-2 text-muted-foreground">
-        <History aria-hidden="true" className="size-3.5" />
-        {heading}
-      </p>
-      <p className="mt-1.5 text-sm text-muted-foreground">
-        Real agent runs on this festival day, saved as they streamed, with the request ids of any Qloo
-        calls they made. Replaying one makes no live call.
-      </p>
-      <ul className="mt-3 grid gap-2">
+      {heading ? <p className="max-w-prose text-[0.8125rem] leading-5 font-semibold text-muted-foreground">{heading}</p> : null}
+      {description ? <p className="mt-1.5 max-w-prose text-sm text-muted-foreground">{description}</p> : null}
+      <ol
+        aria-label="Recorded runs"
+        className={cn("border-b border-border", (heading || description) && "mt-3")}
+      >
         {runs.map((run) => (
-          <li key={run.id}>
-            <button
+          <li
+            key={run.id}
+            className="grid grid-cols-[minmax(0,1fr)] gap-x-6 border-t border-border py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-baseline"
+          >
+            <div className="min-w-0">
+              <p className="text-[0.9375rem] leading-relaxed break-words">{run.question}</p>
+              <p className="mt-0.5 text-[0.8125rem] text-muted-foreground">{run.title}</p>
+            </div>
+            <Button
               type="button"
+              variant="ruled"
               disabled={disabled}
               onClick={() => onPlay(run)}
-              className="group grid w-full grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-lg border border-dashed border-prov-recorded-border bg-card px-3.5 py-3 text-left transition-colors hover:bg-prov-recorded-bg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50"
+              className="mt-1 justify-self-start sm:mt-0"
             >
-              <span
-                aria-hidden="true"
-                className="mt-0.5 grid size-7 place-items-center rounded-full border border-prov-recorded-border text-prov-recorded group-hover:bg-card"
-              >
-                <Play className="size-3.5" />
-              </span>
-              <span className="min-w-0">
-                <span className="block text-sm font-semibold">{run.title}</span>
-                <span className="mt-0.5 line-clamp-2 block text-sm text-muted-foreground">{run.question}</span>
-              </span>
-            </button>
+              Replay
+              <span className="sr-only"> the recorded run: {run.title}</span>
+              <ArrowRight aria-hidden="true" />
+            </Button>
           </li>
         ))}
-      </ul>
+      </ol>
     </div>
   );
 }

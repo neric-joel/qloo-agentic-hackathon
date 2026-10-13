@@ -802,7 +802,7 @@ describe("the brief's trade-off", () => {
     expect(more.tradeoff.heading).toBe("The two changes, tested alone, not your whole plan");
     // The sentence under the heading and the line under the table are the brief's.
     expect(more.tradeoff.subtitle).toMatch(/^Each change tested alone on the published day/);
-    expect(more.tradeoff.footnote).toBe("A reading to weigh, not a verdict; the plan receipt above is what your plan does.");
+    expect(more.tradeoff.footnote).toBe("Weigh this reading; the plan receipt above is what your plan does.");
   });
 
   it("gives the card's move a receipt only for a plan that is just that move", () => {
@@ -847,8 +847,8 @@ describe("the brief's trade-off", () => {
       expect(position, order[i]).toBeGreaterThan(-1);
       if (i > 0) expect(position).toBeGreaterThan(at[i - 1]);
     });
-    expect(plain).toContain("A reading to weigh, not a verdict; the plan receipt above is what your plan does.");
-    expect(plain.indexOf("A reading to weigh")).toBeGreaterThan(plain.indexOf("Costliest clash after"));
+    expect(plain).toContain("Weigh this reading; the plan receipt above is what your plan does.");
+    expect(plain.indexOf("Weigh this reading")).toBeGreaterThan(plain.indexOf("Costliest clash after"));
     // The heading is kept on paper when the table is tested alone; the plan summary is the larger type.
     expect(html).toMatch(/<h3[^>]*print:text-\[9pt\][^>]*>The two changes, tested alone/);
     expect(html).toMatch(/<p class="[^"]*text-lg[^"]*font-bold[^"]*">3 kept moves/);

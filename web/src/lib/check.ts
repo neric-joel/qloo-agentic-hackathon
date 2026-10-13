@@ -45,6 +45,8 @@ const ECHO_CHARS = 80;
 const MINUTES_PER_DAY = 1440;
 /** H:MM or HH:MM, with optional seconds that are dropped (spreadsheets often copy 18:00:00). */
 const CLOCK = /^(\d{1,2}):([0-5]\d)(?::[0-5]\d)?$/;
+/** A 12-hour time as spreadsheets and exports write it: 2:00 PM, 2pm, 3:10pm, 12:30 a.m. */
+const CLOCK_12 = /^(\d{1,2})(?::([0-5]\d))?(?::[0-5]\d)?\s*([ap])\.?\s*m\.?$/i;
 /**
  * Control characters (tab, carriage return and line feed are handled before this runs) and invisible
  * format characters, except the joiners real names use (U+200C, U+200D). Soft hyphens (U+00AD) are
@@ -115,21 +117,38 @@ export type CheckReport = {
   settings: CheckSettings;
   breaks: RuleBreak[];
   shared: SharedPair[];
+  /** What the page read but did not use, such as columns it ignores. Never a rule break. */
+  notes: string[];
 };
 
-export type CheckOutcome = { ok: true; report: CheckReport } | { ok: false; errors: string[] };
+/**
+ * A pair-rule name that matches no set, with the name the page would use instead: `match` when one act
+ * starts with or holds the typed words (the visitor confirms it with one click), else the three nearest.
+ */
+export type PairSuggestion = {
+  /** The error this suggestion belongs to, word for word. */
+  message: string;
+  line: number;
+  side: 0 | 1;
+  match: string | null;
+  nearest: string[];
+};
+
+export type CheckOutcome =
+  | { ok: true; report: CheckReport }
+  | { ok: false; errors: string[]; suggestions: PairSuggestion[] };
 
 /** The page's set wording. */
 export const CHECK_COPY = {
   kicker: "Check a draft grid",
   title: "Check a draft grid against your rules",
-  lede: "Paste one day of a draft timetable. This page lists the rule breaks and the sets that share time. It runs in your browser: nothing you paste is sent anywhere, including to Qloo.",
+  lede: "Paste one day of a draft timetable to find rule breaks and sets that share time. Audience overlap is optional.",
+  privacy:
+    "Rule checks run in your browser; nothing is sent unless you press Compare audience overlap. Decisions you mark stay in this tab and clear on reload. A copied link contains your grid and settings; anyone with it can read them, and opening it fills the fields again.",
   printTitle: "Draft check, not a verdict",
   noBreaks: "No rule breaks found against the settings above.",
-  notComputed:
-    "Not computed: taste overlap. It needs a Qloo reading per act, and this page makes no request to Qloo or to anything else. The two published days on the home page show what it adds.",
   elsewhere:
-    "Rule checks like these also exist in scheduling software. What this app adds is the audience reading on the published days; this page does not have it.",
+    "Rule checks like these also exist in scheduling software. What this app adds is the audience reading: on this page it is the optional Compare audience overlap step, read from a saved day or, if you ask, from Qloo.",
 } as const;
 
 /** The file "Download a template" gives: a header and two invented rows. */
@@ -184,13 +203,33 @@ function plural(count: number, one: string, many: string = `${one}s`): string {
   return `${count} ${count === 1 ? one : many}`;
 }
 
-/** Minutes for `H:MM` or `HH:MM` (hours up to 47), or null when it is not one. */
-function parseClock(value: string): number | null {
-  const match = CLOCK.exec(value.trim());
-  if (!match) return null;
-  const minutes = Number(match[1]) * 60 + Number(match[2]);
-  return minutes <= CHECK_LIMITS.maxMinutes ? minutes : null;
+type Clock = { minutes: number; twelveHour: boolean };
+
+/**
+ * Minutes for `H:MM` or `HH:MM` (hours up to 47), or for a 12-hour time (`2:00 PM`, `2pm`, `12:30 AM`
+ * is 00:30), or null when it is neither. `twelveHour` says which, because a 12-hour time cannot be
+ * written as 24:30 for after midnight.
+ */
+function readClock(value: string): Clock | null {
+  const text = value.trim();
+  const match = CLOCK.exec(text);
+  if (match) {
+    const minutes = Number(match[1]) * 60 + Number(match[2]);
+    return minutes <= CHECK_LIMITS.maxMinutes ? { minutes, twelveHour: false } : null;
+  }
+  const twelve = CLOCK_12.exec(text);
+  if (!twelve) return null;
+  const hour = Number(twelve[1]);
+  if (hour < 1 || hour > 12) return null;
+  const afternoon = twelve[3].toLowerCase() === "p";
+  return { minutes: ((hour % 12) + (afternoon ? 12 : 0)) * 60 + Number(twelve[2] ?? 0), twelveHour: true };
 }
+
+function parseClock(value: string): number | null {
+  return readClock(value)?.minutes ?? null;
+}
+
+const TIME_FORMS = "18:00, 24:30, 6:00 PM or 6pm";
 
 /** The delimiter of the paste: a tab on the first non-blank line means tab, otherwise comma. */
 function delimiterOf(lines: readonly string[]): string {
@@ -245,23 +284,50 @@ function splitLine(line: string, delimiter: string): SplitResult {
   return { ok: true, fields };
 }
 
+type Column = "act" | "stage" | "start" | "end" | "locked" | "day";
+
 /** What a header cell may be called, by column; spreadsheets say "Start time" and capitalise freely. */
-const HEADER_NAMES: readonly ReadonlySet<string>[] = [
-  new Set(["act", "act name", "artist"]),
-  new Set(["stage", "stage name"]),
-  new Set(["start", "start time"]),
-  new Set(["end", "end time"]),
-  new Set(["locked"]),
-];
+const HEADER_NAMES: Record<Column, ReadonlySet<string>> = {
+  act: new Set(["act", "act name", "artist", "artist name"]),
+  stage: new Set(["stage", "stage name"]),
+  start: new Set(["start", "start time"]),
+  end: new Set(["end", "end time"]),
+  locked: new Set(["locked"]),
+  day: new Set(["day", "date"]),
+};
+
+const COLUMNS = Object.keys(HEADER_NAMES) as Column[];
 
 function headerName(value: string): string {
   return value.trim().toLowerCase().replace(/[_\s]+/g, " ");
 }
 
+function columnOf(value: string): Column | null {
+  const name = headerName(value);
+  return COLUMNS.find((column) => HEADER_NAMES[column].has(name)) ?? null;
+}
+
+/** Where each column sits in a row; without a header, act, stage, start, end and locked in that order. */
+type Layout = { act: number; stage: number; start: number; end: number; locked: number | null; day: number | null; width: number };
+
+const POSITIONAL: Layout = { act: 0, stage: 1, start: 2, end: 3, locked: 4, day: null, width: 5 };
+
+/** Distinct day values listed in the refusal of a grid with more than one day. */
+const DAYS_SHOWN = 5;
+
 const LOCKED_YES = new Set(["locked", "yes", "y", "true", "1", "x"]);
 const LOCKED_NO = new Set(["", "no", "n", "false", "0"]);
 
-type Draft = { row: number; act: string; stage: string; start: number; end: number; locked: boolean };
+type Draft = {
+  row: number;
+  act: string;
+  stage: string;
+  start: number;
+  end: number;
+  locked: boolean;
+  /** A 12-hour start before 06:00, which cannot be written as 24:30: read as after midnight in an evening grid. */
+  earlyTwelve: boolean;
+};
 
 /** Errors are collected, not thrown, so the page can list several at once. */
 class Problems {
@@ -301,8 +367,11 @@ function textProblem(text: string, linePrefix: string): string | null {
 }
 
 /** The grid text into rows, or the problems that stop it. Header row optional. */
-export function parseGrid(raw: string): { ok: true; sets: CheckSet[] } | { ok: false; errors: string[] } {
+export function parseGrid(
+  raw: string,
+): { ok: true; sets: CheckSet[]; notes: string[] } | { ok: false; errors: string[] } {
   const problems = new Problems();
+  const notes: string[] = [];
   const text = stripSoftHyphens(raw.startsWith("﻿") ? raw.slice(1) : raw);
   if (text.trim() === "") return { ok: false, errors: ["Paste a grid first: one set per line."] };
   const size = utf8Length(text);
@@ -320,7 +389,11 @@ export function parseGrid(raw: string): { ok: true; sets: CheckSet[] } | { ok: f
   const lines = text.split(/\r\n|\r|\n/);
   const delimiter = delimiterOf(lines);
   const drafts: Draft[] = [];
+  // Distinct day values in the order first seen, keyed by their compared form.
+  const days = new Map<string, string>();
   let headerChecked = false;
+  let layout: Layout = POSITIONAL;
+  let headed = false;
 
   lines.forEach((line, index) => {
     if (line.trim() === "") return;
@@ -333,24 +406,60 @@ export function parseGrid(raw: string): { ok: true; sets: CheckSet[] } | { ok: f
     const fields = split.fields;
     if (!headerChecked) {
       headerChecked = true;
-      const names = fields.map(headerName);
+      // A first line with no time in it that names a known column is a header.
       const looksLikeHeader =
-        (names[2] !== undefined && HEADER_NAMES[2].has(names[2])) ||
-        (HEADER_NAMES[0].has(names[0]) && fields[2] !== undefined && parseClock(fields[2]) === null);
+        fields.every((field) => readClock(field) === null) && fields.some((field) => columnOf(field) !== null);
       if (looksLikeHeader) {
-        const matches =
-          names.length >= 4 && names.length <= 5 && names.every((n, k) => HEADER_NAMES[k].has(n));
-        if (!matches) problems.add(`Line ${row}: the header should read act, stage, start, end (and locked).`);
+        const found = new Map<Column, number>();
+        const ignored: string[] = [];
+        let repeated = false;
+        fields.forEach((field, at) => {
+          const column = columnOf(field);
+          if (column === null) {
+            if (field.trim() !== "") ignored.push(clip(tidy(field), 30));
+          } else if (found.has(column)) repeated = true;
+          else found.set(column, at);
+        });
+        const required: Column[] = ["act", "stage", "start", "end"];
+        if (repeated || required.some((column) => !found.has(column))) {
+          problems.add(
+            `Line ${row}: the header should read act, stage, start, end (locked and day are optional; other columns are ignored).`,
+          );
+        } else {
+          layout = {
+            act: found.get("act") as number,
+            stage: found.get("stage") as number,
+            start: found.get("start") as number,
+            end: found.get("end") as number,
+            locked: found.get("locked") ?? null,
+            day: found.get("day") ?? null,
+            width: fields.length,
+          };
+          headed = true;
+          if (ignored.length > 0) {
+            notes.push(
+              `Ignored ${ignored.length === 1 ? "a column" : `${ignored.length} columns`} this page does not read: ${ignored.join(", ")}.`,
+            );
+          }
+        }
         return;
       }
     }
-    while (fields.length > 5 && fields[fields.length - 1].trim() === "") fields.pop();
-    if (fields.length < 4 || fields.length > 5) {
-      problems.add(`Line ${row}: expected act, stage, start, end (and locked), but found ${plural(fields.length, "field")}.`);
+    while (fields.length > layout.width && fields[fields.length - 1].trim() === "") fields.pop();
+    const needed = Math.max(layout.act, layout.stage, layout.start, layout.end) + 1;
+    const fits = headed
+      ? fields.length >= needed && fields.length <= layout.width
+      : fields.length >= 4 && fields.length <= 5;
+    if (!fits) {
+      problems.add(
+        headed
+          ? `Line ${row}: the header has ${plural(layout.width, "column")}, but this line has ${plural(fields.length, "field")}.`
+          : `Line ${row}: expected act, stage, start, end (and locked), but found ${plural(fields.length, "field")}.`,
+      );
       return;
     }
-    const act = tidy(fields[0]);
-    const stage = tidy(fields[1]);
+    const act = tidy(fields[layout.act]);
+    const stage = tidy(fields[layout.stage]);
     if (act === "" || stage === "") {
       problems.add(`Line ${row}: the act and the stage cannot be blank.`);
       return;
@@ -359,16 +468,18 @@ export function parseGrid(raw: string): { ok: true; sets: CheckSet[] } | { ok: f
       problems.add(`Line ${row}: a name is longer than ${CHECK_LIMITS.nameChars} characters.`);
       return;
     }
-    const start = parseClock(fields[2]);
-    let end = parseClock(fields[3]);
-    if (start === null) {
-      problems.add(`Line ${row}: the start time is not H:MM or HH:MM (hours up to 47).`);
+    const startClock = readClock(fields[layout.start]);
+    const endClock = readClock(fields[layout.end]);
+    if (startClock === null) {
+      problems.add(`Line ${row}: the start time is not a time such as ${TIME_FORMS} (hours up to 47).`);
       return;
     }
-    if (end === null) {
-      problems.add(`Line ${row}: the end time is not H:MM or HH:MM (hours up to 47).`);
+    if (endClock === null) {
+      problems.add(`Line ${row}: the end time is not a time such as ${TIME_FORMS} (hours up to 47).`);
       return;
     }
+    const start = startClock.minutes;
+    let end = endClock.minutes;
     if (end < start) {
       // Only a set that starts in the day proper can run past midnight by writing a small end; a set
       // that starts after midnight and ends earlier could mean anything.
@@ -384,13 +495,31 @@ export function parseGrid(raw: string): { ok: true; sets: CheckSet[] } | { ok: f
       problems.add(`Line ${row}: the set must end after it starts.`);
       return;
     }
-    const flag = (fields[4] ?? "").trim().toLowerCase();
+    const flag = (layout.locked === null ? "" : (fields[layout.locked] ?? "")).trim().toLowerCase();
     if (!LOCKED_YES.has(flag) && !LOCKED_NO.has(flag)) {
       problems.add(`Line ${row}: the locked column should be yes, no or blank.`);
       return;
     }
-    drafts.push({ row, act, stage, start, end, locked: LOCKED_YES.has(flag) });
+    if (layout.day !== null) {
+      const day = tidy(fields[layout.day] ?? "");
+      if (day !== "" && !days.has(normalizeName(day))) days.set(normalizeName(day), clip(day, 20));
+    }
+    drafts.push({
+      row,
+      act,
+      stage,
+      start,
+      end,
+      locked: LOCKED_YES.has(flag),
+      earlyTwelve: startClock.twelveHour && start < CHECK_LIMITS.dayStartsAt,
+    });
   });
+
+  if (days.size > 1) {
+    const named = [...days.values()];
+    const listed = named.length > DAYS_SHOWN ? [...named.slice(0, DAYS_SHOWN), "…"] : named;
+    problems.add(`This grid has more than one day (${listed.join(", ")}). Paste one day at a time.`);
+  }
 
   if (drafts.length === 0 && !problems.any) {
     problems.add("No sets found. Put one set on each line: act, stage, start, end.");
@@ -408,9 +537,21 @@ export function parseGrid(raw: string): { ok: true; sets: CheckSet[] } | { ok: f
   const seen = new Map<string, number>();
   for (const d of drafts) {
     if (lateStart && d.start < CHECK_LIMITS.dayStartsAt) {
-      problems.add(
-        `Line ${d.row}: starts before 06:00 while other sets start in the afternoon or evening. Write after-midnight times as 24:30 or later so the day reads in order.`,
-      );
+      if (d.earlyTwelve) {
+        // 12:30 AM in an evening grid is after midnight: a 12-hour time has no 24:30 to write instead.
+        // Each endpoint moves once: an end already written as 24:45 (or later) is already the next day.
+        d.start += MINUTES_PER_DAY;
+        if (d.end < MINUTES_PER_DAY) d.end += MINUTES_PER_DAY;
+        if (d.end <= d.start || d.end > CHECK_LIMITS.maxMinutes) {
+          problems.add(
+            `Line ${d.row}: the set ends before it starts. For after midnight, write the end as 24:30 or later.`,
+          );
+        }
+      } else {
+        problems.add(
+          `Line ${d.row}: starts before 06:00 while other sets start in the afternoon or evening. Write after-midnight times as 24:30 or later so the day reads in order.`,
+        );
+      }
     }
     const key = lengthPrefixed(normalizeName(d.act), normalizeName(d.stage), String(d.start), String(d.end));
     const first = seen.get(key);
@@ -421,15 +562,70 @@ export function parseGrid(raw: string): { ok: true; sets: CheckSet[] } | { ok: f
   if (problems.any) return { ok: false, errors: problems.shown() };
   return {
     ok: true,
+    notes,
     sets: drafts.map((d) => ({
-      ...d,
+      row: d.row,
+      act: d.act,
+      stage: d.stage,
+      start: d.start,
+      end: d.end,
+      locked: d.locked,
       actKey: normalizeName(d.act),
       stageKey: normalizeName(d.stage),
     })),
   };
 }
 
-type SettingsResult = { ok: true; settings: CheckSettings } | { ok: false; errors: string[] };
+type SettingsResult =
+  | { ok: true; settings: CheckSettings }
+  | { ok: false; errors: string[]; suggestions: PairSuggestion[] };
+
+/** Edit distance between two compared names (insert, delete, substitute), for "nearest" only. */
+function editDistance(a: string, b: string): number {
+  const x = Array.from(a);
+  const y = Array.from(b);
+  let previous = Array.from({ length: y.length + 1 }, (_, k) => k);
+  for (let i = 1; i <= x.length; i += 1) {
+    const current = [i];
+    for (let k = 1; k <= y.length; k += 1) {
+      current[k] = Math.min(previous[k] + 1, current[k - 1] + 1, previous[k - 1] + (x[i - 1] === y[k - 1] ? 0 : 1));
+    }
+    previous = current;
+  }
+  return previous[y.length];
+}
+
+function wordsOf(key: string): string[] {
+  return key.split(/[\s&+,./()-]+/).filter((word) => word !== "");
+}
+
+/** Nearest names listed when nothing matches. */
+const NEAREST_SHOWN = 3;
+
+/**
+ * The act a typed pair name most likely means. One act whose name starts with it, or holds each of its
+ * words at the start of a word ("Marlowe", "the tides"), is offered as the match; otherwise the three
+ * nearest names by spelling are listed. Nothing is matched without the visitor's click.
+ */
+export function suggestName(typed: string, acts: ReadonlyMap<string, string>): { match: string | null; nearest: string[] } {
+  const key = normalizeName(typed);
+  const typedWords = wordsOf(key);
+  const hits: string[] = [];
+  if (Array.from(key).length >= 2 && typedWords.length > 0) {
+    for (const [actKey, act] of acts) {
+      const words = wordsOf(actKey);
+      if (actKey.startsWith(key) || typedWords.every((word) => words.some((other) => other.startsWith(word)))) hits.push(act);
+    }
+  }
+  if (hits.length === 1) return { match: hits[0], nearest: [] };
+  const scored = [...acts].map(([actKey, act]) => {
+    const prefix = Array.from(actKey).slice(0, Array.from(key).length).join("");
+    const words = wordsOf(actKey).map((word) => editDistance(key, word));
+    return { act, score: Math.min(editDistance(key, actKey), editDistance(key, prefix) + 1, ...words.map((d) => d + 1)) };
+  });
+  scored.sort((p, q) => p.score - q.score || p.act.localeCompare(q.act));
+  return { match: null, nearest: scored.slice(0, NEAREST_SHOWN).map((item) => item.act) };
+}
 
 /** Changeover, curfew and pair rules, checked against the sets they name. */
 export function parseSettings(input: Omit<CheckInput, "grid">, sets: readonly CheckSet[]): SettingsResult {
@@ -471,6 +667,7 @@ export function parseSettings(input: Omit<CheckInput, "grid">, sets: readonly Ch
   }
 
   const pairs: CheckSettings["pairs"] = [];
+  const suggestions: PairSuggestion[] = [];
   const pairText = stripSoftHyphens(input.pairs.replace(/^﻿/, ""));
   const sizeProblem =
     utf8Length(pairText) > CHECK_LIMITS.pairBytes
@@ -485,7 +682,7 @@ export function parseSettings(input: Omit<CheckInput, "grid">, sets: readonly Ch
     const lines = pairText.split(/\r\n|\r|\n/);
     if (lines.filter((line) => line.trim() !== "").length > CHECK_LIMITS.pairLines) {
       problems.add(`More than ${CHECK_LIMITS.pairLines} pair rules. This page reads up to ${CHECK_LIMITS.pairLines}.`);
-      return { ok: false, errors: problems.shown() };
+      return { ok: false, errors: problems.shown(), suggestions: [] };
     }
     lines.forEach((line, index) => {
       if (line.trim() === "") return;
@@ -505,7 +702,19 @@ export function parseSettings(input: Omit<CheckInput, "grid">, sets: readonly Ch
       parts.forEach((part, side) => {
         const matches = byKey.get(keys[side]) ?? [];
         if (matches.length === 0) {
-          problems.add(`Pair line ${lineNo}: “${clip(tidy(part))}” matches no set in the grid.`);
+          const named = clip(tidy(part));
+          const acts = new Map(sets.map((set) => [set.actKey, set.act]));
+          const { match, nearest } = suggestName(part, acts);
+          const message =
+            match !== null
+              ? `Pair line ${lineNo}: “${named}” matches “${match}”. Use it?`
+              : `Pair line ${lineNo}: “${named}” matches no set in the grid.${
+                  nearest.length > 0 ? ` Nearest: ${nearest.map((name) => `“${name}”`).join(", ")}.` : ""
+                }`;
+          problems.add(message);
+          if (match !== null || nearest.length > 0) {
+            suggestions.push({ message, line: lineNo, side: side === 0 ? 0 : 1, match, nearest });
+          }
           broken = true;
         } else if (matches.length > 1) {
           problems.add(
@@ -524,7 +733,10 @@ export function parseSettings(input: Omit<CheckInput, "grid">, sets: readonly Ch
     });
   }
 
-  if (problems.any) return { ok: false, errors: problems.shown() };
+  if (problems.any) {
+    const shown = problems.shown();
+    return { ok: false, errors: shown, suggestions: suggestions.filter((item) => shown.includes(item.message)) };
+  }
   return { ok: true, settings: { changeover, curfew, pairs } };
 }
 
@@ -622,7 +834,7 @@ export function findBreaks(sets: readonly CheckSet[], settings: CheckSettings): 
 }
 
 /** One set as a pair-id part: act, stage and times, length-prefixed so no field can bleed into the next. */
-function setIdentity(set: CheckSet): string {
+export function setIdentity(set: CheckSet): string {
   return lengthPrefixed(set.actKey, set.stageKey, String(set.start), String(set.end));
 }
 
@@ -661,14 +873,17 @@ export function findShared(sets: readonly CheckSet[]): SharedPair[] {
 export function runCheck(input: CheckInput): CheckOutcome {
   const grid = parseGrid(input.grid);
   const errors: string[] = [];
+  let suggestions: PairSuggestion[] = [];
   if (!grid.ok) errors.push(...grid.errors);
   const settings = parseSettings(input, grid.ok ? grid.sets : []);
-  if (!settings.ok && grid.ok) errors.push(...settings.errors);
-  else if (!settings.ok) {
+  if (!settings.ok && grid.ok) {
+    errors.push(...settings.errors);
+    suggestions = settings.suggestions;
+  } else if (!settings.ok) {
     // Settings that do not depend on the grid (changeover, curfew, size) are still worth naming.
     errors.push(...settings.errors.filter((e) => !e.startsWith("Pair line")));
   }
-  if (errors.length > 0 || !grid.ok || !settings.ok) return { ok: false, errors };
+  if (errors.length > 0 || !grid.ok || !settings.ok) return { ok: false, errors, suggestions };
 
   const sets = grid.sets;
   return {
@@ -680,8 +895,24 @@ export function runCheck(input: CheckInput): CheckOutcome {
       settings: settings.settings,
       breaks: findBreaks(sets, settings.settings),
       shared: findShared(sets),
+      notes: grid.notes,
     },
   };
+}
+
+/**
+ * The pair rules with one name replaced, as the visitor's click on "Use it" asks: the line keeps its
+ * other name and is written back as "A | B". Lines other than `line` are left exactly as typed.
+ */
+export function replacePairName(pairs: string, line: number, side: 0 | 1, name: string): string {
+  const lines = pairs.split(/\r\n|\r|\n/);
+  const at = line - 1;
+  if (at < 0 || at >= lines.length || name.includes("|")) return pairs;
+  const parts = lines[at].split("|");
+  if (parts.length !== 2) return pairs;
+  parts[side] = name;
+  lines[at] = parts.map(tidy).join(" | ");
+  return lines.join("\n");
 }
 
 /** What the polite live region says once a check has run. */

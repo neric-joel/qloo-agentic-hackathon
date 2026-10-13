@@ -14,7 +14,8 @@ type RecordedBadgeProps = {
 };
 
 /**
- * Marks a run or screen that replays saved responses instead of calling Qloo live. A preset says
+ * Marks a run or screen that replays saved responses instead of calling Qloo live, as one quiet line
+ * of plain 12.5px/500 muted text after its 14px clock: no border, no box and no pill. A preset says
  * when it was built; a recorded run says when it was captured.
  */
 export function RecordedBadge({ capturedAt, builtAt, children, className }: RecordedBadgeProps) {
@@ -22,25 +23,22 @@ export function RecordedBadge({ capturedAt, builtAt, children, className }: Reco
   const built = formatCaptured(builtAt);
   const captured = formatCaptured(capturedAt);
   return (
-    <div
-      className={cn(
-        "inline-flex max-w-full items-start gap-2.5 rounded-md border border-dashed border-prov-recorded-border bg-prov-recorded-bg px-3 py-2 text-prov-recorded",
-        className,
-      )}
-    >
-      <History aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-      {isPreset ? (
-        <p className="text-sm leading-snug">
-          <strong className="font-semibold">Recorded, not live.</strong>{" "}
-          {children ?? `Preset built ${built ? `${built} ` : ""}from saved Qloo responses.`}
-        </p>
-      ) : (
-        <p className="text-sm leading-snug">
-          <strong className="font-semibold">Recorded run.</strong>{" "}
-          {children ?? "Replayed from saved Qloo responses, not fetched live."}
-          {captured ? ` Captured ${captured}.` : null}
-        </p>
-      )}
+    <div className={cn("flex max-w-prose items-start gap-1.5 text-muted-foreground", className)}>
+      <History aria-hidden="true" className="mt-px size-3.5 shrink-0" />
+      <p className="text-[0.78125rem] leading-snug font-medium">
+        {isPreset ? (
+          <>
+            <strong className="font-semibold text-foreground">Recorded, not live.</strong>{" "}
+            {children ?? `Preset built ${built ? `${built} ` : ""}from saved Qloo responses.`}
+          </>
+        ) : (
+          <>
+            <strong className="font-semibold text-foreground">Recorded run.</strong>{" "}
+            {children ?? "Replayed from saved Qloo responses, not fetched live."}
+            {captured ? ` Captured ${captured}.` : null}
+          </>
+        )}
+      </p>
     </div>
   );
 }

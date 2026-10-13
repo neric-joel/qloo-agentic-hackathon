@@ -226,6 +226,52 @@ describe("the first page's meta and Open Graph description", () => {
     }
   });
 
+  it("says in the hero that taste overlap is a rank, not attendance, on both kinds of day", async () => {
+    for (const invented of [false, true]) {
+      serveDay(invented);
+      const { default: Home } = await import("@/app/page");
+      const page = await Home({ searchParams: Promise.resolve({}) });
+      // The first paint is the fallback, which carries the same static pitch the interactive page gets.
+      const plain = text(renderToStaticMarkup(page.props.fallback));
+      expect(plain).toContain("Which clash is worth moving?");
+      // The audience leads the lede: no eyebrow above the headline.
+      expect(plain).toContain("For heads of programming: equal-length clashes can cost very different amounts.");
+      // The lede is at most 28 words on both kinds of day, the parenthetical included.
+      const ledeHtml = /<h1 id="pitch-heading"[^>]*>[\s\S]*?<\/h1>\s*<p[^>]*>([\s\S]*?)<\/p>/.exec(
+        renderToStaticMarkup(page.props.fallback),
+      )?.[1];
+      expect(ledeHtml).toBeDefined();
+      const lede = text(ledeHtml ?? "").trim();
+      expect(lede.startsWith("For heads of programming")).toBe(true);
+      expect(lede.endsWith(invented ? "(an invented rank, not attendance)." : "(a rank, not attendance).")).toBe(true);
+      expect(lede.split(/\s+/).length).toBeLessThanOrEqual(28);
+      expect(plain.indexOf("For heads of programming")).toBeGreaterThan(plain.indexOf("Which clash is worth moving?"));
+      // The complaint figures are one sentence after the lede, with a link to their sources, on both days.
+      const stat = "Fans and press complained about 45 clashes at 5 festivals; the median overlap was 50 minutes. Sources";
+      expect(plain).toContain(stat);
+      expect(plain.indexOf(stat)).toBeGreaterThan(plain.indexOf("taste overlap"));
+      // The count of pairs stays in Why this matters; the hero carries one figure line, not a strip.
+      expect(plain).not.toContain("pairs of acts");
+      expect(renderToStaticMarkup(page.props.fallback)).toMatch(/<a href="#why-this-matters"[^>]*>Sources<\/a>/);
+      // In the foreground colour, not muted, so the figures keep their contrast.
+      const statTag = /<div data-hero-stat=""[^>]*>/.exec(renderToStaticMarkup(page.props.fallback))?.[0] ?? "";
+      expect(statTag).toContain("text-foreground");
+      expect(statTag).not.toContain("text-muted-foreground");
+      if (invented) {
+        expect(plain).toContain("taste overlap (an invented rank, not attendance).");
+        // Nothing on an invented day credits Qloo in the lede.
+        expect(ledeHtml).not.toMatch(/Qloo/);
+        expect(plain).not.toContain("(a rank, not attendance)");
+        expect(plain).toContain(SYNTHETIC_PROOF_LINE);
+      } else {
+        expect(plain).toContain("from Qloo data (a rank, not attendance).");
+        expect(plain).toContain(
+          "Run on the public timetables of Glastonbury 2025 and Riot Fest 2026. Neither festival uses Clash Control.",
+        );
+      }
+    }
+  });
+
   it("keeps the published-day description for a real day", async () => {
     serveDay(false);
     const { generateMetadata } = await import("@/app/page");

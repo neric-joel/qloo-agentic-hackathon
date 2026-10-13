@@ -1,11 +1,7 @@
-import { useId } from "react";
-
 import { cn } from "@/lib/utils";
 
-/** Two overlapping audiences; the overlap is the accent. */
+/** Two set slots locked together with a gap between them; the second is the accent. */
 export function LogoMark({ className }: { className?: string }) {
-  // Unique per instance, so a second logo on the page cannot borrow this clip path.
-  const clipId = `${useId()}-left-audience`;
   return (
     <svg
       viewBox="0 0 32 32"
@@ -13,14 +9,8 @@ export function LogoMark({ className }: { className?: string }) {
       focusable="false"
       className={cn("size-8 shrink-0", className)}
     >
-      <defs>
-        <clipPath id={clipId}>
-          <circle cx="12" cy="16" r="9" />
-        </clipPath>
-      </defs>
-      <circle cx="20" cy="16" r="9" fill="var(--primary)" clipPath={`url(#${clipId})`} />
-      <circle cx="12" cy="16" r="9" fill="none" stroke="currentColor" strokeWidth="2.5" />
-      <circle cx="20" cy="16" r="9" fill="none" stroke="currentColor" strokeWidth="2.5" />
+      <path fill="currentColor" d="M9 3h11v7h-10v19h-1a6 6 0 0 1-6-6v-14a6 6 0 0 1 6-6z" />
+      <path fill="var(--primary)" d="M23 29h-11v-7h10v-19h1a6 6 0 0 1 6 6v14a6 6 0 0 1-6 6z" />
     </svg>
   );
 }

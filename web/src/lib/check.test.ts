@@ -7,7 +7,9 @@ import {
   announcement,
   clip,
   formatClock,
+  replacePairName,
   runCheck,
+  suggestName,
   type CheckInput,
   type CheckReport,
 } from "@/lib/check";
@@ -314,7 +316,7 @@ describe("pair rules", () => {
 
   it("refuses a name that matches no row", () => {
     const e = errors(grid, { pairs: "A | Nobody" });
-    expect(e).toEqual(["Pair line 1: “Nobody” matches no set in the grid."]);
+    expect(e).toEqual(["Pair line 1: “Nobody” matches no set in the grid. Nearest: “B”, “A”, “A2”."]);
   });
 
   it("refuses a name that matches several rows, naming the count", () => {
@@ -376,21 +378,20 @@ describe("the sample", () => {
   if (!outcome.ok) throw new Error(outcome.errors.join(" | "));
   const r = outcome.report;
 
-  it("is an invented day of 18 to 22 sets on three stages", () => {
-    expect(r.sets.length).toBeGreaterThanOrEqual(18);
-    expect(r.sets.length).toBeLessThanOrEqual(22);
-    expect(r.stages).toHaveLength(3);
-    expect(SAMPLE_GRID).toMatch(/Lantern Stage/);
+  it("is the invented example day's 24 acts as 25 sets on four stages", () => {
+    expect(r.sets).toHaveLength(25);
+    expect(new Set(r.sets.map((s) => s.actKey)).size).toBe(24);
+    expect(r.stages).toEqual(["Main Stage", "Riverside Stage", "Grove Stage", "Night Tent"]);
   });
 
   it("has exactly four planted findings, one of each kind", () => {
     expect(r.breaks).toHaveLength(4);
     expect(r.breaks.map((b) => b.rule)).toEqual([1, 3, 4, 5]);
     expect(r.breaks.map((b) => b.text)).toEqual([
-      "Quiet Voltage is booked on two stages at the same time.",
-      "Willow Lights and Cedar Orchard are 10 minutes apart on Night Tent, under the 15-minute changeover.",
-      "Mosaic Syndicate ends at 00:20, after the 00:00 curfew.",
-      "Lunar Roads and Copper Circuit share 25 minutes, and you asked that they never overlap.",
+      "Orchid Bloom is booked on two stages at the same time.",
+      "Willow Circuit and Neon Garden are 10 minutes apart on Grove Stage, under the 15-minute changeover.",
+      "Rustic Harbour ends at 00:20, after the 00:00 curfew.",
+      "Saffron Season and Ivory Lights share 20 minutes, and you asked that they never overlap.",
     ]);
   });
 
@@ -485,17 +486,15 @@ Other,Main,18:30,19:30`);
 describe("copy", () => {
   it("states the fixed words of the page", () => {
     expect(CHECK_COPY.title).toBe("Check a draft grid against your rules");
-    expect(CHECK_COPY.lede).toBe(
-      "Paste one day of a draft timetable. This page lists the rule breaks and the sets that share time. It runs in your browser: nothing you paste is sent anywhere, including to Qloo.",
-    );
+    expect(CHECK_COPY.lede).toBe("Paste one day of a draft timetable to find rule breaks and sets that share time. Audience overlap is optional.");
+    expect(CHECK_COPY.privacy).toMatch(/^Rule checks run in your browser; nothing is sent unless you press Compare audience overlap\./);
+    expect(CHECK_COPY.privacy).toContain("A copied link contains your grid and settings; anyone with it can read them");
     expect(CHECK_COPY.printTitle).toBe("Draft check, not a verdict");
     expect(CHECK_COPY.noBreaks).toBe("No rule breaks found against the settings above.");
-    expect(CHECK_COPY.notComputed).toBe(
-      "Not computed: taste overlap. It needs a Qloo reading per act, and this page makes no request to Qloo or to anything else. The two published days on the home page show what it adds.",
-    );
-    expect(CHECK_COPY.elsewhere).toBe(
-      "Rule checks like these also exist in scheduling software. What this app adds is the audience reading on the published days; this page does not have it.",
-    );
+    expect(CHECK_COPY.elsewhere).toMatch(/^Rule checks like these also exist in scheduling software\./);
+    for (const text of Object.values(CHECK_COPY)) {
+      expect(text).not.toMatch(/nothing you paste is sent anywhere|makes no request/);
+    }
   });
 
   it("gives a template that the page itself can read", () => {
@@ -507,5 +506,136 @@ describe("copy", () => {
     expect(formatClock(1470)).toBe("00:30");
     expect(formatClock(1440)).toBe("00:00");
     expect(formatClock(75)).toBe("01:15");
+  });
+});
+
+// Round 9: the paste a head of programming made first, which the page refused. Tabs, a header with a
+// day column and a notes column, 12-hour times from a spreadsheet, a short name in a pair rule.
+const PROGRAMMER_GRID = [
+  ["Day", "Artist", "Stage", "Start time", "End time", "Notes"],
+  ["Fri", "Marlowe & The Tides", "Main", "6:00 PM", "7:15 PM", "confirmed"],
+  ["Fri", "Sable Arcade", "Club", "6:30 PM", "7:30 PM", ""],
+  ["Fri", "Orbital Kitchen", "Woods", "7:00pm", "8:00pm", "hold"],
+  ["Fri", "Wren Division", "Club", "7:45pm", "9:00pm", ""],
+  ["Fri", "Midnight Cartographers", "Woods", "8:15 PM", "9:45 PM", ""],
+  ["Fri", "Glass Harbour", "Main", "7:30 PM", "8:45 PM", ""],
+  ["Fri", "Paper Lanterns", "Tent", "6:00 PM", "6:50 PM", ""],
+  ["Fri", "Iron Orchard", "Tent", "7:00 PM", "8:00 PM", ""],
+  ["Fri", "Velvet Static", "Main", "9:00 PM", "10:30 PM", ""],
+  ["Fri", "Northern Kites", "Club", "9:15 PM", "10:30 PM", ""],
+  ["Fri", "Lowland Choir", "Woods", "10:00 PM", "11:00 PM", ""],
+  ["Fri", "Ember Coast", "Tent", "8:20 PM", "9:20 PM", ""],
+  ["Fri", "Silver Engines", "Tent", "9:40 PM", "10:40 PM", ""],
+  ["Fri", "Quiet Furnace", "Main", "10:50 PM", "12:20 AM", ""],
+  ["Fri", "Hollow Bells", "Club", "10:45 PM", "11:55 PM", ""],
+  ["Fri", "Rook & Raven", "Woods", "11:15 PM", "12:30 AM", ""],
+  ["Fri", "Dune Signal", "Tent", "11:00 PM", "12:15 AM", ""],
+  ["Fri", "Cinder Avenue", "Club", "12:10 AM", "1:30 AM", "late"],
+  ["Fri", "Moth Parade", "Woods", "12:45 AM", "1:20 AM", ""],
+  ["Fri", "Pale Meridian", "Main", "12:30 AM", "1:15 AM", ""],
+  ["Fri", "Tin Lighthouse", "Tent", "12:30 AM", "1:00 AM", ""],
+]
+  .map((row) => row.join("\t"))
+  .join("\n");
+
+describe("pastes from spreadsheets and other tools", () => {
+  it("reads 12-hour times: 2:00 PM, 2pm, 3:10pm and 12:30 AM as 00:30", () => {
+    const r = report("A,Main,2:00 PM,3:10pm\nB,Side,2pm,3pm\nC,Tent,11:30 AM,12:15 PM\nD,Main,12:00 AM,1:00 a.m.");
+    expect(r.sets.map((s) => [s.start, s.end])).toEqual([
+      [840, 910],
+      [840, 900],
+      [690, 735],
+      [1440, 1500],
+    ]);
+    expect(errors("A,Main,13:00 PM,14:00")[0]).toMatch(/start time is not a time such as 18:00, 24:30, 6:00 PM or 6pm/);
+    expect(errors("A,Main,0:30 AM,1:00 AM")[0]).toMatch(/start time/);
+  });
+
+  it("reads a 12-hour start after midnight as the next day in an evening grid, and the curfew the same way", () => {
+    const r = report("A,Main,10:00 PM,11:30 PM\nB,Main,12:30 AM,1:30 AM", { curfew: "1:00 AM", changeover: "15" });
+    expect(r.sets[1]).toMatchObject({ start: 1470, end: 1530 });
+    expect(r.settings.curfew).toBe(1500);
+    expect(r.breaks.map((b) => b.text)).toEqual(["B ends at 01:30, after the 01:00 curfew."]);
+    // A 24-hour 00:30 in an evening grid is still refused: it has 24:30 to write instead.
+    expect(errors("A,Main,22:00,23:30\nB,Main,00:30,01:30")[0]).toMatch(/Write after-midnight times as 24:30/);
+  });
+
+  it("moves each endpoint past midnight once: a 12:30 AM start with a 24:45 end reads 24:30 to 24:45", () => {
+    // Round-9 regression: the early-morning shift added a day to an end already written as 24:45.
+    const r = report("Evening,Main,22:00,23:30\nNight,Other,12:30 AM,24:45");
+    expect(r.sets[1]).toMatchObject({ start: 1470, end: 1485 });
+    expect(r.shared).toHaveLength(0);
+    // Both written in 12-hour time still move together.
+    expect(report("Evening,Main,22:00,23:30\nNight,Other,12:30 AM,1:15 AM").sets[1]).toMatchObject({ start: 1470, end: 1515 });
+    // An end at or before the moved start is refused, never stretched into a second day.
+    expect(errors("Evening,Main,22:00,23:30\nNight,Other,12:30 AM,24:15")[0]).toMatch(/Line 2: the set ends before it starts/);
+  });
+
+  it("reads columns by their header in any order, ignores the ones it does not know and says so", () => {
+    const r = report("Notes,End,Stage,Act,Start,Genre\nok,19:00,Main,A,18:00,rock\n,20:00,Side,B,19:30,");
+    expect(r.sets.map((s) => [s.act, s.stage, s.start, s.end])).toEqual([
+      ["A", "Main", 1080, 1140],
+      ["B", "Side", 1170, 1200],
+    ]);
+    expect(r.notes).toEqual(["Ignored 2 columns this page does not read: Notes, Genre."]);
+    expect(report("act,stage,start,end\nA,Main,18:00,19:00").notes).toEqual([]);
+  });
+
+  it("accepts a day column with one day and refuses several, naming them", () => {
+    expect(report("day,act,stage,start,end\nFri,A,Main,18:00,19:00\nfri,B,Side,18:30,19:30").sets).toHaveLength(2);
+    expect(errors("day,act,stage,start,end\nFri,A,Main,18:00,19:00\nSat,B,Side,18:30,19:30")).toContain(
+      "This grid has more than one day (Fri, Sat). Paste one day at a time.",
+    );
+  });
+
+  it("refuses a header that misses a column or names one twice", () => {
+    expect(errors("act,stage,start\nA,Main,18:00")[0]).toMatch(/header should read act, stage, start, end/);
+    expect(errors("act,act,stage,start,end\nA,A,Main,18:00,19:00")[0]).toMatch(/header should read/);
+    expect(errors("act,stage,start,end,notes\nA,Main,18:00,19:00,x,extra")[0]).toMatch(
+      /the header has 5 columns, but this line has 6 fields/,
+    );
+  });
+
+  it("reads the failing paste: tabs, a day and a notes column, 12-hour times and a short pair name offered with one click", () => {
+    const pairs = "Marlowe | Sable Arcade\nOrbital Kitchen | Wren Division\nGlass Harbour | Velvet Static";
+    const first = runCheck(input(PROGRAMMER_GRID, { changeover: "20", curfew: "1:00 AM", pairs }));
+    expect(first.ok).toBe(false);
+    if (first.ok) return;
+    expect(first.errors).toEqual(["Pair line 1: “Marlowe” matches “Marlowe & The Tides”. Use it?"]);
+    expect(first.suggestions).toEqual([
+      { message: first.errors[0], line: 1, side: 0, match: "Marlowe & The Tides", nearest: [] },
+    ]);
+    const fixed = replacePairName(pairs, 1, 0, "Marlowe & The Tides");
+    expect(fixed.split("\n")[0]).toBe("Marlowe & The Tides | Sable Arcade");
+    expect(fixed.split("\n").slice(1)).toEqual(pairs.split("\n").slice(1));
+    const r = report(PROGRAMMER_GRID, { changeover: "20", curfew: "1:00 AM", pairs: fixed });
+    expect(r.sets).toHaveLength(21);
+    expect(r.stages).toHaveLength(4);
+    expect(r.notes).toEqual(["Ignored a column this page does not read: Notes."]);
+    expect(r.settings.curfew).toBe(1500);
+    expect(r.sets.find((s) => s.act === "Cinder Avenue")).toMatchObject({ start: 1450, end: 1530 });
+    expect(r.breaks.some((b) => b.text === "Cinder Avenue ends at 01:30, after the 01:00 curfew.")).toBe(true);
+    expect(r.breaks.filter((b) => b.rule === 5)).toHaveLength(2);
+  });
+
+  it("lists the three nearest names when nothing starts with or holds the typed name", () => {
+    const grid = "Marlowe & The Tides,Main,18:00,19:00\nSable Arcade,Club,18:30,19:30\nMarble Hall,Tent,18:00,19:00";
+    const e = runCheck(input(grid, { pairs: "Marlwe | Sable Arcade" }));
+    if (e.ok) throw new Error("expected a refusal");
+    expect(e.errors[0]).toBe(
+      "Pair line 1: “Marlwe” matches no set in the grid. Nearest: “Marlowe & The Tides”, “Marble Hall”, “Sable Arcade”.",
+    );
+    expect(e.suggestions[0]).toMatchObject({ match: null, nearest: ["Marlowe & The Tides", "Marble Hall", "Sable Arcade"] });
+    // A word in the name is enough, and two acts that both hold it are not guessed between.
+    expect(suggestName("tides", new Map([["marlowe & the tides", "Marlowe & The Tides"]])).match).toBe("Marlowe & The Tides");
+    expect(
+      suggestName(
+        "marble",
+        new Map([
+          ["marble hall", "Marble Hall"],
+          ["marble syndicate", "Marble Syndicate"],
+        ]),
+      ).match,
+    ).toBeNull();
   });
 });

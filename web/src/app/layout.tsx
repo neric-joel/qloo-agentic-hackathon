@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Archivo, JetBrains_Mono } from "next/font/google";
 
+import { IntroReveal } from "@/components/site/intro-reveal";
 import { MockBanner } from "@/components/site/mock-banner";
 import { SiteFooter } from "@/components/site/site-footer";
 import { SiteHeader } from "@/components/site/site-header";
@@ -45,10 +46,47 @@ export const metadata: Metadata = {
   twitter: { card: "summary_large_image", title: "Clash Control", description: DESCRIPTION },
 };
 
+/**
+ * Arms the opening reveal before the first paint: `data-intro="play"` on `<html>` only on a first
+ * visit to the home page itself (no hash), with motion allowed. Any first page writes the session key,
+ * so the intro never shows mid-visit and a reload does not replay it. Anything that fails skips it.
+ *
+ * It also owns the skip, so it works before the page has hydrated. While the curtain is visible it
+ * takes every pointer event (`globals.css`), so a press lands on it, never on a control under it: the
+ * press and its click are stopped here, and the click (or a cancelled press, a wheel or any key) lifts
+ * it at once (`data-intro="done"`, then the `cc:intro-done` event that starts the hero receipt). Keys
+ * that would move focus, scroll or activate something are held back while it shows. Once the curtain
+ * has gone (its own CSS end, hidden) none of this does anything.
+ */
+const INTRO_INIT_SCRIPT = [
+  "(function(){try{",
+  'var s=window.sessionStorage,k="cc.intro.v2";if(s.getItem(k))return;s.setItem(k,"1");',
+  'if(location.pathname!=="/"||location.hash)return;',
+  'if(!window.matchMedia||matchMedia("(prefers-reduced-motion: reduce)").matches)return;',
+  'var d=document.documentElement,c=true;d.setAttribute("data-intro","play");',
+  'var held=" Enter Tab ArrowUp ArrowDown ArrowLeft ArrowRight PageUp PageDown Home End ";',
+  'var taps=["pointerdown","mousedown","pointerup","mouseup","click","pointercancel"];',
+  // The curtain while it can still be hit: armed, in the page, and not yet hidden by its own end.
+  'function shown(){if(d.getAttribute("data-intro")!=="play")return null;',
+  'var o=document.querySelector(".cc-intro");return o&&getComputedStyle(o).visibility!=="hidden"?o:null}',
+  'function done(){off();if(d.getAttribute("data-intro")!=="play")return;',
+  'd.setAttribute("data-intro","done");window.dispatchEvent(new Event("cc:intro-done"))}',
+  'function tap(e){var o=shown();if(!o||!(e.target instanceof Node)||!o.contains(e.target))return;',
+  'e.preventDefault();e.stopPropagation();if(e.type==="click"||e.type==="pointercancel")done()}',
+  'function key(e){if(!shown())return;',
+  'if(!e.ctrlKey&&!e.metaKey&&!e.altKey&&(e.key===" "||held.indexOf(" "+e.key+" ")>-1)){e.preventDefault();e.stopPropagation()}done()}',
+  "function wheel(){if(shown())done()}",
+  'function off(){for(var i=0;i<taps.length;i++)window.removeEventListener(taps[i],tap,c);',
+  'window.removeEventListener("keydown",key,c);window.removeEventListener("wheel",wheel,c)}',
+  "for(var i=0;i<taps.length;i++)window.addEventListener(taps[i],tap,c);",
+  'window.addEventListener("keydown",key,c);window.addEventListener("wheel",wheel,{capture:true,passive:true})',
+  "}catch(e){}})();",
+].join("");
+
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f9f5ee" },
-    { media: "(prefers-color-scheme: dark)", color: "#140e0a" },
+    { media: "(prefers-color-scheme: light)", color: "#f1f4f7" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0e15" },
   ],
 };
 
@@ -63,8 +101,10 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: INTRO_INIT_SCRIPT }} />
       </head>
       <body className="flex min-h-dvh flex-col">
+        <IntroReveal />
         <ThemeProvider>
           <SyntheticProvider initial={synthetic}>
             <a

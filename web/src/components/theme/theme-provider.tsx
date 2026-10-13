@@ -19,8 +19,42 @@ type ThemeContextValue = {
   resolvedTheme: "light" | "dark";
   /** False until the browser has read the stored preference (server render and hydration). */
   ready: boolean;
-  setTheme: (theme: Theme) => void;
+  /**
+   * Changes the theme. Pass the point the change came from (the toggle's centre) and the new
+   * theme is revealed as a circle growing from it, where the browser supports that.
+   */
+  setTheme: (theme: Theme, origin?: RevealOrigin) => void;
 };
+
+/** A point in viewport pixels that the theme reveal grows from. */
+export type RevealOrigin = { x: number; y: number };
+
+/** How long the circular reveal takes, in milliseconds. */
+export const REVEAL_DURATION_MS = 520;
+export const REVEAL_EASING = "cubic-bezier(0.76, 0, 0.24, 1)";
+
+/** Distance from the origin to the farthest corner: the radius at which the circle covers the page. */
+export function revealRadius(origin: RevealOrigin, width: number, height: number): number {
+  return Math.hypot(Math.max(origin.x, width - origin.x), Math.max(origin.y, height - origin.y));
+}
+
+/** The reveal runs only when the browser can do it and nothing asks for less motion or for print. */
+export function shouldAnimateReveal(input: {
+  supportsViewTransitions: boolean;
+  reducedMotion: boolean;
+  printing: boolean;
+  /** Whether the light/dark appearance actually changes (system -> the theme already shown does not). */
+  appearanceChanges: boolean;
+  hasOrigin: boolean;
+}): boolean {
+  return (
+    input.supportsViewTransitions &&
+    !input.reducedMotion &&
+    !input.printing &&
+    input.appearanceChanges &&
+    input.hasOrigin
+  );
+}
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
@@ -90,16 +124,58 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const setTheme = useCallback((next: Theme) => {
-    memoryTheme = next;
-    try {
-      if (next === "system") window.localStorage.removeItem(THEME_STORAGE_KEY);
-      else window.localStorage.setItem(THEME_STORAGE_KEY, next);
-    } catch {
-      // Storage unavailable: the choice lasts until the page is reloaded.
+  const setTheme = useCallback((next: Theme, origin?: RevealOrigin) => {
+    let committed = false;
+    const commit = () => {
+      if (committed) return;
+      committed = true;
+      memoryTheme = next;
+      try {
+        if (next === "system") window.localStorage.removeItem(THEME_STORAGE_KEY);
+        else window.localStorage.setItem(THEME_STORAGE_KEY, next);
+      } catch {
+        // Storage unavailable: the choice lasts until the page is reloaded.
+      }
+      applyTheme(next);
+      window.dispatchEvent(new Event(THEME_CHANGE_EVENT));
+    };
+
+    const doc = document as Document & {
+      startViewTransition?: (update: () => void) => { ready: Promise<void> };
+    };
+    const willBeDark = next === "dark" || (next === "system" && systemPrefersDark());
+    const animate = shouldAnimateReveal({
+      supportsViewTransitions: typeof doc.startViewTransition === "function",
+      reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+      printing: window.matchMedia("print").matches,
+      appearanceChanges: willBeDark !== document.documentElement.classList.contains("dark"),
+      hasOrigin: origin !== undefined,
+    });
+    if (!animate || !origin || !doc.startViewTransition) {
+      commit();
+      return;
     }
-    applyTheme(next);
-    window.dispatchEvent(new Event(THEME_CHANGE_EVENT));
+
+    try {
+      const transition = doc.startViewTransition(commit);
+      const radius = revealRadius(origin, window.innerWidth, window.innerHeight);
+      transition.ready
+        .then(() => {
+          document.documentElement.animate(
+            {
+              clipPath: [
+                `circle(0px at ${origin.x}px ${origin.y}px)`,
+                `circle(${radius}px at ${origin.x}px ${origin.y}px)`,
+              ],
+            },
+            { duration: REVEAL_DURATION_MS, easing: REVEAL_EASING, pseudoElement: "::view-transition-new(root)" },
+          );
+        })
+        .catch(() => undefined);
+    } catch {
+      // The browser refused the transition: switch without it.
+      commit();
+    }
   }, []);
 
   const value = useMemo(

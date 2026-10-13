@@ -15,6 +15,8 @@ function resolveBackendUrl(raw: string | undefined): string {
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // No dev-mode badge in the corner: it shows up in every screenshot and is not part of the page.
+  devIndicators: false,
   // Do not write tooling instruction files into the repository on `next dev`.
   agentRules: false,
   // With gzip on, the Node server holds an event stream back until it ends (browsers always send

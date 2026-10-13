@@ -42,18 +42,21 @@ describe("the check links follow the flag", () => {
     expect(footer).toContain("Check a draft grid");
   });
 
-  it("calls the page one thing everywhere: the header, the hero and the footer say Check a draft grid", async () => {
+  it("names the page the same in the header and footer, and the hero says Paste your own draft grid", async () => {
     const { header, hero, footer } = await render(true);
     const label = (html: string) => {
       const from = html.indexOf('href="/check"');
       const open = html.indexOf(">", from) + 1;
       return html.slice(open, html.indexOf("</a>", open)).replace(/<[^>]+>/g, "").trim();
     };
-    // The header link keeps the one name for assistive tech; below 768 px it reads "Check" so it fits.
+    // The header link reads the same at every width: in full beside the theme control from 640 px, and
+    // in full again in the phone menu, with the one name for assistive tech.
     expect(header).toContain('aria-label="Check a draft grid"');
-    expect(label(header)).toBe("CheckCheck a draft grid");
-    expect(header).toMatch(/<span class="md:hidden">Check<\/span><span class="max-md:hidden">Check a draft grid<\/span>/);
-    expect(label(hero)).toBe("Check a draft grid");
+    expect(label(header)).toBe("Check a draft grid");
+    const checkLabels = [...header.matchAll(/href="\/check"[^>]*>([\s\S]*?)<\/a>/g)].map((m) => m[1].replace(/<[^>]+>/g, ""));
+    expect(checkLabels).toEqual(["Check a draft grid", "Check a draft grid"]);
+    expect(header).not.toMatch(/>Check<|>Method</);
+    expect(label(hero)).toBe("Paste your own draft grid");
     expect(label(footer)).toBe("Check a draft grid");
     for (const html of [header, hero, footer]) {
       expect(html).not.toContain("Check a grid");
@@ -61,9 +64,9 @@ describe("the check links follow the flag", () => {
     }
   });
 
-  it("keeps the home link's name and the mark when the wordmark text is hidden below 340 px", async () => {
+  it("keeps the home link's name and the mark when the wordmark text is hidden below 360 px", async () => {
     const { header } = await render(false);
     expect(header).toContain('aria-label="Clash Control, home"');
-    expect(header).toMatch(/max-\[339px\]:sr-only[^"]*">\s*Clash Control\s*<\/span>/);
+    expect(header).toMatch(/max-\[359px\]:sr-only[^"]*">\s*Clash Control\s*<\/span>/);
   });
 });

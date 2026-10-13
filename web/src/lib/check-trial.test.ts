@@ -25,6 +25,7 @@ import {
   targetId,
   targetOfBreak,
   targetOfPair,
+  tradeOffOf,
   trialSteps,
   type TrialChange,
   type TrialTarget,
@@ -97,7 +98,7 @@ describe("the sample: each planted break gets a result", () => {
         for (const line of change.lines) expect(line).toMatch(/^.+ → .+ \d\d:\d\d–\d\d:\d\d$/);
       }
       expect(result.summary).toMatch(
-        /^\d+ (within 3 hours )?found, \d+ shown: each ends it, adds no rule break and makes none larger, ranked by total start-time minutes moved\. [\d,]+ candidates? tested\./,
+        /^\d+ (within 3 hours )?found, \d+ shown: each ends it, adds no rule break and makes none larger, ranked by total start-time minutes moved, with any that create a longer overlap than they end last\. [\d,]+ candidates? tested\./,
       );
       expect(result.changes).toHaveLength(Math.min(TRIAL_LIMITS.shown, result.found));
       expect(result.summary).toContain(
@@ -111,7 +112,7 @@ describe("the sample: each planted break gets a result", () => {
     const result = findChange(report, target, { shown: Infinity, everyChange: true });
     expect(result.changes.length).toBeGreaterThan(0);
     const locked = report.sets.filter((set) => set.locked).map((set) => set.row);
-    expect(locked).toHaveLength(1);
+    expect(locked).toHaveLength(3);
     for (const change of result.changes) {
       for (const move of change.moves) expect(locked).not.toContain(move.row);
     }
@@ -129,12 +130,12 @@ describe("the sample: each planted break gets a result", () => {
     }
   });
 
-  it("lists the least total start-time minutes moved first, then less added shared time, then sets, then stage changes", () => {
+  it("lists changes that leave no longer overlap first, then the least total start-time minutes moved, then less added shared time, then sets, then stage changes", () => {
     for (const item of report.breaks) {
       const result = findChange(report, targetOfBreak(item));
-      const keys = result.changes.map((c) => [c.minutesMoved, c.sharedRise, c.setsMoved, c.stageChanges]);
+      const keys = result.changes.map((c) => [Number(c.longerThanEnded), c.minutesMoved, c.sharedRise, c.setsMoved, c.stageChanges]);
       expect(keys).toEqual(
-        [...keys].sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3] - b[3]),
+        [...keys].sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3] - b[3] || a[4] - b[4]),
       );
     }
   });
@@ -144,10 +145,11 @@ describe("the sample: each planted break gets a result", () => {
     expect(top.minutesMoved).toBe(5);
     expect(top.setsMoved).toBe(1);
     expect(top.stageChanges).toBe(0);
-    // The top change on every break is the smallest total shift of anything listed for it.
+    // The top change on every break is the smallest total shift listed for it among those in its tier.
     for (const item of report.breaks) {
       const result = findChange(report, targetOfBreak(item));
-      expect(result.changes[0].minutesMoved).toBe(Math.min(...result.changes.map((c) => c.minutesMoved)));
+      const tier = result.changes.filter((c) => c.longerThanEnded === result.changes[0].longerThanEnded);
+      expect(result.changes[0].minutesMoved).toBe(Math.min(...tier.map((c) => c.minutesMoved)));
     }
   });
 
@@ -166,14 +168,15 @@ describe("the sample: each planted break gets a result", () => {
   });
 
   it("searches two-set changes when one-set changes exist, in the same ranking", () => {
-    // The curfew break has no one-set move; the double booking has both kinds.
+    // The double booking has both kinds; a one-stage curfew break has no one-set move.
     const double = findChange(report, breakTarget(report, 1), { everyChange: true, shown: Infinity });
     expect(double.swapsSearched).toBe(true);
     expect(double.oneSetPassed).toBeGreaterThan(0);
     expect(double.changes.some((c) => c.setsMoved === 1)).toBe(true);
     expect(double.changes.some((c) => c.setsMoved === 2)).toBe(true);
     expect(findChange(report, breakTarget(report, 1)).summary).toContain("Two-set changes were tried as well.");
-    const curfew = findChange(report, breakTarget(report, 4));
+    const late = plain("A,Main,18:00,19:00\nB,Main,19:15,20:15", { changeover: "15", curfew: "20:00" });
+    const curfew = findChange(late, breakTarget(late, 4));
     expect(curfew.oneSetPassed).toBe(0);
     expect(curfew.summary).toContain("No one-set move ends it, so two-set changes were tried.");
   });
@@ -565,13 +568,32 @@ describe("the search against a brute-force check with the page's own rules", { t
         const target = targetOfBreak(item);
         const result = findChange(report, target, {});
         if (result.changes.length === 0) continue;
-        const keys = result.changes.map((c) => [c.minutesMoved, c.sharedRise, c.setsMoved, c.stageChanges]);
-        expect(keys).toEqual([...keys].sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3] - b[3]));
+        const keys = result.changes.map((c) => [Number(c.longerThanEnded), c.minutesMoved, c.sharedRise, c.setsMoved, c.stageChanges]);
+        expect(keys).toEqual(
+          [...keys].sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3] - b[3] || a[4] - b[4]),
+        );
+        // One-set moves in the top change's tier: none that leaves a longer overlap may beat one that does not.
         const minutes = [...bruteSingles(report, target)]
-          .map((id) => {
-            const [row, , start] = id.split(":");
+          .flatMap((id) => {
+            const [row, stageKey, start] = id.split(":");
             const set = report.sets.find((s) => s.row === Number(row)) as CheckSet;
-            return Math.abs(Number(start) - set.start);
+            const after = applyChange(report, {
+              moves: [
+                {
+                  row: set.row,
+                  act: set.act,
+                  stage: set.stage,
+                  stageKey,
+                  fromStage: set.stage,
+                  fromStart: set.start,
+                  fromEnd: set.end,
+                  start: Number(start),
+                  end: Number(start) + set.end - set.start,
+                },
+              ],
+            });
+            const { longer } = tradeOffOf(report, after, target, [{ row: set.row }]);
+            return longer === result.changes[0].longerThanEnded ? [Math.abs(Number(start) - set.start)] : [];
           })
           .filter((m) => m <= TRIAL_LIMITS.largeShift);
         if (minutes.length > 0) {

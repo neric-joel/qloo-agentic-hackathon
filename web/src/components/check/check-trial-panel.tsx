@@ -1,6 +1,7 @@
 import type { Ref } from "react";
 
 import { Button } from "@/components/ui/button";
+
 import {
   TRIAL_COPY,
   TRIAL_LIMITS,
@@ -15,6 +16,14 @@ import {
   type TrialResult,
   type TrialTarget,
 } from "@/lib/check-trial";
+
+/**
+ * The check page's ghost text action (toolbar, "Show all rows", the review's take-away actions, "Hide
+ * this result"): 14px semibold ink with no fill and no border, 8px sides and a 44px hit area. Hover
+ * underlines the text (1px, 4px below); the focus ring stays. A 14px icon may follow the text.
+ */
+export const TEXT_ACTION =
+  "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md px-2 text-sm font-semibold whitespace-nowrap text-foreground decoration-1 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-3.5 [&_svg]:shrink-0";
 
 /** What the page keeps of one search: the target it was for, how far it has got and, once done, the result. */
 export type TrialState = {
@@ -50,8 +59,11 @@ function ChangeItem({
 }) {
   const rise = sharedRiseLine(change);
   return (
-    <li className="rounded-md border border-border bg-card p-3">
-      <ul className="space-y-1">
+    <li className="py-3 first:pt-0 last:pb-0">
+      <p className={change.longerThanEnded ? "font-semibold break-words text-warning" : "font-semibold break-words"}>
+        {change.tradeOff}
+      </p>
+      <ul className="mt-2 space-y-1">
         {change.moves.map((move, index) => (
           <li key={move.row} className="break-words">
             <span className="font-semibold">{change.lines[index]}</span>{" "}
@@ -72,7 +84,7 @@ function ChangeItem({
       </p>
       {rise ? <p className="mt-0.5 text-sm break-words text-warning">{rise}</p> : null}
       <p className="mt-0.5 text-sm text-muted-foreground">{sizeLine(change)}</p>
-      <Button type="button" variant="outline" className="mt-3" disabled={stale} onClick={() => onApply(change)}>
+      <Button type="button" variant="outline" size="sm" className="mt-3" disabled={stale} onClick={() => onApply(change)}>
         {TRIAL_COPY.tryIt}
         <span className="sr-only">: {change.lines.join(" and ")}</span>
       </Button>
@@ -103,27 +115,31 @@ function TrialPanel({
     );
   }
   return (
-    <section className="mt-3 rounded-md border border-border bg-muted p-3 sm:p-4">
+    <section className="mt-3 border-t border-border pt-3">
       <h3
         ref={headingRef}
         tabIndex={-1}
-        className="type-kicker scroll-mt-24 outline-offset-4"
+        className="scroll-mt-24 text-[0.8125rem] leading-5 font-semibold outline-offset-4"
       >
         {TRIAL_COPY.heading}
       </h3>
       <p className="mt-1.5 break-words">{result.summary}</p>
       {result.changes.length > 0 ? (
-        <ol className="mt-3 space-y-3">
+        <ol className="mt-3 divide-y divide-border border-y border-border py-3">
           {result.changes.map((change, index) => (
             <ChangeItem key={index} change={change} onApply={ui.onApply} gloss={index === 0} stale={ui.stale === true} />
           ))}
         </ol>
       ) : null}
       <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{TRIAL_COPY.scope}</p>
+      <details className="mt-1 text-sm leading-relaxed text-muted-foreground">
+        <summary className="min-h-11 cursor-pointer py-2.5 font-semibold text-foreground">{TRIAL_COPY.scopeSummary}</summary>
+        <p>{TRIAL_COPY.scopeDetail}</p>
+      </details>
       <button
         type="button"
         onClick={ui.onClose}
-        className="mt-2 min-h-11 rounded-md border border-border-strong px-4 text-sm font-semibold hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        className={`${TEXT_ACTION} mt-2 -ml-2`}
       >
         Hide this result
       </button>
@@ -131,31 +147,46 @@ function TrialPanel({
   );
 }
 
-/** "Find a change" for one break or one pair that shares time, with its result below once there is one. */
-export function TrialControl({
+function searchOf(target: TrialTarget, ui: TrialUi): TrialState | null {
+  return ui.state && ui.state.targetId === targetId(target) ? ui.state : null;
+}
+
+/**
+ * "Find a change" for one break or one pair that shares time. It sits on the row's one line of
+ * controls, beside the decision buttons, whether or not the finding is decided; its result is drawn
+ * under the row by `TrialResult`.
+ */
+export function TrialButton({ target, label, ui, className }: { target: TrialTarget; label: string; ui: TrialUi; className?: string }) {
+  const mine = searchOf(target, ui);
+  return (
+    <button
+      type="button"
+      data-find-change=""
+      onClick={() => ui.onFind(target, label)}
+      disabled={mine?.running === true || ui.stale === true}
+      className={className}
+    >
+      {TRIAL_COPY.button}
+      <span className="sr-only">: {label}</span>
+    </button>
+  );
+}
+
+/** The search for this target, under its row, once one has started. Not printed. */
+export function TrialResult({
   target,
-  label,
   ui,
   headingRef,
 }: {
   target: TrialTarget;
-  label: string;
   ui: TrialUi;
   headingRef?: Ref<HTMLHeadingElement>;
 }) {
-  const mine = ui.state && ui.state.targetId === targetId(target) ? ui.state : null;
+  const mine = searchOf(target, ui);
+  if (!mine) return null;
   return (
-    <div className="mt-2 print:hidden">
-      <button
-        type="button"
-        onClick={() => ui.onFind(target, label)}
-        disabled={mine?.running === true || ui.stale === true}
-        className="min-h-11 rounded-md border border-border-strong px-4 text-sm font-semibold hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50"
-      >
-        {TRIAL_COPY.button}
-        <span className="sr-only">: {label}</span>
-      </button>
-      {mine ? <TrialPanel state={mine} ui={ui} headingRef={headingRef} /> : null}
+    <div className="print:hidden">
+      <TrialPanel state={mine} ui={ui} headingRef={headingRef} />
     </div>
   );
 }

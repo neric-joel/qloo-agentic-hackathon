@@ -143,7 +143,7 @@ describe("the dial", () => {
     const html = renderToStaticMarkup(createElement(BudgetDial, { index: 116.71, baseline: BASELINE }));
     const text = textOf(createElement(BudgetDial, { index: 116.71, baseline: BASELINE }));
     expect(text).toContain("Shaded: the middle 80% of those random valid timetables (92 to 109).");
-    expect(text).toContain("This day’s published timetable scores 117, above that range.");
+    expect(text).toContain("This day’s published timetable scores 116.7, above that range.");
     expect(html).toContain("the middle 80% of them score 92 to 109.");
     expect(html).toContain("average of random valid timetables of this lineup");
     expect(text).not.toMatch(/re-order/i);

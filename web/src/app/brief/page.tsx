@@ -11,7 +11,7 @@ export const metadata = {
 
 /**
  * Print rules for this page only: the site header, footer and notices are left out, the sheet
- * prints in the light palette whatever the screen theme, and the page box fits Letter and A4.
+ * prints in cool ink on white whatever the screen theme, and the page box fits Letter and A4.
  */
 const PRINT_CSS = `
 @media print {
@@ -20,25 +20,27 @@ const PRINT_CSS = `
   :root, :root.dark {
     color-scheme: light;
     --background: #ffffff;
-    --foreground: #1a1714;
+    --foreground: #141821;
     --card: #ffffff;
-    --card-foreground: #1a1714;
-    --muted: #f1efeb;
-    --muted-foreground: #4d4843;
-    --border: #c9c4bc;
-    --border-strong: #6f6962;
-    --highlight: #f3d75a;
-    --highlight-foreground: #1a1714;
+    --card-foreground: #141821;
+    --muted: #e5e8ec;
+    --muted-foreground: #525864;
+    --border: #d6d9de;
+    --border-strong: #7b818a;
+    --primary: #ca2a02;
+    --destructive: #ca2a02;
+    --highlight: #c7dcfc;
+    --highlight-foreground: #141821;
   }
-  body { background: #ffffff !important; color: #1a1714; }
+  body { background: #ffffff !important; color: #141821; }
 }
 `;
 
 function Loading() {
   return (
-    <div className="container-page max-w-3xl py-16 sm:py-24">
+    <div className="container-page max-w-[60rem] pt-8 pb-12">
       <p className="type-kicker text-muted-foreground">Clash brief</p>
-      <p role="status" className="mt-3 text-lg font-semibold sm:text-xl">
+      <p role="status" className="mt-2 text-lg font-semibold sm:text-xl">
         Loading the brief.
       </p>
     </div>

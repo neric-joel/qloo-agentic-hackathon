@@ -33,7 +33,7 @@ export function ErrorState({
   return (
     <div
       role="alert"
-      className={cn("rounded-lg border border-destructive/50 bg-danger-bg p-5", className)}
+      className={cn("rounded-lg border border-destructive bg-danger-bg p-5", className)}
     >
       <div className="flex items-start gap-3">
         <TriangleAlert aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-destructive" />

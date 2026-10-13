@@ -1,16 +1,21 @@
+import { useRef, type CSSProperties } from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 
 import { ordinal } from "@/lib/clashes";
-import { formulaNote } from "@/lib/credit";
 import type { LensApart, Lenses } from "@/lib/lenses";
 import type { PairClash } from "@/lib/preset";
+import { useReveal } from "@/lib/use-in-view";
 
 /** The anchor of the section. */
 export const TASTE_LENS_ID = "taste-lens";
 
 /** How many pairs each list shows. */
 export const LENS_LIST_LIMIT = 5;
+
+/** M6: rows rise this far apart; the second list starts this much after the first. */
+const ROW_STAGGER_MS = 40;
+const SECOND_LIST_MS = 160;
 
 type LensRow = { a: string; b: string; a_id: string; b_id: string; rank: number; other: number | null };
 
@@ -47,7 +52,7 @@ export function lensLead(
 
 /** The separate caveat line of the old lead; the shuffled lead carries its own disclosure. */
 export const LENS_CAVEAT =
-  "This shows what the number changes in this ranking, not that it finds clashes better: the check we set before building did not pass (see How we know).";
+  "This shows how taste overlap reorders this ranking. The check we set before building did not pass (see How we know).";
 
 const HOW_WE_KNOW = "How we know";
 
@@ -102,21 +107,33 @@ function LensList({
   describe,
   ranked,
   onOpen,
+  startMs,
+  embedded = false,
 }: {
   title: string;
   rows: readonly LensRow[];
   describe: (row: LensRow) => string;
   ranked: readonly PairClash[];
   onOpen: (clash: PairClash, trigger: HTMLElement | null) => void;
+  /** When this list's rows start to rise, if the section plays (M6). */
+  startMs: number;
+  /**
+   * These pairs drop out of the top once taste overlap counts. The list's heading names it; the rows
+   * carry no edge of their own (no left stripe).
+   */
+  marked?: boolean;
+  /** Inside the taste section, under its h3: the list heading is an h4. */
+  embedded?: boolean;
 }) {
   if (rows.length === 0) return null;
+  const Heading = embedded ? "h4" : "h3";
   return (
     // On wide screens both lists share two grid rows (heading, rows), so a heading that wraps in one
     // column leaves the two lists' rows aligned.
     <div className="min-w-0 lg:row-span-2 lg:grid lg:grid-rows-subgrid">
-      <h3 className="type-kicker border-b-2 border-foreground pb-2">{title}</h3>
+      <Heading className="pb-2 text-[0.8125rem] leading-5 font-semibold">{title}</Heading>
       <ol className="divide-y divide-border">
-        {rows.map((row) => {
+        {rows.map((row, i) => {
           const clash = findClash(ranked, row.a_id, row.b_id);
           const body = (
             <>
@@ -127,7 +144,11 @@ function LensList({
             </>
           );
           return (
-            <li key={`${row.a_id}|${row.b_id}`}>
+            <li
+              key={`${row.a_id}|${row.b_id}`}
+              className="cc-lens-row"
+              style={{ "--reveal-delay": `${startMs + i * ROW_STAGGER_MS}ms` } as CSSProperties}
+            >
               {clash ? (
                 <button
                   type="button"
@@ -165,6 +186,8 @@ export function TasteLens({
   ranked,
   onOpen,
   synthetic = false,
+  embedded = false,
+  className,
 }: {
   lenses: Lenses;
   /** The day's priced concurrent clashes, costliest first: a listed pair opens its drawer from here. */
@@ -172,6 +195,12 @@ export function TasteLens({
   onOpen: (clash: PairClash, trigger: HTMLElement | null) => void;
   /** The invented day: the lead does not credit Qloo's numbers or its popularity field. */
   synthetic?: boolean;
+  /**
+   * Inside the taste section's "Two rankings of this day" disclosure: no section or container of its
+   * own, the heading an h3 (list headings h4) in one column, and no label above it (the summary names it).
+   */
+  embedded?: boolean;
+  className?: string;
 }) {
   const withTaste = droppedRows(
     lenses.with_taste.map((pair) => ({ ...pair, other: pair.rank_without_taste })),
@@ -182,72 +211,106 @@ export function TasteLens({
     lenses.ranked,
   );
   const unchanged = lenses.only_with_taste === 0 && lenses.only_without_taste === 0;
+  // M6: once the lists scroll into view, the draw-and-time rows rise, then the taste rows, then the
+  // pairs taste overlap pushes out of the top get their edge. The server HTML is the final frame.
+  const listsRef = useRef<HTMLDivElement | null>(null);
+  const phase = useReveal(listsRef, { threshold: 0.4 });
   const { priced_with_taste: pricedWith, priced_without_taste: pricedWithout } = lenses;
 
+  const linkClass = "font-semibold text-foreground underline underline-offset-4";
+  const lead = (
+    <>
+      <p>
+        <WithMethodLink text={lensLead(lenses, synthetic)} linkClassName={linkClass} />
+      </p>
+      {unchanged || lenses.shuffled ? null : (
+        <p className="text-sm text-muted-foreground">
+          <WithMethodLink text={LENS_CAVEAT} linkClassName={linkClass} />
+        </p>
+      )}
+    </>
+  );
+  const lists =
+    withTaste.length > 0 || withoutTaste.length > 0 ? (
+      <div
+        ref={listsRef}
+        data-reveal={phase === "still" ? undefined : phase}
+        className={embedded ? "mt-6 grid gap-8 lg:grid-cols-2 lg:gap-x-10 lg:gap-y-0" : "mt-8 grid gap-10 lg:grid-cols-2 lg:gap-x-12 lg:gap-y-0"}
+      >
+        <LensList
+          title="Costliest with taste overlap, lower without"
+          rows={withTaste}
+          describe={(row) =>
+            `${placeText(row.rank, pricedWith)} with taste overlap, ${rankText(row.other, pricedWithout)} on draw and time alone`
+          }
+          ranked={ranked}
+          onOpen={onOpen}
+          startMs={SECOND_LIST_MS}
+          embedded={embedded}
+        />
+        <LensList
+          title="Costliest on draw and time alone, lower with taste overlap"
+          rows={withoutTaste}
+          describe={(row) =>
+            `${placeText(row.rank, pricedWithout)} on draw and time alone, ${rankText(row.other, pricedWith)} with taste overlap`
+          }
+          ranked={ranked}
+          onOpen={onOpen}
+          startMs={0}
+          marked
+          embedded={embedded}
+        />
+      </div>
+    ) : null;
+  const apart =
+    lenses.apart.length > 0 ? (
+      <div
+        className={
+          embedded
+            ? "mt-6 max-w-prose space-y-1.5 border-t border-border pt-4 text-sm leading-relaxed"
+            : "mt-8 max-w-3xl space-y-1.5 rounded-md border border-border p-4 text-sm leading-relaxed sm:p-5"
+        }
+      >
+        <p>
+          <span className="font-semibold">High taste overlap, never on at the same time:</span>{" "}
+          {apartLine(lenses.apart)}.
+        </p>
+        <p className="text-muted-foreground">
+          Taste overlap only costs something when two sets share time, so these pairs price at zero.{" "}
+          <Link href="/method#price" className={linkClass}>
+            How the price works
+          </Link>
+        </p>
+      </div>
+    ) : null;
+
+  if (embedded) {
+    return (
+      <div id={TASTE_LENS_ID} aria-labelledby="taste-lens-heading" role="group" className={className}>
+        <h3 id="taste-lens-heading" className="type-title">
+          What taste overlap changes
+        </h3>
+        <div className="mt-2 max-w-prose space-y-2 text-[0.9375rem] leading-relaxed">{lead}</div>
+        {lists}
+        {apart}
+      </div>
+    );
+  }
+
   return (
-    <section id={TASTE_LENS_ID} aria-labelledby="taste-lens-heading" className="border-t border-border">
-      <div className="container-page py-14 sm:py-20">
+    <section id={TASTE_LENS_ID} aria-labelledby="taste-lens-heading" className={className}>
+      <div className="container-page py-16 lg:py-20">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:items-end">
           <div>
-            <p className="type-kicker text-muted-foreground">Two rankings of this day</p>
+            <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Two rankings of this day</p>
             <h2 id="taste-lens-heading" className="type-headline mt-2">
               What taste overlap changes
             </h2>
           </div>
-          <div className="space-y-2 text-[0.9375rem] leading-relaxed">
-            <p>
-              <WithMethodLink
-                text={lensLead(lenses, synthetic)}
-                linkClassName="font-semibold text-foreground underline underline-offset-4"
-              />
-            </p>
-            {unchanged || lenses.shuffled ? null : (
-              <p className="text-sm text-muted-foreground">
-                <WithMethodLink
-                  text={LENS_CAVEAT}
-                  linkClassName="font-semibold text-foreground underline underline-offset-4"
-                />
-              </p>
-            )}
-          </div>
+          <div className="space-y-2 text-[0.9375rem] leading-relaxed">{lead}</div>
         </div>
-
-        {withTaste.length > 0 || withoutTaste.length > 0 ? (
-          <div className="mt-8 grid gap-10 lg:grid-cols-2 lg:gap-x-12 lg:gap-y-0">
-            <LensList
-              title="Costliest with taste overlap, lower without"
-              rows={withTaste}
-              describe={(row) =>
-                `${placeText(row.rank, pricedWith)} with taste overlap, ${rankText(row.other, pricedWithout)} on draw and time alone`
-              }
-              ranked={ranked}
-              onOpen={onOpen}
-            />
-            <LensList
-              title="Costliest on draw and time alone, lower with taste overlap"
-              rows={withoutTaste}
-              describe={(row) =>
-                `${placeText(row.rank, pricedWithout)} on draw and time alone, ${rankText(row.other, pricedWith)} with taste overlap`
-              }
-              ranked={ranked}
-              onOpen={onOpen}
-            />
-          </div>
-        ) : null}
-
-        {lenses.apart.length > 0 ? (
-          <div className="mt-8 max-w-3xl space-y-1.5 rounded-lg border border-border-strong p-4 text-sm leading-relaxed sm:p-5">
-            <p>
-              <span className="font-semibold">High taste overlap, never on at the same time:</span>{" "}
-              {apartLine(lenses.apart)}.
-            </p>
-            <p className="text-muted-foreground">
-              Taste overlap only costs something when two sets share time: price = taste overlap
-              &times; the share of the shorter set they play at once &times; the two acts&rsquo; draw
-              (their geometric mean) &times; a rarity factor. {formulaNote(synthetic)}
-            </p>
-          </div>
-        ) : null}
+        {lists}
+        {apart}
       </div>
     </section>
   );

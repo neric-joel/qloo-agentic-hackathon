@@ -230,9 +230,13 @@ export function decisionDay(preset: Pick<Preset, "festival" | "report">): number
 
 export const ATTRIBUTION = "Selected and scored by this app’s index";
 export const NO_MOVE = "No legal place for either set lowers the index.";
-export const LIMITS_WITH_RULE =
-  "Lines 1 and 2 are selected and scored by this app’s index. Line 3 is checked against the timetable’s rules; the index in it is shown for information, not as a verdict. A reading, not a verdict.";
-export const LIMITS_NO_RULE = "Lines 1 and 2 are selected and scored by this app’s index. A reading, not a verdict.";
+/**
+ * The rule-check sentence, set inside "Show the working" beside the rule row it describes. No sentence when
+ * the card has no rule row: the caption under the index ("Selected and scored by this app’s index. A
+ * reading, not a verdict.") already limits the clash and the move.
+ */
+export const LIMITS_WITH_RULE = "Checked against the timetable’s rules; its index is shown for information.";
+export const LIMITS_NO_RULE = null;
 
 export const TRADEOFF_HEADING = "The two changes side by side";
 /** The heading when the plan holds more than the one change the table is about (the brief). */
@@ -242,9 +246,9 @@ export const TRADEOFF_SUBTITLE =
   "Each change tested alone on the published day: the first column is the single move with the lowest index; the second is the smallest change this search found that ends the overlap.";
 /** Under the table on the card, where the plan is priced further down the page. */
 export const TRADEOFF_NOTE_CARD =
-  "A reading to weigh, not a verdict; once you keep a change, the plan receipt below is what your plan does.";
+  "Weigh this reading; once you keep a change, the plan receipt below is what your plan does.";
 /** Under the table in the brief, where the plan receipt comes first. */
-export const TRADEOFF_NOTE_BRIEF = "A reading to weigh, not a verdict; the plan receipt above is what your plan does.";
+export const TRADEOFF_NOTE_BRIEF = "Weigh this reading; the plan receipt above is what your plan does.";
 export const TRADEOFF_MOVE_HEAD = "Move one set";
 export const TRADEOFF_RULE_HEAD = "Keep the two apart";
 export const NO_PRICED_CLASH = "No priced clash left on this day";
@@ -363,8 +367,15 @@ export type SharedTimeline = {
   bandNow: TimelineBar | null;
   movingAfter: TimelineBar;
   bandAfter: TimelineBar | null;
-  ticks: { x: number; label: string }[];
+  /**
+   * A tick every 15 minutes across the axis. `major` is true at :00 and :30; only a major tick carries
+   * a label, and `label` is empty when the tick has none (a minor tick, or a major one too close to the
+   * label before it).
+   */
+  ticks: TimelineTick[];
 };
+
+export type TimelineTick = { x: number; label: string; major: boolean };
 
 /** One row of the side-by-side comparison; both cells are printed text, built from the route's figures. */
 export type TradeoffRow = {
@@ -411,7 +422,8 @@ export type DecisionCopy = {
   rangeLine: string | null;
   timeline: SharedTimeline | null;
   ruleLine: string | null;
-  limitsLine: string;
+  /** The rule-check sentence beside the rule row; null when the card has no rule row. */
+  limitsLine: string | null;
   /** Minutes the pair shares before and after, for the counter and the live region. */
   minutesBefore: number | null;
   minutesAfter: number | null;
@@ -444,16 +456,23 @@ function rangeOf(preset: Pick<Preset, "report">): ScaleRange {
 
 const CANVAS = { left: 24, width: 240 } as const;
 
-/** Published times scaled to the drawing: the span of the three intervals fills 240 units. */
+const QUARTER = 15;
+
+/**
+ * Published times scaled to the drawing: the axis runs from the quarter hour at or before the earliest
+ * start to the quarter hour at or after the latest end, and that span fills 240 units.
+ */
 export function sharedTimeline(
   fixed: { name: string; start: number; end: number },
   moving: { name: string; start: number; end: number },
   after: { start: number; end: number },
 ): SharedTimeline | null {
   const all = [fixed, moving, after];
-  const first = Math.min(...all.map((item) => item.start));
-  const last = Math.max(...all.map((item) => item.end));
-  if (!(last > first) || all.some((item) => !(item.end > item.start))) return null;
+  const earliest = Math.min(...all.map((item) => item.start));
+  const latest = Math.max(...all.map((item) => item.end));
+  if (!(latest > earliest) || all.some((item) => !(item.end > item.start))) return null;
+  const first = Math.floor(earliest / QUARTER) * QUARTER;
+  const last = Math.ceil(latest / QUARTER) * QUARTER;
   const unit = CANVAS.width / (last - first);
   const x = (minute: number) => CANVAS.left + (minute - first) * unit;
   const bar = (item: { start: number; end: number }): TimelineBar => ({ x: x(item.start), w: (item.end - item.start) * unit });
@@ -461,13 +480,16 @@ export function sharedTimeline(
     const window = overlapWindow(fixed, item);
     return window ? bar(window) : null;
   };
-  // A label is dropped when it would sit within 44 units of the one before it (about one "14:00" in 12-unit type).
-  const minutes = [...new Set(all.flatMap((item) => [item.start, item.end]))].sort((p, q) => p - q);
-  const ticks: { x: number; label: string }[] = [];
-  for (const minute of minutes) {
+  // A hairline every quarter hour; a label only at :00 and :30, and dropped when it would sit within 44
+  // units of the label before it (about one "14:00" in 12 px type), so long spans label every hour.
+  const ticks: TimelineTick[] = [];
+  let labelled: number | null = null;
+  for (let minute = first; minute <= last; minute += QUARTER) {
     const at = x(minute);
-    if (ticks.length > 0 && at - ticks[ticks.length - 1].x < 44) continue;
-    ticks.push({ x: at, label: formatClock(minute) });
+    const major = (((minute % 30) + 30) % 30) === 0;
+    const fits = major && (labelled === null || at - labelled >= 44);
+    if (fits) labelled = at;
+    ticks.push({ x: at, label: fits ? formatClock(minute) : "", major });
   }
   return {
     stayingName: fixed.name,
@@ -479,6 +501,22 @@ export function sharedTimeline(
     bandAfter: band(after),
     ticks,
   };
+}
+
+/**
+ * The card's dateline: "Glastonbury 2025 · Sunday · published timetable", read from the festival's own
+ * name and day (a " Festival" before the year is dropped, as a running order's masthead would). On an
+ * invented day it names no festival: "Invented day · Sunday · invented timetable".
+ */
+export function decisionDateline(
+  festival: { name: string; days: readonly string[] },
+  dayLabel: string,
+  synthetic = false,
+): string {
+  const day = dayName(dayLabel);
+  if (synthetic) return `Invented day · ${day} · invented timetable`;
+  const name = festivalName(festival).replace(/ Festival(?= \d{4}\b)/, "");
+  return `${name} · ${day} · published timetable`;
 }
 
 /**
@@ -502,7 +540,7 @@ export function buildDecisionCopy(preset: Preset, decision: Decision | null): De
     const stageOf = (slot: { stage_id: string }) => stages.get(slot.stage_id) ?? slot.stage_id;
 
     const dayLabel = festival.days[decision.day] ?? `Day ${decision.day + 1}`;
-    const title = `One decision on ${festivalName(festival)} ${dayName(dayLabel)}, published timetable`;
+    const title = decisionDateline(festival, dayLabel, preset.synthetic === true);
 
     // Line 1: the clash. Taste overlap is a rank out of 100 on this bill, read from the report.
     const window = overlapWindow(slotA, slotB);

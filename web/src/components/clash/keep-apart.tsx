@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { Check, LoaderCircle, RotateCcw } from "lucide-react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type ReactNode, type Ref } from "react";
+import { Check, ChevronDown, LoaderCircle, RotateCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { dayName } from "@/lib/clashes";
 import { movableSets, type PickableSet } from "@/lib/moves";
-import type { Preset } from "@/lib/preset";
+import type { PairClash, Preset } from "@/lib/preset";
 import {
   BOTH_LOCKED,
   INDEX_NOTE,
@@ -38,7 +38,8 @@ import {
   type RuleFixes,
   type RulePreview,
 } from "@/lib/rule-fix";
-import { overlapWindow } from "@/lib/timetable";
+import { formatRange, overlapWindow } from "@/lib/timetable";
+import { cn } from "@/lib/utils";
 import { pluralize } from "@/lib/format";
 import {
   MAX_STACK,
@@ -51,12 +52,13 @@ import {
   type StackStep,
 } from "@/lib/stack";
 
+import { PairStrip, bracketWords } from "./pair-strip";
 import { useAnnouncement } from "./use-announcement";
 
 /** Where the section sits, for links and the seed's scroll. */
 export const KEEP_APART_ID = "keep-apart";
 
-/** A search, a refusal or a failure for one pair; `idle` before the first Search. */
+/** A search, a refusal or a failure for one pair; `idle` before the first search. */
 type Search =
   | { status: "idle" }
   | { status: "loading"; key: string }
@@ -96,6 +98,177 @@ function SetOptions({ groups }: { groups: readonly Group[] }) {
   ));
 }
 
+/** What an underline field shows for its chosen set: the start time in mono, then the act. */
+export type SetFieldDisplay = { time: string; name: string } | null;
+
+/**
+ * A native select drawn as a card control: 48px tall, the 12px control corner, a 1px border-strong edge
+ * (3:1, so the edge itself names the control) that turns ink on hover (keyboard focus adds the 2px focus
+ * ring), 16px side padding, the chosen set's start time in mono at 13px and then its name at 15px
+ * semibold, and one 12px chevron at the right in place of the browser's. The platform control sits over
+ * the whole box (transparent, `appearance-none`), so a click, the keyboard and screen readers all reach the
+ * real select; the drawn text is only what it shows.
+ */
+export function SetSelect({
+  id,
+  value,
+  onChange,
+  selectRef,
+  describedBy,
+  display = null,
+  placeholder = "Choose a set",
+  children,
+}: {
+  id: string;
+  value: string;
+  onChange: (event: ChangeEvent<HTMLSelectElement>) => void;
+  selectRef?: Ref<HTMLSelectElement>;
+  describedBy?: string;
+  /** The chosen set as the field draws it; null draws the placeholder. */
+  display?: SetFieldDisplay;
+  placeholder?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "relative mt-1.5 flex h-12 min-w-0 items-center rounded-md border border-border-strong bg-card pr-10 pl-4 motion-safe:transition-colors motion-safe:duration-150 motion-safe:ease-out hover:border-foreground",
+        "has-[select:focus-visible]:outline-2 has-[select:focus-visible]:outline-offset-2 has-[select:focus-visible]:outline-ring",
+      )}
+    >
+      <span aria-hidden="true" className="pointer-events-none flex min-w-0 flex-1 items-baseline gap-2.5">
+        {display ? (
+          <>
+            <span className="shrink-0 font-mono text-[0.8125rem] text-muted-foreground tabular-nums">{display.time}</span>
+            <span className="min-w-0 truncate font-sans text-[0.9375rem] font-semibold">{display.name}</span>
+          </>
+        ) : (
+          <span className="truncate text-[0.9375rem] text-muted-foreground">{placeholder}</span>
+        )}
+      </span>
+      <select
+        id={id}
+        ref={selectRef}
+        value={value}
+        onChange={onChange}
+        aria-describedby={describedBy}
+        className="absolute inset-0 h-full w-full min-w-0 cursor-pointer appearance-none rounded-md bg-card text-[0.9375rem] text-foreground opacity-0 outline-none"
+      >
+        {children}
+      </select>
+      <ChevronDown
+        aria-hidden="true"
+        className="pointer-events-none absolute top-1/2 right-4 size-3 -translate-y-1/2 text-foreground"
+      />
+    </div>
+  );
+}
+
+/** The field's drawing for a set id: its start and name, or null when it is not on the list. */
+export function fieldDisplay(sets: readonly PickableSet[], actId: string | null): SetFieldDisplay {
+  const set = actId ? sets.find((candidate) => candidate.actId === actId) : undefined;
+  return set ? { time: set.start, name: set.name } : null;
+}
+
+/** Where a set plays on the published day: "Pyramid · 21:30–23:00". Null for a set not on the timetable. */
+export function setWhere(preset: Pick<Preset, "festival">, actId: string): string | null {
+  const slot = preset.festival.timetable.find((candidate) => candidate.act_id === actId);
+  if (!slot) return null;
+  const stage = preset.festival.stages.find((candidate) => candidate.id === slot.stage_id)?.name ?? slot.stage_id;
+  return `${stage} · ${formatRange(slot)}`;
+}
+
+/** Where a set plays, split so the stage is set in the sans and the time in mono. Null off the timetable. */
+export function setPlace(preset: Pick<Preset, "festival">, actId: string): { stage: string; time: string } | null {
+  const slot = preset.festival.timetable.find((candidate) => candidate.act_id === actId);
+  if (!slot) return null;
+  const stage = preset.festival.stages.find((candidate) => candidate.id === slot.stage_id)?.name ?? slot.stage_id;
+  return { stage, time: formatRange(slot) };
+}
+
+/**
+ * The chosen set under its select, as a line of a running order: the act, then its stage and time in
+ * mono. `id` lets the select point at it.
+ */
+export function SetCard({
+  name,
+  where,
+  id,
+  className,
+  children,
+}: {
+  name: string;
+  where: string | null;
+  id?: string;
+  className?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div id={id} className={cn("mt-2.5 min-w-0", className)}>
+      <p className="text-[0.9375rem] leading-snug font-semibold break-words">{name}</p>
+      {where ? <p className="mt-0.5 font-mono text-xs text-muted-foreground tabular-nums">{where}</p> : null}
+      {children}
+    </div>
+  );
+}
+
+/** One set as the strip draws it: its name and its published start and end, in minutes from the day's start. */
+type StripSet = { name: string; start: number; end: number };
+
+/**
+ * The two chosen sets as the hero's `PairStrip` draws a clash: the first set the solid ink capsule, the
+ * second the open capsule, hatched in its card window over the minutes they share, with straight cuts where
+ * the shared time starts and ends, on the one strip domain and the same 9.5rem label column as the other
+ * strips. The figure is the strip's own bracket and the minutes under it, as on the hero and in Try a move,
+ * worded "N min at the same time" in 13px vermilion mono. The drawing is hidden from readers; a live line
+ * says both names and the same figure for them. Drawn from the published timetable; nothing is requested.
+ */
+export function ChosenPairStrip({ a, b }: { a: StripSet; b: StripSet }) {
+  const shared = overlapWindow(a, b);
+  const minutes = shared ? shared.end - shared.start : 0;
+  return (
+    <div className="min-w-0">
+      <PairStrip
+        description={null}
+        wording="same-time"
+        lanes={[
+          { key: "a", kind: "staying", name: a.name, start: a.start, end: a.end },
+          { key: "b", kind: "now", name: b.name, start: b.start, end: b.end, minutes },
+        ]}
+      />
+      <p aria-live="polite" className="sr-only">
+        {a.name} and {b.name}: {bracketWords(minutes, "same-time")}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * The pair the form opens on, so it never arrives half empty: the pair asked for when both are sets of
+ * this day; else the costliest clash (the lowest rank) that has `prefer` in it; else the day's
+ * costliest clash; else nothing. Read locally; nothing is searched until Find changes is pressed.
+ */
+function openingPair(
+  preset: Pick<Preset, "festival" | "report">,
+  day: number,
+  wanted: { aId: string; bId: string } | null,
+  prefer: string | null,
+): { a: string; b: string } {
+  const onDay = new Set(movableSets(preset, day).map((set) => set.actId));
+  if (wanted && wanted.aId !== wanted.bId && onDay.has(wanted.aId) && onDay.has(wanted.bId)) {
+    return { a: wanted.aId, b: wanted.bId };
+  }
+  const clashes = preset.report.clashes.filter(
+    (clash) => clash.day === day && onDay.has(clash.a.act_id) && onDay.has(clash.b.act_id),
+  );
+  const costliest = (list: readonly PairClash[]) =>
+    list.reduce<PairClash | null>((best, clash) => (!best || clash.rank < best.rank ? clash : best), null);
+  const top =
+    (prefer ? costliest(clashes.filter((clash) => clash.a.act_id === prefer || clash.b.act_id === prefer)) : null) ??
+    costliest(clashes);
+  return top ? { a: top.a.act_id, b: top.b.act_id } : { a: "", b: "" };
+}
+
 /** Whether a listed change can be kept now: it can, the plan has no room for it, or it is already in the plan. */
 type KeepState = "ready" | "full" | "kept";
 
@@ -132,8 +305,8 @@ export function ChangeCard({
   const flags = stageFitNote(fix);
   const roomId = useId();
   return (
-    <li className="rounded-lg border border-border bg-background p-3.5 sm:p-4">
-      <p className="type-kicker text-muted-foreground">Change {n}</p>
+    <li className="rounded-md border border-border bg-background p-3.5 sm:p-4">
+      <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Change {n}</p>
       <ul className="mt-1.5 space-y-0.5 font-semibold">
         {fix.moves.map((move) => (
           <li key={move.actId} className="break-words">
@@ -147,7 +320,7 @@ export function ChangeCard({
         {index ? ` · ${index}` : ""}
         {flags ? ` · ${flags}` : ""}
       </p>
-      {flags ? <p className="mt-0.5 text-xs text-muted-foreground">{STAGE_FIT_GLOSS}</p> : null}
+      {flags ? <p className="mt-0.5 text-xs text-muted-foreground lg:text-[0.8125rem]">{STAGE_FIT_GLOSS}</p> : null}
       <p className="mt-0.5 text-sm">Adds no rule break; ends this overlap.</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <Button
@@ -201,9 +374,15 @@ export function KeepApart({
   onPreview,
   plan = [],
   onKeep,
+  opening = null,
+  prefer = null,
 }: {
   preset: Preset;
   day: number;
+  /** The decision card's pair, preselected while the visitor has not picked a set. */
+  opening?: { aId: string; bId: string } | null;
+  /** Without `opening`, the costliest clash with this set in it is preselected (the card's mover). */
+  prefer?: string | null;
   /** A pair the decision card asks for; a new `nonce` runs the search again, the same one does not. */
   seed?: { nonce: number; aId: string; bId: string } | null;
   onPreview?: (preview: RulePreview | null) => void;
@@ -215,6 +394,7 @@ export function KeepApart({
   const firstId = useId();
   const secondId = useId();
   const resultHeadingId = useId();
+  const pairHintId = useId();
   const sectionRef = useRef<HTMLElement | null>(null);
   const resultRef = useRef<HTMLHeadingElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
@@ -226,13 +406,31 @@ export function KeepApart({
   const sets = useMemo(() => movableSets(preset, day), [preset, day]);
   const byId = useMemo(() => new Map(sets.map((set) => [set.actId, set])), [sets]);
   const slots = useMemo(() => new Map(festival.timetable.map((slot) => [slot.act_id, slot])), [festival]);
-  const [first, setFirst] = useState("");
-  const [second, setSecond] = useState("");
+  // Both sets open on the decision's pair (or the day's costliest clash), so the form arrives ready to
+  // search; nothing is searched until Find changes is pressed. Until the visitor picks a set, a pair that
+  // arrives later (the decision loads after the page) takes the place of the first one.
+  const opened = openingPair(preset, day, opening, prefer);
+  const openedKey = `${opened.a}|${opened.b}`;
+  const [first, setFirst] = useState(opened.a);
+  const [second, setSecond] = useState(opened.b);
+  const [touched, setTouched] = useState(false);
+  const [shownOpening, setShownOpening] = useState(openedKey);
   // The pair last searched for, and the answer that came back for it.
-  const [wanted, setWanted] = useState<{ a: string; b: string; attempt: number } | null>(null);
-  const [outcome, setOutcome] = useState<{ key: string; attempt: number; answer: RuleAnswer } | null>(null);
+  const [wanted, setWanted] = useState<{
+    a: string;
+    b: string;
+    attempt: number;
+  } | null>(null);
+  const [outcome, setOutcome] = useState<{
+    key: string;
+    attempt: number;
+    answer: RuleAnswer;
+  } | null>(null);
   // The change being previewed, tied to the pair it belongs to.
-  const [previewing, setPreviewing] = useState<{ key: string; index: number } | null>(null);
+  const [previewing, setPreviewing] = useState<{
+    key: string;
+    index: number;
+  } | null>(null);
   const [announcement, setAnnouncement] = useAnnouncement(5000);
   const [handledSeed, setHandledSeed] = useState(0);
   const multiDay = festival.days.length > 1;
@@ -244,17 +442,22 @@ export function KeepApart({
 
   const wantedKey = wanted ? pairKey(preset.id, wanted.a, wanted.b) : null;
   const known = wantedKey ? answers.get(wantedKey) : undefined;
-  const search: Search = !wanted || !wantedKey
-    ? { status: "idle" }
-    : known
-      ? { status: "ready", key: wantedKey, fixes: known }
-      : outcome && outcome.key === wantedKey && outcome.attempt === wanted.attempt
-        ? outcome.answer.status === "ready"
-          ? { status: "ready", key: wantedKey, fixes: outcome.answer.fixes }
-          : outcome.answer.status === "refused"
-            ? { status: "refused", key: wantedKey, message: outcome.answer.message }
-            : { status: "error", key: wantedKey }
-        : { status: "loading", key: wantedKey };
+  const search: Search =
+    !wanted || !wantedKey
+      ? { status: "idle" }
+      : known
+        ? { status: "ready", key: wantedKey, fixes: known }
+        : outcome && outcome.key === wantedKey && outcome.attempt === wanted.attempt
+          ? outcome.answer.status === "ready"
+            ? { status: "ready", key: wantedKey, fixes: outcome.answer.fixes }
+            : outcome.answer.status === "refused"
+              ? {
+                  status: "refused",
+                  key: wantedKey,
+                  message: outcome.answer.message,
+                }
+              : { status: "error", key: wantedKey }
+          : { status: "loading", key: wantedKey };
 
   const groups = useMemo(() => groupByStage(sets), [sets]);
   // The second select lists the sets that share time with the first before every other set.
@@ -303,7 +506,19 @@ export function KeepApart({
     wantsFocus.current = true;
     setPreviewing(null);
     setAnnouncement("");
-    setWanted((current) => ({ a: aId, b: bId, attempt: (current?.attempt ?? 0) + 1 }));
+    setWanted((current) => ({
+      a: aId,
+      b: bId,
+      attempt: (current?.attempt ?? 0) + 1,
+    }));
+  }
+
+  if (openedKey !== shownOpening) {
+    setShownOpening(openedKey);
+    if (!touched && !wanted) {
+      setFirst(opened.a);
+      setSecond(opened.b);
+    }
   }
 
   // A seed from the decision card: choose both sets and search, as state adjusted while rendering. A
@@ -311,19 +526,34 @@ export function KeepApart({
   const seedNonce = seed?.nonce ?? 0;
   const seedA = seed?.aId;
   const seedB = seed?.bId;
-  if (seedA && seedB && seedNonce !== 0 && seedNonce !== handledSeed && byId.has(seedA) && byId.has(seedB) && seedA !== seedB) {
+  if (
+    seedA &&
+    seedB &&
+    seedNonce !== 0 &&
+    seedNonce !== handledSeed &&
+    byId.has(seedA) &&
+    byId.has(seedB) &&
+    seedA !== seedB
+  ) {
     setHandledSeed(seedNonce);
     setFirst(seedA);
     setSecond(seedB);
     setPreviewing(null);
     setAnnouncement("");
-    setWanted((current) => ({ a: seedA, b: seedB, attempt: (current?.attempt ?? 0) + 1 }));
+    setWanted((current) => ({
+      a: seedA,
+      b: seedB,
+      attempt: (current?.attempt ?? 0) + 1,
+    }));
   }
   useEffect(() => {
     if (seedNonce === 0) return;
     wantsFocus.current = true;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    sectionRef.current?.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+    sectionRef.current?.scrollIntoView({
+      block: "start",
+      behavior: reduce ? "auto" : "smooth",
+    });
   }, [seedNonce]);
 
   // Focus lands on the result heading once it is on the page; when the search failed or was
@@ -333,13 +563,13 @@ export function KeepApart({
   useEffect(() => {
     if (!settled || !wantsFocus.current) return;
     wantsFocus.current = false;
-    const target =
-      status === "ready" ? resultRef.current : status === "error" ? retryRef.current : refusedRef.current;
+    const target = status === "ready" ? resultRef.current : status === "error" ? retryRef.current : refusedRef.current;
     target?.focus({ preventScroll: true });
   }, [settled, status, wantedKey, attempt]);
 
   function changePick(setter: (id: string) => void, id: string) {
     setter(id);
+    setTouched(true);
     setWanted(null);
     setPreviewing(null);
     setAnnouncement("");
@@ -420,7 +650,20 @@ export function KeepApart({
     return parts.length > 0 ? parts.join(" ") : null;
   }
 
-  const canSearch = first !== "" && second !== "" && first !== second && search.status !== "loading";
+  const needsPair = first === "" || second === "" || first === second;
+  // The two chosen sets on one axis, when both are on this day's timetable.
+  const strip = useMemo(() => {
+    const slotA = slots.get(first);
+    const slotB = slots.get(second);
+    const setA = byId.get(first);
+    const setB = byId.get(second);
+    if (needsPair || !slotA || !slotB || !setA || !setB || slotA.day !== slotB.day) return null;
+    return {
+      a: { name: setA.name, start: slotA.start, end: slotA.end },
+      b: { name: setB.name, start: slotB.start, end: slotB.end },
+    };
+  }, [needsPair, slots, byId, first, second]);
+  const canSearch = !needsPair && search.status !== "loading";
   const result = search.status === "ready" ? search.fixes : null;
   // Near-duplicates (the same sets and stages, starts within five minutes) share a row; the route's count stays as sent.
   const rows = useMemo(() => (result ? collapseSimilar(result.fixes) : []), [result]);
@@ -432,88 +675,95 @@ export function KeepApart({
       id={KEEP_APART_ID}
       ref={sectionRef}
       aria-labelledby="keep-apart-heading"
-      className="mt-10 rounded-xl border border-border-strong bg-card p-4 sm:p-6"
+      className="mt-16 grid gap-x-12 lg:col-span-12 lg:grid-cols-12 lg:items-start"
     >
-      <h3 id="keep-apart-heading" className="type-title">
-        Keep two sets apart
-      </h3>
-      <p className="mt-2 max-w-3xl text-sm leading-relaxed">
-        Pick two sets that share time. The search covers {SEARCH_COVERS}. {SEARCH_RULE}
-      </p>
-
-      <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
-        <div className="min-w-0">
-          <label htmlFor={firstId} className="block text-sm font-semibold">
-            First set
-          </label>
-          <select
-            id={firstId}
-            value={first}
-            onChange={(event) => changePick(setFirst, event.target.value)}
-            className="mt-1.5 h-11 w-full min-w-0 rounded-md border border-border-strong bg-card px-3 text-[0.9375rem] text-foreground"
-          >
-            <option value="" disabled>
-              Choose a set
-            </option>
-            <SetOptions groups={groups} />
-          </select>
-        </div>
-        <div className="min-w-0">
-          <label htmlFor={secondId} className="block text-sm font-semibold">
-            Second set
-          </label>
-          <select
-            id={secondId}
-            value={second}
-            onChange={(event) => changePick(setSecond, event.target.value)}
-            className="mt-1.5 h-11 w-full min-w-0 rounded-md border border-border-strong bg-card px-3 text-[0.9375rem] text-foreground"
-          >
-            <option value="" disabled>
-              Choose a set
-            </option>
-            {partnerGroups.partners.length > 0 ? (
-              <optgroup label={`Share time with ${byId.get(first)?.name ?? "the first set"}`}>
-                {partnerGroups.partners.flatMap((group) =>
-                  group.sets.map((set) => (
-                    <option key={set.actId} value={set.actId}>
-                      {set.start} {set.name} · {group.label}
-                      {set.locked ? " (locked)" : ""}
-                    </option>
-                  )),
-                )}
-              </optgroup>
+      <div className="lg:col-span-5">
+        <h3 id="keep-apart-heading" className="type-title">
+          Keep two sets apart
+        </h3>
+        <p className="mt-2 max-w-prose text-[0.9375rem] leading-relaxed">
+          Choose two overlapping sets. Find the moves that end the overlap without breaking a rule.
+        </p>
+        <div className="mt-4 grid gap-x-6 gap-y-4 sm:grid-cols-2 sm:items-start lg:grid-cols-1">
+          <div className="min-w-0">
+            <label htmlFor={firstId} className="block text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
+              First set
+            </label>
+            <SetSelect
+              id={firstId}
+              value={first}
+              display={fieldDisplay(sets, first)}
+              describedBy={needsPair ? pairHintId : undefined}
+              onChange={(event) => changePick(setFirst, event.target.value)}
+            >
+              <option value="" disabled>
+                Choose a set
+              </option>
+              <SetOptions groups={groups} />
+            </SetSelect>
+          </div>
+          <div className="min-w-0">
+            <label htmlFor={secondId} className="block text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
+              Second set
+            </label>
+            <SetSelect
+              id={secondId}
+              value={second}
+              display={fieldDisplay(sets, second)}
+              describedBy={needsPair ? pairHintId : undefined}
+              onChange={(event) => changePick(setSecond, event.target.value)}
+            >
+              <option value="" disabled>
+                Choose a set
+              </option>
+              {partnerGroups.partners.length > 0 ? (
+                <optgroup label={`Share time with ${byId.get(first)?.name ?? "the first set"}`}>
+                  {partnerGroups.partners.flatMap((group) =>
+                    group.sets.map((set) => (
+                      <option key={set.actId} value={set.actId}>
+                        {set.start} {set.name} · {group.label}
+                        {set.locked ? " (locked)" : ""}
+                      </option>
+                    )),
+                  )}
+                </optgroup>
+              ) : null}
+              <SetOptions groups={partnerGroups.others} />
+            </SetSelect>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 sm:col-span-2 lg:col-span-1">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!canSearch}
+              aria-describedby={needsPair ? pairHintId : undefined}
+              className={cn(needsPair && "border-border bg-transparent text-muted-foreground disabled:opacity-100")}
+              onClick={() => run(first, second)}
+            >
+              Find changes that end this overlap
+            </Button>
+            {needsPair ? (
+              <p id={pairHintId} className="text-[0.8125rem] text-muted-foreground">
+                Pick two sets first
+              </p>
             ) : null}
-            <SetOptions groups={partnerGroups.others} />
-          </select>
+          </div>
         </div>
-        <Button
-          type="button"
-          variant="ink"
-          disabled={!canSearch}
-          className="w-full lg:w-auto"
-          onClick={() => run(first, second)}
-        >
-          Search
-        </Button>
       </div>
 
-      <div className="mt-5" aria-busy={search.status === "loading"}>
+      <div className="mt-6 min-w-0 lg:col-span-7 lg:mt-0" aria-busy={search.status === "loading"}>
+        {strip ? <ChosenPairStrip a={strip.a} b={strip.b} /> : null}
+        <div className={cn(strip && search.status !== "idle" && "mt-6")}>
         {search.status === "loading" ? (
-          <div className="flex min-h-20 items-center gap-2 rounded-lg border border-dashed border-border-strong p-4 text-sm text-muted-foreground">
+          <div className="flex min-h-20 items-center gap-2 rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">
             <LoaderCircle aria-hidden="true" className="size-4 motion-safe:animate-spin" />
             Searching {SEARCH_COVERS} for {byId.get(first)?.name ?? "the first set"} and{" "}
             {byId.get(second)?.name ?? "the second set"}
           </div>
         ) : search.status === "error" ? (
-          <div role="alert" className="rounded-lg border border-destructive/50 bg-danger-bg p-4">
+          <div role="alert" className="rounded-md border border-destructive bg-card p-4">
             <p className="text-[0.9375rem] font-semibold">Could not run this search.</p>
-            <Button
-              ref={retryRef}
-              type="button"
-              variant="outline"
-              className="mt-3"
-              onClick={() => run(first, second)}
-            >
+            <Button ref={retryRef} type="button" variant="outline" className="mt-3" onClick={() => run(first, second)}>
               <RotateCcw aria-hidden="true" />
               Try again
             </Button>
@@ -523,7 +773,7 @@ export function KeepApart({
             ref={refusedRef}
             role="alert"
             tabIndex={-1}
-            className="rounded-lg border border-border-strong p-4 text-[0.9375rem] font-semibold outline-none"
+            className="rounded-md border border-border-strong bg-card p-4 text-[0.9375rem] font-semibold outline-none"
           >
             {search.message}
           </p>
@@ -533,7 +783,7 @@ export function KeepApart({
               id={resultHeadingId}
               ref={resultRef}
               tabIndex={-1}
-              className="type-kicker text-muted-foreground outline-none"
+              className="text-[0.9375rem] leading-6 font-semibold outline-none"
             >
               Keeping {result.a.act} and {result.b.act} apart
             </h4>
@@ -550,19 +800,7 @@ export function KeepApart({
                   <p className="mt-2 text-[0.9375rem] font-semibold">{NO_RESULT}</p>
                 ) : (
                   <>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      {searchedSentence(result)} {SEARCH_RULE} {SMALLEST_FIRST}{" "}
-                      {result.singleSetPlaces === 0
-                        ? "This search found no single-set place that ends it."
-                        : `${pluralize(result.singleSetPlaces, "single-set place")} end${result.singleSetPlaces === 1 ? "s" : ""} it.`}
-                      {result.fixesFound > covered
-                        ? ` Showing ${covered} of ${result.fixesFound} changes found.`
-                        : ""}
-                      {covered > rows.length
-                        ? " A change that moves the same sets to the same stages, with starts within 5 minutes, shares a row."
-                        : ""}
-                    </p>
-                    <ol aria-label="Changes that end the overlap" className="mt-3 grid gap-3 lg:grid-cols-3">
+                    <ol aria-label="Changes that end the overlap" className="mt-3 grid gap-3 sm:grid-cols-2">
                       {rows.map(({ fix, similar }, i) => (
                         <ChangeCard
                           key={fix.moves.map((move) => `${move.actId}@${move.start}`).join("+")}
@@ -584,16 +822,27 @@ export function KeepApart({
                         />
                       ))}
                     </ol>
+                    {/* What the search covered, set directly under the changes it qualifies. */}
+                    <p className="mt-2.5 max-w-prose text-[0.8125rem] leading-relaxed text-muted-foreground">
+                      {searchedSentence(result)} {SEARCH_RULE} {SMALLEST_FIRST}{" "}
+                      {result.singleSetPlaces === 0
+                        ? "This search found no single-set place that ends it."
+                        : `${pluralize(result.singleSetPlaces, "single-set place")} end${result.singleSetPlaces === 1 ? "s" : ""} it.`}
+                      {result.fixesFound > covered ? ` Showing ${covered} of ${result.fixesFound} changes found.` : ""}
+                      {covered > rows.length
+                        ? " A change that moves the same sets to the same stages, with starts within 5 minutes, shares a row."
+                        : ""}
+                    </p>
                     <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
                       <Button type="button" variant="outline" disabled={activePreview === null} onClick={clearPreview}>
                         Clear preview
                       </Button>
-                      <p className="min-w-0 flex-1 basis-64 text-xs leading-relaxed text-muted-foreground">
+                      <p className="min-w-0 flex-1 basis-64 text-xs leading-relaxed text-muted-foreground lg:text-[0.8125rem]">
                         {INDEX_NOTE}
                       </p>
                     </div>
                     {activePreview !== null ? (
-                      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                      <p className="mt-2 text-xs leading-relaxed text-muted-foreground lg:text-[0.8125rem]">
                         This is a tested timetable, not a kept change. While it shows, it replaces any kept plan’s
                         ghosts on the timetable; Clear preview brings them back. The links and rank badges still
                         describe the published day.
@@ -605,6 +854,7 @@ export function KeepApart({
             )}
           </div>
         ) : null}
+        </div>
       </div>
 
       <p role="status" aria-live="polite" className="sr-only">

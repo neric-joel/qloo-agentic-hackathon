@@ -1,6 +1,5 @@
 "use client";
 
-import { Sparkles, Waypoints } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
@@ -12,13 +11,11 @@ const OPTIONS: readonly SegmentedOption<AnswerSource>[] = [
   {
     value: "qloo",
     label: "With Qloo",
-    icon: <Waypoints aria-hidden="true" />,
     description: "The answer built from Qloo audience data.",
   },
   {
     value: "llm-only",
     label: "LLM only",
-    icon: <Sparkles aria-hidden="true" />,
     description: "The same task answered without Qloo.",
   },
 ];

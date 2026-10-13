@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ElementType, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, ExternalLink, Lock, ShieldCheck, ShieldAlert } from "lucide-react";
+import { ArrowLeft, ArrowRight, ExternalLink, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { ProvenanceChip, TraceDrawer } from "@/components/kernel";
@@ -72,7 +72,7 @@ type ClashDrawerProps = {
 function Section({ title, children, className }: { title: string; children: ReactNode; className?: string }) {
   return (
     <section className={cn("mt-8", className)}>
-      <h3 className="type-kicker border-b-2 border-foreground pb-2">{title}</h3>
+      <h3 className="pb-2 text-[0.8125rem] leading-5 font-semibold">{title}</h3>
       <div className="mt-4">{children}</div>
     </section>
   );
@@ -94,7 +94,7 @@ function Figure({
   return (
     <div className="min-w-0 border-t border-border pt-3">
       <dt className="flex items-center justify-between gap-2">
-        <span className="type-kicker text-muted-foreground">{label}</span>
+        <span className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">{label}</span>
         {chip}
       </dt>
       <dd className="mt-2">
@@ -119,7 +119,7 @@ function ActPanel({
 }) {
   if (!act) return null;
   return (
-    <div className="min-w-0 rounded-lg border border-border-strong bg-card p-4">
+    <div className="min-w-0 rounded-md border border-border bg-card p-4">
       <p className="font-mono text-xs text-muted-foreground tabular-nums">
         {stage?.name ?? "Unknown stage"}
         {slot ? ` · ${formatRange(slot)}` : ""}
@@ -187,7 +187,7 @@ function PairTags({
         {shown.map((tag) => (
           <li
             key={tag.name}
-            className="rounded-full border border-prov-qloo-border bg-prov-qloo-bg px-2.5 py-1 text-xs font-semibold text-prov-qloo"
+            className={cn("tag max-w-full whitespace-normal", synthetic ? "text-foreground" : "text-prov-qloo")}
           >
             {tagLabel(tag.name)}
           </li>
@@ -328,7 +328,7 @@ export function ClashDetails({
             chip={<ProvenanceChip provenance="derived" size="sm" synthetic={synthetic} />}
           />
         </dl>
-        <p className="mt-5 rounded-md bg-muted px-3 py-2.5 font-mono text-xs leading-relaxed">
+        <p className="mt-5 rounded-md bg-background px-3 py-2.5 font-mono text-xs leading-relaxed">
           price = taste overlap {shown.audience_overlap.toFixed(3)} &times; share of the shorter set{" "}
           {shown.concurrency.toFixed(3)} &times; combined draw {shown.draw.toFixed(3)}
           {rarityFactor !== null ? ` × rarity factor ${rarityFactor.toFixed(3)}` : ""} ={" "}
@@ -473,7 +473,7 @@ export function ClashDrawer({
   return (
     <Sheet open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
       <SheetContent
-        className="gap-0 p-0 data-[side=right]:lg:max-w-2xl"
+        className="gap-0 p-0 data-[side=bottom]:rounded-t-lg data-[side=right]:rounded-l-lg data-[side=right]:lg:max-w-2xl"
         onCloseAutoFocus={(event) => {
           if (returnFocusTo && document.contains(returnFocusTo)) {
             event.preventDefault();
@@ -483,7 +483,7 @@ export function ClashDrawer({
         }}
       >
         <SheetHeader className="gap-0 border-b border-border p-5 pr-14 sm:p-6 sm:pr-16">
-          <p className="type-kicker text-muted-foreground">
+          <p className="text-[0.8125rem] font-semibold text-muted-foreground">
             Clash {shown.rank} of {ranked.length} · {dayName}
             {window ? ` ${formatRange(window)}` : ""}
           </p>
@@ -493,24 +493,12 @@ export function ClashDrawer({
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {shown.label ? <LabelBadge label={shown.label} /> : null}
             {fixed ? (
-              <span className="inline-flex h-6 items-center gap-1.5 rounded-full border border-border-strong px-2.5 text-xs font-semibold">
-                <Lock aria-hidden="true" className="size-3.5" />
+              <span className="tag text-foreground">
+                <Lock aria-hidden="true" className="size-3" />
                 Both sets locked
               </span>
             ) : null}
-            <span
-              className={cn(
-                "inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-xs font-semibold",
-                shown.confidence === "strong"
-                  ? "border-success/50 bg-success-bg text-success"
-                  : "border-warning/60 bg-warning-bg text-warning",
-              )}
-            >
-              {shown.confidence === "strong" ? (
-                <ShieldCheck aria-hidden="true" className="size-3.5" />
-              ) : (
-                <ShieldAlert aria-hidden="true" className="size-3.5" />
-              )}
+            <span className="tag text-foreground">
               {shown.confidence === "strong" ? "Strong signal" : "Weak signal"}
             </span>
           </div>

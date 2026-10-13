@@ -120,7 +120,7 @@ export function ScratchPlan({
   const stageName = (stageId: string) => festival.stages.find((stage) => stage.id === stageId)?.name ?? stageId;
 
   return (
-    <section aria-labelledby={headingId} className="rounded-xl border border-border-strong bg-card p-4 sm:p-6">
+    <section aria-labelledby={headingId} className="rounded-lg border border-surface-edge bg-card p-5 sm:p-6">
       <div className="flex items-start justify-between gap-3">
         <h3 id={headingId} className="type-title">
           Your tested moves
@@ -179,7 +179,7 @@ export function ScratchPlan({
         </ol>
 
         <div className="min-w-0 lg:border-l lg:border-border lg:pl-8">
-          <h4 id={clashesId} className="type-kicker text-muted-foreground">
+          <h4 id={clashesId} className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
             Costliest clashes with these moves
           </h4>
           {plan.clashes.length === 0 ? (
@@ -197,7 +197,7 @@ export function ScratchPlan({
         </div>
       </div>
 
-      <p className="mt-5 text-xs leading-relaxed text-muted-foreground">{PLAN_CAVEAT}</p>
+      <p className="mt-5 text-xs leading-relaxed text-muted-foreground lg:text-[0.8125rem]">{PLAN_CAVEAT}</p>
 
       <PlanActions
         preset={preset}

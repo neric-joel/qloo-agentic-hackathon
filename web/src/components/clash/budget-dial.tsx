@@ -1,4 +1,6 @@
-import { useId, type ReactNode } from "react";
+"use client";
+
+import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 import { ProvenanceChip } from "@/components/kernel";
@@ -6,19 +8,59 @@ import { COUNTS_ONLY } from "@/lib/credit";
 import {
   describeReach,
   describeVsRandom,
-  dialArc,
   dialDomain,
   dialFraction,
-  dialPoint,
   rangePosition,
 } from "@/lib/clash-budget";
 import type { BaselineStats } from "@/lib/preset";
+import { useReveal, type RevealPhase } from "@/lib/use-in-view";
 
-const W = 240;
-const CX = 120;
-const CY = 124;
-const R = 100;
-const TRACK = 14;
+/**
+ * The figure's rows, in px; x runs in percent of the column's width. It speaks the home page's axis
+ * language ("What Qloo changes"): a 1px border-strong axis with end ticks, the middle 80% of random
+ * timetables as a muted band whose two border-strong ticks carry its extent, the span from 100 to the
+ * reading, the ink 100 tick and an ink dot at the reading. The day's figure prints above the dot, and the
+ * ends and "100 = average" print under the axis in 13px mono, so no two labels share a row at the rail's
+ * 272px. The figure sits on the page's paper at every width, so its halos are drawn in the paper.
+ */
+const AXIS_Y = 26;
+const RULER_H = 56;
+/** The axis's end ticks, 6px tall, centred on it. */
+const END_TICK = 6;
+/** The band: 8px of muted fill (information only), and 12px border-strong ticks at its two ends. */
+const BAND_H = 8;
+const BAND_TICK = 12;
+/** The span from 100 to the reading: a 3px line on the axis. */
+const SPAN_W = 3;
+/** The ink 100 tick is 2px wide and 18px tall, on a 6px paper underlay of its own height. */
+const REF_W = 2;
+const REF_H = 18;
+/** The reading: a 10px ink dot on a 2px paper halo (a 14px paper circle under it). */
+const DOT_R = 5;
+const HALO = 2;
+/** The underlay is this wide, so a 2px paper gap rings the 100 tick wherever it crosses the span or the band. */
+const UNDERLAY_W = REF_W + 2 * HALO;
+/** The reading's label: its baseline 4px over the 100 tick's top (and 6px over the dot's halo). */
+const LABEL_Y = AXIS_Y - REF_H / 2 - 4;
+/** The baseline of the ends and "100 = average", 4px above the ruler's foot. */
+const FOOT_Y = RULER_H - 4;
+/** The ruler's narrowest width: the 18rem rail, 4px wider either side, less its 12px inset either side (272px). */
+const RULER_MIN_W = 272;
+/** Centre to centre, the dot and the 100 tick keep a 2px paper gap between them: 5 + 2 + 1 px. */
+const MARK_CLEAR = DOT_R + HALO + REF_W / 2;
+/** The halo and the underlay are the paper on screen; in print the paper is the sheet's white. */
+const PAPER = "var(--background)";
+
+/**
+ * How far, in px, the dot (and its label) is nudged off its reading so it never touches the 100 tick:
+ * none when the reading is already 8px or more from 100 at the ruler's narrowest width, else just
+ * enough to clear it there (at most 8px, away from 100). Wider rulers only spread them further.
+ */
+export function readingNudge(fromHundred: number): number {
+  const apart = Math.abs(fromHundred) * RULER_MIN_W;
+  if (apart >= MARK_CLEAR) return 0;
+  return (fromHundred < 0 ? -1 : 1) * (MARK_CLEAR - apart);
+}
 
 type BudgetDialProps = {
   index: number | null;
@@ -26,8 +68,9 @@ type BudgetDialProps = {
   /** The rules every random valid timetable keeps, as a clause (see `describeReach`). */
   reach?: string;
   /**
-   * The home page's reading under the decision card: the caption is cut to its two sentences, and the
-   * rules the random timetables keep and the shaded range stay in the dial's text alternative.
+   * The home page's reading in the timetable's narrow header cell: the dial and figure side by side,
+   * the sentence under them, and a caption cut to what the index is measured against; the rules the
+   * random timetables keep and the shaded range stay in the dial's text alternative.
    */
   compact?: boolean;
   /** The invented day: the text says its figures are invented instead of crediting Qloo. */
@@ -37,11 +80,52 @@ type BudgetDialProps = {
 
 const ANY_REACH = describeReach({ windowMinutes: null, neighbourStages: false, locked: 0 });
 
+/** The settle plays once per page load, the first time a scale scrolls into view. */
+let settled = false;
+
+/** How long the big figure takes to count from 100 to the reading. */
+const SETTLE_MS = 720;
+
+/** The index as the hero's decision card prints it: one decimal. Display precision only. */
+function oneDecimal(value: number): number {
+  return Number(value.toFixed(1));
+}
+
 /**
- * The Clash Budget Index on a half dial: the middle 80% of random valid timetables of this lineup,
- * their average at 100, and a needle at this timetable. The gap to 100 is filled in one neutral
- * tone whichever side it falls on, because the dial is a reading, not a grade of a real festival. Every reading is also printed,
- * so nothing depends on the colours.
+ * The big figure while the scale settles: 100 on the start frame, then counting to the reading
+ * (eased out). Before and after, and in the server HTML, it is the reading itself.
+ */
+function useSettleCount(target: number, phase: RevealPhase): number {
+  const [count, setCount] = useState({ value: 100, running: true });
+  useEffect(() => {
+    if (phase !== "play") return;
+    let frame = 0;
+    let begin = 0;
+    const tick = (now: number) => {
+      if (begin === 0) begin = now;
+      const t = Math.min(1, (now - begin) / SETTLE_MS);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setCount({ value: oneDecimal(100 + (target - 100) * eased), running: t < 1 });
+      if (t < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [phase, target]);
+  return phase === "wait" || (phase === "play" && count.running) ? count.value : target;
+}
+
+/**
+ * The Clash Budget Index on a horizontal reference scale, like the rule along the foot of a printed
+ * running order, drawn in the home page's axis language: the middle 80% of random valid timetables of
+ * this lineup as a band on the axis between two end ticks, their average at the tall ink 100 tick, and an
+ * ink dot at this timetable. Above 100 the span from 100 to the reading is vermilion, because it is the
+ * excess cost; below 100 it is a grey graphic. Every reading is also printed, so nothing depends on the
+ * colours.
+ *
+ * The first time the scale scrolls into view the span draws out from 100 and the figure counts up
+ * (M2); the dot is drawn at its reading and never moves. Everything is at its reading in the
+ * server HTML, under reduced motion, in print and when it is already on screen at load; the title
+ * never changes.
  */
 export function BudgetDial({
   index,
@@ -53,11 +137,18 @@ export function BudgetDial({
 }: BudgetDialProps) {
   const titleId = useId();
   const descId = useId();
+  const figureRef = useRef<HTMLElement | null>(null);
+  const [fresh] = useState(() => !settled);
+  const phase = useReveal(figureRef, { threshold: 0.6, enabled: fresh && index !== null });
+  useEffect(() => {
+    if (phase === "play") settled = true;
+  }, [phase]);
+  const shown = useSettleCount(index === null ? 100 : oneDecimal(index), phase);
 
   if (index === null) {
     return (
       <div className={className}>
-        <p className="type-kicker text-muted-foreground">Clash Budget Index</p>
+        <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Clash Budget Index</p>
         <p className="type-title mt-3">No index for this day</p>
         <p className="mt-2 text-sm text-muted-foreground">
           The random timetables it is measured against could not be sampled, so there is nothing
@@ -69,100 +160,205 @@ export function BudgetDial({
 
   const domain = dialDomain(index, baseline);
   const at = (value: number) => dialFraction(value, domain);
+  /** A value's x on the ruler, in percent of its width, to 0.1%. */
+  const pct = (value: number) => Math.round(at(value) * 1000) / 10;
+  const x = (value: number) => `${pct(value)}%`;
   const p10 = baseline?.p10_index ?? null;
   const p90 = baseline?.p90_index ?? null;
-  const needle = dialPoint(at(index), CX, CY, R - TRACK / 2 - 6);
-  const avgInner = dialPoint(at(100), CX, CY, R - TRACK / 2 - 3);
-  const avgOuter = dialPoint(at(100), CX, CY, R + TRACK / 2 + 3);
-  const avgLabel = dialPoint(at(100), CX, CY, R + TRACK / 2 + 13);
-  const rounded = Math.round(index);
+  const band = p10 !== null && p90 !== null ? { low: Math.min(p10, p90), high: Math.max(p10, p90) } : null;
+  const reading = oneDecimal(index);
+  const printed = reading.toFixed(1);
   const position = rangePosition(index, p10, p90);
+  const moving = phase !== "still";
+  // The gap line runs from its lower end, so a reading under 100 draws from the line's end.
+  const gapFrom = { "--draw-from": index >= 100 ? 1 : -1 } as CSSProperties;
+  // Read from the printed positions, so the gap holds for the x the SVG is given.
+  const nudge = readingNudge((pct(index) - pct(100)) / 100);
+  // Rounded away from 100, never toward it, so the 2px gap is never shaved.
+  const readingShift = nudge === 0 ? undefined : `translate(${(Math.sign(nudge) * Math.ceil(Math.abs(nudge) * 100)) / 100} 0)`;
+  // A label near either end of the scale hangs inward, so it stays inside the column.
+  const anchorAt = (fraction: number, edge: number) => (fraction < edge ? "start" : fraction > 1 - edge ? "end" : "middle");
+  const refAnchor = anchorAt(at(100), 0.3);
+  const dayAnchor = anchorAt(at(index), 0.08);
+
+  const ruler = (
+    <svg
+      width="100%"
+      height={RULER_H}
+      role="img"
+      aria-labelledby={`${titleId} ${descId}`}
+      className="block overflow-visible"
+    >
+      <title id={titleId}>{`Clash Budget Index ${printed}`}</title>
+      <desc id={descId}>
+        {`Taste-overlap cost, ${synthetic ? "from invented figures" : "calculated from Qloo data"}. Scale from ${domain.min} to ${domain.max}. 100 is the average of random valid timetables of this lineup` +
+          (compact ? ` in which ${reach}` : "") +
+          (p10 !== null && p90 !== null
+            ? `; the middle 80% of them score ${Math.round(p10)} to ${Math.round(p90)}.`
+            : ".") +
+          " Lower is better."}
+      </desc>
+
+      {/* The band first, so the axis runs through it: the middle 80% of random timetables as an 8px muted
+          fill (information only, 1.11 / 1.32 on paper), its extent carried by the two 12px border-strong
+          ticks drawn with the axis. */}
+      {band ? (
+        <rect
+          data-band=""
+          x={x(band.low)}
+          y={AXIS_Y - BAND_H / 2}
+          width={`${Math.round(Math.abs(at(band.high) - at(band.low)) * 1000) / 10}%`}
+          height={BAND_H}
+          fill="var(--muted)"
+        />
+      ) : null}
+      {/* The axis: a 1px border-strong line across the ruler with 6px end ticks at the domain's ends. */}
+      <line data-axis="" x1="0" x2="100%" y1={AXIS_Y} y2={AXIS_Y} stroke="var(--border-strong)" strokeWidth={1} shapeRendering="crispEdges" />
+      <line
+        data-tick="min"
+        x1="0"
+        x2="0"
+        y1={AXIS_Y - END_TICK / 2}
+        y2={AXIS_Y + END_TICK / 2}
+        stroke="var(--border-strong)"
+        strokeWidth={1}
+        shapeRendering="crispEdges"
+        transform="translate(0.5 0)"
+      />
+      <line
+        data-tick="max"
+        x1="100%"
+        x2="100%"
+        y1={AXIS_Y - END_TICK / 2}
+        y2={AXIS_Y + END_TICK / 2}
+        stroke="var(--border-strong)"
+        strokeWidth={1}
+        shapeRendering="crispEdges"
+        transform="translate(-0.5 0)"
+      />
+      {band
+        ? (["low", "high"] as const).map((end) => (
+            <line
+              key={end}
+              data-tick={end === "low" ? "p10" : "p90"}
+              x1={x(band[end])}
+              x2={x(band[end])}
+              y1={AXIS_Y - BAND_TICK / 2}
+              y2={AXIS_Y + BAND_TICK / 2}
+              stroke="var(--border-strong)"
+              strokeWidth={1}
+              shapeRendering="crispEdges"
+            />
+          ))
+        : null}
+      {/* The span from 100 to the reading: vermilion only above 100 (the excess), ink-3 at or under it. */}
+      <line
+        data-span=""
+        x1={x(Math.min(index, 100))}
+        x2={x(Math.max(index, 100))}
+        y1={AXIS_Y}
+        y2={AXIS_Y}
+        stroke={index > 100 ? "var(--primary)" : "var(--ink-3)"}
+        strokeWidth={SPAN_W}
+        pathLength={1}
+        className="cc-dial-gap"
+        style={gapFrom}
+      />
+      {/* The 100 tick, 2px of ink, on a 6px paper underlay of its own height drawn after the band and the
+          span, so a 2px paper gap always separates the ink from the vermilion span and from the band. */}
+      <line
+        data-underlay="ref"
+        x1={x(100)}
+        x2={x(100)}
+        y1={AXIS_Y - REF_H / 2}
+        y2={AXIS_Y + REF_H / 2}
+        stroke={PAPER}
+        strokeWidth={UNDERLAY_W}
+        className="print:stroke-card"
+      />
+      <line
+        data-ref=""
+        x1={x(100)}
+        x2={x(100)}
+        y1={AXIS_Y - REF_H / 2}
+        y2={AXIS_Y + REF_H / 2}
+        stroke="var(--foreground)"
+        strokeWidth={REF_W}
+      />
+      {/* The reading: a 10px ink dot on a 2px paper halo, which parts it from the span's end. */}
+      <circle
+        data-halo=""
+        cx={x(index)}
+        cy={AXIS_Y}
+        r={DOT_R + HALO}
+        fill={PAPER}
+        transform={readingShift}
+        className="print:fill-card"
+      />
+      <circle data-dot="" cx={x(index)} cy={AXIS_Y} r={DOT_R} fill="var(--foreground)" transform={readingShift} />
+      <text
+        x={x(index)}
+        y={LABEL_Y}
+        textAnchor={dayAnchor}
+        transform={readingShift}
+        className="fill-primary font-mono text-[13px] font-semibold"
+      >
+        {printed}
+      </text>
+      <text x="0" y={FOOT_Y} textAnchor="start" className="fill-muted-foreground font-mono text-[13px]">
+        {domain.min}
+      </text>
+      <text x={x(100)} y={FOOT_Y} textAnchor={refAnchor} className="fill-foreground font-mono text-[13px] font-semibold">
+        100 = average
+      </text>
+      <text x="100%" y={FOOT_Y} textAnchor="end" className="fill-muted-foreground font-mono text-[13px]">
+        {domain.max}
+      </text>
+    </svg>
+  );
 
   return (
-    <figure className={className}>
-      <div className="flex items-start justify-between gap-3">
-        <p className="type-kicker text-muted-foreground">Clash Budget Index</p>
-        <ProvenanceChip provenance="derived" size="sm" synthetic={synthetic} />
+    <figure ref={figureRef} className={className} data-reveal={moving ? phase : undefined}>
+      {/* The source rides on the label line after a middle dot as a plain muted word, not a boxed stamp. */}
+      <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
+        Clash Budget Index{" "}
+        <span aria-hidden="true" className="font-normal">
+          ·
+        </span>{" "}
+        <ProvenanceChip provenance="derived" look="kicker" synthetic={synthetic} />
+      </p>
+
+      <div className="mt-3 flex items-end gap-x-4 sm:gap-x-5">
+        {/* The figure at h2 scale in the condensed title face (2.25rem/1, tabular), not a display numeral. */}
+        <p className="type-numeral shrink-0 text-[2.25rem] leading-none">
+          {moving && shown !== reading ? (
+            <>
+              <span aria-hidden="true">{shown.toFixed(1)}</span>
+              <span className="sr-only">{printed}</span>
+            </>
+          ) : (
+            printed
+          )}
+        </p>
+        {compact ? null : (
+          <div className="min-w-0 pb-1">
+            <p className="text-sm leading-snug font-semibold">{describeVsRandom(index)}.</p>
+            <p className="text-sm leading-snug text-muted-foreground">Lower is better.</p>
+          </div>
+        )}
       </div>
 
-      <div className="mt-3 grid grid-cols-[minmax(0,13rem)_minmax(6.5rem,1fr)] items-end gap-x-4 sm:gap-x-5">
-        <svg
-          viewBox={`0 0 ${W} ${CY + 18}`}
-          role="img"
-          aria-labelledby={`${titleId} ${descId}`}
-          className="block w-full overflow-visible"
-        >
-          <title id={titleId}>{`Clash Budget Index ${rounded}`}</title>
-          <desc id={descId}>
-            {`Taste-overlap cost, ${synthetic ? "from invented figures" : "calculated from Qloo data"}. Dial from ${domain.min} to ${domain.max}. 100 is the average of random valid timetables of this lineup` +
-              (compact ? ` in which ${reach}` : "") +
-              (p10 !== null && p90 !== null
-                ? `; the middle 80% of them score ${Math.round(p10)} to ${Math.round(p90)}.`
-                : ".") +
-              " Lower is better."}
-          </desc>
-
-          <path d={dialArc(0, 1, CX, CY, R)} fill="none" stroke="var(--muted)" strokeWidth={TRACK} />
-          {p10 !== null && p90 !== null ? (
-            <path
-              d={dialArc(at(p10), at(p90), CX, CY, R)}
-              fill="none"
-              stroke="color-mix(in oklab, var(--foreground) 22%, transparent)"
-              strokeWidth={TRACK}
-            />
-          ) : null}
-          <path
-            d={dialArc(at(Math.min(index, 100)), at(Math.max(index, 100)), CX, CY, R)}
-            fill="none"
-            stroke="color-mix(in oklab, var(--foreground) 35%, transparent)"
-            strokeWidth={TRACK}
-          />
-          <line
-            x1={avgInner.x}
-            y1={avgInner.y}
-            x2={avgOuter.x}
-            y2={avgOuter.y}
-            stroke="var(--foreground)"
-            strokeWidth={2.5}
-          />
-          <text
-            x={avgLabel.x}
-            y={avgLabel.y}
-            textAnchor="middle"
-            className="fill-foreground font-mono text-[11px] font-semibold"
-          >
-            100
-          </text>
-          <line
-            x1={CX}
-            y1={CY}
-            x2={needle.x}
-            y2={needle.y}
-            stroke="var(--foreground)"
-            strokeWidth={3.5}
-            strokeLinecap="round"
-          />
-          <circle cx={CX} cy={CY} r={6.5} fill="var(--foreground)" />
-          <circle cx={CX} cy={CY} r={2.25} fill="var(--card)" />
-          <text x={CX - R} y={CY + 16} textAnchor="middle" className="fill-muted-foreground font-mono text-[11px]">
-            {domain.min}
-          </text>
-          <text x={CX + R} y={CY + 16} textAnchor="middle" className="fill-muted-foreground font-mono text-[11px]">
-            {domain.max}
-          </text>
-        </svg>
-
-        <div className="min-w-0 pb-1">
-          <p className="type-numeral text-6xl leading-none sm:text-7xl">{rounded}</p>
-          <p className="mt-2 text-sm leading-snug font-semibold">{describeVsRandom(index)}.</p>
-          <p className="text-sm leading-snug text-muted-foreground">Lower is better.</p>
-        </div>
-      </div>
+      <div className="mt-4">{ruler}</div>
 
       {compact ? (
-        <figcaption className="mt-4 text-sm leading-relaxed">
-          <p className="font-medium">
-            100 = the average random valid timetable of this lineup. {COUNTS_ONLY}
+        // In the open Index block: a hairline across the block's own width over the sentence (15px
+        // semibold), then its explanation at 13px on a 1.625 line, muted, wrapping at the block's
+        // measure. Never clamped or shortened.
+        <figcaption className="mt-4 border-t border-border pt-4">
+          <p className="text-[0.9375rem] leading-snug font-semibold">{describeVsRandom(index)}.</p>
+          <p data-index-explain="" className="mt-2 text-[0.8125rem] leading-relaxed text-muted-foreground">
+            The {synthetic ? "invented" : "published"} timetable, against random valid timetables of this lineup: 100
+            is their average, and lower is better. {COUNTS_ONLY}
           </p>
         </figcaption>
       ) : (
@@ -177,11 +373,10 @@ export function BudgetDial({
               : ""}
             {position === "above" || position === "below" ? (
               <>
-                This day&rsquo;s published timetable scores {rounded}, {position} that range.{" "}
+                This day&rsquo;s published timetable scores {printed}, {position} that range.{" "}
               </>
             ) : null}
-            A reading, not a grade. Not a verdict on the festival: real programming weighs much more
-            than taste overlap.
+            A reading of one cost. Real programming weighs much more than taste overlap.
           </p>
         </figcaption>
       )}
@@ -189,10 +384,15 @@ export function BudgetDial({
   );
 }
 
-/** One card for the day's score: the dial on top, Qloo coverage underneath. */
+/**
+ * The board's Index block: a result, so it sits open on the page's paper with no box, under one 1px
+ * hairline rule. It holds the label, the figure, its axis and the sentence under it. Below 1280px the
+ * block carries that rule itself; from 1280px the rail's wrapper carries it (see clash-control's rail),
+ * so the block drops its own and there is exactly one rule above the Index at every width.
+ */
 export function Scorecard({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn("divide-y divide-border rounded-xl border border-border bg-card [&>*]:p-5 sm:[&>*]:p-6", className)}>
+    <div className={cn("border-t border-border pt-5 sm:pt-6 xl:border-0 xl:pt-0", className)}>
       {children}
     </div>
   );

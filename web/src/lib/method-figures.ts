@@ -82,6 +82,11 @@ export const METHOD_FIGURES = {
     clusters: 42,
     /** Complained-about pairs left unscored because Qloo has no signal for one of the acts. */
     unscoredPairs: 16,
+    /**
+     * Complained-about pairs with a set on a minor stage the test leaves out (Outside Lands, Friday:
+     * Romy's DJ set on Dolores). 68 + 16 + 2 = the 86 verified pairs.
+     */
+    outOfScopePairs: 2,
     rows: BACKTEST_ROWS,
     /** The bar, set before the test ran. */
     bar: { topQuarterPct: 60, leadOverGenrePoints: 10 },
@@ -327,16 +332,21 @@ export function clusterClause(
 /**
  * Why two sets of counts appear on the site: the public set's verified overlaps against the scored
  * pairs the AUC uses. "The 45 complaints and 86 pairs ... are the verified overlaps in the public
- * set; the AUC scores 68 pairs from 42 complaints, the ones with a Qloo signal for both acts, so the
- * counts differ."
+ * set; the AUC scores 68 pairs from 42 complaints, the ones with a Qloo signal for both acts; 16 more
+ * have no Qloo signal for one act, and 2 involve a set on a minor stage the test leaves out."
  */
 export function countsNote(
   figures: {
     readonly verified: { readonly clustersVerified: number; readonly pairsVerified: number };
-    readonly scored: { readonly scoredPairs: number; readonly clusters: number };
+    readonly scored: {
+      readonly scoredPairs: number;
+      readonly clusters: number;
+      readonly unscoredPairs: number;
+      readonly outOfScopePairs: number;
+    };
   } = { verified: METHOD_FIGURES.complaints, scored: METHOD_FIGURES.backtest },
 ): string {
   const { clustersVerified, pairsVerified } = figures.verified;
-  const { scoredPairs, clusters } = figures.scored;
-  return `The ${clustersVerified} complaints and ${pairsVerified} pairs counted elsewhere on this site are the verified overlaps in the public set; the AUC scores ${scoredPairs} pairs from ${clusters} complaints, the ones with a Qloo signal for both acts, so the counts differ.`;
+  const { scoredPairs, clusters, unscoredPairs, outOfScopePairs } = figures.scored;
+  return `The ${clustersVerified} complaints and ${pairsVerified} pairs counted elsewhere on this site are the verified overlaps in the public set; the AUC scores ${scoredPairs} pairs from ${clusters} complaints, the ones with a Qloo signal for both acts; ${unscoredPairs} more have no Qloo signal for one act, and ${outOfScopePairs} involve a set on a minor stage the test leaves out.`;
 }

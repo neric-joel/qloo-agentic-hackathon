@@ -24,8 +24,8 @@ const STEP_META: Record<
   running: {
     label: "Running",
     Icon: LoaderCircle,
-    indicator: "border-primary text-primary",
-    text: "text-primary",
+    indicator: "border-foreground text-foreground",
+    text: "text-foreground",
   },
   done: {
     label: "Done",
@@ -36,7 +36,7 @@ const STEP_META: Record<
   error: {
     label: "Failed",
     Icon: X,
-    indicator: "border-destructive bg-destructive text-background",
+    indicator: "border-destructive bg-destructive text-primary-foreground",
     text: "text-destructive",
   },
   skipped: {
@@ -102,10 +102,10 @@ export function RunSteps({
 
   return (
     <section aria-label={title} className={className}>
-      <header className="flex items-baseline justify-between gap-3 border-b-2 border-foreground pb-2">
-        <h3 className="type-kicker text-foreground">{title}</h3>
+      <header className="flex items-baseline justify-between gap-3 pb-2">
+        <h3 className="text-[0.8125rem] leading-5 font-semibold text-foreground">{title}</h3>
         {steps.length > 0 ? (
-          <span className="type-kicker text-muted-foreground tabular-nums">
+          <span className="font-mono text-xs text-muted-foreground tabular-nums">
             {settled} of {steps.length}
           </span>
         ) : null}
@@ -141,7 +141,7 @@ export function RunSteps({
                 <div className="min-w-0 pt-0.5">
                   <p className="flex flex-wrap items-baseline gap-x-2.5">
                     <span className="font-semibold break-words">{step.label}</span>
-                    <span className={cn("type-kicker", text)}>{label}</span>
+                    <span className={cn("text-[0.8125rem] font-semibold", text)}>{label}</span>
                   </p>
                   {step.detail ? (
                     <p className="mt-0.5 text-sm break-words text-muted-foreground">{step.detail}</p>

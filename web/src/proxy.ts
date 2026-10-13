@@ -10,7 +10,7 @@ import { firstHop, SIGNATURE_HEADER, stamp, VISITOR_HEADER } from "@/lib/visitor
  * proxy adds a fresh stamp. With no secret it only removes: the stamp stays inert until the owner sets it.
  *
  * The rule search (`/rule-fixes`) takes a what-if limiter slot when it computes, so it is signed like the plan
- * route. Not matched: the move list (`/moves`, cached at the edge for everyone), the day's `/decision` (cached
+ * route. Grid pricing (`/api/price-grid`) takes a slot in its live mode, so it is signed like the pair check. Not matched: the move list (`/moves`, cached at the edge for everyone), the day's `/decision` (cached
  * on the server, no slot) and the preset reads.
  */
 export async function proxy(request: NextRequest) {
@@ -29,5 +29,12 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/api/pair", "/api/runs", "/api/presets/:id/whatif", "/api/presets/:id/rule-fixes", "/api/health"],
+  matcher: [
+    "/api/pair",
+    "/api/price-grid",
+    "/api/runs",
+    "/api/presets/:id/whatif",
+    "/api/presets/:id/rule-fixes",
+    "/api/health",
+  ],
 };

@@ -16,7 +16,7 @@ type NeedsInputProps = {
   className?: string;
 };
 
-/** The agent needs a decision before it can continue. Options are large, tappable chips. */
+/** The agent needs a decision before it can continue. Options are a left-aligned list of 44px controls. */
 export function NeedsInput({
   question,
   options,
@@ -29,14 +29,14 @@ export function NeedsInput({
   const answered = selectedId !== undefined;
   return (
     <section className={cn("rounded-lg border border-border-strong bg-card p-5", className)}>
-      <p className="type-kicker flex items-center gap-1.5 text-muted-foreground">
+      <p className="flex items-center gap-1.5 text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
         <CircleHelp aria-hidden="true" className="size-4" />
         Needs your input
       </p>
       <h3 id={questionId} className="type-title mt-2">
         {question}
       </h3>
-      <div role="group" aria-labelledby={questionId} className="mt-4 flex flex-wrap gap-2">
+      <div role="group" aria-labelledby={questionId} className="mt-4 flex max-w-prose flex-col items-stretch gap-2">
         {options.map((option) => {
           const selected = option.id === selectedId;
           return (
@@ -46,7 +46,7 @@ export function NeedsInput({
               disabled={disabled || answered}
               onClick={() => onSelect(option)}
               className={cn(
-                "inline-flex min-h-11 items-center gap-2 rounded-full border px-4 text-sm font-semibold transition-[color,background-color,border-color]",
+                "inline-flex min-h-11 w-full items-center justify-start gap-2 rounded-md border px-4 py-2 text-left text-sm font-semibold transition-[color,background-color,border-color]",
                 "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
                 selected
                   ? "border-foreground bg-foreground text-background"

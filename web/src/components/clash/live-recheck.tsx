@@ -54,7 +54,7 @@ function Tile({
   return (
     <div className="min-w-0 border-t border-border pt-3">
       <dt className="flex flex-wrap items-center justify-between gap-2">
-        <span className="type-kicker text-muted-foreground">{label}</span>
+        <span className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">{label}</span>
         {chip}
       </dt>
       <dd className="mt-2">
@@ -79,7 +79,7 @@ function CheckResult({ check, receipt }: { check: PairCheck; receipt: Receipt | 
   const requestIds = requestIdLabels(check);
 
   return (
-    <div className="mt-5 rounded-lg border border-border-strong bg-card p-4">
+    <div className="mt-5 rounded-md border border-border bg-card p-4">
       <h4 className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 font-semibold">
         Qloo answered at <span className="font-mono tabular-nums">{time}</span> UTC
         <ProvenanceChip provenance="qloo" size="sm" />
@@ -104,7 +104,7 @@ function CheckResult({ check, receipt }: { check: PairCheck; receipt: Receipt | 
         className={
           verdict.kind === "same"
             ? "mt-4 text-[0.9375rem] leading-relaxed"
-            : "mt-4 border-l-2 border-foreground pl-3 text-[0.9375rem] leading-relaxed"
+            : "mt-4 text-[0.9375rem] leading-relaxed font-semibold"
         }
       >
         {verdictText(verdict)}
@@ -119,7 +119,7 @@ function CheckResult({ check, receipt }: { check: PairCheck; receipt: Receipt | 
 
       <div className="mt-5">
         <p className="flex flex-wrap items-center gap-2">
-          <span className="type-kicker text-muted-foreground">Tags Qloo returned just now</span>
+          <span className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Tags Qloo returned just now</span>
           <ProvenanceChip provenance="qloo" size="sm" />
         </p>
         {check.tags.length > 0 ? (
@@ -128,7 +128,7 @@ function CheckResult({ check, receipt }: { check: PairCheck; receipt: Receipt | 
               {tags.map((tag) => (
                 <li
                   key={tag.name}
-                  className="rounded-full border border-prov-qloo-border bg-prov-qloo-bg px-2.5 py-1 text-xs font-semibold text-prov-qloo"
+                  className="tag text-prov-qloo"
                 >
                   {tagLabel(tag.name)}
                 </li>
@@ -154,7 +154,7 @@ function CheckResult({ check, receipt }: { check: PairCheck; receipt: Receipt | 
           <span key={i}>
             {i > 0 ? ", " : ""}
             {check.requests[i]?.request_id ? (
-              <code className="font-mono break-all text-foreground">{label}</code>
+              <code className="min-w-0 font-mono break-words text-foreground">{label}</code>
             ) : (
               label
             )}
@@ -210,7 +210,7 @@ export function LiveRecheck({ preset, shown, actA, actB, receipt, earlier, onRes
 
   return (
     <section className="mt-8" aria-labelledby={titleId}>
-      <h3 id={titleId} className="type-kicker border-b-2 border-foreground pb-2">
+      <h3 id={titleId} className="pb-2 text-[0.8125rem] leading-5 font-semibold">
         Check it with Qloo now
       </h3>
       <div className="mt-4">
@@ -246,7 +246,7 @@ export function LiveRecheck({ preset, shown, actA, actB, receipt, earlier, onRes
             {error ? (
               <p
                 role="alert"
-                className="mt-3 max-w-prose rounded-md border border-warning/50 bg-warning-bg px-3 py-2 text-sm text-warning"
+                className="mt-3 max-w-prose rounded-md border border-warning bg-warning-bg px-3 py-2 text-sm text-warning"
               >
                 {error.message}
               </p>

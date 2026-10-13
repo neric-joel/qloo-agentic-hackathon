@@ -9,8 +9,8 @@ import { clashKey, formatDraw, formatShare, LABEL_META, partnerOf, type SetView 
 import type { PairClash, Stage } from "@/lib/preset";
 import type { RulePreview } from "@/lib/rule-fix";
 import type { GhostSlot, PlanPreview } from "@/lib/stack";
+import { useReveal } from "@/lib/use-in-view";
 import {
-  blockDensity,
   columnFrames,
   columnGap,
   formatClock,
@@ -26,9 +26,153 @@ import {
   type TimeRange,
 } from "@/lib/timetable";
 
+import { ClashDisc, clashMarkLabel } from "./marks";
+import { usePublishCueTiles } from "./timetable-legend";
+
 const AXIS_WIDTH = 52;
-const PX_PER_MINUTE = 1.7;
+/**
+ * A tile's rows, in px. A name of up to 22 characters is 14px semibold on a 17.5px line (leading-tight);
+ * a longer one is 13px semibold on a 16.25px line. A name the measured board wraps to two lines or more
+ * is set on a 1.2 line instead (16.8px, or 15.6px for a long name), so its lines read as one name. The
+ * time is 12px mono on a 16px line, each line of the genre 12px on a 15px line, and the no-signal label
+ * 12px on a 16px line; the draw is 13px mono on that 16px line in a roomy tile and 12px otherwise. A
+ * roomy tile has 8px of padding top and bottom (4px in a short one), plus 2px for its 1px edge, and 4px
+ * over its bottom row.
+ */
+const NAME_LINE = 17.5;
+const LONG_NAME_LINE = 16.25;
+const WRAPPED_NAME_LINE = 16.8;
+const WRAPPED_LONG_NAME_LINE = 15.6;
+/** Names longer than this many characters are set at 13px instead of 14px. */
+const LONG_NAME = 22;
+const TIME_LINE = 16;
+const GENRE_LINE = 15;
+const DRAW_LINE = 16;
+/** The weak-signal line over the draw ("Weak Qloo signal"): 12px on a 16px line, like the no-signal label. */
+const WEAK_LINE = 16;
+const FULL_CHROME = 16 + 2;
+const SHORT_CHROME = 8 + 2;
+const DRAW_GAP = 4;
+const CARD_PAD_X = 10;
+/**
+ * The space between a tile and the tiles above and below it on its stage: a tile starts half of it
+ * under the axis line of its start and ends half of it above the line of its end.
+ */
+const TILE_GAP = 4;
+/**
+ * The most lines a name is counted for. A name is never clamped or cut with an ellipsis: in a slot too
+ * short for it the full name also prints in a tooltip on hover and focus.
+ */
+const MAX_NAME_LINES = 3;
+/** About how wide a character of a 14px (or 13px) semibold name runs, for counting the lines a name needs. */
+const NAME_CHAR_PX = 8;
+const LONG_NAME_CHAR_PX = 7.4;
+/** About how wide a character of the 12px genre runs: generous, so a genre is never counted short. */
+const GENRE_CHAR_PX = 7;
+/** About how wide a character of the 12px mono draw line runs (7.2px measured), generous; and set tighter (-0.05em). */
+const MONO_CHAR_PX = 7.3;
+const MONO_TIGHT_CHAR_PX = 6.7;
+
+/**
+ * The word a short weak-signal tile prints beside its draw. The board key draws the same word in its
+ * cue specimen, so the two cannot drift.
+ */
+export const WEAK_CUE_WORD = "weak";
+
+/**
+ * The cue a weak-signal tile too short for its "Weak Qloo signal" line adds to its draw line, by the
+ * room the tile has across (`room` px; 0 or less while the board is unmeasured): " · weak" ("Draw 21 ·
+ * weak"); where that does not fit, "·weak" (the mono dot keeps its own side space), then the same set
+ * 0.05em tighter (`tight`, on a phone board's narrow tiles); "weak" alone with no figure. Null where
+ * none fits: the tile then hides its draw, as a short tile does, so no figure shows without its
+ * qualifier (both stay in the title and are read out).
+ */
+export function weakCue(figure: string, room: number): { cue: string; tight: boolean } | null {
+  if (!figure) return { cue: WEAK_CUE_WORD, tight: false };
+  const spaced = ` · ${WEAK_CUE_WORD}`;
+  const close = `·${WEAK_CUE_WORD}`;
+  const fits = (cue: string, px: number) => room <= 0 || (figure.length + cue.length) * px <= room;
+  if (fits(spaced, MONO_CHAR_PX)) return { cue: spaced, tight: false };
+  if (fits(close, MONO_CHAR_PX)) return { cue: close, tight: false };
+  if (fits(close, MONO_TIGHT_CHAR_PX)) return { cue: close, tight: true };
+  return null;
+}
+
+/** A name over 22 characters is set at 13px so it can wrap whole. */
+export function isLongName(name: string): boolean {
+  return name.length > LONG_NAME;
+}
+
+/**
+ * What a set tile prints, by its height. The name comes first and gets every line it needs (up to
+ * three); then the time, then the draw, and the genre last (on every line it wraps to), each only where
+ * it still fits, so a short tile hides its genre first and then its draw before it gives the name fewer
+ * lines. A tile with no signal keeps its label ("No Qloo signal") before anything but the first line of
+ * its name. A weak-signal tile that shows its draw says so next to it: on its own line over the draw
+ * where the tile has room for it (`weakLine`, before the genre, since it qualifies the figure), else as
+ * "· weak" on the draw line itself. A row a tile leaves out is still read out and kept in its title.
+ * `clamped` says the slot has room for fewer lines than the name needs: the name is never clamped or
+ * ellipsised, and the full name also prints in a tooltip.
+ */
+export type CardRows = {
+  roomy: boolean;
+  nameLines: number;
+  clamped: boolean;
+  time: boolean;
+  draw: boolean;
+  genre: boolean;
+  label: boolean;
+  /** A weak-signal tile with room for "Weak Qloo signal" on its own line over the draw. */
+  weakLine: boolean;
+};
+
+export function cardRows(
+  box: number,
+  needed: number,
+  hasGenre: boolean,
+  {
+    long = false,
+    label = false,
+    genreLines = 1,
+    weak = false,
+    wraps = false,
+  }: { long?: boolean; label?: boolean; genreLines?: number; weak?: boolean; wraps?: boolean } = {},
+): CardRows {
+  // `wraps`: the measured board wraps the name to more than one line, so it is set on the 1.2 line.
+  const line = wraps ? (long ? WRAPPED_LONG_NAME_LINE : WRAPPED_NAME_LINE) : long ? LONG_NAME_LINE : NAME_LINE;
+  const lines = Math.max(1, Math.min(MAX_NAME_LINES, needed));
+  const roomy = box >= FULL_CHROME + lines * line + TIME_LINE + DRAW_GAP + DRAW_LINE;
+  const bottomRow = DRAW_LINE + (roomy ? DRAW_GAP : 0);
+  let left = box - (roomy ? FULL_CHROME : SHORT_CHROME);
+  if (label) left -= bottomRow;
+  const nameLines = Math.max(1, Math.min(lines, Math.floor(left / line)));
+  left -= nameLines * line;
+  const time = left >= TIME_LINE;
+  if (time) left -= TIME_LINE;
+  const draw = !label && time && left >= bottomRow;
+  if (draw) left -= bottomRow;
+  const weakLine = weak && draw && left >= WEAK_LINE;
+  if (weakLine) left -= WEAK_LINE;
+  const genre = hasGenre && (draw || label) && time && left >= Math.max(1, genreLines) * GENRE_LINE;
+  return { roomy, nameLines, clamped: nameLines < lines, time, draw, genre, label, weakLine };
+}
+
+/** Tall enough that a 45-minute set prints its whole name on two lines, its time and its draw. */
+const PX_PER_MINUTE = 2.1;
 const BADGE = 26;
+/**
+ * The narrowest gutter between stages: a rank badge sits in the middle of the first gutter its link
+ * crosses, so this keeps clear paper between the badge and the set cards on either side.
+ */
+const MIN_GUTTER = BADGE + 8;
+
+/** The clash links draw in once per page load, the first time a board scrolls into view. */
+let linksDrawn = false;
+
+/** Link k (by rank) starts (k - 1) x this, draws over `LINK_DRAW_MS`, then its badge pops. */
+const LINK_STAGGER_MS = 70;
+const LINK_DRAW_MS = 420;
+const BADGE_POP_MS = 160;
 
 type TimetableGridProps = {
   views: readonly SetView[];
@@ -61,7 +205,7 @@ type Ghost = { slot: GhostSlot; name: string; col: number; range: TimeRange; kin
 function drawnSpan(range: TimeRange, y: (minute: number) => number): { top: number; bottom: number } {
   const top = y(range.start);
   const height = y(range.end) - top;
-  return { top: top + 1, bottom: top + 1 + Math.max(height - 2, 18) };
+  return { top: top + TILE_GAP / 2, bottom: top + TILE_GAP / 2 + Math.max(height - TILE_GAP, 18) };
 }
 
 /** What a ghost is called, so its flight plays once and never again for the same place. */
@@ -95,6 +239,78 @@ function placeGhosts(
   });
 }
 
+/**
+ * About how many lines a set's name wraps to in a column `width` px wide (words kept whole), at 14px,
+ * or at 13px for a name over 22 characters, so a tile can tell whether its genre also fits under the
+ * name. Before the board has measured its columns it counts the most lines a name may take, so no
+ * name is cut short on the first paint.
+ */
+export function estimateNameLines(name: string, width: number): number {
+  if (width <= 0) return MAX_NAME_LINES;
+  return wrapLines(name, width, isLongName(name) ? LONG_NAME_CHAR_PX : NAME_CHAR_PX);
+}
+
+/** About how many lines the 12px genre wraps to in `width` px (two before the columns are measured). */
+function estimateGenreLines(genre: string, width: number): number {
+  if (width <= 0) return 2;
+  return wrapLines(genre, width, GENRE_CHAR_PX);
+}
+
+function wrapLines(text: string, width: number, char: number): number {
+  let lines = 1;
+  let used = 0;
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    const w = word.length * char;
+    if (used === 0) used = w;
+    else if (used + char / 2 + w <= width) used += char / 2 + w;
+    else {
+      lines += 1;
+      used = w;
+    }
+  }
+  return lines;
+}
+
+/**
+ * How one set tile is laid out on a board drawn on `y`, in a column `columnWidth` px wide (0 while the
+ * board is unmeasured): its box, its rows, its draw figure and its weak cue. `cue` is undefined where
+ * the tile prints no short cue (not weak, no draw, or the "Weak Qloo signal" line instead), and null
+ * where none fits, so the tile hides its draw.
+ */
+export function tileLayout(view: SetView, y: (minute: number) => number, columnWidth: number) {
+  const top = y(view.slot.start);
+  const height = y(view.slot.end) - top;
+  const box = Math.max(height - TILE_GAP, 18);
+  const long = isLongName(view.act.name);
+  const none = view.coverage === "none";
+  const weak = view.coverage === "weak";
+  const needed = Math.min(
+    MAX_NAME_LINES,
+    estimateNameLines(view.act.name, columnWidth - 2 * CARD_PAD_X - (view.slot.locked ? 16 : 0)),
+  );
+  const genreLines = view.act.genre ? estimateGenreLines(view.act.genre, columnWidth - 2 * CARD_PAD_X) : 1;
+  // Only a measured board knows a name wraps; before that every name keeps its leading-tight line.
+  const wraps = columnWidth > 0 && needed > 1;
+  // The name is never cut: a short tile drops its genre, then its draw, then its time (each still read
+  // out and kept in the title) before it gives the name fewer lines than it needs, and then the full
+  // name also prints in a tooltip.
+  const rows = cardRows(box, needed, Boolean(view.act.genre), { long, label: none, genreLines, weak, wraps });
+  const drawFigure = view.act.popularity !== null ? `Draw ${formatDraw(view.act.popularity)}` : "";
+  // A weak tile with no room for the line over its draw says "· weak" on the draw line.
+  const cue = weak && rows.draw && !rows.weakLine ? weakCue(drawFigure, columnWidth - 2 * CARD_PAD_X - 2) : undefined;
+  return { top, box, long, none, weak, wraps, rows, drawFigure, cue };
+}
+
+/**
+ * How many tiles of a board print the short weak cue (" · weak", "·weak" or "weak"), with its columns
+ * `columnWidths` px wide (none while unmeasured). The board publishes this to its key, which draws the
+ * cue only while it is over 0: a roomy weak tile says "Weak Qloo signal" in words and needs no key.
+ */
+export function shortCueCount(views: readonly SetView[], columnWidths: readonly number[] = []): number {
+  const scale = timeScale(timeDomain(views.map((view) => view.slot)), PX_PER_MINUTE);
+  return views.filter((view) => tileLayout(view, scale.y, columnWidths[view.col] ?? 0).cue).length;
+}
+
 /** What a set block adds for screen readers after its visible text. */
 export function describeSetTail(view: SetView, moved: boolean, synthetic = false): string {
   const parts = [
@@ -115,9 +331,9 @@ export function describeSetTail(view: SetView, moved: boolean, synthetic = false
 }
 
 /**
- * The day's timetable: stages as columns on a shared time axis, sets sized by length, and an arc
- * between the two sets of each of the costliest clashes, visible without a hover (thicker and
- * stronger = costlier; dashed with a diamond badge = hidden clash). Arrow keys move between sets;
+ * The day's timetable: stages as columns on a shared time axis, sets sized by length, and a level
+ * line between the two sets of each of the costliest clashes at the middle of the minutes they
+ * share, visible without a hover (a 1px line, stronger = costlier; an outlined disc = hidden clash). A line runs behind any stage in between, so it never crosses a set's text. Arrow keys move between sets;
  * Enter opens a set's costliest clash; each badge opens its clash. A tested plan, when given, shows
  * as dashed ghosts at the tested places; the links and badges stay on the published timetable.
  *
@@ -163,18 +379,43 @@ export function TimetableGrid({
     return () => observer.disconnect();
   }, []);
 
-  // Wider gutters once the board has room, so the arcs between neighbouring stages show.
-  const gap = columnGap(boardWidth);
+  // Wider gutters once the board has room, so the links between neighbouring stages show.
+  const gap = Math.max(columnGap(boardWidth), MIN_GUTTER);
 
   const domain = useMemo(() => timeDomain(views.map((view) => view.slot)), [views]);
   const scale = useMemo(() => timeScale(domain, PX_PER_MINUTE), [domain]);
   const hours = useMemo(() => timeTicks(domain, 60), [domain]);
-  const halfHours = useMemo(
-    () => timeTicks(domain, 30).filter((minute) => minute % 60 !== 0),
-    [domain],
-  );
   const frames = useMemo(() => columnFrames(width, stages.length, gap), [width, stages.length, gap]);
+  // The key draws the short tiles' "· weak" cue while some tile on this board prints it.
+  const cueTiles = useMemo(() => shortCueCount(views, frames.map((frame) => frame.width)), [views, frames]);
+  usePublishCueTiles(cueTiles);
   const byId = useMemo(() => new Map(views.map((view) => [view.id, view])), [views]);
+  // A tile in one of the costed clashes drawn on the board (it carries a link and a disc).
+  const costedIds = useMemo(() => new Set(links.flatMap((clash) => [clash.a.act_id, clash.b.act_id])), [links]);
+  // Tiles whose rows the browser could not fit after all (the line counts above are estimates): their
+  // names get the hover and focus tooltip too. Measured after layout and after the fonts load.
+  const [overflowing, setOverflowing] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => {
+    const area = areaRef.current;
+    if (!area) return;
+    let cancelled = false;
+    const measure = () => {
+      if (cancelled) return;
+      const ids = new Set<string>();
+      area.querySelectorAll<HTMLElement>("button[data-set]").forEach((element) => {
+        if (element.scrollHeight > element.clientHeight + 1) ids.add(element.dataset.set ?? "");
+      });
+      setOverflowing((previous) =>
+        previous.size === ids.size && [...ids].every((id) => previous.has(id)) ? previous : ids,
+      );
+    };
+    const frame = requestAnimationFrame(measure);
+    void document.fonts?.ready.then(measure);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+    };
+  }, [width, gap, views]);
   // A rule preview is a tested timetable of its own: while it shows, the kept plan's ghosts step
   // aside (the preview was checked against the published day, not the plan) and return on Clear.
   const shownPlan = rulePreview ? null : plan;
@@ -271,17 +512,57 @@ export function TimetableGrid({
   );
   const tabStop = rovingId && byId.has(rovingId) ? rovingId : (views[0]?.id ?? null);
 
+  // The links draw in by rank the first time the board scrolls into view (M3). A highlight before
+  // the draw starts cancels it, so a hovered set always shows its links; one during the draw dims
+  // them as usual. The links are drawn in full otherwise (reduced motion, print, a board already on
+  // screen at load, or a start frame held for 1.5 s without the board showing). Sets never move, and
+  // the badges are buttons, focusable and labelled, from the start.
+  const [fresh] = useState(() => !linksDrawn);
+  const reveal = useReveal(rootRef, { threshold: 0.35, enabled: fresh });
+  const [drawing, setDrawing] = useState<"waiting" | "drawing" | "drawn">("waiting");
+  if (drawing === "waiting" && reveal !== "still") {
+    if (dimmed) setDrawing("drawn");
+    else if (reveal === "play") setDrawing("drawing");
+  }
+  const drawOrder = useMemo(
+    () => new Map([...links].sort((a, b) => a.rank - b.rank).map((clash, order) => [clashKey(clash), order])),
+    [links],
+  );
+  useEffect(() => {
+    if (drawing !== "drawing") return;
+    linksDrawn = true;
+    const total = (Math.max(drawOrder.size, 1) - 1) * LINK_STAGGER_MS + LINK_DRAW_MS + BADGE_POP_MS + 100;
+    const timer = window.setTimeout(() => setDrawing("drawn"), total);
+    return () => window.clearTimeout(timer);
+  }, [drawing, drawOrder]);
+  const linkPhase = drawing === "drawing" ? "play" : drawing === "waiting" && reveal === "wait" ? "wait" : undefined;
+  const linkDelay = (key: string) =>
+    ({ "--reveal-delay": `${(drawOrder.get(key) ?? 0) * LINK_STAGGER_MS}ms` }) as CSSProperties;
+
   const maxShare = Math.max(...links.map((clash) => clash.regret_share), 0.0001);
   const layouts = useMemo(() => {
     if (width === 0) return [];
     const inputs: LinkInput[] = links.flatMap((clash) => {
       const a = byId.get(clash.a.act_id);
       const b = byId.get(clash.b.act_id);
-      const window = a && b ? overlapWindow(a.slot, b.slot) : null;
-      if (!a || !b || !window || a.col === b.col) return [];
+      if (!a || !b || a.col === b.col) return [];
+      // The minutes the two share; failing that, the span between the later set's start and the
+      // earlier set's end, so the line sits between two times the data gives.
+      const [earlier, later] = a.slot.start <= b.slot.start ? [a.slot, b.slot] : [b.slot, a.slot];
+      const window = overlapWindow(a.slot, b.slot) ?? {
+        start: Math.min(later.start, earlier.end),
+        end: Math.max(later.start, earlier.end),
+      };
       return [{ id: clashKey(clash), colA: a.col, colB: b.col, window, weight: clash.regret_share / maxShare }];
     });
-    return layoutLinks(inputs, frames, scale, { badgeSize: BADGE });
+    // No rise: every link is one level line from set edge to set edge, its badge in the first gutter.
+    return layoutLinks(inputs, frames, scale, {
+      badgeSize: BADGE,
+      bulgePerColumn: 0,
+      maxBulge: 0,
+      minStroke: 2,
+      maxStroke: 5,
+    });
   }, [links, byId, frames, scale, maxShare, width]);
   const clashByKey = useMemo(() => new Map(links.map((clash) => [clashKey(clash), clash])), [links]);
 
@@ -295,21 +576,21 @@ export function TimetableGrid({
   const columnsTemplate = `${AXIS_WIDTH}px repeat(${stages.length}, minmax(0, 1fr))`;
 
   return (
-    <div ref={rootRef} className={cn("relative", className)}>
+    <div ref={rootRef} className={cn("relative", className)} data-reveal={linkPhase}>
       {/* Stage names stay in view while the day scrolls past, under the site header and the
           page's jump nav. In the phone scroller they scroll with the board instead. */}
       <div
-        className="z-20 grid border-b-2 border-foreground bg-background/95 py-2.5 backdrop-blur supports-backdrop-filter:bg-background/85 md:sticky md:top-27"
+        className="z-20 grid bg-background pt-2.5 pb-3 md:sticky md:top-27"
         style={{ gridTemplateColumns: columnsTemplate, columnGap: gap }}
       >
-        <p className="type-kicker self-end text-muted-foreground">{dayLabel}</p>
+        <p className="self-end text-[0.8125rem] font-semibold text-muted-foreground">{dayLabel}</p>
         {stages.map((stage) => {
           const count = views.filter((view) => view.stage.id === stage.id).length;
           return (
             <div key={stage.id} className="min-w-0 snap-start">
-              <p className="type-wordmark truncate text-lg">{stage.name}</p>
-              <p className="font-mono text-[0.6875rem] text-muted-foreground">
-                {count} {count === 1 ? "set" : "sets"}
+              <p className="type-wordmark text-lg break-words">{stage.name}</p>
+              <p className="text-xs font-medium text-muted-foreground">
+                <span className="font-mono tabular-nums">{count}</span> {count === 1 ? "set" : "sets"}
               </p>
             </div>
           );
@@ -329,7 +610,7 @@ export function TimetableGrid({
           {hours.map((minute) => (
             <span
               key={minute}
-              className="absolute right-0 -translate-y-1/2 font-mono text-[0.6875rem] text-muted-foreground tabular-nums"
+              className="absolute right-0 -translate-y-1/2 font-mono text-xs text-muted-foreground tabular-nums"
               style={{ top: scale.y(minute) }}
             >
               {formatClock(minute)}
@@ -338,7 +619,9 @@ export function TimetableGrid({
         </div>
 
         <div ref={areaRef} className="relative" style={{ height: scale.height }}>
-          {/* Hour and half-hour rules */}
+          {/* Hour rules and stage guides, 1px, beneath the tiles and the links: every tile is opaque, so
+              no rule shows through one. A guide runs down the middle of each gap between two stages,
+              from the first hour line to the last, so the board reads as one ruled sheet. Decorative. */}
           <div aria-hidden="true" className="pointer-events-none absolute inset-0">
             {hours.map((minute) => (
               <span
@@ -347,17 +630,25 @@ export function TimetableGrid({
                 style={{ top: scale.y(minute) }}
               />
             ))}
-            {halfHours.map((minute) => (
-              <span
-                key={`m${minute}`}
-                className="absolute inset-x-0 border-t border-dashed border-border/70"
-                style={{ top: scale.y(minute) }}
-              />
-            ))}
+            {width > 0 && hours.length > 1
+              ? frames.slice(0, -1).map((frame, index) => (
+                  <span
+                    key={`g${index}`}
+                    data-stage-guide=""
+                    className="absolute border-l border-border"
+                    style={{
+                      left: frame.left + frame.width + gap / 2 - 0.5,
+                      top: scale.y(hours[0] ?? domain.start),
+                      height: scale.y(hours[hours.length - 1] ?? domain.end) - scale.y(hours[0] ?? domain.start),
+                    }}
+                  />
+                ))
+              : null}
           </div>
 
-          {/* Links between clashing sets. Drawn behind the sets, so a link that jumps a stage never
-              covers the text of the set in between; it shows in the gutters and in open time. */}
+          {/* Links between clashing sets: one level line each, from the inner edge of one set to the
+              inner edge of the other. Drawn behind the sets, so a link that jumps a stage passes under
+              the set in between and shows only in the gutters and in open time. */}
           <svg
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 overflow-visible"
@@ -369,23 +660,18 @@ export function TimetableGrid({
               if (!clash) return null;
               const active = activeClashKeys.has(layout.id);
               const opacity = dimmed ? (active ? 1 : 0.12) : layout.opacity;
-              const dash = clash.label === "hidden" ? "7 5" : undefined;
+              // Every link is one 1px solid vermilion line with round caps, 2px for the active pair; the
+              // disc says whether the clash is hidden.
               return (
-                <g key={layout.id} style={{ opacity }} className="transition-opacity duration-150">
-                  <path
-                    d={layout.path}
-                    fill="none"
-                    stroke="var(--background)"
-                    strokeWidth={layout.strokeWidth + 4}
-                    strokeLinecap="round"
-                  />
+                <g key={layout.id} style={{ opacity, ...linkDelay(layout.id) }} className="transition-opacity duration-150 ease-out">
                   <path
                     d={layout.path}
                     fill="none"
                     stroke="var(--primary)"
-                    strokeWidth={active ? layout.strokeWidth + 1 : layout.strokeWidth}
-                    strokeLinecap={dash ? "butt" : "round"}
-                    strokeDasharray={dash}
+                    strokeWidth={active ? 2 : 1}
+                    strokeLinecap="round"
+                    pathLength={1}
+                    className="cc-link-draw"
                   />
                 </g>
               );
@@ -404,129 +690,187 @@ export function TimetableGrid({
                 {views
                   .filter((view) => view.stage.id === stage.id)
                   .map((view) => {
-                    const top = scale.y(view.slot.start);
-                    const height = scale.y(view.slot.end) - top;
-                    const density = blockDensity(height);
+                    const { top, box, long, none, weak, wraps, rows, drawFigure, cue } = tileLayout(
+                      view,
+                      scale.y,
+                      frames[view.col]?.width ?? 0,
+                    );
                     const related = activeSetIds.has(view.id);
                     const isFocus = focusSetId === view.id;
                     const costliest = view.clashes[0];
-                    const none = view.coverage === "none";
                     const moved = movedIds.has(view.id);
                     const overprinted = overprintedIds.has(view.id);
+                    const clamped = rows.clamped || overflowing.has(view.id);
+                    const drawText = none
+                      ? noSignalLabel(synthetic)
+                      : view.act.popularity !== null
+                        ? `Draw ${formatDraw(view.act.popularity)}`
+                        : "";
+                    const showDraw = rows.draw && cue !== null;
+                    // The tile's tooltip names everything it holds, shown or not.
+                    const title = [view.act.name, formatRange(view.slot), view.act.genre, drawText, weak ? weakSignalLabel(synthetic) : ""]
+                      .filter(Boolean)
+                      .join(" · ");
                     return (
-                      <button
-                        key={view.id}
-                        type="button"
-                        ref={(element) => {
-                          if (element) setRefs.current.set(view.id, element);
-                          else setRefs.current.delete(view.id);
-                        }}
-                        tabIndex={view.id === tabStop ? 0 : -1}
-                        onKeyDown={(event) => onSetKeyDown(event, view.id)}
-                        onFocus={() => {
-                          setRovingId(view.id);
-                          onHighlightSet(view.id);
-                        }}
-                        onBlur={() => onHighlightSet(null)}
-                        onMouseEnter={() => onHighlightSet(view.id)}
-                        onMouseLeave={() => onHighlightSet(null)}
-                        onClick={(event) => {
-                          if (costliest) onOpen(costliest, event.currentTarget);
-                        }}
-                        data-set={view.id}
-                        data-overprinted={overprinted ? "true" : undefined}
-                        onAnimationEnd={moved ? () => markPlayed(`lift:${view.id}`) : undefined}
-                        className={cn(
-                          "group/set absolute inset-x-0 flex flex-col overflow-hidden rounded-md border text-left transition-[opacity,background-color,border-color,box-shadow] duration-150",
-                          "focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
-                          density === "tiny" ? "px-2 py-1" : "px-2.5 py-1.5",
-                          none
-                            ? "bg-hatch border-dashed border-border-strong bg-card text-muted-foreground"
-                            : view.coverage === "weak"
-                              ? "border-dotted border-border-strong bg-card"
-                              : "border-border-strong bg-card",
-                          view.slot.locked && "border-2 border-foreground",
-                          moved && "bg-hatch",
-                          moved && mayPlay(`lift:${view.id}`) && "cc-lift",
-                          costliest ? "cursor-pointer hover:bg-accent" : "cursor-default",
-                          isFocus && "border-foreground bg-accent",
-                          related && !isFocus && "shadow-[0_0_0_2px_var(--primary)]",
-                          dimmed && !related && !isFocus && "opacity-40",
-                          "data-[overprinted=true]:opacity-30 data-[overprinted=true]:focus-visible:opacity-100",
-                        )}
-                        style={{ top: top + 1, height: Math.max(height - 2, 18) }}
-                      >
-                        <span className="flex min-w-0 items-start gap-1">
+                      <div key={view.id} className="group/tile contents">
+                        <button
+                          type="button"
+                          ref={(element) => {
+                            if (element) setRefs.current.set(view.id, element);
+                            else setRefs.current.delete(view.id);
+                          }}
+                          tabIndex={view.id === tabStop ? 0 : -1}
+                          onKeyDown={(event) => onSetKeyDown(event, view.id)}
+                          onFocus={() => {
+                            setRovingId(view.id);
+                            onHighlightSet(view.id);
+                          }}
+                          onBlur={() => onHighlightSet(null)}
+                          onMouseEnter={() => onHighlightSet(view.id)}
+                          onMouseLeave={() => onHighlightSet(null)}
+                          onClick={(event) => {
+                            if (costliest) onOpen(costliest, event.currentTarget);
+                          }}
+                          title={title}
+                          data-set={view.id}
+                          data-overprinted={overprinted ? "true" : undefined}
+                          onAnimationEnd={moved ? () => markPlayed(`lift:${view.id}`) : undefined}
+                          className={cn(
+                            "group/set absolute inset-x-0 flex min-w-0 flex-col overflow-hidden rounded-sm border text-left transition-[opacity,background-color,outline-color] duration-150 ease-out",
+                            "focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+                            rows.roomy ? "px-2.5 py-2" : "px-2.5 py-1",
+                            // Moved in the tested plan: the slot it left, paper with muted text and no
+                            // edge. No Qloo signal: the board's own paper (opaque, so no rule shows through)
+                            // in a 1px dotted control-grey edge with an ink name, so an unpriced set weighs
+                            // less than a priced one (its label says why it is not priced). The board sits on
+                            // paper at every width; the list view draws its tiles on its own classes. A priced
+                            // tile is the sheet in a 1px hairline (its name identifies it), and a tile in one
+                            // of the costed clashes gets the stronger edge.
+                            moved
+                              ? "border-transparent bg-background text-muted-foreground"
+                              : none
+                                ? "border-dotted border-border-strong bg-background text-foreground"
+                                : cn("bg-card text-foreground", costedIds.has(view.id) ? "border-border-strong" : "border-border"),
+                            moved && mayPlay(`lift:${view.id}`) && "cc-lift",
+                            costliest ? "cursor-pointer hover:bg-accent" : "cursor-default",
+                            isFocus && "bg-accent outline-2 -outline-offset-2 outline-foreground",
+                            related && !isFocus && "outline-2 -outline-offset-2 outline-primary",
+                            dimmed && !related && !isFocus && "opacity-40",
+                            "data-[overprinted=true]:opacity-30 data-[overprinted=true]:focus-visible:opacity-100",
+                          )}
+                          style={{ top: top + TILE_GAP / 2, height: box }}
+                        >
+                          <span className="flex min-w-0 items-start gap-1">
+                            <span
+                              data-set-name={view.id}
+                              className={cn(
+                                "min-w-0 flex-1 font-semibold break-words",
+                                long ? "text-[0.8125rem]" : "text-sm",
+                                wraps ? "leading-[1.2]" : "leading-tight",
+                                "transition-opacity duration-150 group-data-[overprinted=true]/set:opacity-0 group-data-[overprinted=true]/set:group-focus-visible/set:opacity-100",
+                              )}
+                            >
+                              {view.act.name}
+                              <span className="sr-only">, {view.stage.name}. </span>
+                              {rows.time ? null : <span className="sr-only">{formatRange(view.slot)}. </span>}
+                            </span>
+                            {view.slot.locked ? <Lock aria-hidden="true" className="mt-0.5 size-3 shrink-0" /> : null}
+                          </span>
+                          {rows.time ? (
+                            // The act and its time are the tile's two ink lines; genre, draw and signal stay muted.
+                            // The slot a tested move left keeps its muted text throughout.
+                            <span
+                              className={cn(
+                                "block font-mono text-xs leading-4 whitespace-nowrap tabular-nums",
+                                moved ? "text-muted-foreground" : "text-foreground",
+                              )}
+                            >
+                              {formatRange(view.slot)}
+                              <span className="sr-only">. {view.act.genre && !rows.genre ? `${view.act.genre}. ` : ""}</span>
+                            </span>
+                          ) : view.act.genre ? (
+                            <span className="sr-only">{view.act.genre}. </span>
+                          ) : null}
+                          {rows.genre ? (
+                            <span data-genre="" className="block text-xs leading-[15px] break-words text-muted-foreground">
+                              {view.act.genre}
+                              <span className="sr-only">. </span>
+                            </span>
+                          ) : null}
+                          {rows.label ? (
+                            // No Qloo signal is the tile's label, never the row a short tile hides.
+                            <span
+                              data-no-signal=""
+                              className={cn("mt-auto block text-xs leading-4 font-medium whitespace-nowrap text-muted-foreground", rows.roomy && "pt-1")}
+                            >
+                              {noSignalLabel(synthetic)}
+                              <span className="sr-only">, not priced. </span>
+                            </span>
+                          ) : showDraw ? (
+                            <>
+                              {rows.weakLine ? (
+                                // A weak signal, said in words on its own line over the figure it qualifies, in the
+                                // no-signal label's style. Read out once, in the tile's tail.
+                                <span
+                                  aria-hidden="true"
+                                  data-weak="line"
+                                  className={cn("mt-auto block text-xs leading-4 font-medium whitespace-nowrap text-muted-foreground", rows.roomy && "pt-1")}
+                                >
+                                  {weakSignalLabel(synthetic).replace(/\.$/, "")}
+                                </span>
+                              ) : null}
+                              {/* Draw: a mono figure at the bottom right, 13px in a roomy tile and 12px otherwise; on
+                                  a weak tile too short for the line above, "· weak" in the 12px style, explained in
+                                  the key (that line keeps 12px, so the cue is never resized). */}
+                              <span
+                                data-weak={cue ? "cue" : undefined}
+                                className={cn(
+                                  "flex min-w-0 items-baseline justify-end gap-x-1.5",
+                                  // The size before the line height: a later size class would drop leading-4 in cn.
+                                  rows.roomy && cue === undefined ? "text-[0.8125rem]" : "text-xs",
+                                  "leading-4 whitespace-nowrap text-muted-foreground",
+                                  !rows.weakLine && "mt-auto",
+                                  rows.roomy && !rows.weakLine && "pt-1",
+                                )}
+                              >
+                                {drawFigure || cue ? (
+                                  <>
+                                    <span className={cn("shrink-0 font-mono tabular-nums", cue?.tight && "tracking-tighter")}>
+                                      {drawFigure}
+                                      {cue ? <span aria-hidden="true">{cue.cue}</span> : null}
+                                    </span>
+                                    <span className="sr-only">. </span>
+                                  </>
+                                ) : null}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="sr-only">
+                              {view.act.popularity !== null ? `Draw ${formatDraw(view.act.popularity)}. ` : ""}
+                            </span>
+                          )}
+                          <span className="sr-only">{describeSetTail(view, moved, synthetic)}</span>
+                        </button>
+                        {clamped ? (
+                          // A name in a slot too short for every line it needs also shows in full on hover
+                          // and on focus. Decorative: the tile's own text and its title carry the whole name.
                           <span
-                            className={cn(
-                              "min-w-0 flex-1 text-[0.8125rem] leading-tight font-bold [font-variation-settings:'wdth'_85]",
-                              density === "full" ? "line-clamp-2" : "truncate",
-                              none ? "text-foreground" : "",
-                              "transition-opacity duration-150 group-data-[overprinted=true]/set:opacity-0 group-data-[overprinted=true]/set:group-focus-visible/set:opacity-100",
-                            )}
+                            aria-hidden="true"
+                            data-name-tooltip=""
+                            className="pointer-events-none absolute left-0 z-30 hidden w-max max-w-64 rounded-sm bg-foreground px-2 py-1 text-xs text-background group-focus-within/tile:block group-hover/tile:block print:hidden"
+                            style={{ top: top + TILE_GAP / 2 + box + 4 }}
                           >
                             {view.act.name}
-                            <span className="sr-only">, {view.stage.name}. </span>
-                            {density === "tiny" ? <span className="sr-only">{formatRange(view.slot)}. </span> : null}
-                          </span>
-                          {view.slot.locked ? (
-                            <Lock aria-hidden="true" className="mt-0.5 size-3 shrink-0" />
-                          ) : null}
-                        </span>
-                        {density !== "tiny" ? (
-                          <span className="mt-0.5 truncate font-mono text-[0.6875rem] text-muted-foreground tabular-nums">
-                            {formatRange(view.slot)}
-                            {density === "full" && view.act.genre ? ` · ${view.act.genre}` : ""}
-                            <span className="sr-only">
-                              . {density !== "full" && view.act.genre ? `${view.act.genre}. ` : ""}
-                            </span>
                           </span>
                         ) : null}
-                        {density === "full" ? (
-                          <span className="mt-auto flex items-center gap-1.5 pt-1 font-mono text-[0.6875rem]">
-                            {none ? (
-                              <span className="rounded-sm bg-card px-1 font-sans font-semibold text-foreground">
-                                {noSignalLabel(synthetic)}
-                                <span className="sr-only">, not priced. </span>
-                              </span>
-                            ) : view.act.popularity !== null ? (
-                              <>
-                                <span className="text-muted-foreground">Draw</span>{" "}
-                                <span className="tabular-nums">{formatDraw(view.act.popularity)}</span>
-                                <span className="sr-only">. </span>
-                                {/* The bar shows only on the set in hand; at rest the number is enough. */}
-                                {isFocus ? (
-                                  <span aria-hidden="true" className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
-                                    <span
-                                      className="block h-full bg-foreground/70"
-                                      style={{ width: `${view.act.popularity * 100}%` }}
-                                    />
-                                  </span>
-                                ) : null}
-                              </>
-                            ) : null}
-                            {view.coverage === "weak" ? (
-                              <span className="shrink-0 font-sans text-muted-foreground">weak</span>
-                            ) : null}
-                          </span>
-                        ) : (
-                          <span className="sr-only">
-                            {none
-                              ? `${noSignalLabel(synthetic)}, not priced. `
-                              : view.act.popularity !== null
-                                ? `Draw ${formatDraw(view.act.popularity)}. `
-                                : ""}
-                          </span>
-                        )}
-                        <span className="sr-only">{describeSetTail(view, moved, synthetic)}</span>
-                      </button>
+                      </div>
                     );
                   })}
               </div>
             ))}
           </div>
 
-          {/* Tested places: a dashed ghost per kept move (the place being tried is lighter) and per
+          {/* Tested places: a dashed ink ghost per kept move, for the place being tried and per
               set of a previewed rule change. Decorative: the moved set's own block says it moved.
               A ghost that appears after the board has settled flies in from the set's published
               place (`--dx`, `--dy`, in this area's own pixels); the published block never moves. */}
@@ -559,25 +903,23 @@ export function TimetableGrid({
                     data-ghost={ghost.kind}
                     onAnimationEnd={flies ? () => markPlayed(name) : undefined}
                     className={cn(
-                      "absolute flex flex-col overflow-hidden rounded-md border-2 border-dashed px-2 py-1 text-left",
-                      ghost.kind === "trying"
-                        ? "border-primary/55 bg-background/70 text-foreground/80"
-                        : "border-primary bg-background text-foreground",
+                      // A tested place, kept or being tried: dashed ink on the sheet, never vermilion.
+                      "absolute flex flex-col overflow-hidden rounded-sm border-2 border-dashed border-foreground bg-card bg-clip-padding px-2.5 py-1 text-left text-foreground",
                       flies && "cc-slot-flight",
                     )}
                     style={{
                       left: frame.left,
                       width: frame.width,
-                      top: top + 1,
-                      height: Math.max(height - 2, 18),
+                      top: top + TILE_GAP / 2,
+                      height: Math.max(height - TILE_GAP, 18),
                       ...flight,
                     }}
                   >
-                    <span className="truncate text-[0.75rem] leading-tight font-bold [font-variation-settings:'wdth'_85]">
+                    <span className="text-[0.75rem] leading-tight font-bold break-words [font-variation-settings:'wdth'_85]">
                       {ghost.name} · tested
                     </span>
                     {height >= 36 ? (
-                      <span className="truncate font-mono text-[0.6875rem] text-muted-foreground tabular-nums">
+                      <span className="font-mono text-xs font-medium whitespace-nowrap text-muted-foreground tabular-nums">
                         {formatRange(ghost.range)}
                       </span>
                     ) : null}
@@ -590,7 +932,7 @@ export function TimetableGrid({
                   data-ghost="zero"
                   onAnimationEnd={() => markPlayed(`zero:${zero.key}`)}
                   className={cn(
-                    "absolute grid size-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-foreground bg-card font-mono text-[0.6875rem] font-bold text-foreground",
+                    "absolute grid size-5.5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-foreground bg-card font-mono text-[11px] font-bold text-foreground",
                     mayPlay(`zero:${zero.key}`) && ruleSeen && "cc-zero",
                   )}
                   style={{ left: zero.x, top: zero.y }}
@@ -601,9 +943,7 @@ export function TimetableGrid({
             </div>
           ) : null}
 
-          {/* Over the sets: a faint trace of each link where it passes behind a set in between, so
-              the arc reads end to end without hiding the set's text, and the two ends where the
-              link meets its sets. */}
+          {/* Over the sets: a 6px dot where each link meets each of its two sets, on the set's edge. */}
           <svg
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 overflow-visible"
@@ -611,21 +951,12 @@ export function TimetableGrid({
             height={scale.height}
           >
             {layouts.map((layout) => {
-              const clash = clashByKey.get(layout.id);
               const active = activeClashKeys.has(layout.id);
               const opacity = dimmed ? (active ? 1 : 0.12) : layout.opacity;
               return (
                 <g key={layout.id} style={{ opacity }} className="transition-opacity duration-150">
-                  <path
-                    d={layout.path}
-                    fill="none"
-                    stroke="var(--primary)"
-                    strokeOpacity={0.4}
-                    strokeWidth={1.5}
-                    strokeDasharray={clash?.label === "hidden" ? "4 4" : undefined}
-                  />
-                  <circle cx={layout.x1} cy={layout.y} r={4} fill="var(--primary)" stroke="var(--background)" strokeWidth={1.5} />
-                  <circle cx={layout.x2} cy={layout.y} r={4} fill="var(--primary)" stroke="var(--background)" strokeWidth={1.5} />
+                  <circle cx={layout.x1} cy={layout.y} r={3} fill="var(--primary)" />
+                  <circle cx={layout.x2} cy={layout.y} r={3} fill="var(--primary)" />
                 </g>
               );
             })}
@@ -642,14 +973,15 @@ export function TimetableGrid({
                 <li key={layout.id}>
                   <button
                     type="button"
-                    aria-label={`Clash ${clash.rank}: ${clash.a.name} and ${clash.b.name}${clash.label ? `, ${LABEL_META[clash.label].name.toLowerCase()}` : ""}, ${formatShare(clash.regret_share)} of the day's clash cost. Open details.`}
+                    aria-label={`${clashMarkLabel(clash)}${clash.label && !hidden ? `, ${LABEL_META[clash.label].name.toLowerCase()}` : ""}, ${formatShare(clash.regret_share)} of the day's clash cost. Open details.`}
+                    title={clashMarkLabel(clash)}
                     onClick={(event) => onOpen(clash, event.currentTarget)}
                     onMouseEnter={() => onHighlightClash(layout.id)}
                     onMouseLeave={() => onHighlightClash(null)}
                     onFocus={() => onHighlightClash(layout.id)}
                     onBlur={() => onHighlightClash(null)}
                     className={cn(
-                      "pointer-events-auto absolute grid cursor-pointer place-items-center font-mono text-xs font-bold tabular-nums transition-[opacity,transform] duration-150 hover:scale-110 focus-visible:scale-110",
+                      "cc-link-badge pointer-events-auto absolute grid cursor-pointer place-items-center rounded-full font-mono text-[11px] font-bold tabular-nums transition-[opacity,transform] duration-150 hover:scale-110 focus-visible:scale-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
                       dimmed && !active && "opacity-30",
                     )}
                     style={{
@@ -657,21 +989,14 @@ export function TimetableGrid({
                       top: layout.badge.y - BADGE / 2,
                       width: BADGE,
                       height: BADGE,
+                      ...linkDelay(layout.id),
                     }}
                   >
-                    <span
-                      aria-hidden="true"
-                      className={cn(
-                        "absolute inset-0.5 shadow-sm",
-                        hidden
-                          ? "rotate-45 rounded-[3px] border-2 border-foreground bg-highlight"
-                          : "rounded-full border-2 border-background bg-foreground",
-                      )}
-                    />
-                    <span
-                      aria-hidden="true"
-                      className={cn("relative", hidden ? "text-highlight-foreground" : "text-background")}
-                    >
+                    {/* Every clash is a 22px numbered disc, centred in the first gutter the line crosses,
+                        clear of the sets: a seen clash is filled vermilion with a paper numeral, a hidden
+                        one is outlined in vermilion on the card with a vermilion numeral. */}
+                    <ClashDisc hidden={hidden} className="absolute top-0.5 left-0.5" />
+                    <span aria-hidden="true" className={cn("relative", hidden ? "text-primary" : "text-primary-foreground")}>
                       {clash.rank}
                     </span>
                   </button>

@@ -41,6 +41,23 @@ describe("SyntheticNotice", () => {
     expect(html).toBe(SYNTHETIC_NOTICE);
   });
 
+  it("is one ink-edged card with its warning icon, not a tinted strip under a hairline", () => {
+    const html = renderToStaticMarkup(createElement(SyntheticNotice));
+    expect(html).toMatch(/^<aside aria-label="Synthetic data notice" class="container-page pt-3">/);
+    expect(html).toContain("rounded-md border border-foreground bg-card");
+    // A 16 px warning icon (lucide TriangleAlert, not one of the banned decorative icons), hidden from
+    // screen readers, before the words.
+    const icon = /<svg[^>]*>/.exec(html)?.[0] ?? "";
+    expect(icon).toContain('aria-hidden="true"');
+    expect(icon).toMatch(/\blucide\b/);
+    expect(icon).toMatch(/\bsize-4\b/);
+    expect(icon).not.toMatch(/sparkles|shield|zap|flask|waypoints/);
+    expect(html.indexOf("<svg")).toBeLessThan(html.indexOf(SYNTHETIC_NOTICE));
+    expect(html).not.toMatch(/border-b\b/);
+    expect(html).not.toContain("/40");
+    expect(html).not.toContain("bg-warning-bg");
+  });
+
   it("stays off the pages that do not show the day", () => {
     expect(showsSyntheticNotice("/")).toBe(true);
     expect(showsSyntheticNotice("/brief")).toBe(true);

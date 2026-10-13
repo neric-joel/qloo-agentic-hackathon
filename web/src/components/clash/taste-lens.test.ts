@@ -84,7 +84,7 @@ describe("TasteLens", () => {
     expect(html).toContain("What taste overlap changes");
     expect(html).toContain("9 of this day’s 15 costliest clashes would no longer be among the 15 costliest.");
     expect(html).toContain(
-      "This shows what the number changes in this ranking, not that it finds clashes better: the check we set before building did not pass (see How we know ).",
+      "This shows how taste overlap reorders this ranking. The check we set before building did not pass (see How we know ).",
     );
   });
 
@@ -164,7 +164,21 @@ describe("TasteLens", () => {
     );
     expect(html).toContain("High taste overlap, never on at the same time: Act Nine and Act Ten; Act Eleven and Act Twelve.");
     expect(html).toContain(
-      "Taste overlap only costs something when two sets share time: price = taste overlap × the share of the shorter set they play at once × the two acts’ draw (their geometric mean) × a rarity factor.",
+      "Taste overlap only costs something when two sets share time, so these pairs price at zero. How the price works",
     );
+  });
+});
+
+describe("TasteLens motion (M6)", () => {
+  it("is drawn final in the server HTML: rows visible, nothing waiting, the pairs taste pushes out with no edge of their own", () => {
+    const html = renderToStaticMarkup(createElement(TasteLens, { lenses: lenses(), ranked: [], onOpen: () => {} }));
+    expect(html).not.toContain("data-reveal");
+    // Draw-and-time rows start first; the taste rows follow 160 ms later, 40 ms apart.
+    const rows = [...html.matchAll(/<li class="([^"]*)" style="--reveal-delay:(\d+)ms">/g)].map((m) => [m[1], Number(m[2])]);
+    expect(rows).toEqual([
+      ["cc-lens-row", 160],
+      ["cc-lens-row", 200],
+      ["cc-lens-row", 0],
+    ]);
   });
 });

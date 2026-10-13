@@ -11,19 +11,18 @@ export const alt = "Clash Control: which clash is worth moving?";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-const BACKGROUND = "#140e0a";
-const FOREGROUND = "#f1eee7";
-const MUTED = "#b0aaa0";
-const ACCENT = "#ff7643";
-const BORDER = "#39312c";
+const BACKGROUND = "#0a0e15";
+const FOREGROUND = "#eceff2";
+const MUTED = "#aab2bd";
+const ACCENT = "#f75936";
+const BORDER = "#323843";
 
-/** The site mark: two rings whose overlap is filled, drawn without a clip path. */
+/** The site mark: two set slots locked together with a gap between them, the second in the accent. */
 function Mark() {
   return (
     <svg width="72" height="72" viewBox="0 0 32 32">
-      <path d="M16 7.938A9 9 0 0 1 16 24.062A9 9 0 0 1 16 7.938Z" fill={ACCENT} />
-      <circle cx="12" cy="16" r="9" fill="none" stroke={FOREGROUND} strokeWidth="2.5" />
-      <circle cx="20" cy="16" r="9" fill="none" stroke={FOREGROUND} strokeWidth="2.5" />
+      <path fill={FOREGROUND} d="M9 3h11v7h-10v19h-1a6 6 0 0 1-6-6v-14a6 6 0 0 1 6-6z" />
+      <path fill={ACCENT} d="M23 29h-11v-7h10v-19h1a6 6 0 0 1 6 6v14a6 6 0 0 1-6 6z" />
     </svg>
   );
 }

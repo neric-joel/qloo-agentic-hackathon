@@ -1,4 +1,4 @@
-import { History, Sigma, Sparkles, Waypoints, type LucideIcon } from "lucide-react";
+import { History, type LucideIcon } from "lucide-react";
 import { cva } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
@@ -6,22 +6,20 @@ import type { Provenance } from "@/lib/events";
 
 export const PROVENANCE_META: Record<
   Provenance,
-  { label: string; description: string; Icon: LucideIcon }
+  // Only Recorded carries a glyph (the clock that marks a replay); every other stamp is its word.
+  { label: string; description: string; Icon?: LucideIcon }
 > = {
   qloo: {
     label: "Qloo",
     description: "A value Qloo returned in a live request.",
-    Icon: Waypoints,
   },
   derived: {
     label: "Derived",
     description: "Calculated by this app from Qloo data.",
-    Icon: Sigma,
   },
   llm: {
     label: "LLM",
     description: "Written by a language model. Not Qloo data.",
-    Icon: Sparkles,
   },
   recorded: {
     label: "Recorded",
@@ -38,20 +36,24 @@ const SYNTHETIC_DESCRIPTION: Partial<Record<Provenance, string>> = {
 
 export const PROVENANCE_ORDER: readonly Provenance[] = ["qloo", "derived", "llm", "recorded"];
 
+// No stamp and no box: the source prints as a plain 12px/500 word in sentence case, in the sans, like
+// a credit line on a running order. Each word takes its provenance ink: Qloo teal on a published day
+// (ink on the invented day, which credits nothing to Qloo), Derived ink, LLM and Recorded muted ink,
+// told apart by their words and Recorded's 14px clock. Both sizes print the same; the prop stays so
+// callers keep their API.
 const chipVariants = cva(
-  "inline-flex shrink-0 items-center gap-1 rounded-full border align-middle font-semibold leading-none whitespace-nowrap",
+  "inline-flex shrink-0 items-center gap-1 align-baseline font-sans text-[12px] leading-none font-medium [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:self-center",
   {
     variants: {
       provenance: {
-        qloo: "border-prov-qloo-border bg-prov-qloo-bg text-prov-qloo",
-        derived: "border-prov-derived-border bg-prov-derived-bg text-prov-derived",
-        llm: "border-prov-llm-border bg-prov-llm-bg text-prov-llm",
-        // Dashed outline: recorded values read differently from live ones even in greyscale.
-        recorded: "border-dashed border-prov-recorded-border bg-prov-recorded-bg text-prov-recorded",
+        qloo: "text-prov-qloo",
+        derived: "text-prov-derived",
+        llm: "text-prov-llm",
+        recorded: "text-prov-recorded",
       },
       size: {
-        sm: "h-5 px-2 text-xs [&_svg]:size-3",
-        md: "h-6 px-2.5 text-[0.8125rem] [&_svg]:size-3.5",
+        sm: "",
+        md: "",
       },
     },
     defaultVariants: { size: "md" },
@@ -64,19 +66,35 @@ type ProvenanceChipProps = {
   className?: string;
   /** The invented day: the tooltip says the figure is invented instead of crediting Qloo. */
   synthetic?: boolean;
+  /**
+   * "tag" (default) prints the word (and Recorded's clock) as plain muted text. "kicker" prints the
+   * word alone, to ride on a label line after a middle dot ("Clash Budget Index · Derived"); its
+   * tooltip and screen-reader text stay.
+   */
+  look?: "tag" | "kicker";
 };
 
-/** Says where a value came from. Always an icon plus a text label, never colour alone. */
-export function ProvenanceChip({ provenance, size = "md", className, synthetic = false }: ProvenanceChipProps) {
+const KICKER_CLASS = "inline font-sans text-[12px] font-medium tracking-normal text-muted-foreground normal-case";
+
+/** Says where a value came from. Always a text label, never colour alone. */
+export function ProvenanceChip({ provenance, size = "md", className, synthetic = false, look = "tag" }: ProvenanceChipProps) {
   const { label, description: saved, Icon } = PROVENANCE_META[provenance];
   const description = (synthetic ? SYNTHETIC_DESCRIPTION[provenance] : undefined) ?? saved;
+  if (look === "kicker") {
+    return (
+      <span className={cn(KICKER_CLASS, className)} title={description} data-provenance={provenance} data-look="kicker">
+        <span className="sr-only">Source: </span>
+        {label}
+      </span>
+    );
+  }
   return (
     <span
-      className={cn(chipVariants({ provenance, size }), className)}
+      className={cn(chipVariants({ provenance, size }), synthetic && provenance === "qloo" && "text-foreground", className)}
       title={description}
       data-provenance={provenance}
     >
-      <Icon aria-hidden="true" />
+      {Icon ? <Icon aria-hidden="true" /> : null}
       <span className="sr-only">Source: </span>
       {label}
     </span>

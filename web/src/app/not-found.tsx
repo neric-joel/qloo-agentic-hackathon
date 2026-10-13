@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "Page not found" };
 export default function NotFound() {
   return (
     <div className="container-page py-16 sm:py-24">
-      <p className="type-kicker text-muted-foreground">Error 404</p>
+      <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Error 404</p>
       <div className="@container">
         <h1 className="type-display mt-4">
           Off the

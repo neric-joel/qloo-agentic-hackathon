@@ -83,9 +83,10 @@ describe("proxy without the secret", () => {
 });
 
 describe("proxy matcher", () => {
-  it("covers the pair check, the agent route, what-if, the rule search and health, and not the cached reads", () => {
+  it("covers the pair check, grid pricing, the agent route, what-if, the rule search and health, and not the cached reads", () => {
     expect(config.matcher).toEqual([
       "/api/pair",
+      "/api/price-grid",
       "/api/runs",
       "/api/presets/:id/whatif",
       "/api/presets/:id/rule-fixes",

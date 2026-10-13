@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import MethodPage, { metadata } from "@/app/method/page";
+import { FIGURE_TICKS } from "@/components/clash/why-this-matters";
 import { SyntheticContext } from "@/components/site/synthetic-context";
 
 import {
@@ -65,6 +66,8 @@ function allowedNumerals(): Set<string> {
     else if (value && typeof value === "object") Object.values(value).forEach(walk);
   };
   walk(METHOD_FIGURES);
+  // The backtest figure's axis labels are scale ticks, not findings (round 24: one 0 to 75 axis).
+  FIGURE_TICKS.forEach(add);
   return allowed;
 }
 
@@ -160,10 +163,10 @@ describe("method figures", () => {
   it("words the cluster clause and the two sets of counts from the pinned figures", () => {
     expect(clusterClause()).toBe("the 68 pairs come from 42 complaints, so this p understates the uncertainty");
     expect(countsNote()).toBe(
-      "The 45 complaints and 86 pairs counted elsewhere on this site are the verified overlaps in the public set; the AUC scores 68 pairs from 42 complaints, the ones with a Qloo signal for both acts, so the counts differ.",
+      "The 45 complaints and 86 pairs counted elsewhere on this site are the verified overlaps in the public set; the AUC scores 68 pairs from 42 complaints, the ones with a Qloo signal for both acts; 16 more have no Qloo signal for one act, and 2 involve a set on a minor stage the test leaves out.",
     );
     const html = renderToStaticMarkup(createElement(MethodPage)).replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ");
-    expect(html).toContain("p = 0.0002; the 68 pairs come from 42 complaints, so this p understates the uncertainty)");
+    expect(html).toContain("the 68 pairs come from 42 complaints, so the real uncertainty is wider than that p suggests.");
     expect(html).toContain(countsNote());
   });
 
@@ -171,6 +174,9 @@ describe("method figures", () => {
     expect(backtest.scoredPairs).toBe(68);
     expect(backtest.clusters).toBe(42);
     expect(backtest.unscoredPairs).toBe(16);
+    expect(backtest.outOfScopePairs).toBe(2);
+    // Every verified pair is accounted for (summary-all.json: 86 = 68 scored + 16 abstain + 2 other).
+    expect(backtest.scoredPairs + backtest.unscoredPairs + backtest.outOfScopePairs).toBe(METHOD_FIGURES.complaints.pairsVerified);
     expect(backtest.festivals).toBe(5);
     expect(backtest.usFestivals).toBe(4);
     expect(backtest.festivalDays).toBe(15);
@@ -352,6 +358,7 @@ describe("/method page", () => {
     expect(text).toContain("the check failed as written.");
     expect(text).toContain("68 scored pairs from 42 complaints");
     expect(text).toContain("Sixteen more could not be scored");
+    expect(text).toContain("Two more involve a set on a minor stage that the test leaves out, which makes the 86 verified pairs.");
     expect(text).toContain("36 of 39 sets (92%) and 31 of 34 sets (91%)");
     expect(text).toContain("Back to the timetable");
     // The failed gate comes before the method details.
@@ -395,19 +402,16 @@ describe("/method page", () => {
     const text = pageText();
     const section = text.slice(text.indexOf("The live re-check"));
     expect(text.indexOf("The live re-check")).toBeGreaterThan(text.indexOf("Where each number comes from"));
-    expect(section).toContain("asks Qloo for a fresh comparison, 3 requests in all,");
-    expect(section).toContain("It never replaces a number on the page: Qloo's answers can change over time");
-    expect(section).toContain("it pauses when this demo's monthly Qloo allowance runs low.");
+    expect(section).toContain("can be re-checked with Qloo: 3 requests in all.");
+    expect(section).toContain("Fresh results appear beside the saved values and never replace them.");
+    expect(section).toContain("Checks are limited per visitor and per day, and pause when the monthly Qloo allowance runs low.");
     expect(section.slice(0, section.indexOf("Back to the timetable")).match(/\d+/g)).toEqual(["3"]);
   });
 
   it("says the check is offered only while it is switched on, for the day's costliest clashes", () => {
     const text = pageText();
     expect(text).toContain(
-      "Each of the day's costliest clashes can be re-checked with Qloo on request while live checks are switched on.",
-    );
-    expect(text).toContain(
-      "The timetable page offers the check only while it is switched on; they can be switched off to protect that allowance, and then the drawer shows only the saved results.",
+      "While enabled, the day's costliest clashes can be re-checked with Qloo: 3 requests in all. Fresh results appear beside the saved values and never replace them. Request IDs appear when Qloo supplies them. Checks are limited per visitor and per day, and pause when the monthly Qloo allowance runs low. When disabled, only saved results appear.",
     );
     expect(text).not.toContain("Every priced clash can be re-checked");
   });
@@ -415,7 +419,7 @@ describe("/method page", () => {
   it("lists the kept-moves limit after the hidden-clash items", () => {
     const text = pageText();
     const limit = text.indexOf(
-      "A plan of kept moves is scored by the same measure the places are found with, so it shows what the measure rewards, not what would suit the real festival.",
+      "A plan of kept moves is scored by the same measure the places are found with, so it shows what the measure rewards; whether it suits the real festival is the programmer's call.",
     );
     expect(limit).toBeGreaterThan(text.indexOf("The Hidden label on the timetable uses a stricter line"));
     expect(limit).toBeLessThan(text.indexOf("Moving sets"));
@@ -435,16 +439,16 @@ describe("/method page", () => {
     expect(section.match(/\d/g)).toBeNull();
   });
 
-  it("opens with five short-version bullets, the fourth saying what the measure is good for", () => {
+  it("opens with four short-version rows (popularity and the moves check share one), the third saying what the measure is good for", () => {
     const html = renderToStaticMarkup(createElement(MethodPage));
     const box = html.match(/<section aria-labelledby="short-heading"[\s\S]*?<\/section>/)?.[0] ?? "";
-    expect(box.match(/<li/g)).toHaveLength(5);
+    expect(box.match(/<li/g)).toHaveLength(4);
     const text = pageText();
     expect(text).toContain(
-      "What it is good for. It ranks a day's clashes with a number you can inspect, and it tests moves against the timetable's rules. It tells apart two rivals of equal popularity when Qloo ranks one as much alike in audience to an act and the other as unlike (the twin card shows one such case). It says nothing about attendance, and on our own check it did not find complained-about clashes better than popularity does.",
+      "It ranks a day's clashes and tests moves against timetable rules. Taste overlap is a rank, not attendance; our check did not find complained-about clashes better than popularity.",
     );
     // The failed gate still comes first.
-    expect(text.indexOf("The test we set before building failed.")).toBeLessThan(text.indexOf("What it is good for."));
+    expect(text.indexOf("The test we set before building failed.")).toBeLessThan(text.indexOf("It ranks a day's clashes"));
   });
 
   it("puts the terms in plain words at their first use", () => {
@@ -467,18 +471,20 @@ describe("/method page", () => {
   it("states that the saved pairs checked read the same both ways, with the symmetry figures", () => {
     const text = pageText();
     expect(text).toContain(
-      "In the 9,381 saved pairs we checked, Qloo's affinity came back the same whichever act was the signal (the 18,762 readings agree in both directions to within 0.00000007), so for those pairs the two directions are one reading, not two. The app turns that reading into a rank within each act's row of the bill, averages the two ranks, so an act that is close to everyone does not look close to everyone, and scales the result 0 to 100.",
+      "In the 9,381 saved pairs we checked, Qloo's affinity came back the same whichever act was the signal (the 18,762 readings agree in both directions to within 0.00000007), so for those pairs the two directions make one reading. The app turns that reading into a rank within each act's row of the bill, averages the two ranks, so an act that is close to everyone does not look close to everyone, and scales the result 0 to 100.",
     );
     // A finding about the pairs checked, not a claim about every Qloo pair.
     expect(text).not.toMatch(/affinity for a pair is the same/);
-    expect(text).toContain("It says how alike Qloo ranks two audiences in taste, relative to that bill.");
+    expect(text).toContain(
+      "Taste overlap is an app-derived rank of how alike Qloo ranks two audiences in taste, relative to that bill. It is not a share of fans and not attendance.",
+    );
     expect(text).not.toContain("both directions are turned into ranks");
     expect(text).toContain("the mean total price of 300 sampled random valid timetables of the same lineup");
   });
 
   it("does not promise a request id Qloo may not send", () => {
     const text = pageText();
-    expect(text).toContain("with the request id Qloo returned for each request when it sent one.");
+    expect(text).toContain("Request IDs appear when Qloo supplies them.");
     expect(text).not.toContain("with Qloo's request ids");
   });
 
@@ -528,16 +534,19 @@ describe("/method exploratory result", () => {
     expect(text).toContain("so it is exploratory");
   });
 
-  it("puts the fifth bullet in the short version, with the failed test above it", () => {
+  it("puts the fifth bullet in the short version, with the failed test above it and a link to the full comparison", () => {
     const html = renderToStaticMarkup(createElement(MethodPage));
     const box = html.match(/<section aria-labelledby="short-heading"[\s\S]*?<\/section>/)?.[0] ?? "";
     const text = textOf(box);
     expect(text).toContain(
-      "What held, exploratory. On this press-skewed complaint set, taste overlap separated the complained-about clashes from the day's other pairs: AUC (0.5 means no better than chance; 1 means every listed clash ranks above every unlisted pair) 0.634, interval 0.517 to 0.755. One of 10,000 shuffles of the complaint labels scored that high (p = 0.0002; the 68 pairs come from 42 complaints, so this p understates the uncertainty). We ran that after the 46.8% against 60% test above failed. Popularity separated them more (0.722), and the gap between the two has an interval that includes zero.",
+      "An exploratory follow-up checked the same data after the test failed. The results do not establish an advantage over popularity. See the full comparison below .",
     );
+    expect(box).toMatch(/<a href="#tested"[^>]*>See the full comparison below<\/a>/);
     expect(text.indexOf("The test we set before building failed.")).toBeLessThan(
-      text.indexOf("What held, exploratory."),
+      text.indexOf("An exploratory follow-up"),
     );
+    // The figures are stated once, in the test section below, not repeated here.
+    expect(text).not.toContain("AUC");
   });
 
   it("uses none of the words the page must not use about this result", () => {
@@ -549,7 +558,7 @@ describe("/method exploratory result", () => {
 
   it("lists the sources collapsed, under the 45 clashes, with one safe link per page", () => {
     const html = renderToStaticMarkup(createElement(MethodPage));
-    const details = html.match(/<details[\s\S]*?<\/details>/)?.[0] ?? "";
+    const details = [...html.matchAll(/<details[\s\S]*?<\/details>/g)].map((m) => m[0]).find((d) => d.includes("Sources for the")) ?? "";
     expect(details).not.toMatch(/<details[^>]*\sopen/);
     expect(textOf(details)).toContain("Sources for the 45 clashes");
     expect(textOf(details)).toContain(
@@ -558,5 +567,27 @@ describe("/method exploratory result", () => {
     const links = [...details.matchAll(/<a [^>]*href="([^"]+)"[^>]*>/g)];
     expect(links.map((match) => match[1])).toEqual([...PUBLIC_SOURCES]);
     for (const [tag] of links) expect(tag).toContain('rel="noopener noreferrer"');
+    // The four forum threads read apart by festival, in the list's order.
+    const labels = [...details.matchAll(/<a [^>]*>([^<]+)</g)].map((match) => match[1]);
+    expect(labels.filter((label) => label.includes("Reddit"))).toEqual([
+      "Coachella 2026 - Reddit discussion",
+      "Lollapalooza 2026 - Reddit discussion 1",
+      "Lollapalooza 2026 - Reddit discussion 2",
+      "Lollapalooza 2026 - Reddit discussion 3",
+    ]);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it("keeps the score mechanics in a closed disclosure, with the equation and the plain definition visible", () => {
+    const html = renderToStaticMarkup(createElement(MethodPage));
+    const section = html.match(/<section id="price"[\s\S]*?<\/section>/)?.[0] ?? "";
+    const details = section.match(/<details[\s\S]*?<\/details>/)?.[0] ?? "";
+    expect(details).not.toMatch(/<details[^>]*\sopen/);
+    expect(textOf(details)).toContain("How the score is calculated");
+    expect(textOf(details)).toContain("the square root of their product");
+    expect(textOf(details)).toContain("Lower is better.");
+    const visible = textOf(section.replace(details, ""));
+    expect(visible).toContain("Price = taste overlap × share of the shorter set played at once × combined draw × rarity factor.");
+    expect(visible).toContain("It is not a share of fans and not attendance.");
   });
 });

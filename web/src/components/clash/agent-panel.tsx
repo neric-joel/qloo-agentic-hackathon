@@ -1,16 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
-import {
-  Check,
-  CornerDownLeft,
-  History,
-  LoaderCircle,
-  PowerOff,
-  RotateCcw,
-  SkipForward,
-  X,
-} from "lucide-react";
+import { ArrowRight, Check, CornerDownLeft, History, LoaderCircle, RotateCcw, SkipForward, X } from "lucide-react";
 
 import { ErrorState, MockBadge, ProvenanceChip, TraceDrawer, useAgentRun } from "@/components/kernel";
 import { Button } from "@/components/ui/button";
@@ -35,7 +26,7 @@ import { formatOverlap } from "@/lib/clashes";
 import { agentDataLine, explainPrompt } from "@/lib/credit";
 import { formatLatency, humanizeIdentifier, pluralize } from "@/lib/format";
 import type { Festival, Preset } from "@/lib/preset";
-import type { RecordedRun } from "@/lib/recorded-run";
+import { replayFinalState, type RecordedRun } from "@/lib/recorded-run";
 import type { ToolCallState } from "@/lib/run-state";
 import { cn } from "@/lib/utils";
 
@@ -76,7 +67,11 @@ const CAPABILITIES: { tool: string; title: string; text: string }[] = [
     title: "Record a rule",
     text: "Record your rules: keep a set in place, keep two acts apart, stage hours.",
   },
-  { tool: "reslot", title: "Suggest moves", text: "Suggest moves when you ask, graded by the same measure." },
+  {
+    tool: "reslot",
+    title: "Suggest moves",
+    text: "Suggest moves when you ask, graded by the same measure.",
+  },
 ];
 
 function toolLabel(tool: string): string {
@@ -126,20 +121,33 @@ function AgentText({ text }: { text: string }) {
   );
 }
 
-/** What the agent did, one line per tool call, so the answer can be checked against its steps. */
+/**
+ * What the agent did, one line per tool call, so the answer can be checked against its steps. M10: the
+ * exchange's left rule fills beside the steps one step at a time as each finishes, so it follows the
+ * stream (live or replayed) rather than a timer, and each step's dot pops in as the step appears.
+ */
 function ToolTrail({ calls }: { calls: readonly ToolCallState[] }) {
   if (calls.length === 0) return null;
   return (
     <ol aria-label="What the agent did" className="space-y-1.5">
-      {calls.map((call) => (
-        <li key={call.id} className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm">
+      {calls.map((call, i) => (
+        <li key={call.id} className="relative flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm">
+          <span
+            aria-hidden="true"
+            data-done={call.status === "running" ? undefined : ""}
+            className={cn(
+              // Over the exchange's own left rule (`border-l-2` with `pl-4`), which it fills as steps finish.
+              "cc-rail absolute top-0 -left-[1.125rem] w-0.5 bg-border-strong",
+              i < calls.length - 1 ? "-bottom-1.5" : "bottom-0",
+            )}
+          />
           <span
             aria-hidden="true"
             className={cn(
               "grid size-5 shrink-0 place-items-center rounded-full border",
-              call.status === "running" && "border-primary text-primary",
+              call.status === "running" && "border-foreground text-foreground",
               call.status === "done" && "border-success bg-success text-background",
-              call.status === "error" && "border-destructive bg-destructive text-background",
+              call.status === "error" && "border-destructive bg-destructive text-primary-foreground",
             )}
           >
             {call.status === "running" ? (
@@ -164,9 +172,9 @@ function ToolTrail({ calls }: { calls: readonly ToolCallState[] }) {
 
 function WhatIfCard({ whatIf, range }: { whatIf: WhatIf; range: ScaleRange }) {
   return (
-    <div className="rounded-lg border border-border-strong bg-card p-4">
+    <div className="rounded-md border border-border bg-card p-4">
       <div className="flex items-start justify-between gap-3">
-        <p className="type-kicker text-muted-foreground">What if</p>
+        <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">What if</p>
         <ProvenanceChip provenance="derived" size="sm" />
       </div>
       <p className="mt-1.5 font-semibold break-words">{whatIf.move.replace(/ -> /g, " → ")}</p>
@@ -184,7 +192,9 @@ function WhatIfCard({ whatIf, range }: { whatIf: WhatIf; range: ScaleRange }) {
           ) : null}
         </div>
       )}
-      <p className="mt-3 text-xs text-muted-foreground">Tested only. The timetable above is unchanged.</p>
+      <p className="mt-3 text-xs text-muted-foreground lg:text-[0.8125rem]">
+        Tested only. The timetable above is unchanged.
+      </p>
     </div>
   );
 }
@@ -195,11 +205,9 @@ function WhatIfCard({ whatIf, range }: { whatIf: WhatIf; range: ScaleRange }) {
  */
 function RuledOutCard({ whatIfs, festival }: { whatIfs: readonly WhatIf[]; festival: Festival }) {
   return (
-    <div className="rounded-lg border border-dashed border-border-strong p-4">
+    <div className="rounded-md border border-dashed border-border-strong p-4">
       <div className="flex items-start justify-between gap-3">
-        <p className="type-kicker text-muted-foreground">
-          Ruled out · {pluralize(whatIfs.length, "move")}
-        </p>
+        <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Ruled out · {pluralize(whatIfs.length, "move")}</p>
         <ProvenanceChip provenance="derived" size="sm" />
       </div>
       <ul className="mt-2 space-y-1.5 text-sm">
@@ -219,9 +227,9 @@ function RuledOutCard({ whatIfs, festival }: { whatIfs: readonly WhatIf[]; festi
 function MoveOptionsCard({ options, range }: { options: MoveOptions; range: ScaleRange }) {
   const [lowest, ...rest] = options.options;
   return (
-    <div className="rounded-lg border border-border-strong bg-card p-4 sm:col-span-2">
+    <div className="rounded-md border border-border bg-card p-4 sm:col-span-2">
       <div className="flex items-start justify-between gap-3">
-        <p className="type-kicker text-muted-foreground">Where {options.act} could go</p>
+        <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Where {options.act} could go</p>
         <ProvenanceChip provenance="derived" size="sm" />
       </div>
       <p className="mt-1.5 text-sm text-muted-foreground">Now: {options.from}</p>
@@ -253,9 +261,9 @@ function MoveOptionsCard({ options, range }: { options: MoveOptions; range: Scal
               })}
             </ol>
           ) : null}
-          <p className="mt-3 text-xs text-muted-foreground">
-            {pluralize(options.legalPlaces, "legal place")}, checking every start on a 5-minute grid.
-            Tested only: the timetable above is unchanged.
+          <p className="mt-3 text-xs text-muted-foreground lg:text-[0.8125rem]">
+            {pluralize(options.legalPlaces, "legal place")}, checking every start on a 5-minute grid. Tested only: the
+            timetable above is unchanged.
           </p>
         </>
       )}
@@ -266,16 +274,18 @@ function MoveOptionsCard({ options, range }: { options: MoveOptions; range: Scal
 /** `recorded`: the tags were returned when the run was recorded, not just now. */
 function ExplainCard({ explain, recorded = false }: { explain: ClashExplain; recorded?: boolean }) {
   return (
-    <div className="rounded-lg border border-border-strong bg-card p-4">
+    <div className="rounded-md border border-border bg-card p-4">
       <div className="flex items-start justify-between gap-3">
-        <p className="type-kicker text-muted-foreground">Clash</p>
+        <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Clash</p>
         <ProvenanceChip provenance="derived" size="sm" />
       </div>
       <p className="mt-1.5 font-semibold break-words">
         {explain.a} <span className="text-muted-foreground">×</span> {explain.b}
       </p>
       {explain.sharedAudience === null ? (
-        <p className="mt-2 text-sm text-muted-foreground">{explain.note ?? "Qloo has no signal for one of these acts."}</p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {explain.note ?? "Qloo has no signal for one of these acts."}
+        </p>
       ) : (
         <>
           <dl className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm">
@@ -301,7 +311,10 @@ function ExplainCard({ explain, recorded = false }: { explain: ClashExplain; rec
               </p>
               <ul className="mt-1.5 flex flex-wrap gap-1.5">
                 {explain.sharedTaste.map((tag) => (
-                  <li key={tag} className="rounded-full border border-border bg-muted px-2.5 py-0.5 text-xs font-medium">
+                  <li
+                    key={tag}
+                    className="tag text-foreground"
+                  >
                     {tag}
                   </li>
                 ))}
@@ -316,13 +329,15 @@ function ExplainCard({ explain, recorded = false }: { explain: ClashExplain; rec
 
 function ReslotCard({ reslot, range }: { reslot: ReslotSuggestion; range: ScaleRange }) {
   return (
-    <div className="rounded-lg border border-border-strong bg-card p-4">
+    <div className="rounded-md border border-border bg-card p-4">
       <div className="flex items-start justify-between gap-3">
-        <p className="type-kicker text-muted-foreground">Suggested moves</p>
+        <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Suggested moves</p>
         <ProvenanceChip provenance="derived" size="sm" />
       </div>
       {reslot.moves.length === 0 ? (
-        <p className="mt-1.5 text-sm text-muted-foreground">{reslot.message ?? "No move lowers this day's Clash Budget under your rules."}</p>
+        <p className="mt-1.5 text-sm text-muted-foreground">
+          {reslot.message ?? "No move lowers this day's Clash Budget under your rules."}
+        </p>
       ) : (
         <>
           <BudgetMove before={reslot.before} after={reslot.after} range={range} />
@@ -334,9 +349,8 @@ function ReslotCard({ reslot, range }: { reslot: ReslotSuggestion; range: ScaleR
               </li>
             ))}
           </ol>
-          <p className="mt-3 text-xs text-muted-foreground">
-            Suggestions are graded by the same measure used to find them, so a better score here is
-            expected, not proof.
+          <p className="mt-3 text-xs text-muted-foreground lg:text-[0.8125rem]">
+            Suggestions are graded by the same measure used to find them, so a better score here is expected, not proof.
           </p>
         </>
       )}
@@ -375,8 +389,11 @@ function ExchangeView({
 
   return (
     <li id={`agent-${exchange.id}`} className="space-y-4">
-      <div className="flex justify-end">
-        <p className="max-w-[85%] rounded-2xl rounded-br-sm bg-foreground px-4 py-2.5 text-[0.9375rem] leading-relaxed text-background break-words">
+      <div>
+        <p aria-hidden="true" className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
+          {recording ? "Asked" : "You asked"}
+        </p>
+        <p className="mt-1 max-w-prose border-l-2 border-foreground pl-4 text-[0.9375rem] leading-relaxed text-foreground break-words">
           <span className="sr-only">{recording ? "The recorded run was asked: " : "You asked: "}</span>
           {exchange.message}
         </p>
@@ -407,7 +424,7 @@ function ExchangeView({
         {text ? (
           <div>
             <div className="mb-1.5 flex items-center gap-2">
-              <span className="type-kicker text-muted-foreground">Agent</span>
+              <span className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Agent</span>
               <ProvenanceChip provenance="llm" size="sm" />
             </div>
             <AgentText text={text} />
@@ -417,7 +434,11 @@ function ExchangeView({
         {reply && reply.whatIfs.length + reply.explains.length + reply.reslots.length + reply.moveOptions.length > 0 ? (
           <div className="grid gap-3 sm:grid-cols-2">
             {reply.explains.map((explain, i) => (
-              <ExplainCard key={`e${i}`} explain={explain} recorded={exchange.recording !== undefined || exchange.recorded === true} />
+              <ExplainCard
+                key={`e${i}`}
+                explain={explain}
+                recorded={exchange.recording !== undefined || exchange.recorded === true}
+              />
             ))}
             {reply.moveOptions.map((options, i) => (
               <MoveOptionsCard key={`m${i}`} options={options} range={range} />
@@ -447,7 +468,7 @@ function ExchangeView({
             {latest && onWatchRecorded ? (
               <Button
                 type="button"
-                variant="link"
+                variant="ruled"
                 size="sm"
                 className="mt-2 h-auto px-0 py-1"
                 onClick={onWatchRecorded}
@@ -491,7 +512,7 @@ function ExchangeView({
 function Capabilities({ synthetic = false }: { synthetic?: boolean }) {
   return (
     <div>
-      <h3 className="type-kicker border-b-2 border-foreground pb-2 text-foreground">What it can do</h3>
+      <h3 className="pb-2 text-[0.8125rem] leading-5 font-semibold text-foreground">What it can do</h3>
       <ul className="mt-4 space-y-3 text-sm">
         {CAPABILITIES.map((item) => (
           <li key={item.tool} className="grid grid-cols-[minmax(0,1fr)] gap-0.5">
@@ -503,51 +524,112 @@ function Capabilities({ synthetic = false }: { synthetic?: boolean }) {
         ))}
       </ul>
       <p className="mt-4 text-sm text-muted-foreground">
-        Prices, overlaps and Clash Budgets in its answers come from the steps listed with them. It
-        never changes the real festival, which does not use Clash Control.
+        Prices, overlaps and Clash Budgets in its answers come from the steps listed with them. {NEVER_CHANGES}
       </p>
     </div>
   );
 }
 
-function AgentHeading({ isMock, synthetic = false }: { isMock: boolean; synthetic?: boolean }) {
+/** Said beside the capabilities when the agent is on, and beside the recorded runs when it is off. */
+const NEVER_CHANGES = "It never changes the real festival, which does not use Clash Control.";
+
+/**
+ * The lede under the heading while the live agent is off: what the agent does, and that a replay calls
+ * nothing (the off card below says it is off). The invented day names no Qloo call, since it never had one.
+ */
+function offLede(withRecordings: boolean, synthetic: boolean): string {
+  const does = "The agent tests a move against every rule and prices it before it answers.";
+  if (!withRecordings) return does;
+  return synthetic
+    ? `${does} Saved runs on this day replay with no live call.`
+    : `${does} Saved runs on this day replay with no live Qloo or model call.`;
+}
+
+function AgentHeading({
+  isMock,
+  synthetic = false,
+  lede,
+}: {
+  isMock: boolean;
+  synthetic?: boolean;
+  /** Replaces the invitation to ask while the live agent is off. */
+  lede?: string;
+}) {
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:items-end">
-      <div>
-        <p className="type-kicker flex flex-wrap items-center gap-2 text-muted-foreground">
-          Ask the agent {isMock ? <MockBadge /> : null}
-        </p>
-        <h2 id="agent-heading" className="type-headline mt-2">
-          Or describe the change in plain words
-        </h2>
-      </div>
-      <p className="text-[0.9375rem] leading-relaxed">
-        The agent works on this day&rsquo;s timetable {agentDataLine(synthetic)}. Ask why two sets
-        clash, give it a rule, or ask it to try a move: it tests the move against every rule and
-        prices it before saying anything.
+    <div>
+      <p className="flex max-w-prose flex-wrap items-center gap-2 text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
+        Ask the agent {isMock ? <MockBadge /> : null}
       </p>
+      <h2 id="agent-heading" className="type-title mt-1.5">
+        Or describe the change in plain words
+      </h2>
+      <p className="mt-2 max-w-prose text-[0.9375rem] leading-relaxed">
+        {lede ?? (
+          <>
+            The agent works on this day&rsquo;s timetable {agentDataLine(synthetic)}. Ask why two sets clash, give it a
+            rule, or ask it to try a move: it tests the move against every rule and prices it before saying anything.
+          </>
+        )}
+      </p>
+    </div>
+  );
+}
+
+/** Why the live agent is off, said plainly wherever the panel stands in for it. */
+const AGENT_OFF =
+  "The live agent is off here to keep this demo free to run; its answers come from a language model. Prices, clashes and receipts above work without it.";
+
+/**
+ * Shown instead of the question box while the language model is off, so the panel never looks
+ * broken. With recorded runs to offer, the block is labelled "Recorded run" and the sentence sits
+ * under that label as one quiet line; with none, the sentence stands alone.
+ */
+function AgentOffCard({ withRecordings }: { withRecordings: boolean }) {
+  if (!withRecordings) {
+    return <p className="max-w-prose text-[0.9375rem] leading-relaxed">{AGENT_OFF}</p>;
+  }
+  return (
+    <div className="pt-0">
+      <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Recorded run</p>
+      <p className="mt-1.5 max-w-prose text-[0.8125rem] leading-relaxed text-muted-foreground">{AGENT_OFF}</p>
     </div>
   );
 }
 
 /**
- * Shown instead of the question box while the language model is off, so the panel never looks
- * broken. With recorded runs to offer, it ends by pointing at them.
+ * The first recorded run as a still transcript: its question and the steps it took, read from the
+ * saved stream with no playback, so the section shows the agent at work before anything is pressed.
+ * Labelled recorded throughout; Replay plays it in full.
  */
-function AgentOffCard({ withRecordings }: { withRecordings: boolean }) {
+function RecordedTranscript({
+  run,
+  disabled,
+  onReplay,
+}: {
+  run: RecordedRun;
+  disabled: boolean;
+  onReplay: () => void;
+}) {
+  const calls = useMemo(() => replayFinalState(run).toolCalls, [run]);
   return (
-    <div className="rounded-xl border-2 border-dashed border-border-strong bg-card p-5 sm:p-6">
-      <div className="flex items-start gap-3">
-        <PowerOff aria-hidden="true" className="mt-1 size-5 shrink-0 text-muted-foreground" />
-        <div className="min-w-0">
-          <h3 className="type-title">The live agent is switched off right now</h3>
-          <p className="mt-2 text-[0.9375rem] leading-relaxed text-muted-foreground">
-            Its answers come from a language model, which is off here to keep this demo free to run.
-            Everything above (prices, clashes, receipts) works without it.
-            {withRecordings ? " Watch a recorded run instead:" : null}
-          </p>
+    <div className="mt-5 border-t border-border pt-4">
+      <RecordedNotice capturedAt={run.capturedAt} />
+      <p className="mt-4">
+        <span className="block text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
+          <span className="sr-only">The recorded run was asked: </span>
+          <span aria-hidden="true">Asked</span>
+        </span>
+        <span className="mt-1 block text-[0.9375rem] leading-relaxed font-semibold break-words">{run.question}</span>
+      </p>
+      {calls.length > 0 ? (
+        <div className="mt-4 border-l-2 border-border pl-4">
+          <ToolTrail calls={calls} />
         </div>
-      </div>
+      ) : null}
+      <Button type="button" variant="ruled" className="mt-3" disabled={disabled} onClick={onReplay}>
+        Replay this run
+        <ArrowRight aria-hidden="true" />
+      </Button>
     </div>
   );
 }
@@ -574,19 +656,31 @@ export function AgentPanel({
   const run = useAgentRun({ endpoint: "/api/runs" });
   const recordings = useRecordings(preset.id);
   const [exchanges, setExchanges] = useState<PanelExchange[]>([]);
-  const [current, setCurrent] = useState<{ id: string; message: string; recording?: RecordedRun } | null>(null);
+  const [current, setCurrent] = useState<{
+    id: string;
+    message: string;
+    recording?: RecordedRun;
+  } | null>(null);
   const [draft, setDraft] = useState("");
   const counter = useRef(0);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const runs = recordings.runs;
   const mode = panelMode(agentStatus, runs.length > 0, recordings.status === "loading");
+  const off = mode === "off" || mode === "off-recorded";
   const range = useMemo<ScaleRange>(() => scaleRange(preset.report.baseline), [preset]);
 
   const all = useMemo<PanelExchange[]>(
     () =>
       current
-        ? [...exchanges, { ...current, recorded: current.recording !== undefined, state: run.state }]
+        ? [
+            ...exchanges,
+            {
+              ...current,
+              recorded: current.recording !== undefined,
+              state: run.state,
+            },
+          ]
         : exchanges,
     [exchanges, current, run.state],
   );
@@ -609,15 +703,23 @@ export function AgentPanel({
     if (!current) return;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     // Bring the question to the top so the answer streams into view below it, not below the fold.
-    document
-      .getElementById(`agent-${current.id}`)
-      ?.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+    document.getElementById(`agent-${current.id}`)?.scrollIntoView({
+      block: "start",
+      behavior: reduce ? "auto" : "smooth",
+    });
   }, [current]);
 
   /** Moves the exchange in progress into the finished list and returns that list. */
   function commit(): PanelExchange[] {
     const committed: PanelExchange[] = current
-      ? [...exchanges, { ...current, recorded: current.recording !== undefined, state: run.state }]
+      ? [
+          ...exchanges,
+          {
+            ...current,
+            recorded: current.recording !== undefined,
+            state: run.state,
+          },
+        ]
       : exchanges;
     counter.current += 1;
     setExchanges(committed);
@@ -637,7 +739,11 @@ export function AgentPanel({
   function play(recording: RecordedRun) {
     if (busy) return;
     commit();
-    setCurrent({ id: `q${counter.current}`, message: recording.question, recording });
+    setCurrent({
+      id: `q${counter.current}`,
+      message: recording.question,
+      recording,
+    });
     run.replay(recording);
   }
 
@@ -696,6 +802,11 @@ export function AgentPanel({
     ) : null;
 
   const recorded = <RecordedRuns runs={runs} onPlay={play} disabled={busy} />;
+  // While the agent is off, the heading already says saved runs replay with no live call, so the list
+  // keeps its kicker and drops the line under it.
+  const recordedOff = <RecordedRuns runs={runs} onPlay={play} disabled={busy} description={null} />;
+  // The side column holds the capabilities (live agent only), the rules said so far and Start over.
+  const aside = mode === "live" || rules.length > 0 || (all.length > 0 && mode !== "checking");
 
   let main: ReactNode;
   if (mode === "checking") {
@@ -711,7 +822,15 @@ export function AgentPanel({
     main = (
       <>
         <AgentOffCard withRecordings={mode === "off-recorded"} />
-        {mode === "off-recorded" ? <div className="mt-6">{recorded}</div> : null}
+        {mode === "off-recorded" && runs[0] && !conversation ? (
+          <RecordedTranscript run={runs[0]} disabled={busy} onReplay={() => play(runs[0])} />
+        ) : null}
+        {mode === "off-recorded" ? (
+          <div className="mt-8">
+            {recordedOff}
+            <p className="mt-3 max-w-prose text-sm text-muted-foreground">{NEVER_CHANGES}</p>
+          </div>
+        ) : null}
         {conversation ? <div className="mt-10">{conversation}</div> : null}
       </>
     );
@@ -741,7 +860,10 @@ export function AgentPanel({
           </div>
         ) : null}
 
-        <form onSubmit={onSubmit} className="rounded-xl border border-border-strong bg-card p-2 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring">
+        <form
+          onSubmit={onSubmit}
+          className="rounded-md border border-border-strong bg-card p-2 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring"
+        >
           <label htmlFor="agent-input" className="sr-only">
             Ask the agent about this festival day
           </label>
@@ -774,53 +896,59 @@ export function AgentPanel({
             </div>
           </div>
         </form>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Answers are written live by a language model from the tools&rsquo; results. Questions are
-          limited per visitor to keep the demo free.
+        <p className="mt-2 text-xs text-muted-foreground lg:text-[0.8125rem]">
+          Answers are written live by a language model from the tools&rsquo; results. Questions are limited per visitor
+          to keep the demo free.
         </p>
 
-        {runs.length > 0 ? <div className="mt-10 border-t border-border pt-6">{recorded}</div> : null}
+        {runs.length > 0 ? <div className="mt-12">{recorded}</div> : null}
       </>
     );
   }
 
   return (
-    <section id="agent" aria-labelledby="agent-heading" className="border-t border-border bg-muted/40">
-      <div className="container-page py-14 sm:py-20">
-        <AgentHeading isMock={run.isMock} synthetic={preset.synthetic === true} />
+    <section id="agent" aria-labelledby="agent-heading">
+      <div className="container-page grid gap-x-12 py-10 sm:py-12 lg:grid-cols-12 lg:items-start">
+        <div className="lg:col-span-5">
+          <AgentHeading
+            isMock={run.isMock}
+            synthetic={preset.synthetic === true}
+            lede={off ? offLede(mode === "off-recorded", preset.synthetic === true) : undefined}
+          />
+        </div>
 
-        <div className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:gap-12">
-          <div className="min-w-0">
-            {main}
-            {mode !== "checking" ? (
-              <p role="status" aria-live="polite" className="sr-only">
-                {status}
-              </p>
-            ) : null}
-          </div>
+        <div className="mt-5 min-w-0 lg:col-span-7 lg:col-start-6 lg:row-span-2 lg:row-start-1 lg:mt-0">
+          {main}
+          {mode !== "checking" ? (
+            <p role="status" aria-live="polite" className="sr-only">
+              {status}
+            </p>
+          ) : null}
+        </div>
 
-          <aside className="min-w-0 space-y-8">
+        {aside ? (
+          <aside className="mt-10 min-w-0 space-y-8 lg:col-span-5 lg:row-start-2 lg:mt-8">
             {rules.length > 0 ? (
               <div>
-                <h3 className="type-kicker border-b-2 border-foreground pb-2 text-foreground">Your rules</h3>
+                <h3 className="pb-2 text-[0.8125rem] leading-5 font-semibold text-foreground">Your rules</h3>
                 <ul className="mt-4 space-y-1.5 text-sm">
                   {rules.map((rule) => (
                     <li key={rule} className="flex gap-2">
-                      <Check aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-success" />
+                      <Check aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-foreground" />
                       {rule}
                     </li>
                   ))}
                 </ul>
               </div>
             ) : null}
-            <Capabilities synthetic={preset.synthetic === true} />
+            {mode === "live" ? <Capabilities synthetic={preset.synthetic === true} /> : null}
             {all.length > 0 && mode !== "checking" ? (
               <Button type="button" variant="outline" size="sm" onClick={startOver} disabled={busy}>
                 <RotateCcw aria-hidden="true" /> Start over
               </Button>
             ) : null}
           </aside>
-        </div>
+        ) : null}
       </div>
     </section>
   );

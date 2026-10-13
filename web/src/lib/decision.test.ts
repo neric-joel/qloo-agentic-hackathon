@@ -12,6 +12,7 @@ import {
   TRADEOFF_NOTE_CARD,
   TRADEOFF_SUBTITLE,
   buildDecisionCopy,
+  decisionDateline,
   lacksComparison,
   decisionDay,
   decisionPath,
@@ -138,7 +139,17 @@ describe("buildDecisionCopy", () => {
   it("leads with the receipt and prints the lines from the answer and the report", () => {
     const copy = buildDecisionCopy(preset(), parseDecision(rawDecision()))!;
     expect(copy.receipt).toBe("Bo Diddly Squat 60 minutes later: 60 → 0 minutes shared");
-    expect(copy.title).toBe("One decision on Tiny Fest Saturday, published timetable");
+    expect(copy.title).toBe("Tiny Fest · Saturday · published timetable");
+    expect(decisionDateline({ name: "Glastonbury Festival 2025, Sun", days: ["Sun"] }, "Sun")).toBe(
+      "Glastonbury 2025 · Sunday · published timetable",
+    );
+    expect(decisionDateline({ name: "Riot Fest 2026, Sun", days: ["Sun"] }, "Sun")).toBe(
+      "Riot Fest 2026 · Sunday · published timetable",
+    );
+    // An invented day names no festival and claims no published timetable.
+    expect(decisionDateline({ name: "Tiny Fest", days: ["Sat"] }, "Sat", true)).toBe(
+      "Invented day · Saturday · invented timetable",
+    );
     expect(copy.clashLine).toBe(
       "The costliest clash with a set that has a legal place that lowers the index: Ann Arbor (Main) and Bo Diddly Squat (Side) share 60 minutes, 20:30–21:30. " +
         "Their main genre tags differ; their taste overlap is 70 of 100 on this bill, among its highest. It is a rank, not attendance.",
@@ -153,6 +164,8 @@ describe("buildDecisionCopy", () => {
     );
     expect(copy.ruleLine).toContain("Ann Arbor is locked, so only Bo Diddly Squat can move.");
     expect(copy.limitsLine).toBe(LIMITS_WITH_RULE);
+    expect(LIMITS_WITH_RULE).toBe("Checked against the timetable’s rules; its index is shown for information.");
+    expect(LIMITS_WITH_RULE).not.toMatch(/Line \d|Lines 1/);
     expect(ATTRIBUTION).toBe("Selected and scored by this app’s index");
     expect(copy.seedMove).toEqual({ actId: "bo", stageId: "side", day: 0, start: "21:30" });
     expect(copy.seedRule).toEqual({ aId: "ann", bId: "bo" });
@@ -242,6 +255,7 @@ describe("buildDecisionCopy", () => {
     expect(copy.ruleLine).toBeNull();
     expect(copy.seedRule).toBeNull();
     expect(copy.limitsLine).toBe(LIMITS_NO_RULE);
+    expect(LIMITS_NO_RULE).toBeNull();
     const holds = buildDecisionCopy(
       preset(),
       parseDecision(rawDecision({ rule: rawRule({ holds: true, fixes: [], shared_minutes: 0 }) })),
@@ -284,7 +298,38 @@ describe("sharedTimeline", () => {
     expect(line.bandNow).toEqual({ x: 24, w: 144 });
     expect(line.movingAfter).toEqual({ x: 72, w: 192 });
     expect(line.bandAfter).toEqual({ x: 72, w: 96 });
-    expect(line.ticks.map((tick) => tick.label)).toEqual(["14:00", "14:15", "14:45", "15:00", "15:15"]);
+    // A hairline every quarter hour; labels only at :00 and :30, so 14:30 is never dropped for a bar's end.
+    expect(line.ticks.map((tick) => tick.x)).toEqual([24, 72, 120, 168, 216, 264]);
+    expect(line.ticks.map((tick) => tick.major)).toEqual([true, false, true, false, true, false]);
+    expect(line.ticks.map((tick) => tick.label)).toEqual(["14:00", "", "14:30", "", "15:00", ""]);
+  });
+
+  it("runs the axis from the quarter hour before the first start to the one after the last end", () => {
+    const line = sharedTimeline(
+      { name: "A", start: 845, end: 905 },
+      { name: "B", start: 850, end: 900 },
+      { start: 870, end: 920 },
+    )!;
+    // 14:00 to 15:30: 90 minutes across 240 units.
+    expect(line.ticks[0]).toEqual({ x: 24, label: "14:00", major: true });
+    expect(line.ticks[line.ticks.length - 1]).toEqual({ x: 264, label: "15:30", major: true });
+    expect(line.ticks).toHaveLength(7);
+    expect(line.staying.x).toBeCloseTo(24 + (5 * 240) / 90);
+    for (const tick of line.ticks) expect(tick.label === "" || tick.major).toBe(true);
+  });
+
+  it("labels every hour, not every half hour, when half-hour labels would collide", () => {
+    const line = sharedTimeline({ name: "A", start: 720, end: 960 }, { name: "B", start: 780, end: 900 }, { start: 900, end: 1020 })!;
+    // 12:00 to 17:00 is 300 minutes: half an hour is 24 units, under the 44-unit gap.
+    expect(line.ticks.filter((tick) => tick.label).map((tick) => tick.label)).toEqual([
+      "12:00",
+      "13:00",
+      "14:00",
+      "15:00",
+      "16:00",
+      "17:00",
+    ]);
+    expect(line.ticks).toHaveLength(21);
   });
 
   it("has no band after a swap that ends the overlap, and refuses an empty span", () => {
@@ -362,8 +407,8 @@ describe("the side-by-side comparison", () => {
       "Each change tested alone on the published day: the first column is the single move with the lowest index; the second is the smallest change this search found that ends the overlap.",
     );
     expect(tradeoff.footnote).toBe(TRADEOFF_NOTE_CARD);
-    expect(TRADEOFF_NOTE_CARD).toMatch(/^A reading to weigh, not a verdict;/);
-    expect(TRADEOFF_NOTE_BRIEF).toBe("A reading to weigh, not a verdict; the plan receipt above is what your plan does.");
+    expect(TRADEOFF_NOTE_CARD).toMatch(/^Weigh this reading;/);
+    expect(TRADEOFF_NOTE_BRIEF).toBe("Weigh this reading; the plan receipt above is what your plan does.");
   });
 
   it("marks a change that leaves the pair sharing time, from the after minutes", () => {

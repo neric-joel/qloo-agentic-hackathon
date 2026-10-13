@@ -41,6 +41,17 @@ describe("SummaryScore and SummaryBoard", () => {
     expect(html).toContain("Priced from 2 saved Qloo request records: 2 of 3 acts matched to Qloo artists; 1 not priced.");
   });
 
+  it("set the index open on the paper under one hairline rule, as the loaded Index block is", () => {
+    const html = renderToStaticMarkup(createElement(SummaryScore, { summary }));
+    const open = /^<div class="([^"]*)">/.exec(html)?.[1] ?? "";
+    // The loaded block's rule and top space below 1280px, and the loaded rail's measure from there.
+    expect(open).toBe("border-t border-border pt-5 sm:pt-6 xl:-mx-1 xl:px-3");
+    // No box: no corner, surface edge, card fill or shadow, on the outer block or inside it.
+    expect(html).not.toMatch(/rounded-lg|surface-edge|bg-card|shadow/);
+    // One rule only.
+    expect(html.match(/border-t\b/g)).toHaveLength(1);
+  });
+
   it("print the costliest clashes with taste overlap, draw and share", () => {
     const html = text(renderToStaticMarkup(createElement(SummaryBoard, { summary })));
     expect(html).toContain("Tiny Fest, Saturday: the costliest clash");
@@ -61,7 +72,7 @@ describe("ClashControlFallback", () => {
     expect(html).not.toContain("Tiny Fest, Saturday");
   });
 
-  it("puts the decision card first, with its receipt, and a button to it, in the server HTML", () => {
+  it("puts the decision card first, with its receipt and its heading, in the server HTML", () => {
     const decision = parseDecision({
       kind: "decision",
       day: 0,
@@ -93,7 +104,7 @@ describe("ClashControlFallback", () => {
     expect(plain).toContain("Bo Diddly Squat 60 minutes later: 60 → to 0 minutes shared");
     expect(plain.indexOf("Bo Diddly Squat 60 minutes later")).toBeLessThan(plain.indexOf("Clash Budget Index"));
     expect(plain).toContain("Selected and scored by this app’s index");
-    expect(html).toContain('href="#decision-heading"');
+    expect(html).toContain('id="decision-heading"');
     // The server cannot act yet: no buttons that do nothing.
     expect(plain).not.toContain("Open this move");
   });

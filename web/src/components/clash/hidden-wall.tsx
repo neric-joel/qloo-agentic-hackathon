@@ -3,19 +3,21 @@ import { ExternalLink } from "lucide-react";
 import { ProvenanceChip } from "@/components/kernel";
 import {
   BROAD_TAGS_NOTE,
-  describeDayRank,
+  dayName,
   festivalLabel,
   hostOf,
   isWebUrl,
-  leadingTags,
   sourceLabel,
   tagLabel,
 } from "@/lib/clashes";
-import { popularityName, tagsTitle } from "@/lib/credit";
+import { tagsTitle } from "@/lib/credit";
 import { pluralize } from "@/lib/format";
 import type { Evidence, HiddenWallItem, SharedTag } from "@/lib/preset";
+import { watchReveal } from "@/lib/use-in-view";
+import { cn } from "@/lib/utils";
 
-import { DiamondGlyph, Meter } from "./marks";
+import { DiamondGlyph } from "./marks";
+import { DayRank, RankAxis, TasteRing } from "./taste-ring";
 
 function GenreLine({ act, genres }: { act: string; genres: readonly string[] }) {
   return (
@@ -28,47 +30,66 @@ function GenreLine({ act, genres }: { act: string; genres: readonly string[] }) 
   );
 }
 
-/** A rank among the day's clashes: the ordinal (or "Highest") set large, the words after it small. */
-function DayRank({ value }: { value: number }) {
-  const [lead, ...rest] = describeDayRank(value).split(" ");
+/** Every one of the pair's tags, in the order they are stored (Qloo's score, highest first). */
+function TagChips({ tags, className }: { tags: readonly SharedTag[]; className?: string }) {
   return (
-    <>
-      <span className="type-numeral block text-3xl leading-none">{lead.charAt(0).toUpperCase() + lead.slice(1)}</span>{" "}
-      <span className="mt-1 block text-xs leading-snug text-muted-foreground">{rest.join(" ")}</span>
-    </>
-  );
-}
-
-/** The pair's tags in the order they are stored (Qloo's score, highest first): the first few, then a count. */
-function TagChips({ tags }: { tags: readonly SharedTag[] }) {
-  const { shown, more } = leadingTags(tags);
-  return (
-    <ul className="mt-1.5 flex flex-wrap gap-1">
-      {shown.map((tag) => (
-        <li
-          key={tag.name}
-          className="rounded-full border border-prov-qloo-border bg-prov-qloo-bg px-2 py-0.5 text-[0.6875rem] font-semibold text-prov-qloo"
-        >
+    <ul className={cn("flex flex-wrap gap-1.5", className)}>
+      {tags.map((tag) => (
+        <li key={tag.name} className="tag max-w-full leading-tight whitespace-normal text-foreground">
           {tagLabel(tag.name)}
         </li>
       ))}
-      {more > 0 ? <li className="px-1 py-0.5 text-[0.6875rem] text-muted-foreground">+{more} more</li> : null}
     </ul>
   );
+}
+
+/** The pair's tags, all of them, printed directly on the card. A pair with no tags prints nothing. */
+function WallTags({ tags, synthetic }: { tags: readonly SharedTag[]; synthetic: boolean }) {
+  if (tags.length === 0) return null;
+  return (
+    <div className="mt-3">
+      <p className="text-xs font-semibold">{tagsTitle(synthetic)}</p>
+      <TagChips tags={tags} className="mt-1.5" />
+    </div>
+  );
+}
+
+/** Cards that start in the same frame are staggered by this, up to the fifth. */
+const CARD_STAGGER_MS = 80;
+const CARD_STAGGER_MAX = 4;
+
+/**
+ * M8, once per card the first time it scrolls into view: the corner mark pops, then "No genre tag in
+ * common." firms up. It writes `data-reveal` on the card itself, so
+ * nothing re-renders; a card on screen at load, in print or under reduced motion stays as drawn.
+ */
+function revealCard(card: HTMLLIElement | null): (() => void) | void {
+  if (!card) return;
+  return watchReveal(card, {
+    threshold: 0.5,
+    onPhase: (phase, order) => {
+      if (phase === "still") {
+        delete card.dataset.reveal;
+        return;
+      }
+      card.style.setProperty("--reveal-delay", `${Math.min(order, CARD_STAGGER_MAX) * CARD_STAGGER_MS}ms`);
+      card.dataset.reveal = phase;
+    },
+  });
 }
 
 function WallCard({ item, synthetic }: { item: HiddenWallItem; synthetic: boolean }) {
   const [a, b] = item.acts;
   const source = isWebUrl(item.source) ? item.source : null;
   return (
-    <li className="flex flex-col rounded-xl border border-border-strong bg-background">
-      <div className="p-4 pb-5">
+    <li ref={revealCard} className="flex flex-col rounded-lg border border-surface-edge bg-card">
+      <div className="p-4">
         <div className="flex items-center justify-between gap-2">
-          <p className="type-kicker text-muted-foreground">
+          <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
             {festivalLabel(item.festival)}
-            {item.day ? ` · ${item.day}` : ""}
+            {item.day ? `, ${dayName(item.day)}` : ""}
           </p>
-          <DiamondGlyph className="size-3.5 shrink-0" />
+          <DiamondGlyph className="cc-wall-gem size-3.5 shrink-0" />
         </div>
         <h3 className="type-title mt-2 break-words">
           {a} <span className="text-muted-foreground">&times;</span> {b}
@@ -77,64 +98,50 @@ function WallCard({ item, synthetic }: { item: HiddenWallItem; synthetic: boolea
           <GenreLine act={a} genres={item.genres[0]} />
           <GenreLine act={b} genres={item.genres[1]} />
         </div>
-        <p className="mt-2 text-xs font-semibold">No genre tag in common.</p>
+        <p className="cc-wall-note mt-2 text-xs font-semibold">No genre tag in common.</p>
       </div>
 
-      <div className="ticket-perforation mx-4" aria-hidden="true" />
+      {/* The card's one divider: a 1px hairline inset 16px from its edges. */}
+      <div className="mx-4 border-t border-border" aria-hidden="true" />
 
-      <div className="flex flex-1 flex-col p-4 pt-5">
+      <div className="flex flex-1 flex-col p-4">
         <dl className="grid grid-cols-2 gap-3">
           <div>
-            <dt className="type-kicker flex min-h-8 items-end text-muted-foreground">Taste overlap rank</dt>
+            <dt className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Taste overlap rank</dt>
             <dd className="mt-1">
               <DayRank value={item.overlap_pct} />
-              <Meter
-                value={item.overlap_pct}
-                tone="qloo"
-                label={`Taste overlap rank, ${describeDayRank(item.overlap_pct)}`}
-                className="mt-2 h-1.5"
-              />
+              <RankAxis value={item.overlap_pct} halo="card" />
             </dd>
           </div>
           <div>
-            <dt className="type-kicker flex min-h-8 items-end text-muted-foreground">Draw rank</dt>
+            <dt className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Draw rank</dt>
             <dd className="mt-1">
               {item.draw_pct !== null ? (
                 <>
                   <DayRank value={item.draw_pct} />
-                  <Meter
-                    value={item.draw_pct}
-                    label={`Draw rank, ${describeDayRank(item.draw_pct)}`}
-                    className="mt-2 h-1.5"
-                  />
+                  <RankAxis value={item.draw_pct} halo="card" />
                 </>
               ) : (
-                <span className="type-numeral block text-3xl leading-none">n/a</span>
+                <span className="block text-[0.9375rem] leading-snug font-semibold">n/a</span>
               )}
             </dd>
           </div>
         </dl>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Both figures here rank this pair among that day&rsquo;s clashes, 0 to 100, so they are not on
-          the same scale as the timetable above, where draw is {popularityName(synthetic)}.
-          {item.overlap_min ? ` ${item.overlap_min} min at the same time.` : ""}
-        </p>
-
-        {item.shared_tags.length > 0 ? (
-          <div className="mt-4">
-            <p className="text-xs font-semibold">{tagsTitle(synthetic)}</p>
-            <TagChips tags={item.shared_tags} />
-            <p className="mt-1.5 text-[0.6875rem] text-muted-foreground">{BROAD_TAGS_NOTE}</p>
-          </div>
+        {item.overlap_min ? (
+          <p className="mt-2 text-[0.8125rem] text-muted-foreground">
+            <span className="font-mono tabular-nums">{item.overlap_min} min</span> at the same time.
+          </p>
         ) : null}
 
-        <p className="mt-auto pt-4 text-xs">
+        <WallTags tags={item.shared_tags} synthetic={synthetic} />
+
+        <p className="mt-auto pt-3 text-xs">
           {source ? (
             <a
               href={source}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 font-semibold text-primary underline underline-offset-4 hover:text-primary-hover"
+              className="inline-flex items-center gap-1 font-semibold text-foreground underline decoration-border-strong decoration-1 underline-offset-4 hover:decoration-foreground"
             >
               {sourceLabel(source)}: {hostOf(source)}
               <ExternalLink aria-hidden="true" className="size-3" />
@@ -149,6 +156,28 @@ function WallCard({ item, synthetic }: { item: HiddenWallItem; synthetic: boolea
   );
 }
 
+/**
+ * Every example as a printed card, for paper only: on screen the taste figure's one switcher carries every
+ * pair, and a printout cannot switch, so each pair prints with its ranks, tags and source.
+ */
+function WallGrid({
+  items,
+  synthetic,
+  className,
+}: {
+  items: readonly HiddenWallItem[];
+  synthetic: boolean;
+  className?: string;
+}) {
+  return (
+    <ul className={cn("grid gap-4 sm:grid-cols-2 xl:grid-cols-4", className)}>
+      {items.map((item) => (
+        <WallCard key={`${item.festival}-${item.acts.join("|")}`} item={item} synthetic={synthetic} />
+      ))}
+    </ul>
+  );
+}
+
 /** The wall's count line: how many sourced examples it shows, and that the rest were not saved. */
 export function wallCount(shown: number, total: number): string {
   if (shown >= total) return pluralize(shown, "sourced example");
@@ -159,6 +188,10 @@ export function wallCount(shown: number, total: number): string {
   );
 }
 
+/** The wall's caveats, word for word wherever they are set. */
+const NOT_A_TEST = "These are examples with their sources, not a test of how well the measure spots such clashes.";
+const RANK_SCALE = "Both ranks run 0 to 100 within that day’s clashes, not on the timetable’s draw scale.";
+
 /**
  * Sourced examples of hidden clashes: pairs the press or fans called out where the two acts share
  * no genre tag but their taste overlap is among the highest of that day. Shown as examples with
@@ -168,45 +201,50 @@ export function HiddenWall({ evidence, synthetic = false }: { evidence: Evidence
   const items = evidence?.hidden_wall ?? [];
   // A day with no sourced examples has nothing to show: the section, its link and its nav entry stay out.
   if (items.length === 0) return null;
+  const total = evidence?.hidden_wall_total ?? items.length;
   return (
-    <section
-      id="hidden-wall"
-      aria-labelledby="hidden-wall-heading"
-      className="border-y border-border bg-card [--ticket-bg:var(--card)]"
-    >
-      <div className="container-page py-14 sm:py-20">
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:items-end">
-          <div>
-            <p className="type-kicker flex items-center gap-2 text-muted-foreground">
-              <DiamondGlyph className="size-3" /> Hidden clashes
-            </p>
-            <h2 id="hidden-wall-heading" className="type-headline mt-2">
-              Different genres, overlapping tastes
-            </h2>
-          </div>
-          <div className="space-y-2 text-[0.9375rem] leading-relaxed">
-            <p>
-              Sourced examples: clashes the press or fans called out where the acts share no genre
-              tag but their taste overlap is among the highest of that day.
-            </p>
-            <p className="text-sm text-muted-foreground">
-              These are examples with their sources, not a test of how well the measure spots such
-              clashes.
-            </p>
-          </div>
-        </div>
+    <section id="hidden-wall" aria-labelledby="hidden-wall-heading">
+      {/* The exhibit ends on its own last line: the bottom padding is shorter than the page's other sections, so
+          no dead band opens before the next heading (whose own top padding still sets the gap). */}
+      <div className="container-page pt-16 pb-10 lg:pt-20 lg:pb-12">
+        <h2 id="hidden-wall-heading" className="type-title">
+          {/* Every wall item is a called-out pair with no genre tag in common: the build keeps only those. */}
+          Hidden clashes: {pluralize(items.length, "called-out pair")} with no genre tag in common
+        </h2>
+        <p className="mt-2 max-w-[70ch] text-[0.9375rem] leading-[1.55]">
+          Clashes the press or fans called out where the acts share no genre tag, yet their taste overlap is
+          among the highest of that day.
+        </p>
 
-        <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-b-2 border-foreground pb-2">
-          <p className="text-sm font-semibold">
-            {wallCount(items.length, evidence?.hidden_wall_total ?? items.length)}
-          </p>
-          <ProvenanceChip provenance="recorded" size="sm" synthetic={synthetic} />
-        </div>
-        <ul className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {items.map((item) => (
-            <WallCard key={`${item.festival}-${item.acts.join("|")}`} item={item} synthetic={synthetic} />
-          ))}
-        </ul>
+        {/* The caveat that qualifies the finding sits in the finding's column, under the shared-minutes key; the
+            count closes the exhibit (after the source details below 1024px, across both halves from 1024px); the
+            rank scale and the broad-tags note close the pair's source details, word for word. On paper the
+            switcher is left out and the whole caveat prints in one block, above every example as a card. */}
+        <TasteRing
+          items={items}
+          synthetic={synthetic}
+          badge={<ProvenanceChip provenance="recorded" size="sm" synthetic={synthetic} />}
+          aside={<p className="max-w-[60ch] text-[0.8125rem] leading-relaxed text-muted-foreground">{NOT_A_TEST}</p>}
+          closing={
+            <p className="text-[0.8125rem] leading-relaxed font-medium text-muted-foreground">
+              {wallCount(items.length, total)}
+            </p>
+          }
+          notes={
+            <p data-wall-notes className="text-[0.8125rem] leading-relaxed text-muted-foreground">
+              {RANK_SCALE} {BROAD_TAGS_NOTE}
+            </p>
+          }
+          footnote={
+            <div className="max-w-[90ch] space-y-1.5 text-[0.8125rem] leading-relaxed text-muted-foreground">
+              <p className="font-medium">{wallCount(items.length, total)}</p>
+              <p className="text-muted-foreground">
+                {NOT_A_TEST} {RANK_SCALE} {BROAD_TAGS_NOTE}
+              </p>
+            </div>
+          }
+        />
+        <WallGrid items={items} synthetic={synthetic} className="mt-6 hidden print:grid" />
       </div>
     </section>
   );

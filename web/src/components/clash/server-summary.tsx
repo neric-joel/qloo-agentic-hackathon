@@ -8,12 +8,17 @@ import type { ServerSummary } from "@/lib/server-summary";
  * visual language as the dial and the clash list; no tags, ids or raw popularity.
  */
 
-/** In place of the dial while the day loads. */
+/**
+ * In place of the dial while the day loads, open on the paper as the loaded Index is: no box, one 1px
+ * hairline rule at its top, 20px over the label (24px from 640px). From 1280px it takes the loaded
+ * rail's measure too (its rule 4px wider than the column either side, its text 12px in), so the rule
+ * and the label sit where the loaded ones do.
+ */
 export function SummaryScore({ summary }: { summary: ServerSummary }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-5 sm:p-6">
+    <div className="border-t border-border pt-5 sm:pt-6 xl:-mx-1 xl:px-3">
       <div className="flex items-start justify-between gap-3">
-        <p className="type-kicker text-muted-foreground">Clash Budget Index</p>
+        <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Clash Budget Index</p>
         <ProvenanceChip provenance="derived" size="sm" synthetic={summary.synthetic} />
       </div>
       {summary.index !== null ? (
@@ -37,8 +42,8 @@ export function SummaryScore({ summary }: { summary: ServerSummary }) {
 export function SummaryBoard({ summary }: { summary: ServerSummary }) {
   return (
     <section aria-labelledby="summary-clashes-heading" className="max-w-2xl">
-      <div className="border-b-2 border-foreground pb-3">
-        <h2 id="summary-clashes-heading" className="type-kicker">
+      <div className="pb-3">
+        <h2 id="summary-clashes-heading" className="text-[0.9375rem] leading-snug font-semibold">
           {summary.title}:{" "}
           {summary.clashes.length === 1 ? "the costliest clash" : `the ${summary.clashes.length} costliest clashes`}
         </h2>
@@ -49,7 +54,7 @@ export function SummaryBoard({ summary }: { summary: ServerSummary }) {
         </p>
       </div>
       {summary.clashes.length === 0 ? (
-        <p className="mt-4 rounded-lg border-2 border-dashed border-border-strong p-4 text-sm text-muted-foreground">
+        <p className="mt-4 rounded-md border border-dotted border-border-strong p-4 text-sm text-muted-foreground">
           {summary.synthetic
             ? "No priced clashes on this day: no two priced acts play at the same time."
             : "No priced clashes on this day: no two acts with a Qloo signal play at the same time."}

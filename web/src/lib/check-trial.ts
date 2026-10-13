@@ -22,7 +22,8 @@
  * a fast incremental check; every change it shows is then re-tested with the full `findBreaks` and
  * `findShared`, so a displayed "adds no rule break" is the page's own rule check, not the shortcut.
  *
- * Ranking: total start-time minutes moved first, then how much shared time the change adds elsewhere,
+ * Ranking: a change that creates an overlap longer than the one it ends comes after every change that
+ * does not; then total start-time minutes moved, then how much shared time the change adds elsewhere,
  * then sets moved, then stage changes, then a fixed order. At most one change is listed per moved set and
  * stage (its smallest shift). A change that moves any set by more than three hours is listed only when
  * nothing smaller exists. One-set moves include a set taking another set's exact start (any minute), and
@@ -85,6 +86,10 @@ export type TrialChange = {
   sharedRise: number;
   /** One line per move: "{Act} → {Stage} {start}–{end}". */
   lines: string[];
+  /** The first line of the change: what it ends and the longest overlap it creates or lengthens. */
+  tradeOff: string;
+  /** True when the overlap it creates is longer than the overlap it ends; such a change is ranked last. Never for a changeover or curfew break. */
+  longerThanEnded: boolean;
   /** Shared minutes of the targeted pair before this change (pair targets only). */
   pairBefore: number | null;
   sharedBefore: SharedTotals;
@@ -136,8 +141,10 @@ export type TrialOptions = {
 export const TRIAL_COPY = {
   button: "Find a change",
   heading: "What this search found",
-  scope:
-    "How it searched: one-set moves first, then two-set changes, on a 5-minute grid within the day’s span (a set may also take another set’s exact start time), at most 20,000 candidates. A change is listed only if it ends this break, adds no rule break and makes none of the existing ones larger, under your settings. They are ranked by total start-time minutes moved, one per moved set and stage; a change that moves a set by more than 3 hours is listed only when nothing smaller exists. Sets marked locked are not moved. It uses no taste reading, and nothing you paste is sent anywhere.",
+  scope: "Searches one or two set moves within this day; locked sets stay put. It uses no audience data and sends nothing.",
+  scopeSummary: "How the search works",
+  scopeDetail:
+    "One-set moves first, then two-set changes, on a 5-minute grid within the day’s span (a set may also take another set’s exact start time), at most 20,000 candidates. A change is listed only if it ends this break, adds no rule break and makes none of the existing ones larger, under your settings. A change that creates an overlap longer than the one it ends is ranked after every change that does not; then they are ranked by total start-time minutes moved, one per moved set and stage; a change that moves a set by more than 3 hours is listed only when nothing smaller exists.",
   adds: "Adds no rule break and makes none larger.",
   addsGloss: "Other sets may still share time; the grid line below shows the total.",
   stale: "You changed the grid or settings; check again to search.",
@@ -189,9 +196,13 @@ type Candidate = {
   largestShift: number;
   /** Minutes of shared time added between sets (pairs sharing more than before), summed over pairs. */
   gain: number;
+  /** The longest overlap after the change among the pairs that share more than before (0 when none). */
+  longest: number;
+  /** True when that overlap is longer than the one the change ends: ranked after every change that is not. */
+  worse: boolean;
 };
 
-type Verdict = { gone: boolean; clean: boolean; gain: number };
+type Verdict = { gone: boolean; clean: boolean; gain: number; longest: number };
 
 /** The rule-break identity: rule, then the sets by index. Rules 1, 2 and 5 are unordered pairs; rule 3 is (first, second). */
 function pairKey(rule: 1 | 2 | 5, i: number, j: number): number {
@@ -218,6 +229,11 @@ class Search {
   readonly targetRows: number[];
   readonly targetIndexes: number[];
   readonly targetKey: number | null;
+  /**
+   * Minutes the targeted pair shares as pasted, or null for a changeover or curfew break: those end no
+   * overlap, so they have no overlap to weigh a new one against and are ranked without that tier.
+   */
+  readonly removed: number | null;
   readonly spanStart: number;
   readonly spanEnd: number;
 
@@ -271,6 +287,9 @@ class Search {
     });
     this.movable = this.targetIndexes.filter((index) => !this.locked[index]);
     this.targetKey = this.keyOfTarget();
+    const [first, second] = this.targetIndexes;
+    const ends = target.kind === "shared" || (target.rule !== 3 && target.rule !== 4);
+    this.removed = ends && first !== undefined && second !== undefined ? Math.max(0, this.overlapOf(first, second)) : null;
     this.base = this.fullBreaks();
   }
 
@@ -386,12 +405,16 @@ class Search {
       this.start[p.index] = saved[k][1];
     });
     let gain = 0;
+    let longest = 0;
     if (pairs !== null && after !== null) {
       pairs.forEach(([i, j], k) => {
-        gain += Math.max(0, after[k] - this.sharedMinutes(i, j));
+        const rise = after[k] - this.sharedMinutes(i, j);
+        if (rise <= 0) return;
+        gain += rise;
+        longest = Math.max(longest, after[k]);
       });
     }
-    return { gone, clean, gain };
+    return { gone, clean, gain, longest };
   }
 
   /** Minutes two different acts share (the grid line of the page); the same act twice is a rule break, not shared time. */
@@ -418,7 +441,7 @@ class Search {
     return { from: Math.ceil(this.spanStart / step) * step, to: this.spanEnd - duration };
   }
 
-  private candidateOf(places: Place[], gain: number): Candidate {
+  private candidateOf(places: Place[], { gain, longest }: Pick<Verdict, "gain" | "longest">): Candidate {
     let minutesMoved = 0;
     let stageChanges = 0;
     let largestShift = 0;
@@ -428,7 +451,7 @@ class Search {
       largestShift = Math.max(largestShift, shift);
       if (p.stage !== this.originalStage[p.index]) stageChanges += 1;
     }
-    return { places, minutesMoved, stageChanges, largestShift, gain };
+    return { places, minutesMoved, stageChanges, largestShift, gain, longest, worse: this.removed !== null && longest > this.removed };
   }
 
   /** Free places for set `y` (no other set playing there), nearest to where it plays now first. */
@@ -488,11 +511,11 @@ class Search {
           tested += 1;
           if (tested % chunk === 0) yield marker();
           const place: Place = { index, stage, start: t };
-          const { gone, clean, gain } = this.test([place]);
-          if (gone && clean) {
+          const verdict = this.test([place]);
+          if (verdict.gone && verdict.clean) {
             singles += 1;
             singleKeys.add(`${index}:${stage}:${t}`);
-            found.push(this.candidateOf([place], gain));
+            found.push(this.candidateOf([place], verdict));
           }
         }
         if (capped) break;
@@ -518,11 +541,11 @@ class Search {
         tested += 1;
         if (tested % chunk === 0) yield marker();
         const place: Place = { index, stage, start: t };
-        const { gone, clean, gain } = this.test([place]);
-        if (gone && clean) {
+        const verdict = this.test([place]);
+        if (verdict.gone && verdict.clean) {
           singles += 1;
           singleKeys.add(key);
-          found.push(this.candidateOf([place], gain));
+          found.push(this.candidateOf([place], verdict));
         }
       }
       if (capped) break;
@@ -571,10 +594,10 @@ class Search {
             }
             tested += 1;
             if (tested % chunk === 0) yield marker();
-            const { gone, clean, gain } = this.test([takes, place]);
-            if (gone && clean) {
+            const verdict = this.test([takes, place]);
+            if (verdict.gone && verdict.clean) {
               swaps += 1;
-              found.push(this.candidateOf([takes, place], gain));
+              found.push(this.candidateOf([takes, place], verdict));
             }
           }
         }
@@ -595,8 +618,14 @@ type SearchOutcome = {
   swapsSearched: boolean;
 };
 
-/** Total start-time minutes first; at equal size, less shared time added elsewhere; then sets, stage changes, a fixed order. */
+/**
+ * A change that creates an overlap longer than the one it ends comes after every change that does not;
+ * then total start-time minutes; at equal size, less shared time added elsewhere; then sets, stage
+ * changes, a fixed order.
+ */
 function compareCandidates(a: Candidate, b: Candidate): number {
+  const byTier = Number(a.worse) - Number(b.worse);
+  if (byTier !== 0) return byTier;
   const byMinutes = a.minutesMoved - b.minutesMoved;
   if (byMinutes !== 0) return byMinutes;
   const byGain = a.gain - b.gain;
@@ -729,6 +758,7 @@ function buildChange(report: CheckReport, target: TrialTarget, search: Search, c
     const [a, b] = target.rows.map((row) => report.sets.find((set) => set.row === row) as CheckSet);
     pairBefore = overlapBetween(a, b);
   }
+  const { line, longer } = tradeOffOf(report, after, target, moves);
   return {
     moves,
     setsMoved: moves.length,
@@ -737,10 +767,69 @@ function buildChange(report: CheckReport, target: TrialTarget, search: Search, c
     largestShift: candidate.largestShift,
     sharedRise: sharedRiseOf(report, after),
     lines: moves.map((move) => `${move.act} → ${move.stage} ${clockWindow(move.start, move.end)}`),
+    tradeOff: line,
+    longerThanEnded: longer,
     pairBefore,
     sharedBefore: totals(report),
     sharedAfter: totals(after),
   };
+}
+
+/** "a" or "an" before a number of minutes said aloud: an 8-, 11-, 18- or 80-something-minute overlap. */
+export function article(minutes: number): "a" | "an" {
+  const digits = String(minutes);
+  return digits.startsWith("8") || minutes === 11 || minutes === 18 ? "an" : "a";
+}
+
+/**
+ * The first line of a change, from the page's own rules on both grids: what it ends, then the longest
+ * overlap it creates or lengthens. "Ends a 60-minute overlap with Wren Division; creates a 90-minute
+ * overlap with Midnight Cartographers." `longer` is true when that overlap is longer than the one ended;
+ * a changeover or curfew break ends no overlap, so it is never `longer` (and never ranked by it).
+ */
+export function tradeOffOf(
+  before: CheckReport,
+  after: CheckReport,
+  target: TrialTarget,
+  moves: readonly Pick<TrialMove, "row">[],
+): { line: string; longer: boolean } {
+  const movedRows = new Set(moves.map((move) => move.row));
+  const [a, b] = target.rows.map((row) => before.sets.find((set) => set.row === row));
+  // Null for a changeover or curfew break: it ends no overlap, so nothing to weigh a new one against.
+  let ended: number | null = null;
+  let head = "Ends this rule break";
+  if (a && b && (target.kind === "shared" || target.rule === 2 || target.rule === 5)) {
+    ended = overlapBetween(a, b);
+    const aMoved = movedRows.has(a.row);
+    const bMoved = movedRows.has(b.row);
+    head =
+      aMoved && bMoved
+        ? `Ends the ${ended}-minute overlap between ${a.act} and ${b.act}`
+        : `Ends ${article(ended)} ${ended}-minute overlap with ${aMoved ? b.act : a.act}`;
+  } else if (a && b && target.kind === "break" && target.rule === 1) {
+    ended = overlapBetween(a, b);
+    head = `Ends the ${ended}-minute double booking of ${a.act}`;
+  }
+
+  const was = new Map(before.shared.map((pair) => [pairRows(pair), pair.minutes]));
+  let worst: { pair: SharedPair; was: number } | null = null;
+  for (const pair of after.shared) {
+    if (!movedRows.has(pair.a.row) && !movedRows.has(pair.b.row)) continue;
+    const previous = was.get(pairRows(pair)) ?? 0;
+    if (pair.minutes <= previous) continue;
+    if (!worst || pair.minutes > worst.pair.minutes) worst = { pair, was: previous };
+  }
+  if (!worst) return { line: `${head}; creates no new overlap.`, longer: false };
+
+  const { pair } = worst;
+  const mover = movedRows.has(pair.a.row) ? pair.a : pair.b;
+  const other = mover === pair.a ? pair.b : pair.a;
+  const partner = moves.length > 1 ? `between ${mover.act} and ${other.act}` : `with ${other.act}`;
+  const tail =
+    worst.was > 0
+      ? `lengthens the overlap ${partner} from ${worst.was} to ${pair.minutes} minutes`
+      : `creates ${article(pair.minutes)} ${pair.minutes}-minute overlap ${partner}`;
+  return { line: `${head}; ${tail}.`, longer: ended !== null && pair.minutes > ended };
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -778,7 +867,7 @@ export function trialSummary(result: Omit<TrialResult, "summary">): string {
   const found = result.found.toLocaleString("en-US");
   const foundWords = result.largeOmitted > 0 ? `${found} within ${LARGE_HOURS} hours found` : `${found} found`;
   parts.push(
-    `${foundWords}, ${result.changes.length.toLocaleString("en-US")} shown: each ends it, adds no rule break and makes none larger, ranked by total start-time minutes moved.`,
+    `${foundWords}, ${result.changes.length.toLocaleString("en-US")} shown: each ends it, adds no rule break and makes none larger, ranked by total start-time minutes moved, with any that create a longer overlap than they end last.`,
   );
   parts.push(`${count(result.tested, "candidate")} tested.`);
   if (result.swapsSearched) {

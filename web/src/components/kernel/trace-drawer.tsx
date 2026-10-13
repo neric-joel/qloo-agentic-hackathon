@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, type ReactNode } from "react";
-import { Waypoints } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { Button } from "@/components/ui/button";
@@ -19,12 +20,12 @@ import { selectRequests, type ToolCallState, type TracedRequest } from "@/lib/ru
 
 import { CopyJsonButton } from "./copy-json-button";
 import { PROVENANCE_META, PROVENANCE_ORDER, ProvenanceChip } from "./provenance-chip";
-import { FailedPill, RequestItem } from "./trace-parts";
+import { FailedPill, RequestItem, dotted } from "./trace-parts";
 
 function Stat({ value, unit, label }: { value: string; unit?: string; label: string }) {
   return (
     <div className="min-w-0">
-      <dt className="type-kicker text-muted-foreground">{label}</dt>
+      <dt className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">{label}</dt>
       <dd className="mt-2 flex items-baseline gap-1.5">
         <span
           className={cn(
@@ -41,7 +42,7 @@ function Stat({ value, unit, label }: { value: string; unit?: string; label: str
 }
 
 function SectionHeading({ children }: { children: string }) {
-  return <h3 className="type-kicker border-b-2 border-foreground pb-2">{children}</h3>;
+  return <h3 className="pb-2 text-[0.8125rem] leading-5 font-semibold">{children}</h3>;
 }
 
 /** The tool call that made a group of requests, or that made none. */
@@ -49,7 +50,7 @@ function ToolHeading({ call, suffix }: { call: ToolCallState; suffix?: string })
   return (
     <>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <h3 className="font-mono text-sm font-bold break-all">{call.tool}</h3>
+        <h3 className="min-w-0 font-mono text-sm font-bold">{dotted(call.tool)}</h3>
         <ProvenanceChip provenance={call.provenance} size="sm" />
         {call.status === "error" ? <FailedPill>Failed</FailedPill> : null}
         {call.latencyMs !== undefined ? (
@@ -72,10 +73,16 @@ export type TraceDrawerProps = {
   qlooCalls?: number;
   /** The run is still streaming, so more requests may arrive. */
   live?: boolean;
-  triggerVariant?: "default" | "ink" | "outline" | "ghost";
+  /**
+   * The trigger's style. "ruled" (and "ink", which the board passes) sets it as a ruled line of type,
+   * "How Qloo was used · 104 requests"; the others print the count in a pill.
+   */
+  triggerVariant?: "default" | "ink" | "outline" | "ghost" | "ruled";
   triggerClassName?: string;
   /** The trigger's text. Defaults to "How Qloo was used". */
   triggerLabel?: string;
+  /** Leaves the ruled trigger's trailing arrow off, for a trigger set as a plain text link. Its text and name do not change. */
+  hideIcon?: boolean;
   /** The drawer's title. Defaults to "How Qloo was used"; an invented day names where its figures came from instead. */
   title?: string;
   /** The invented day: the notes under the counts do not describe saved Qloo responses. */
@@ -103,6 +110,7 @@ export function TraceDrawer({
   triggerVariant = "outline",
   triggerClassName,
   triggerLabel = "How Qloo was used",
+  hideIcon = false,
   title = "How Qloo was used",
   synthetic = false,
   description,
@@ -114,6 +122,9 @@ export function TraceDrawer({
   const records = useMemo(() => traced.map((item) => item.record), [traced]);
 
   const total = records.length;
+  const requestCount = pluralize(total, "request");
+  // The board's toolbar trigger reads as a ruled line of text, not a filled button.
+  const ruled = triggerVariant === "ruled" || triggerVariant === "ink";
   const cachedCount = records.filter((record) => record.cached).length;
   const failedCount = records.filter((record) => !isSuccessStatus(record.status)).length;
   const liveLatencies = records
@@ -158,25 +169,35 @@ export function TraceDrawer({
       <SheetTrigger asChild>
         {/* The count is part of the accessible name through aria-label, not a hidden span: a hidden span is read
             as its own word, with a space before its comma ("How Qloo was used , 0 requests"). */}
-        <Button
-          variant={triggerVariant}
-          className={triggerClassName}
-          aria-label={`${triggerLabel}, ${pluralize(total, "request")}`}
-        >
-          <Waypoints aria-hidden="true" />
-          <span>{triggerLabel}</span>
-          <span
-            aria-hidden="true"
-            className="ml-0.5 inline-flex min-w-6 items-center justify-center rounded-full bg-foreground px-1.5 py-0.5 text-xs font-bold text-background tabular-nums"
+        {ruled ? (
+          <Button variant="ruled" className={triggerClassName} aria-label={`${triggerLabel}, ${requestCount}`}>
+            <span>
+              {triggerLabel} <span aria-hidden="true">&middot;</span>{" "}
+              <span className="font-mono text-[0.8125rem] tabular-nums">{requestCount.split(" ")[0]}</span>{" "}
+              {total === 1 ? "request" : "requests"}
+            </span>
+            {hideIcon ? null : <ArrowRight aria-hidden="true" />}
+          </Button>
+        ) : (
+          <Button
+            variant={triggerVariant}
+            className={triggerClassName}
+            aria-label={`${triggerLabel}, ${requestCount}`}
           >
-            {total}
-          </span>
-        </Button>
+            <span>{triggerLabel}</span>
+            <span
+              aria-hidden="true"
+              className="ml-0.5 inline-flex min-w-6 items-center justify-center rounded-sm bg-foreground px-1.5 py-0.5 text-xs font-bold text-background tabular-nums"
+            >
+              {total}
+            </span>
+          </Button>
+        )}
       </SheetTrigger>
 
       <SheetContent className="gap-0 p-0 data-[side=right]:lg:max-w-2xl">
         <SheetHeader className="gap-0 border-b border-border p-5 pr-14 sm:p-6 sm:pr-16">
-          <p className="type-kicker text-muted-foreground">Trace</p>
+          <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Trace</p>
           <SheetTitle className="type-headline mt-2 text-balance">{title}</SheetTitle>
         </SheetHeader>
 
@@ -193,7 +214,7 @@ export function TraceDrawer({
               "Every request this run sent to Qloo, in order. The API key stays on the server and is never shown or sent to the browser."}
           </SheetDescription>
 
-          <dl className="mt-6 grid grid-cols-3 gap-4 border-t-2 border-foreground pt-4">
+          <dl className="mt-6 grid grid-cols-3 gap-4 rounded-md bg-background p-4">
             <Stat value={String(total)} label={total === 1 ? "Request" : "Requests"} />
             <Stat value={String(cachedCount)} label="Cached" />
             {hasLive ? (
@@ -221,13 +242,13 @@ export function TraceDrawer({
           </p>
 
           {qlooCalls !== undefined && qlooCalls !== total ? (
-            <p className="mb-5 rounded-md border border-warning/50 bg-warning-bg px-3 py-2 text-sm text-warning">
+            <p className="mb-5 rounded-md border border-warning bg-warning-bg px-3 py-2 text-sm text-warning">
               The run summary reports {pluralize(qlooCalls, "Qloo call")}; {total} listed here.
             </p>
           ) : null}
 
           {total === 0 ? (
-            <div className="rounded-lg border-2 border-dashed border-border-strong p-5">
+            <div className="rounded-md bg-background p-5">
               <p className="font-semibold">No Qloo requests in this run.</p>
               <p className="mt-1 text-sm text-muted-foreground">
                 Whatever this run produced did not use Qloo data. Check the label on each value to
@@ -271,7 +292,7 @@ export function TraceDrawer({
                   className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-start gap-3"
                 >
                   <dt>
-                    <ProvenanceChip provenance={provenance} size="sm" />
+                    <ProvenanceChip provenance={provenance} size="sm" synthetic={synthetic} />
                   </dt>
                   <dd className="text-sm text-muted-foreground">
                     {PROVENANCE_META[provenance].description}
@@ -282,7 +303,7 @@ export function TraceDrawer({
           </section>
 
           <details className="mt-10 border-t border-border pt-4">
-            <summary className="type-kicker cursor-pointer rounded-sm py-1 select-none">
+            <summary className="text-[0.8125rem] leading-5 font-semibold cursor-pointer rounded-sm py-1 select-none">
               Raw JSON
             </summary>
             <pre
@@ -295,7 +316,13 @@ export function TraceDrawer({
             </pre>
           </details>
 
-          <p className="mt-8 font-mono text-xs break-all text-muted-foreground">
+          <p className="mt-6 text-sm">
+            <Link href="/method#qloo-calls" className="font-semibold underline underline-offset-4">
+              All Qloo endpoints we use
+            </Link>
+          </p>
+
+          <p className="mt-6 min-w-0 font-mono text-xs break-words text-muted-foreground">
             {footnote ?? (
               <>
                 {runId ? `Run ${runId}` : "No run id yet"}

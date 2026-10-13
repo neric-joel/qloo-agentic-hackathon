@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { ArrowDown, ChevronDown } from "lucide-react";
+import { ArrowRight, ChevronDown } from "lucide-react";
 import Link from "next/link";
 
 import { AbstainState, ErrorState, TraceDrawer } from "@/components/kernel";
@@ -36,21 +36,20 @@ import { cn } from "@/lib/utils";
 import { AgentPanel } from "./agent-panel";
 import { BudgetDial, Scorecard } from "./budget-dial";
 import { ClashDrawer } from "./clash-drawer";
-import { ClashList } from "./clash-list";
+import { ClashList, liveClashRow } from "./clash-list";
 import { CoverageMeter } from "./coverage-meter";
-import { DECISION_HEADING_ID, DecisionCard, DecisionCardSkeleton } from "./decision-card";
+import { DecisionCard, DecisionCardSkeleton } from "./decision-card";
 import { HiddenWall } from "./hidden-wall";
+import { MoreDetails } from "./more-details";
 import { PresetSources } from "./preset-sources";
-import { RECORDED_RUNS_ID } from "./recorded-runs";
 import { SummaryBoard, SummaryScore } from "./server-summary";
 import { BoardSkeleton, ScoreSkeleton } from "./skeletons";
-import { TasteLens } from "./taste-lens";
 import { TimetableGrid } from "./timetable-grid";
-import { TimetableLegend } from "./timetable-legend";
+import { TimetableLegend, legendSymbolCount } from "./timetable-legend";
 import { TimetableList } from "./timetable-list";
 import { TRY_A_MOVE_ID, TryAMove } from "./try-a-move";
-import { TwinCards } from "./twin-cards";
-import { WhyThisMatters } from "./why-this-matters";
+import { TasteSection, WHAT_QLOO_ID, WhatQlooPointer, concurrentPairs, whatChangesTitle } from "./why-qloo";
+import { WHY_THIS_MATTERS_ID, WhyThisMatters } from "./why-this-matters";
 import { useAgentStatus } from "./use-agent-status";
 import { useDecision } from "./use-decision";
 import { useLenses } from "./use-lenses";
@@ -62,9 +61,6 @@ const TOP_LINKS = 10;
 /** The anchor of the sources section, for the jump nav. */
 const SOURCES_ID = "sources";
 
-const HERO_LINK =
-  "inline-flex items-center gap-1.5 py-1 text-sm font-semibold underline underline-offset-4 hover:text-primary";
-
 /** The card's footer link says what it opens, and only rank 1 is called the costliest. */
 const HERO_BUTTON: Record<HeroClash["kind"], string> = {
   hidden: "Open a hidden clash",
@@ -73,7 +69,7 @@ const HERO_BUTTON: Record<HeroClash["kind"], string> = {
 };
 
 const PROOF_LINE =
-  "Shown on two published days from festivals that do not use it: Glastonbury 2025 and Riot Fest 2026. A reading, not a verdict on either festival.";
+  "Run on the public timetables of Glastonbury 2025 and Riot Fest 2026. Neither festival uses Clash Control.";
 export const SYNTHETIC_PROOF_LINE =
   "Shown here on an invented day: the server has no built festival day, so the acts, times and readings are made up and no Qloo request was made.";
 
@@ -86,81 +82,94 @@ function replacedNote(plan: readonly StackStep[], seed: StackStep): string | nul
   return outcome.kind === "replace" ? `It replaced your earlier ${pluralize(outcome.dropped, "kept step")}.` : null;
 }
 
-/** The proof line sits under the actions on a wide screen and after the card on a phone. */
-function ProofLine({ className, synthetic = false }: { className: string; synthetic?: boolean }) {
+/** Beside the paste action: what it costs the visitor, and what leaves the browser. */
+export const HERO_MICROCOPY = "About a minute. Nothing leaves your browser unless you ask for prices.";
+
+/**
+ * One muted 14 px note at the foot of the pitch column: the paste's cost (when /check is live) and the
+ * proof line, verbatim, joined as one paragraph of at most two lines at 1440 px. On a phone it comes last,
+ * after the card and the stat sentence.
+ */
+function HeroNote({ className, synthetic = false }: { className?: string; synthetic?: boolean }) {
   return (
-    <p className={cn("max-w-2xl text-xs leading-relaxed text-muted-foreground", className)}>
+    <p className={cn("max-w-[32rem] text-sm leading-relaxed text-muted-foreground lg:max-w-none", className)}>
+      {/* On a phone the paste's cost sits under the action it describes (HeroActions), so here it is
+          shown from lg only. */}
+      {CHECK_LIVE ? <span className="hidden lg:inline">{HERO_MICROCOPY} </span> : null}
       {synthetic ? SYNTHETIC_PROOF_LINE : PROOF_LINE}
     </p>
   );
 }
 
 /**
- * The hero's actions. The primary one scrolls to the decision card and moves focus to its heading
- * (a plain link to the heading, so it works before the page has loaded); it is there only when the
- * card is. "Try a move yourself" is there once the section it points at is on the page.
+ * The hero's action: "Paste your own draft grid" opens /check while that page is live, as the outline
+ * button (44 px, the default size, a 1.5 px ink edge with the 12 px control corner and a trailing arrow that moves 2 px), so
+ * the card's "Open this move" stays the one filled ink button on the first screen in both themes.
  */
-function HeroActions({ seeDecision, tryMove }: { seeDecision: boolean; tryMove: boolean }) {
-  if (!seeDecision && !tryMove && !CHECK_LIVE) return null;
+function HeroActions() {
+  if (!CHECK_LIVE) return null;
   return (
-    <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 sm:mt-6 max-[390px]:flex-col max-[390px]:items-stretch">
-      {seeDecision ? (
-        <Button asChild variant="ink">
-          <a href={`#${DECISION_HEADING_ID}`}>See one decision</a>
-        </Button>
-      ) : null}
-      {tryMove ? (
-        <a href={`#${TRY_A_MOVE_ID}`} className={HERO_LINK}>
-          Try a move yourself
-          <ArrowDown aria-hidden="true" className="size-4" />
-        </a>
-      ) : null}
-      {CHECK_LIVE ? (
-        <Link href="/check" className={HERO_LINK}>
-          Check a draft grid
-        </Link>
-      ) : null}
+    <div className="lg:mt-8">
+      <Button asChild variant="outline" size="default">
+        <Link href="/check">Paste your own draft grid<ArrowRight aria-hidden="true" /></Link>
+      </Button>
+      <p className="mt-2 max-w-[32rem] text-sm leading-relaxed text-muted-foreground lg:hidden">{HERO_MICROCOPY}</p>
     </div>
   );
 }
 
 /**
- * The hero: the static pitch and its actions on the left, the decision card and then the day's
- * score on the right. On a phone the pitch comes first, then the card (its first line is on the first
- * screen), the proof line, and the dial.
+ * The hero: the static pitch and its action on the left, the decision card on the right. From `lg` the
+ * card spans the column's rows and the pitch column reads from the top with no hole: pitch, the action
+ * 32 px under it, the stat sentence 40 px under that and the note 16 px under the sentence, with no rule
+ * between them; whatever height the card has spare falls below the note. Below `lg` the page reads in
+ * source order: pitch, decision card, action, stat sentence, then the note, so a phone's first screen
+ * shows the clash itself before the paste. The action is rendered twice for that, in the same grid area:
+ * once before the card, shown from `lg`, and once after it, shown below `lg`. The other copy is
+ * display:none at every width, so exactly one is seen, read and focused, and the tab order is the order
+ * seen. The day's score sits with the timetable it reads.
  */
 function HeroLayout({
   intro,
+  stats,
   actions,
   aside,
   synthetic = false,
 }: {
   intro: ReactNode;
+  /** The complaint figures under the pitch; the page renders them, so every path shows the same line. */
+  stats?: ReactNode;
   actions?: ReactNode;
   aside: ReactNode;
   synthetic?: boolean;
 }) {
   return (
-    <section aria-labelledby="pitch-heading" className="relative isolate overflow-hidden">
-      <div
-        aria-hidden="true"
-        className="bg-timegrid absolute inset-0 -z-10 [mask-image:linear-gradient(to_bottom,black_20%,transparent)]"
-      />
-      <div className="container-page pt-6 pb-8 sm:pt-8 lg:pt-10 lg:pb-10">
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:items-start lg:gap-8">
-          <div className="min-w-0">
-            {intro}
-            {actions}
-            <ProofLine className="mt-4 hidden lg:block" synthetic={synthetic} />
-          </div>
-          <div className="min-w-0">{aside}</div>
+    <section aria-labelledby="pitch-heading">
+      <div className="container-page pt-6 pb-10 sm:pt-8 lg:pt-10">
+        {/* Two equal columns from 1280 px. Between 1024 and 1279 the card column is held at 35.75rem, so the
+            card's running-order drawing reaches its full 24rem inside the card's padding. The pitch and the
+            card's top edge start on the same line; the pitch column is top-aligned, and the last, flexible row
+            under the note takes the height the card has spare. The section's 40 px foot, at every width, is the gap to the jump nav (no rule). Below 1024 px one column in source
+            order, the card before the action. Every track is minmax(0, ...) and every item min-w-0, so nothing pushes the card past the
+            page gutter on a phone. */}
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] items-start gap-y-6 [grid-template-areas:'pitch'_'card'_'actions'_'stats'_'note'] sm:gap-y-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,35.75rem)] lg:grid-rows-[auto_auto_auto_auto_1fr] lg:gap-x-8 lg:gap-y-0 lg:[grid-template-areas:'pitch_card'_'actions_card'_'stats_card'_'note_card'_'._card'] xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="min-w-0 [grid-area:pitch]">{intro}</div>
+          {actions ? <div className="min-w-0 [grid-area:actions] max-lg:hidden">{actions}</div> : null}
+          <div className="min-w-0 self-start [grid-area:card]">{aside}</div>
+          {actions ? <div className="min-w-0 [grid-area:actions] lg:hidden">{actions}</div> : null}
+          {stats ? <div className="min-w-0 [grid-area:stats] lg:mt-10">{stats}</div> : null}
+          <HeroNote className="[grid-area:note] lg:mt-4" synthetic={synthetic} />
         </div>
       </div>
     </section>
   );
 }
 
-/** The timetable section's frame: wider than the page container, so five stages fit. */
+/**
+ * The timetable section's frame: the page container's edges, like every other section. Five stage columns
+ * get no wider than 13rem at 1280 or 1440 in either frame (the score rail takes 18rem), so the wider frame
+ * returns only from 2xl (1536 px), where it buys the columns real room.
+ */
 function BoardFrame({
   label,
   labelledBy,
@@ -171,8 +180,9 @@ function BoardFrame({
   children: ReactNode;
 }) {
   return (
-    <section aria-label={label} aria-labelledby={labelledBy} className="border-t border-border">
-      <div className="mx-auto w-full max-w-[96rem] px-4 pt-7 pb-14 sm:px-6 sm:pb-16 lg:px-10">{children}</div>
+    <section aria-label={label} aria-labelledby={labelledBy}>
+      {/* Open sections are parted by space, not rules: 64 px above and below (80 px from 1024 px). */}
+      <div className="container-page py-16 lg:py-20 2xl:max-w-[96rem]">{children}</div>
     </section>
   );
 }
@@ -180,16 +190,19 @@ function BoardFrame({
 type JumpLink = { href: string; label: string };
 
 /**
- * In-page links under the hero. From 768 px up it sticks under the site header, and the page's
+ * In-page links under the hero, in the order of the sections. From 768 px up it sticks under the site header, and the page's
  * anchor offset grows by its height so a jump lands below it; on a phone it is one row that
  * scrolls sideways.
  */
-function JumpNav({ agent, wall }: { agent: JumpLink; wall: boolean }) {
+function JumpNav({ agent, wall, qloo = null }: { agent: JumpLink; wall: boolean; qloo?: JumpLink | null }) {
+  // In page order.
   const links: JumpLink[] = [
+    ...(qloo ? [qloo] : []),
+    { href: `#${WHY_THIS_MATTERS_ID}`, label: "Why this matters" },
     { href: "#board-heading", label: "Timetable" },
+    ...(wall ? [{ href: "#hidden-wall", label: "Hidden clashes" }] : []),
     { href: `#${TRY_A_MOVE_ID}`, label: "Try a move" },
     agent,
-    ...(wall ? [{ href: "#hidden-wall", label: "Hidden clashes" }] : []),
     { href: `#${SOURCES_ID}`, label: "Sources" },
   ];
   const hrefs = links.map((link) => link.href).join("|");
@@ -223,28 +236,86 @@ function JumpNav({ agent, wall }: { agent: JumpLink; wall: boolean }) {
     };
   }, [hrefs]);
 
+  // One marker under the current item, on the bar's hairline: it slides to the new item over 180 ms
+  // (ease-out) and jumps at once under reduced motion. Drawn from the measured label, so it spans the
+  // word at any font size; hidden when no section is current.
+  const listRef = useRef<HTMLUListElement | null>(null);
+  const markerRef = useRef<HTMLLIElement | null>(null);
+  useEffect(() => {
+    const list = listRef.current;
+    const marker = markerRef.current;
+    if (!list || !marker) return;
+    function place() {
+      if (!list || !marker) return;
+      const label = current ? list.querySelector<HTMLElement>(`a[href="${current}"] [data-nav-label]`) : null;
+      if (!label) {
+        marker.style.visibility = "hidden";
+        return;
+      }
+      const wasHidden = marker.style.visibility !== "visible";
+      // From hidden it appears in place, with no slide in from the left edge.
+      if (wasHidden) marker.style.transition = "none";
+      marker.style.width = `${label.offsetWidth}px`;
+      marker.style.transform = `translateX(${label.offsetLeft}px)`;
+      marker.style.visibility = "visible";
+      if (wasHidden) {
+        void marker.offsetWidth;
+        marker.style.transition = "";
+      }
+    }
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [current]);
+
+  // No rule above or below the bar: the opaque paper is its only edge. From 768 px the anchor offset is 82 px:
+  // with a section's 80 px top padding, a jump lands its heading about 54 px under the bar's foot (64 px
+  // header plus the 44 px bar). Under 768 px the bar does not stick, so the offset is the header's 64 px less 1.
   return (
     <nav
       aria-label="On this page"
-      className="z-30 h-11 border-y border-border bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/85 md:sticky md:top-16 md:[html:has(&)]:scroll-pt-31"
+      className="z-30 h-11 bg-background max-md:[html:has(&)]:scroll-pt-[3.9375rem] md:sticky md:top-16 md:[html:has(&)]:scroll-pt-[5.125rem]"
     >
-      <ul className="container-page flex h-full items-center gap-x-6 overflow-x-auto whitespace-nowrap [scrollbar-width:none]">
-        {links.map((link) => (
-          <li key={link.href}>
-            <a
-              href={link.href}
-              aria-current={current === link.href ? "location" : undefined}
-              className={cn(
-                "rounded-sm py-1.5 text-sm font-semibold underline-offset-4 hover:text-foreground hover:underline",
-                current === link.href
-                  ? "text-foreground underline decoration-2"
-                  : "text-muted-foreground",
-              )}
-            >
-              {link.label}
-            </a>
-          </li>
-        ))}
+      {/* Inside the content column: plain 14 px links, each led by its step number, 44 px tall
+          with 12 px sides (the first pulled back so its numeral starts on the content edge); the numerals are
+          the /method rail's, 15 px in the condensed numeral face. The current
+          item's 3 px ink capsule marker sits at the bar's foot. The current item is ink and semibold with an
+          ink numeral (wayfinding is ink, never vermilion); no ground, no corner. */}
+      <ul
+        ref={listRef}
+        className="container-page relative flex h-full items-center gap-x-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&>li:first-child]:-ml-3"
+      >
+        {links.map((link, index) => {
+          const on = current === link.href;
+          return (
+            <li key={link.href}>
+              <a
+                href={link.href}
+                aria-current={on ? "location" : undefined}
+                className={cn(
+                  "inline-flex h-11 items-center px-3 text-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring motion-safe:transition-colors motion-safe:duration-150 motion-safe:ease-out",
+                  on ? "font-semibold text-foreground" : "font-medium text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <span data-nav-label="" className="inline-flex items-baseline gap-1.5">
+                  <span
+                    aria-hidden="true"
+                    className={cn("type-numeral text-[0.9375rem] leading-none", on ? "text-foreground" : "text-muted-foreground")}
+                  >
+                    {index + 1}
+                  </span>
+                  {link.label}
+                </span>
+              </a>
+            </li>
+          );
+        })}
+        <li
+          ref={markerRef}
+          aria-hidden="true"
+          style={{ visibility: "hidden" }}
+          className="pointer-events-none absolute bottom-0 left-0 h-[3px] list-none rounded-bar bg-foreground motion-safe:transition-[transform,width] motion-safe:duration-[180ms] motion-safe:ease-out print:hidden"
+        />
       </ul>
     </nav>
   );
@@ -256,11 +327,13 @@ function JumpNav({ agent, wall }: { agent: JumpLink; wall: boolean }) {
  */
 function LoadingView({
   intro,
+  stats,
   summary,
   picker,
   status,
 }: {
   intro: ReactNode;
+  stats?: ReactNode;
   summary: ServerSummary | null;
   picker?: ReactNode;
   status?: ReactNode;
@@ -269,20 +342,24 @@ function LoadingView({
     <>
       <HeroLayout
         intro={intro}
+        stats={stats}
         synthetic={summary?.synthetic === true}
-        actions={<HeroActions seeDecision={summary?.decision != null} tryMove={false} />}
+        actions={<HeroActions />}
         aside={
           <div className="space-y-4">
             {summary?.decision ? <DecisionCard copy={summary.decision} /> : null}
-            <ProofLine className="lg:hidden" synthetic={summary?.synthetic === true} />
-            {summary ? <SummaryScore summary={summary} /> : <ScoreSkeleton />}
             {status}
           </div>
         }
       />
       <BoardFrame label="Timetable">
         {picker}
-        {summary ? <SummaryBoard summary={summary} /> : <BoardSkeleton />}
+        {/* The day's score beside the clashes it adds up, where the interactive board puts its dial. */}
+        <div className="grid gap-x-10 gap-y-6 xl:grid-cols-[18rem_minmax(0,1fr)]">
+          <div className="min-w-0 max-w-[28rem]">{summary ? <SummaryScore summary={summary} /> : <ScoreSkeleton />}</div>
+          {summary ? <SummaryBoard summary={summary} /> : null}
+        </div>
+        {summary ? null : <BoardSkeleton className="mt-8" />}
       </BoardFrame>
     </>
   );
@@ -290,12 +367,14 @@ function LoadingView({
 
 export function ClashControlFallback({
   intro,
+  stats,
   summary = null,
 }: {
   intro: ReactNode;
+  stats?: ReactNode;
   summary?: ServerSummary | null;
 }) {
-  return <LoadingView intro={intro} summary={summary} />;
+  return <LoadingView intro={intro} stats={stats} summary={summary} />;
 }
 
 /** False in the server HTML and true once the page is in the browser, with no state to set in an effect. */
@@ -313,7 +392,15 @@ function useInBrowser(): boolean {
  * (every legal place for a set, priced, with no language model), the agent (live or recorded runs),
  * the hidden-clash examples and the twin card.
  */
-export function ClashControl({ intro, summary = null }: { intro: ReactNode; summary?: ServerSummary | null }) {
+export function ClashControl({
+  intro,
+  stats,
+  summary = null,
+}: {
+  intro: ReactNode;
+  stats?: ReactNode;
+  summary?: ServerSummary | null;
+}) {
   // The loading line is for a visitor waiting in the browser. Left out of the server HTML, it cannot
   // linger in the hidden streaming fallback and read as stale once the day has loaded.
   const inBrowser = useInBrowser();
@@ -338,6 +425,7 @@ export function ClashControl({ intro, summary = null }: { intro: ReactNode; summ
     return (
       <HeroLayout
         intro={intro}
+        stats={stats}
         aside={
           <ErrorState
             title="Could not load the timetable"
@@ -359,6 +447,7 @@ export function ClashControl({ intro, summary = null }: { intro: ReactNode; summ
     return (
       <HeroLayout
         intro={intro}
+        stats={stats}
         aside={
           <AbstainState
             title="No festival days to show yet"
@@ -375,6 +464,7 @@ export function ClashControl({ intro, summary = null }: { intro: ReactNode; summ
     return (
       <LoadingView
         intro={intro}
+        stats={stats}
         summary={summary && summary.id === loadingId ? summary : null}
         status={
           inBrowser ? (
@@ -396,6 +486,7 @@ export function ClashControl({ intro, summary = null }: { intro: ReactNode; summ
     <PresetView
       key={preset.value.id}
       intro={intro}
+      stats={stats}
       preset={preset.value}
       agentStatus={agentStatus}
       serverDecision={summary && summary.id === preset.value.id ? summary.decisionData : null}
@@ -420,6 +511,7 @@ function PresetPicker({
     <SegmentedControl
       label="Festival day"
       size="sm"
+      variant="tabs"
       value={selectedId}
       onValueChange={onChange}
       options={presets.map((item) => ({
@@ -438,12 +530,14 @@ type DrawerState = { clash: PairClash | null; open: boolean; trigger: HTMLElemen
 
 function PresetView({
   intro,
+  stats,
   preset,
   agentStatus,
   serverDecision,
   picker,
 }: {
   intro: ReactNode;
+  stats?: ReactNode;
   preset: Preset;
   agentStatus: AgentStatus;
   /** The decision the server already holds for this preset's first day, so the card needs no request. */
@@ -506,10 +600,19 @@ function PresetView({
     [seedMove, seedChange, keptSteps],
   );
   const lenses = useLenses(preset.id, day);
+  // A tested plan or a rule change is drawn on the board: the key must say the lines are the published timetable's.
+  const planShown = planPreview !== null || rulePreview !== null;
+  const sharedPairs = useMemo(() => concurrentPairs(preset, day), [preset, day]);
+  // The card's clash, for its three readings; only while the card is for the day on show.
+  const decisionClash =
+    decisionState.status === "ready" && decisionState.decision.day === day ? decisionState.decision.clash : null;
   const lensRank = useMemo(() => drawerRank(lenses), [lenses]);
+  const actName = (id: string) => festival.acts.find((act) => act.id === id)?.name ?? id;
+  // Both land on the agent section's heading: the recorded runs sit level with it from 1024 px, and the list
+  // itself has no top padding, so a jump to it would land its label under the sticky bar.
   const agentJump: JumpLink =
     agentStatus === "off" && recordings.runs.length > 0
-      ? { href: `#${RECORDED_RUNS_ID}`, label: "Recorded runs" }
+      ? { href: "#agent", label: "Recorded runs" }
       : { href: "#agent", label: "Agent" };
 
   const { activeSetIds, activeClashKeys } = useMemo(() => {
@@ -541,8 +644,9 @@ function PresetView({
     <>
       <HeroLayout
         intro={intro}
+        stats={stats}
         synthetic={preset.synthetic === true}
-        actions={<HeroActions seeDecision={decisionCopy !== null} tryMove />}
+        actions={<HeroActions />}
         aside={
           <div className="space-y-4">
             {decisionCopy ? (
@@ -581,45 +685,78 @@ function PresetView({
                 }
                 onOpenHidden={hero ? (trigger) => openClash(hero.clash, trigger) : undefined}
                 hiddenLabel={hero ? HERO_BUTTON[hero.kind] : undefined}
+                readings={
+                  decisionClash && lenses ? (
+                    <WhatQlooPointer
+                      lenses={lenses}
+                      pairs={sharedPairs}
+                      aId={decisionClash.aId}
+                      bId={decisionClash.bId}
+                      synthetic={synthetic}
+                    />
+                  ) : undefined
+                }
               />
             ) : decisionState.status === "loading" ? (
               <DecisionCardSkeleton />
             ) : null}
-            <ProofLine className="lg:hidden" synthetic={preset.synthetic === true} />
-            <Scorecard>
-              <BudgetDial
-                index={index}
-                baseline={report.baseline}
-                reach={reach}
-                compact
-                synthetic={preset.synthetic === true}
-              />
-            </Scorecard>
           </div>
         }
       />
 
-      <JumpNav agent={agentJump} wall={hasWall} />
+      <JumpNav
+        agent={agentJump}
+        wall={hasWall}
+        qloo={decisionClash && lenses ? { href: `#${WHAT_QLOO_ID}`, label: whatChangesTitle(synthetic) } : null}
+      />
 
+      {/* What Qloo changes for the card's clash, the equal-popularity pairs and the two rankings of the
+          day, closed by the failed test. Always rendered, so the failed test is there with no lens data. */}
+      <TasteSection
+        clash={
+          decisionClash
+            ? {
+                aId: decisionClash.aId,
+                bId: decisionClash.bId,
+                aName: actName(decisionClash.aId),
+                bName: actName(decisionClash.bId),
+              }
+            : null
+        }
+        lenses={lenses}
+        pairs={sharedPairs}
+        twins={twins}
+        acts={festival.acts}
+        ranked={ranked}
+        onOpen={openClash}
+        synthetic={synthetic}
+      />
+
+      {/* The problem, the pilot and what is not known, next to the failed test and before the board. */}
       <WhyThisMatters />
 
       <BoardFrame labelledBy="board-heading">
-        <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4 border-b border-border pb-4">
+        {/* One header block: the dateline and heading on the left; on the right the festival tabs with
+            "How Qloo was used" right under them (8 px), right-aligned from 1024 px and at the left on a
+            phone. */}
+        <div className="mb-8 flex flex-wrap items-end justify-between gap-x-8 gap-y-4 pb-4">
           <div className="min-w-0">
-            <p className="type-kicker text-muted-foreground">
-              Published timetable · {preset.title}
-              {festival.city ? ` · ${festival.city}` : ""}
+            <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
+              {synthetic ? "Invented timetable" : "Published timetable"} · {preset.title}
+              {festival.city ? `, ${festival.city}` : ""}
             </p>
-            <h2 id="board-heading" className="type-title mt-1.5">
+            <h2 id="board-heading" className="type-title mt-1.5 scroll-mt-16 md:scroll-mt-26">
               Where the clash budget goes: {festival.stages.length} stages, {views.length} sets
             </h2>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex min-w-0 flex-col items-start gap-2 lg:items-end">
             {picker}
             <TraceDrawer
               toolCalls={allCalls}
               mode="recorded"
               triggerVariant="ink"
+              hideIcon
+              triggerClassName="min-h-11 text-[0.8125rem] font-semibold lg:min-h-6"
               triggerLabel={usedTitle(preset.synthetic === true)}
               title={usedTitle(preset.synthetic === true)}
               synthetic={preset.synthetic === true}
@@ -629,22 +766,11 @@ function PresetView({
           </div>
         </div>
 
-        <div className="mt-4 grid gap-x-10 gap-y-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-          <CoverageMeter coverage={report.coverage} metrics={report.metrics} synthetic={synthetic} />
-          <div className="max-md:hidden">
-            <TimetableLegend planShown={planPreview !== null || rulePreview !== null} synthetic={synthetic} />
-            <p className="mt-2.5 text-xs text-muted-foreground">
-              Lines join the {links.length} costliest clashes; draw on each set is its{" "}
-              {popularityName(synthetic)}. Hover or focus a set to see its clashes, and open any clash for the figures
-              behind it.
-            </p>
-          </div>
-        </div>
-
         {days.length > 1 ? (
           <SegmentedControl
             label="Day"
             size="sm"
+            variant="tabs"
             value={String(day)}
             onValueChange={(value) => {
               setDay(Number(value));
@@ -655,32 +781,79 @@ function PresetView({
           />
         ) : null}
 
-        <div className="mt-6 grid gap-10 xl:grid-cols-[22rem_minmax(0,1fr)] xl:gap-12">
-          <div className="xl:sticky xl:top-31 xl:max-h-[calc(100dvh-8.75rem)] xl:self-start xl:overflow-y-auto xl:pr-2 xl:[scrollbar-width:thin]">
-            <ClashList
-              clashes={links}
-              slots={slots}
-              stages={stages}
-              totalRanked={ranked.length}
-              fixedShare={fixedShare}
-              isLocked={isLocked}
-              activeKeys={activeClashKeys}
-              dimmed={highlight !== null}
-              onOpen={openClash}
-              onHighlight={(key) => setHighlight(key ? { kind: "clash", key } : null)}
-              synthetic={preset.synthetic === true}
-            />
+        {/* From 1280 px up the rail holds the day's score above the costliest clashes, so the stage
+            headers start right under coverage and the key. Below that the rail dissolves into the column
+            (display: contents) and the score comes last, after the board: under 768 px the board leads,
+            then the costliest clashes; from 768 px the costliest clashes lead, then the board. The score
+            holds nothing focusable, and from 768 px the list and the board keep their source order. */}
+        <div className="mt-6 grid gap-10 xl:grid-cols-[18rem_minmax(0,1fr)] xl:gap-10">
+          {/* From 1280 px up the whole rail is sticky (below the site header and jump bar) and scrolls on
+              its own when taller than the screen, so it travels beside the grid instead of leaving blank.
+              There it holds the score and the costliest clashes under one 1px rule (their own surfaces
+              drop at that width). The scroll box reaches 12 px past the column on each side and pads it back,
+              so its content, and the rule drawn by the one wrapper inside it, start on the section's gutter
+              while the focus rings keep their room inside the clip. Below 1280 px both dissolve and each
+              child keeps its own surface. */}
+          <div className="min-w-0 max-xl:contents xl:sticky xl:top-31 xl:max-h-[calc(100dvh-8.75rem)] xl:self-start xl:overflow-y-auto xl:overscroll-contain xl:-mx-3 xl:scroll-py-1 xl:px-3 xl:pb-1">
+            <div className="flex min-w-0 flex-col gap-10 max-xl:contents xl:gap-6 xl:border-t xl:border-border xl:pt-6">
+            <Scorecard className="order-3 max-w-[28rem] xl:order-1 xl:max-w-none">
+              <BudgetDial index={index} baseline={report.baseline} reach={reach} compact synthetic={synthetic} />
+            </Scorecard>
+            <div className="order-2 min-w-0 md:order-1 xl:order-2">
+              <ClashList
+                clashes={links}
+                slots={slots}
+                stages={stages}
+                totalRanked={ranked.length}
+                fixedShare={fixedShare}
+                isLocked={isLocked}
+                activeKeys={activeClashKeys}
+                dimmed={highlight !== null}
+                onOpen={openClash}
+                onHighlight={(key) => setHighlight(key ? { kind: "clash", key } : null)}
+                synthetic={preset.synthetic === true}
+              />
+            </div>
+            </div>
           </div>
-          <div className="min-w-0">
-            {/* Below 768 px: the clash list above, then the board itself in a sideways scroller
-                that snaps to the stage columns, then the start-order list behind a summary. */}
-            <TimetableLegend
-              planShown={planPreview !== null || rulePreview !== null}
+          <div className="order-1 min-w-0 md:order-2 xl:order-none">
+            <CoverageMeter
+              coverage={report.coverage}
+              metrics={report.metrics}
               synthetic={synthetic}
-              className="mb-3 md:hidden"
+              legend={
+                <TimetableLegend
+                  inline
+                  planShown={planShown}
+                  synthetic={synthetic}
+                  className="max-md:hidden"
+                  note={
+                    <>
+                      Lines join the {links.length} costliest clashes; draw on each set is its {popularityName(synthetic)}.
+                      Open any clash for its figures.
+                    </>
+                  }
+                />
+              }
             />
+            {/* Below 768 px: the key, then the board itself in a sideways scroller that snaps to the stage
+                columns, then the start-order list behind a summary. Under 640 px the key folds into one
+                closed summary unless a tested place is on the board, when its warning must show. */}
+            {planShown ? (
+              <TimetableLegend planShown synthetic={synthetic} className="mt-4 mb-3 md:hidden" />
+            ) : (
+              <>
+                <MoreDetails
+                  className="mt-4 mb-3 sm:hidden"
+                  summary={`How to read the board (${pluralize(legendSymbolCount({ planShown }), "symbol")})`}
+                >
+                  <TimetableLegend synthetic={synthetic} className="mt-3 px-1" />
+                </MoreDetails>
+                <TimetableLegend synthetic={synthetic} className="mt-4 mb-3 hidden sm:flex md:hidden" />
+              </>
+            )}
             <p className="mb-3 text-xs text-muted-foreground md:hidden">Scroll sideways to see every stage.</p>
-            <div className="max-md:snap-x max-md:snap-mandatory max-md:scroll-pl-[72px] max-md:overflow-x-auto max-md:overscroll-x-contain max-md:pb-3">
+            <div className="max-md:snap-x max-md:snap-mandatory max-md:scroll-pl-[72px] max-md:overflow-x-auto max-md:overscroll-x-contain max-md:pb-3 md:mt-6">
               <TimetableGrid
                 className="max-md:min-w-[760px]"
                 views={views}
@@ -713,7 +886,7 @@ function PresetView({
         </div>
       </BoardFrame>
 
-      {lenses ? <TasteLens lenses={lenses} ranked={ranked} onOpen={openClash} synthetic={synthetic} /> : null}
+      <HiddenWall evidence={preset.evidence} synthetic={synthetic} />
 
       <TryAMove
         preset={preset}
@@ -730,15 +903,6 @@ function PresetView({
 
       <AgentPanel preset={preset} day={day} agentStatus={agentStatus} />
 
-      <HiddenWall evidence={preset.evidence} synthetic={synthetic} />
-      {twins.length > 0 ? (
-        <TwinCards twins={twins} acts={festival.acts} synthetic={synthetic} />
-      ) : (
-        <p className="container-page py-8 text-sm text-muted-foreground">
-          This day has no same-size twin pairs to show.
-        </p>
-      )}
-
       <div id={SOURCES_ID}>
         <PresetSources preset={preset} />
       </div>
@@ -749,7 +913,11 @@ function PresetView({
         open={drawer.open}
         ranked={ranked}
         onSelect={(clash) => openClash(clash, null)}
-        onClose={() => setDrawer((previous) => ({ ...previous, open: false }))}
+        onClose={() => {
+          // A resize can have re-rendered the rail row that opened the drawer; return focus to its new row.
+          const trigger = liveClashRow(drawer.trigger);
+          setDrawer((previous) => ({ ...previous, open: false, trigger }));
+        }}
         returnFocusTo={drawer.trigger}
         rankWithoutTaste={lensRank}
         rankWithoutTasteOf={drawerRankOf(lenses)}

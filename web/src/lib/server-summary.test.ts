@@ -172,7 +172,7 @@ describe("the decision card in the summary", () => {
         return new Response(JSON.stringify(rawTinyPreset()), { status: 200 });
       });
     const ok = await loadServerSummary(null, { backend: "http://api.test", fetcher: make(new Response(JSON.stringify(RAW_DECISION), { status: 200 })) });
-    expect(ok?.decision?.title).toBe("One decision on Tiny Fest Saturday, published timetable");
+    expect(ok?.decision?.title).toBe("Tiny Fest · Saturday · published timetable");
     for (const failing of ["down", new Response("{}", { status: 500 }), new Response("not json", { status: 200 }), new Response("{}", { status: 200 })] as const) {
       const summary = await loadServerSummary(null, { backend: "http://api.test", fetcher: make(failing) });
       expect(summary?.index).toBe(104);

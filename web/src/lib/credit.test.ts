@@ -17,7 +17,7 @@ import { TimetableList } from "@/components/clash/timetable-list";
 import { TryAMove } from "@/components/clash/try-a-move";
 import { TwinCards } from "@/components/clash/twin-cards";
 import { SummaryBoard, SummaryScore } from "@/components/clash/server-summary";
-import { WhyThisMatters } from "@/components/clash/why-this-matters";
+import { FailedTestNote } from "@/components/clash/why-this-matters";
 import { TraceDrawer } from "@/components/kernel";
 import { SiteFooter } from "@/components/site/site-footer";
 import { SyntheticBanner } from "@/components/site/synthetic-banner";
@@ -296,9 +296,11 @@ describe("the invented day: the pieces that used to credit Qloo", () => {
   });
 
   it("says the home evidence block's popularity figure is about the published festivals", () => {
-    const block = text(renderToStaticMarkup(createElement(WhyThisMatters)));
-    expect(block).toContain("An exploratory follow-up on those published festivals");
-    expect(block).toMatch(/on the same set, popularity, also a Qloo field, scores 0\.\d{3}\./);
+    const block = text(renderToStaticMarkup(createElement(FailedTestNote)));
+    // The popularity sentence follows the complained-about clashes of the published festivals' test.
+    expect(block).toMatch(
+      /of complained-about clashes in the top quarter of their day, below our \d+% bar\. Popularity, also a Qloo field, did better\./,
+    );
   });
 });
 
@@ -361,13 +363,15 @@ describe("the price words", () => {
     );
   });
 
-  it("puts the factors' scale and rounding in the drawer and the lens", () => {
+  it("puts the factors' scale and rounding in the drawer, and the lens points to the price on /method", () => {
     const drawer = everything(
       createElement(ClashDetails, { preset: published(), shown: published().report.clashes[0] }),
     );
     expect(drawer).toContain("Factors are on a 0 to 1 scale and rounded when printed");
-    const lens = everything(createElement(TasteLens, { lenses: LENSES, ranked: [], onOpen: noop }));
-    expect(lens).toContain("The factors are on a 0 to 1 scale");
+    // The lens says only why its apart pairs price at zero; /method#price carries the full formula note.
+    const lens = renderToStaticMarkup(createElement(TasteLens, { lenses: LENSES, ranked: [], onOpen: noop }));
+    expect(lens).not.toContain("The factors are on a 0 to 1 scale");
+    expect(lens).toMatch(/<a[^>]*href="\/method#price"[^>]*>How the price works<\/a>/);
   });
 });
 

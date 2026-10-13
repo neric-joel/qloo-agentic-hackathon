@@ -29,9 +29,9 @@ export function AbstainState({
     <section
       role="status"
       aria-labelledby={headingId}
-      className={cn("rounded-lg border-2 border-dashed border-border-strong bg-card p-5", className)}
+      className={cn("rounded-lg border border-dotted border-border-strong bg-card p-5", className)}
     >
-      <p className="type-kicker flex items-center gap-1.5 text-muted-foreground">
+      <p className="flex items-center gap-1.5 text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
         <CircleSlash aria-hidden="true" className="size-4" />
         No answer
       </p>

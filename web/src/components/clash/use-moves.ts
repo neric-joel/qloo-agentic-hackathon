@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 
-import { parseMoves, type MovesResult } from "@/lib/moves";
-import { encodeMoves, requestPlan, type Plan, type PlanAnswer, type StackStep } from "@/lib/stack";
+import { parseMoves, type ClashChanges, type MovesResult, type Placement, type PlacedOption } from "@/lib/moves";
+import type { Act, SetSlot } from "@/lib/preset";
+import { overlapWindow } from "@/lib/timetable";
+import { encodeMoves, requestPlan, type Plan, type PlanAnswer, type StackMove, type StackStep } from "@/lib/stack";
 
 /** How many priced places the section asks for. */
 export const MOVES_LIMIT = 8;
@@ -166,4 +168,137 @@ export function useMoves(presetId: string, actId: string | null): MovesState & {
   if (state.status === "idle") return { status: "idle", result: null, retry: state.retry };
   if (state.status === "loading") return { status: "loading", result: null, retry: state.retry };
   return { status: "error", result: null, retry: state.retry };
+}
+
+/**
+ * What the server's own list says about one move before it is kept: still being asked (`checking`), the
+ * list did not load (`error`), the place is not among the places the answer lists (`unlisted`, so its
+ * rules are not confirmed here), or the listed place itself (`ready`): a legal place, so it adds no rule
+ * break, with the Clash Budget Index before and after and the set's clashes there. Never `ready` before
+ * the answer is in.
+ */
+export type MoveCheck =
+  | { status: "checking" }
+  | { status: "error" }
+  | { status: "unlisted"; result: MovesResult }
+  | { status: "ready"; result: MovesResult; option: PlacedOption };
+
+/** The listed place a move lands on (same set, stage, day and start), or null when the list does not hold it. */
+export function listedPlace(result: MovesResult, move: StackMove): PlacedOption | null {
+  if (result.actId !== move.actId || !result.movable) return null;
+  return (
+    result.options.find(
+      (option) => option.stageId === move.stageId && option.day === move.day && option.start === move.start,
+    ) ?? null
+  );
+}
+
+/** A plan state read for one move: see `MoveCheck`. */
+export function moveCheck(state: Pick<PlanState, "status" | "options">, move: StackMove): MoveCheck {
+  if (state.status === "error" || state.status === "invalid") return { status: "error" };
+  if (state.status !== "ready" || !state.options) return { status: "checking" };
+  const option = listedPlace(state.options, move);
+  return option ? { status: "ready", result: state.options, option } : { status: "unlisted", result: state.options };
+}
+
+/**
+ * The decision card's move checked against the timetable engine's list of legal places for its set,
+ * on top of the kept moves: the same request "Show every legal place" makes (shared and cached, so
+ * pressing it afterwards asks nothing new). Null with no move. No language model and no Qloo call.
+ */
+export function useMoveCheck(presetId: string, moves: readonly StackStep[], move: StackMove | null): MoveCheck | null {
+  const state = usePlan(presetId, moves, move?.actId ?? null);
+  return move ? moveCheck(state, move) : null;
+}
+
+/** A clash a move keeps, with the minutes the two sets share before and after it. */
+export type SharedChange = { name: string; before: number; after: number };
+
+/** Minutes the moved set shares with each named partner, before and after the move, by partner name. */
+export type SharedByName = ReadonlyMap<string, { before: number; after: number }>;
+
+/**
+ * The minutes the moved set shares with each of `names`, at `home` (where it plays now) and at `after`
+ * (the tested place), read from the timetable already in memory. A partner the timetable does not hold
+ * is left out. No request is made.
+ */
+export function sharedMinutesByName(
+  acts: readonly Pick<Act, "id" | "name">[],
+  timetable: readonly SetSlot[],
+  actId: string,
+  home: Placement | null,
+  after: Placement | null,
+  names: readonly string[],
+): Map<string, { before: number; after: number }> {
+  const out = new Map<string, { before: number; after: number }>();
+  if (!home || !after) return out;
+  const idsByName = new Map<string, string[]>();
+  for (const act of acts) idsByName.set(act.name, [...(idsByName.get(act.name) ?? []), act.id]);
+  const minutes = (place: Placement, slot: SetSlot) => {
+    if (slot.day !== place.day) return 0;
+    const window = overlapWindow(place, slot);
+    return window ? window.end - window.start : 0;
+  };
+  for (const name of names) {
+    const ids = idsByName.get(name) ?? [name];
+    const slot = timetable.find((item) => item.act_id !== actId && ids.includes(item.act_id));
+    if (slot) out.set(name, { before: minutes(home, slot), after: minutes(after, slot) });
+  }
+  return out;
+}
+
+/** The kept clashes split by what the move does to their shared minutes; `unknown` when a time does not read. */
+export type KeptSplit = {
+  shorter: SharedChange[];
+  longer: SharedChange[];
+  unchanged: SharedChange[];
+  unknown: string[];
+};
+
+/** Splits the kept clashes into shorter, longer and unchanged by their shared minutes before and after. */
+export function splitKept(keeps: ClashChanges["keeps"], shared: SharedByName | null | undefined): KeptSplit {
+  const split: KeptSplit = { shorter: [], longer: [], unchanged: [], unknown: [] };
+  for (const keep of keeps) {
+    const minutes = shared?.get(keep.name);
+    if (!minutes) split.unknown.push(keep.name);
+    else {
+      const change = { name: keep.name, ...minutes };
+      if (minutes.after < minutes.before) split.shorter.push(change);
+      else if (minutes.after > minutes.before) split.longer.push(change);
+      else split.unchanged.push(change);
+    }
+  }
+  return split;
+}
+
+/** One part of the Clashes row: a count, its word, and the minutes when exactly one clash got shorter or longer. */
+export type ClashPart = { count: number; word: string; minutes: { before: number; after: number } | null };
+
+/**
+ * The Clashes row in order: shortened, lengthened and unchanged (each only above 0), kept (only for clashes
+ * whose minutes do not read), then added and removed, always. "1 shortened (45 → 30 min), 2 unchanged,
+ * 0 added, 0 removed".
+ */
+export function clashParts(changes: ClashChanges, shared: SharedByName | null | undefined): ClashPart[] {
+  const split = splitKept(changes.keeps, shared);
+  const parts: ClashPart[] = [];
+  const sized = (list: SharedChange[], word: string, withMinutes = true) => {
+    if (list.length === 0) return;
+    const only = withMinutes && list.length === 1 ? list[0] : null;
+    parts.push({ count: list.length, word, minutes: only ? { before: only.before, after: only.after } : null });
+  };
+  sized(split.shorter, "shortened");
+  sized(split.longer, "lengthened");
+  sized(split.unchanged, "unchanged", false);
+  if (split.unknown.length > 0) parts.push({ count: split.unknown.length, word: "kept", minutes: null });
+  parts.push({ count: changes.adds.length, word: "added", minutes: null });
+  parts.push({ count: changes.ends.length, word: "removed", minutes: null });
+  return parts;
+}
+
+/** The Clashes row as plain words, for tests and the screen reader's reading: "1 shortened (45 → 30 min), 2 unchanged, 0 added, 0 removed". */
+export function clashWords(parts: readonly ClashPart[]): string {
+  return parts
+    .map((part) => `${part.count} ${part.word}${part.minutes ? ` (${part.minutes.before} → ${part.minutes.after} min)` : ""}`)
+    .join(", ");
 }

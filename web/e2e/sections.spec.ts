@@ -25,7 +25,7 @@ test.describe("what Qloo changes", () => {
     await expect(ranks.nth(1)).toContainText("Time + draw");
     await expect(ranks.nth(1)).toContainText("Draw is Qloo popularity, 0 to 100");
     await expect(ranks.nth(2)).toContainText("Time + draw + Qloo taste");
-    await expect(ranks.nth(2)).toContainText("Taste overlap added: the price used here");
+    await expect(ranks.nth(2)).toContainText("Taste overlap added: the index used here");
 
     const [timeOnly, drawn, tasted] = await ranks.evaluateAll((all) => all.map((item) => /#(\d+) of (\d+)/.exec(item.textContent ?? "")?.slice(1).map(Number) ?? []));
     expect(timeOnly[1], "all three rank among the same clashes").toBe(drawn[1]);
@@ -54,8 +54,10 @@ test.describe("what Qloo changes", () => {
     await expect(home.whatQloo.getByRole("heading", { level: 3, name: "What the failed test taught us." })).toBeVisible();
     await expect(home.whatQloo).toContainText("Our test failed: taste overlap put 46.8% of complained-about clashes in the top quarter of their day, below our 60% bar.");
     await expect(home.whatQloo).toContainText("Popularity, also a Qloo field, did better.");
-    await expect(home.whatQloo).toContainText("So the taste reading is a second opinion beside time and draw");
-    await expect(home.whatQloo).toContainText(/It is nearly unrelated to popularity \(r = 0\.\d+\)/);
+    await expect(home.whatQloo).toContainText("The exploratory follow-up did not establish an advantage over popularity.");
+    await expect(home.whatQloo).toContainText("So the taste reading is a second opinion beside time and draw: the part Qloo’s taste data adds to the index, never the verdict on its own.");
+    // The correlation with popularity is stated on /method, where it is defined (method.spec.ts pins it there).
+    await expect(home.whatQloo).not.toContainText(/unrelated to popularity/);
     await expect(home.whatQloo).not.toContainText("never folded into a verdict");
     await expect(home.whatQloo.getByRole("link", { name: "How we know" })).toHaveAttribute("href", "/method#tested");
   });
@@ -102,14 +104,24 @@ test.describe("who has complained, and what nobody has tested", () => {
     await home.goto(DAYS.glastonbury.id);
 
     const section = home.whyThisMatters;
-    await expect(section.getByRole("heading", { level: 3, name: "The problem is public" })).toBeVisible();
-    await expect(section).toContainText("45 clashes that fans or the press complained about at 5 festivals had a verified overlap in time.");
+    // The finding is the column's own heading.
+    await expect(section.getByRole("heading", { level: 3, name: "45 clashes that fans or the press complained about at 5 festivals had a verified overlap in time." })).toBeVisible();
     await expect(section.getByRole("img", { name: /^Overlap range and median across 86 verified pairs\. Range 10 to 90 minutes; median 50 minutes/ })).toBeVisible();
 
     await expect(section.getByRole("heading", { level: 3, name: "What programmers have said in public" })).toBeVisible();
-    const voices = section.getByRole("list").filter({ has: page.getByRole("link", { name: "BBC, 2017" }) }).getByRole("listitem");
-    await expect(voices).toHaveCount(3);
+    // One statement in the open, the other three in one fold; each is our paraphrase and says so, with its sources.
+    const open = section.getByRole("list").filter({ has: page.getByRole("link", { name: "BBC, 2017" }) }).getByRole("listitem");
+    await expect(open).toHaveCount(1);
+    await expect(open).toBeVisible();
+    const more = disclosure(section, /^Three more statements, and what they show$/);
+    await expect(more).toHaveJSProperty("open", false);
+    await more.locator("summary").click();
+    const rest = more.getByRole("listitem");
+    await expect(rest).toHaveCount(3);
+    const voices = open.or(rest);
+    await expect(voices).toHaveCount(4);
     for (const voice of await voices.all()) {
+      await expect(voice).toContainText("(our summary)");
       const links = voice.getByRole("link");
       expect(await links.count(), "every quoted voice has a source link").toBeGreaterThan(0);
       for (const link of await links.all()) {
@@ -128,17 +140,18 @@ test.describe("who has complained, and what nobody has tested", () => {
     await expect(section.getByRole("heading", { level: 3, name: "No scheduler we found reads audience overlap" })).toBeVisible();
     await expect(section).toContainText("Our search, October 2026: absence of evidence only. Who would pay is not known.");
 
-    const sources = disclosure(section, /^Danny Bell, Goldenvoice/);
+    const sources = disclosure(section, /^Three more statements, and what they show$/);
     await sources.locator("summary").click();
+    await expect(sources).toContainText("Danny Bell, Goldenvoice");
     await expect(sources).toContainText("Whether programmers would use or pay for this has not been tested.");
     const schedulers = disclosure(section, /^Festival Pro and Lineup Ninja/);
     await schedulers.locator("summary").click();
     await expect(schedulers).toContainText("We found none that reads audience overlap (our search, October 2026).");
-    const cost = disclosure(section, /^About 40 Qloo requests per bill, only with the festival’s OK$/);
-    await expect(cost).toHaveJSProperty("open", false);
-    await cost.locator("summary").click();
-    await expect(cost).toContainText("Pricing a new bill is not offered: comparing its longest overlaps takes about 40 Qloo requests of the 10,000 shared this month");
-    await expect(cost).toContainText("Either needs the festival’s OK. One answer is not a market.");
+    // The pilot's success line says one answer is not a market, in the open. The pilot offers nothing that costs a
+    // Qloo request, so the request arithmetic is not on the page (round 33 R1.9: it is on the Devpost page).
+    await expect(section).toContainText("Success: you say which suggestion you would take or turn down, and why. One answer is not a market.");
+    await expect(section.locator("summary", { hasText: /Qloo requests/ })).toHaveCount(0);
+    await expect(section).not.toContainText("Pricing a new bill is not offered");
     const complaints = disclosure(section, /^86 pairs, median 50 minutes, and how the lists lean$/);
     await complaints.locator("summary").click();
     await expect(complaints).toContainText("Press lists lean toward headliners, which flatters any taste-based method.");
@@ -173,8 +186,9 @@ test.describe("where the numbers come from", () => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
-    await expect(home.sources).toContainText("Glastonbury Festival 2025 does not use Clash Control.");
-    await expect(home.sources).toContainText("This page scores the festival’s published timetable from public sources. Nothing here is the festival’s own data or view.");
+    await expect(home.sources).toContainText("Glastonbury Festival 2025 does not use Clash Control. Nothing here is the festival’s own data or view.");
+    // That the published timetables are scored by this app is said once, in the footer every page shares.
+    await expect(home.chrome.footer).toContainText("The festivals shown do not use Clash Control; their published timetables are scored by this app.");
     await expect(home.sources).toContainText("Recorded, not live.");
     await expect(home.sources).toContainText(/Preset built \d{4}-\d{2}-\d{2} UTC from saved Qloo responses\./);
     await expect(home.sources).toContainText("31 of 36 acts on this day score 90 or more out of 100.");

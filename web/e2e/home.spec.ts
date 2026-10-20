@@ -44,8 +44,11 @@ for (const day of Object.values(DAYS)) {
 
       const dial = page.getByRole("figure").filter({ hasText: "Clash Budget Index" });
       await expect(dial.getByText(before, { exact: true }).first()).toBeVisible();
-      // The day against random valid timetables, said by this index and in a neutral form, beside "Lower is better".
-      await expect(dial).toContainText(/By this index, the published timetable scores \d+% (above|below) the average random valid timetable\./);
+      // The day against random valid timetables, said by this index with the day's own figure and its direction
+      // (100 is the average random valid timetable; higher is more clash cost), beside "Lower is better".
+      await expect(dial).toContainText(
+        `By this index, the published timetable scores ${before}, where 100 is the average random valid timetable and higher means more clash cost.`,
+      );
       await expect(dial).toContainText("Lower is better");
     });
 
@@ -64,22 +67,26 @@ for (const day of Object.values(DAYS)) {
 test.describe("home page length", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
 
-  /** A ceiling with margin over the 6,800 px target at 1440 px: it catches growth, it does not pin a pixel. */
-  const CEILING = 7_000;
+  /** The home length budget (round 33, R2): 6,800 px at 1440 px in the light theme, 11,800 px at 390 px in the dark. */
+  const BUDGET = {
+    desktop: { width: 1440, theme: "light", ceiling: 6_800 },
+    phone: { width: 390, theme: "dark", ceiling: 11_800 },
+  } as const;
 
-  test(`at 1440 px the home page is at most ${CEILING.toLocaleString("en-US")} px tall`, async ({ page, isPhone }) => {
-    test.skip(isPhone, "The length budget is measured at 1440 px.");
-    // Known defect D5 (round 32): the page measures about 7,980 px at 1440 x 900 on Glastonbury, over this
-    // ceiling (home lane budget L1). Repro: open /?preset=glastonbury-2025-sun at 1440 x 900, wait for the
-    // board, read document.documentElement.scrollHeight. Remove this mark when the page fits.
-    test.fail(true, "D5: the home page is taller than the 7,000 px ceiling at 1440 px");
+  test("the home page is at most 6,800 px tall at 1440 px light, and at most 11,800 px at 390 px dark", async ({ page, isPhone }) => {
+    const budget = isPhone ? BUDGET.phone : BUDGET.desktop;
+    expect(page.viewportSize()?.width, "measured at the budget's width").toBe(budget.width);
+    await page.addInitScript((theme) => localStorage.setItem("theme", theme), budget.theme);
+    await page.emulateMedia({ colorScheme: budget.theme });
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
+    expect(await home.chrome.appliedTheme(), "measured in the budget's theme").toBe(budget.theme);
     await scrollThrough(page);
 
     const height = await page.evaluate(() => document.documentElement.scrollHeight);
-    test.info().annotations.push({ type: "home height at 1440", description: `${height} px` });
-    expect(height, `home height at 1440: ${height} px`).toBeLessThanOrEqual(CEILING);
+    const label = `home height at ${budget.width} ${budget.theme}`;
+    test.info().annotations.push({ type: label, description: `${height} px` });
+    expect(height, `${label}: ${height} px`).toBeLessThanOrEqual(budget.ceiling);
   });
 });
 

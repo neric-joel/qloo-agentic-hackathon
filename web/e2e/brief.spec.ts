@@ -24,10 +24,10 @@ test.describe("one-page brief", () => {
   test("renders the day: its index, its costliest clashes, and what the figures are", async ({ page, isPhone }) => {
     const article = await open(page, `preset=${DAYS.glastonbury.id}&day=0`);
 
-    await expect(article.getByRole("heading", { level: 1 })).toHaveText("Glastonbury Festival 2025 Sunday: where the clash budget goes");
+    await expect(article.getByRole("heading", { level: 1 })).toHaveText("Glastonbury Festival 2025 Sunday: where the clashes fall");
     await expect(article).toContainText("Scored by this app from the published timetable. Glastonbury Festival 2025 does not use Clash Control.");
     await expect(article.getByRole("region", { name: "The day" })).toContainText(/Clash Budget Index \d+\.\d\./);
-    await expect(article.getByRole("region", { name: "The day" })).toContainText("Taste overlap is priced for 36 of 39 sets; 3 have no usable Qloo signal and are not priced.");
+    await expect(article.getByRole("region", { name: "The day" })).toContainText("Taste overlap is scored for 36 of 39 sets; 3 have no usable Qloo signal and are not priced.");
 
     // Five clashes: a table on a desk, a list of cards on a phone (a table does not fit 390 px).
     const clashes = article.getByRole("region", { name: "The five costliest clashes" });
@@ -78,7 +78,7 @@ test.describe("one-page brief", () => {
   test("a second day has its own brief, and says no moves are kept when none are", async ({ page }) => {
     const article = await open(page, `preset=${DAYS.riot.id}&day=0`);
 
-    await expect(article.getByRole("heading", { level: 1 })).toHaveText("Riot Fest 2026 Sunday: where the clash budget goes");
+    await expect(article.getByRole("heading", { level: 1 })).toHaveText("Riot Fest 2026 Sunday: where the clashes fall");
     await expect(article).toContainText("Riot Fest 2026 does not use Clash Control.");
     await expect(article).toContainText("This is an independent hackathon entry, not endorsed by Qloo or Riot Fest 2026.");
     await expect(article.getByRole("region", { name: "Hidden clashes" })).toContainText(/1 of this day’s ranked clashes is a hidden clash: /);
@@ -137,7 +137,7 @@ test.describe("one-page brief", () => {
     await page.goto("/brief", { waitUntil: "domcontentloaded" });
     const article = page.getByRole("article");
     await expect(article).toBeVisible();
-    await expect(article.getByRole("heading", { level: 1 })).toHaveText("Glastonbury Festival 2025 Sunday: where the clash budget goes");
+    await expect(article.getByRole("heading", { level: 1 })).toHaveText("Glastonbury Festival 2025 Sunday: where the clashes fall");
     await expect(article.getByRole("region", { name: "Tested moves" })).toContainText("No moves kept yet.");
     await expect(article.getByRole("region", { name: "Your plan" })).toHaveCount(0);
     await expect(page.getByRole("alert").filter({ hasText: /This brief link is unavailable/ })).toHaveCount(0);

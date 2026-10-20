@@ -28,6 +28,9 @@ test.describe("keep two sets apart", () => {
     const home = new HomePage(page);
     const keep = section(page);
     await home.goto(DAYS.glastonbury.id);
+    // The section waits in a closed disclosure under Try a move until a visitor opens it.
+    await expect(keep.area).toBeHidden();
+    await home.openKeepApart();
 
     await expect(keep.first).toHaveValue("sprints");
     await expect(keep.second).toHaveValue("katy-j-pearson");
@@ -76,6 +79,7 @@ test.describe("keep two sets apart", () => {
     const keep = section(page);
     const move = new TryAMove(page);
     await home.goto(DAYS.glastonbury.id);
+    await home.openKeepApart();
 
     await keep.find.click();
     await expect(keep.clear).toBeDisabled();
@@ -96,6 +100,7 @@ test.describe("keep two sets apart", () => {
     const keep = section(page);
     const move = new TryAMove(page);
     await home.goto(DAYS.glastonbury.id);
+    await home.openKeepApart();
 
     await keep.find.click();
     const first = keep.changes.first();
@@ -120,6 +125,7 @@ test.describe("keep two sets apart", () => {
     const home = new HomePage(page);
     const keep = section(page);
     await home.goto(DAYS.glastonbury.id);
+    await home.openKeepApart();
 
     await keep.first.selectOption({ label: "11:15 The Selecter" });
     await keep.second.selectOption({ label: "14:00 Cymande" });

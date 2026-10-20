@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
-import { startsWith } from "../helpers";
+import { READY_TIMEOUT, startsWith } from "../helpers";
 import { SiteChrome } from "./site-chrome";
 
 /** The home page: the hero decision, the section rail, the board, and the sections under it. */
@@ -38,6 +38,8 @@ export class HomePage {
   readonly whyThisMatters: Locator;
   readonly hiddenWall: Locator;
   readonly tryAMove: Locator;
+  /** "Keep two sets apart" sits in a closed disclosure under Try a move; its summary opens it. */
+  readonly keepApartSummary: Locator;
   readonly keepApart: Locator;
   readonly agent: Locator;
   readonly sources: Locator;
@@ -78,6 +80,7 @@ export class HomePage {
     this.whyThisMatters = page.getByRole("region", { name: "Who has complained, and what nobody has tested" });
     this.hiddenWall = page.getByRole("region", { name: /^Hidden clashes: / });
     this.tryAMove = page.getByRole("region", { name: "Move a set and see what it costs" });
+    this.keepApartSummary = page.locator("summary").filter({ hasText: /^Keep two sets apart: moves that end one overlap$/ });
     this.keepApart = page.getByRole("region", { name: "Keep two sets apart" });
     // While the live agent is off the section is named for what it holds; with it on, it invites a question.
     this.agent = page.getByRole("region", { name: /^(Recorded agent runs|The agent|Or describe the change in plain words)$/ });
@@ -100,12 +103,23 @@ export class HomePage {
    * every button on the page has its handler. The rail's first link, "What Qloo changes", and the card's
    * pointer to it only appear when the day's three rankings have arrived (a separate request); waiting for
    * it means the page has stopped growing, so scroll positions and tab order are settled.
+   *
+   * Those two arrivals (and hydration) wait on the dev server, which under four workers can take longer than
+   * the default 10 s expect timeout, so each step waits up to `READY_TIMEOUT` for its element; it returns as
+   * soon as the element shows.
    */
   async waitUntilReady(): Promise<void> {
-    await expect(this.heading).toBeVisible();
-    await expect(this.boardHeading).toBeVisible();
-    await expect(this.board).toBeVisible();
-    await expect(this.rail.getByRole("link").first()).toHaveText(/What (Qloo|taste) changes/);
+    await expect(this.heading).toBeVisible({ timeout: READY_TIMEOUT });
+    await expect(this.boardHeading).toBeVisible({ timeout: READY_TIMEOUT });
+    await expect(this.board).toBeVisible({ timeout: READY_TIMEOUT });
+    await expect(this.rail.getByRole("link").first()).toHaveText(/What (Qloo|taste) changes/, { timeout: READY_TIMEOUT });
+  }
+
+  /** Opens the "Keep two sets apart" disclosure as a visitor does, by pressing its summary, unless it is open. */
+  async openKeepApart(): Promise<void> {
+    await expect(this.keepApartSummary).toBeVisible();
+    if (!(await this.keepApart.isVisible())) await this.keepApartSummary.click();
+    await expect(this.keepApart).toBeVisible();
   }
 
   /** Chooses a festival day in the picker above the board, as a visitor does: by pressing its label. */

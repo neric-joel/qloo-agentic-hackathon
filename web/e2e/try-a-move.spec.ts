@@ -17,19 +17,22 @@ async function publishedIndex(home: HomePage): Promise<string> {
 test.describe("try a move", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
 
-  test("the starting list names four sets, each with the minutes it shares and its partner", async ({ page }) => {
+  test("the starting list names the card's two sets, each with the minutes it shares and its partner", async ({ page }) => {
     const home = new HomePage(page);
     const move = new TryAMove(page);
     await home.goto(DAYS.glastonbury.id);
 
+    // Two sets to start with (START_WITH in try-a-move.tsx): the decision card's pair; every other set is in the select.
     const rows = move.starters.getByRole("button");
-    await expect(rows).toHaveCount(4);
+    await expect(rows).toHaveCount(2);
     for (const row of await rows.all()) {
       await expect(row).toHaveAccessibleName(/^\d{2}:\d{2} .+ \d+ min with .+$/);
       await expect(row).toHaveAttribute("aria-pressed", "false");
     }
     await expect(move.starter("Sprints")).toContainText("45 min");
     await expect(move.starter("Sprints")).toContainText("with Katy J Pearson");
+    await expect(move.starter("Katy J Pearson")).toContainText("45 min");
+    await expect(move.starter("Katy J Pearson")).toContainText("with Sprints");
   });
 
   test("a picked set lists its legal places on the 5-minute grid, lowest index first", async ({ page }) => {

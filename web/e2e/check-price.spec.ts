@@ -43,6 +43,14 @@ function recordPriceBodies(page: import("@playwright/test").Page): Body[] {
   return sent;
 }
 
+/**
+ * The act names in a body's pairs, each once, in pair order. A saved request sends only these (round 33, C2), plus
+ * the fewest other names the server needs to find the day, which none of the grids here need.
+ */
+function namesInPairs(body: Body): string[] {
+  return [...new Set(body.pairs.flat())];
+}
+
 /** The compared overlaps, one row each (the overlaps not compared wait in a fold of their own). */
 function compared(check: CheckPage) {
   return check.priceSection.getByRole("list", { name: "Compared overlaps" }).getByRole("listitem");
@@ -59,34 +67,41 @@ test.describe("compare audience overlap, from a saved day", () => {
     const check = new CheckPage(page);
     await check.goto();
 
-    await expect(check.priceSection).toContainText("The checks above ran in your browser and used no Qloo data.");
-    await expect(check.priceSection).toContainText("we send the 24 act names and the pairs to this site’s server to look for saved audience data.");
-    await expect(check.priceSection).toContainText("No times, stages or rules are sent; names are not stored or logged.");
+    await expect(check.priceSection).toContainText("Rule checks used no Qloo data.");
+    // Before the press, what a saved request sends: the compared pairs and only their act names, never times, stages or rules.
+    const intro = check.priceSection.getByText(
+      /Compare sends this site’s server the 5 longest movable overlaps and their \d+ act names, never times, stages or rules; names are not stored or logged\./,
+    );
+    await expect(intro).toBeVisible();
+    const said = Number(/and their (\d+) act names/.exec(await intro.innerText())?.[1]);
+    await expect(check.priceSection).toContainText("With no saved day, nothing is compared: live Qloo comparison is off here.");
     expect(sent, "nothing is priced until the button is pressed").toEqual([]);
 
     await check.priceButton.click();
 
-    // What leaves the browser: names and pairs, in saved mode, and nothing else.
+    // What leaves the browser: the pairs and their act names, in saved mode, and nothing else.
     await expect.poll(() => sent.length).toBe(1);
     expect(sent[0].mode).toBe("saved");
     expect(Object.keys(sent[0]).sort()).toEqual(["acts", "mode", "pairs"]);
-    expect(sent[0].acts).toHaveLength(24);
     expect(sent[0].pairs).toHaveLength(5);
+    expect(sent[0].acts, "only the act names in the compared pairs, each once").toEqual(namesInPairs(sent[0]));
+    expect(sent[0].acts, "as many names as the sentence above says").toHaveLength(said);
     expect(JSON.stringify(sent[0])).not.toMatch(/\d{2}:\d{2}/); // no times
     expect(JSON.stringify(sent[0])).not.toMatch(/Stage|Tent/); // no stages
 
     await expect(check.priceSection).toContainText(
       "Compared using the invented example day: its acts and affinities are invented, not Qloo data. No Qloo request was sent.",
     );
-    await expect(check.priceSection).toContainText("24 acts sent: 24 matched, 23 with a usable signal; 1 matched with no signal.");
+    await expect(check.priceSection).toContainText(`${said} acts sent: ${said} matched, ${said} with a usable signal.`);
     const rows = check.priceSection.getByRole("listitem");
     await expect(rows).toHaveCount(5);
-    // One name and one scale for the value: "taste overlap NN / 100" (the invented day's own figures).
-    await expect(rows.first()).toContainText("Glass Mirror × Marble Machine: 80 min shared. Taste overlap 34 / 100, ranked 2 of 5.");
-    for (const row of await rows.all()) await expect(row).toContainText(/Taste overlap \d{1,3} \/ 100, ranked \d of 5\./);
+    // One name and one scale for the value: "taste overlap NN / 100" (the invented day's own figures), and its
+    // rank among the pairs compared here, said as a taste rank.
+    await expect(rows.first()).toContainText("Glass Mirror × Marble Machine: 80 min shared. Taste overlap 34 / 100, taste rank 2 of 5.");
+    for (const row of await rows.all()) await expect(row).toContainText(/Taste overlap \d{1,3} \/ 100, taste rank \d of 5\./);
     // A rank, not attendance, and no index here.
     await expect(check.priceSection).toContainText("not Qloo data and not attendance");
-    await expect(check.priceSection).toContainText("The Clash Budget Index needs a full priced day and is not computed here.");
+    await expect(check.priceSection).toContainText("The Clash Budget Index needs a full scored day and is not computed here.");
   });
 
   test("the answer can be ordered by minutes or by audience overlap, and says what the order changed", async ({ page }) => {
@@ -102,8 +117,8 @@ test.describe("compare audience overlap, from a saved day", () => {
 
     await highest.click();
     await expect(highest).toHaveAttribute("aria-pressed", "true");
-    await expect(rows.first()).toContainText("ranked 1 of 5");
-    const ranks = (await rows.allInnerTexts()).map((text) => Number(/ranked (\d) of 5/.exec(text)?.[1]));
+    await expect(rows.first()).toContainText("taste rank 1 of 5");
+    const ranks = (await rows.allInnerTexts()).map((text) => Number(/taste rank (\d) of 5/.exec(text)?.[1]));
     expect(ranks).toEqual([1, 2, 3, 4, 5]);
     expect(await rows.allInnerTexts()).not.toEqual(byMinutes);
     await expect(check.priceSection).toContainText("Taste overlap changes the order of the 5 compared overlaps: Glass Mirror × Hollow Meadow moves from 3rd to 1st.");
@@ -122,20 +137,26 @@ test.describe("compare audience overlap, from a saved day", () => {
     await check.priceButton.click();
     await expect(check.priceSection).toContainText("Compared using a saved festival day. No Qloo request was sent.");
     expect(sent.map((body) => body.mode)).toEqual(["saved"]);
-    await expect(check.priceSection).toContainText("8 acts sent: 8 matched, 8 with a usable signal.");
+    // Only the names in the compared overlaps are sent: Jorja Smith shares time with no one, so her name stays here.
+    expect(sent[0].acts, "only the act names in the compared pairs, each once").toEqual(namesInPairs(sent[0]));
+    expect(sent[0].acts).not.toContain("Jorja Smith");
+    const names = sent[0].acts.length;
+    await expect(check.priceSection).toContainText(`${names} acts sent: ${names} matched, ${names} with a usable signal.`);
 
     // Counts and wording only: no taste value or rank from the saved day is written into this test.
     const rows = compared(check);
     await expect(rows).toHaveCount(4);
-    await expect(rows.filter({ hasText: /Taste overlap \d{1,3} \/ 100, ranked \d of 4\./ })).toHaveCount(4);
+    await expect(rows.filter({ hasText: /Taste overlap \d{1,3} \/ 100, taste rank \d of 4\./ })).toHaveCount(4);
     // The overlap without a reading is counted in one line, and says why in words inside a closed fold.
-    await expect(check.priceSection).toContainText("1 overlap not compared: no reading served for the pair (1).");
+    await expect(check.priceSection).toContainText("1 overlap not compared: not served (1).");
     const fold = notComparedFold(check);
     await expect(fold.locator("summary")).toHaveText("Why this was not compared (1)");
     await expect(fold).toHaveJSProperty("open", false);
     await fold.locator("summary").click();
     await expect(fold.getByRole("listitem")).toHaveCount(1);
-    await expect(fold.getByRole("listitem").filter({ hasText: "Nadine Shah × Geordie Greep" })).toContainText(/Not compared: \S.+\./);
+    await expect(fold.getByRole("listitem").filter({ hasText: "Nadine Shah × Geordie Greep" })).toContainText(
+      "Not served: this site serves saved Qloo values only for the pairs its timetable page prints. Shown by minutes only.",
+    );
     await expect(check.priceSection).toContainText("each is a rank among the acts on that day’s lineup of 36 acts, not among the acts you pasted, and not attendance.");
   });
 
@@ -153,8 +174,8 @@ test.describe("compare audience overlap, from a saved day", () => {
 });
 
 test.describe("compare audience overlap, names no saved day has", () => {
-  // The saved attempt is refused with a 422, which the browser reports as a console error.
-  test.use({ ignoreConsole: [/status of 422/] });
+  // With live pricing off, the server answers a saved body no saved day holds with a 200 ("no_saved_day"), not a
+  // 422, so the browser logs no error (the suite's console watch fails the test on any).
 
   test("with live pricing off on this server, there is no offer to ask Qloo: it says so, and nothing goes live", async ({ page, guard }) => {
     const health = await (await page.request.get("/api/health")).json();
@@ -166,18 +187,23 @@ test.describe("compare audience overlap, names no saved day has", () => {
     await check.paste(UNKNOWN_GRID);
     await check.checkButton.click();
     // Before the press, the page already says what happens when no saved day matches.
-    await expect(check.priceSection).toContainText("If no saved day matches, nothing is compared: live Qloo pricing is off on this server.");
+    await expect(check.priceSection).toContainText("With no saved day, nothing is compared: live Qloo comparison is off here.");
+    const answered = page.waitForResponse((response) => response.url().endsWith("/api/price-grid"));
     await check.priceButton.click();
+    // The saved attempt is answered, not refused: nothing compared and no Qloo request used.
+    const response = await answered;
+    expect(response.status()).toBe(200);
+    expect(await response.json()).toMatchObject({ mode: "saved", status: "no_saved_day", requests_used: 0 });
 
     await expect(check.priceSection).toContainText(
-      "These acts are not on a saved day, and live Qloo pricing is off on this server, so they are not compared. Acts on a saved day still compare.",
+      "These acts are not on a saved day, and live comparison with Qloo is off on this server, so nothing was compared and no Qloo request was sent. A published day still compares.",
     );
     await expect(check.page.getByRole("button", { name: /^Ask Qloo/ })).toHaveCount(0);
     await expect(check.page.getByText(/We can ask Qloo now/)).toHaveCount(0);
-    // Only the saved attempt went out, and it was refused (422); nothing was sent in a live mode.
+    // Only the saved attempt went out; nothing was sent in a live mode, and nothing was logged as an error.
     expect(sent.map((body) => body.mode)).toEqual(["saved"]);
     expect(guard.spending).toEqual([]);
-    expect(guard.consoleErrors).toHaveLength(1);
+    expect(guard.consoleErrors).toEqual([]);
   });
 });
 
@@ -200,10 +226,11 @@ test.describe("compare audience overlap on a published day", () => {
     await expect(check.priceSection).toContainText("Compared using a saved festival day. No Qloo request was sent.");
     expect(sent.length).toBeGreaterThanOrEqual(1);
     expect(sent.every((body) => body.mode === "saved"), "the published day compares in saved mode only").toBe(true);
+    for (const body of sent) expect(body.acts, "only the act names in the pairs sent, each once").toEqual(namesInPairs(body));
     const pairsSent = sent[0].pairs.length;
 
     const rows = compared(check);
-    const priced = rows.filter({ hasText: /Taste overlap \d{1,3} \/ 100(, ranked \d+ of \d+|, the only pair compared)\./ });
+    const priced = rows.filter({ hasText: /Taste overlap \d{1,3} \/ 100(, taste rank \d+ of \d+|, the only pair compared)\./ });
     await expect(priced.first()).toBeVisible();
     const pricedCount = await priced.count();
     expect(pricedCount, "at least one pair is compared from the saved day").toBeGreaterThanOrEqual(1);
@@ -233,6 +260,12 @@ test.describe("compare audience overlap on a published day", () => {
     await expect(check.publishedButton).toHaveAccessibleName(`Check a published day: ${DAYS.glastonbury.title}`);
     await check.publishedButton.click();
     await expect(check.page.getByText(/^Published timetable: /).first()).toBeVisible();
+    // Before the press, what a saved request sends: the saved day's own costliest movable clashes and their act names.
+    const intro = check.priceSection.getByText(
+      /Compare sends this site’s server the saved day’s \d+ costliest movable clashes, by its own ranking, and their \d+ act names, never times, stages or rules; names are not stored or logged, and nothing goes to Qloo\./,
+    );
+    await expect(intro).toBeVisible();
+    const [, saidPairs, saidNames] = (/the saved day’s (\d+) costliest movable clashes, by its own ranking, and their (\d+) act names/.exec(await intro.innerText()) ?? []).map(Number);
     await check.priceButton.click();
     await expect(check.priceSection).toContainText("Compared using a saved festival day. No Qloo request was sent.");
 
@@ -243,28 +276,39 @@ test.describe("compare audience overlap on a published day", () => {
     expect(sent[0].pairs.length).toBeGreaterThanOrEqual(5);
     expect(sent[0].pairs.length).toBeLessThanOrEqual(10);
     expect([...sent[0].pairs[0]].sort()).toEqual(["Katy J Pearson", "Sprints"]);
-    expect(sent[0].acts, "every act of the day is sent in saved mode").toHaveLength(new Set(sent[0].acts).size);
-    expect(sent[0].acts.length).toBeGreaterThan(25);
+    // Saved mode sends only the act names in the compared pairs, each once (a live body would be the pasted rule's,
+    // up to 25 names, but nothing here goes live).
+    expect(sent[0].acts, "only the act names in the compared pairs, each once").toEqual(namesInPairs(sent[0]));
+    expect([sent[0].pairs.length, sent[0].acts.length], "the body is what the sentence above said").toEqual([saidPairs, saidNames]);
     expect(guard.spending, "nothing in a live mode").toEqual([]);
 
     // At least five pairs come back compared, the card's pair among them.
     const rows = compared(check);
     await expect(rows.first()).toBeVisible();
     expect(await rows.count()).toBeGreaterThanOrEqual(5);
-    await expect(rows.filter({ hasText: /^Sprints × Katy J Pearson: \d+ min shared\. Taste overlap \d{1,3} \/ 100, ranked \d+ of \d+\.$/ })).toHaveCount(1);
+    await expect(rows.filter({ hasText: /^Sprints × Katy J Pearson: \d+ min shared\. Taste overlap \d{1,3} \/ 100, taste rank \d+ of \d+\.$/ })).toHaveCount(1);
     // The order sentence is computed from what came back, and how the pairs were picked is disclosed.
-    await expect(check.priceSection.getByText(/^Taste overlap (does not change|changes) the order of the \d+ compared overlaps/)).toBeVisible();
+    const orderSentence = check.priceSection.getByText(/^Taste overlap (does not change|changes) the order of the \d+ compared overlaps/);
+    await expect(orderSentence).toBeVisible();
     const disclosure = check.priceSection.getByText(
       "These pairs are the saved day's costliest by this app's index, which already includes taste overlap: a worked example, not a test.",
     );
     await expect(disclosure).toBeVisible();
-    // Values first: the compared rows, then the disclosure, then the one line that counts what was not compared, then its fold.
+    // How the pairs were picked and the order sentence are read first, so the order the rows are in is said above them;
+    // then the compared rows, then the one line that counts what was not compared, then its fold.
     const countLine = check.priceSection.getByText(/^\d+ overlaps? not compared: .+\.$/);
     await expect(countLine).toBeVisible();
     const fold = notComparedFold(check);
     await expect(fold).toHaveJSProperty("open", false);
     const top = async (locator: Locator) => (await locator.boundingBox())?.y ?? Number.NaN;
-    const order = [await top(rows.first()), await top(rows.last()), await top(disclosure), await top(countLine), await top(fold)];
-    expect(order, "values, disclosure, count line and fold, top to bottom").toEqual([...order].sort((a, b) => a - b));
+    const order = [
+      await top(disclosure),
+      await top(orderSentence),
+      await top(rows.first()),
+      await top(rows.last()),
+      await top(countLine),
+      await top(fold),
+    ];
+    expect(order, "disclosure, order sentence, values, count line and fold, top to bottom").toEqual([...order].sort((a, b) => a - b));
   });
 });

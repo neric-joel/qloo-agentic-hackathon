@@ -25,7 +25,7 @@ test.describe("recorded agent runs", () => {
     await expect(page.getByRole("heading", { name: "Or describe the change in plain words" })).toHaveCount(0);
     await expect(home.agent).toContainText("The live agent is off here to keep this demo free to run");
     await expect(home.agent).toContainText("Saved runs on this day replay with no live Qloo or model call.");
-    await expect(home.agent).toContainText("Prices, clashes and receipts above work without it.");
+    await expect(home.agent).toContainText("Scores, clashes and moves above work without it.");
     await expect(home.agent.getByRole("textbox")).toHaveCount(0);
     await expect(home.agent.getByRole("button", { name: /^(Ask|Send|Run)/ })).toHaveCount(0);
     await expect(home.agent).toContainText("It never changes the real festival, which does not use Clash Control.");
@@ -34,10 +34,10 @@ test.describe("recorded agent runs", () => {
     await expect(home.agent.getByRole("heading", { level: 3, name: "What the agent can and cannot do" })).toBeVisible();
     await expect(home.agent).toContainText("It can test a move, but it never changes your timetable unless you press Keep this place.");
     await expect(home.agent).toContainText("At most 12 Qloo requests and 6 model turns per run.");
-    // The recordings on this day sent no new Qloo request, and the section says so, and what they scored with.
-    await expect(home.agent).toContainText(
-      "None of these three recorded runs sent a new Qloo request: they test moves with the timetable engine, which scores with this day’s saved Qloo reading.",
-    );
+    // The recordings on this day sent no new Qloo request, and the line under the run list says so, and what they
+    // scored with (it is computed from the listed runs, so a run that asked Qloo would remove it).
+    await expect(home.agent.getByRole("list", { name: "Recorded runs" }).getByRole("listitem")).toHaveCount(3);
+    await expect(home.agent).toContainText("These runs send no new Qloo request; they test moves with this day’s saved reading.");
     expect(guard.requested.filter((url) => url.includes("/api/runs"))).toEqual([]);
   });
 
@@ -45,12 +45,15 @@ test.describe("recorded agent runs", () => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
+    // A run that ends with a place to keep comes first (it is the default replay); the run the rules refuse is last.
     const runs = home.agent.getByRole("list", { name: "Recorded runs" }).getByRole("listitem");
     await expect(runs).toHaveCount(3);
-    await expect(runs.nth(0)).toContainText("Can Nadine Shah play the Other stage at 15:30? Check it against the rules.");
-    await expect(runs.nth(0)).toContainText("Ask for a move the rules refuse");
+    await expect(runs.nth(0)).toContainText("Keep Jorja Smith and Olivia Rodrigo where they are, and keep Parcels and The Maccabees from overlapping. Then tell me where Parcels could go.");
+    await expect(runs.nth(0)).toContainText("Set two rules, then move one set");
+    await expect(runs.nth(1)).toContainText("Why do Thandii and The Selecter clash?");
     await expect(runs.nth(1)).toContainText("Ask about an act Qloo knows nothing about");
-    await expect(runs.nth(2)).toContainText("Set two rules, then move one set");
+    await expect(runs.nth(2)).toContainText("Can Nadine Shah play the Other stage at 15:30? Check it against the rules.");
+    await expect(runs.nth(2)).toContainText("Ask for a move the rules refuse");
     for (const run of await runs.all()) await expect(run.getByRole("button", { name: /^Replay the recorded run: / })).toBeEnabled();
     // The section is the rail's "Recorded runs".
     await expect(home.railLink("Recorded runs")).toHaveAttribute("href", "#agent");
@@ -245,8 +248,9 @@ test.describe("recorded agent runs", () => {
         await page.goto(href as string, { waitUntil: "domcontentloaded" });
         const plan = page.getByRole("region", { name: "Your plan" });
         await expect(plan).toContainText("2 kept moves: Clash Budget Index ");
-        await expect(plan.getByRole("listitem").filter({ hasText: /^1\. Sprints · / })).toHaveCount(1);
-        await expect(plan.getByRole("listitem").filter({ hasText: /^2\. Parcels · / })).toHaveCount(1);
+        // Each step's visible line starts with its number (the item also holds a print-only decision line).
+        await expect(plan.getByRole("listitem").filter({ has: page.getByText(/^1\. Sprints · /) })).toHaveCount(1);
+        await expect(plan.getByRole("listitem").filter({ has: page.getByText(/^2\. Parcels · /) })).toHaveCount(1);
         // A brief with two kept moves still prints on one Letter page and one A4 page.
         await page.emulateMedia({ media: "print" });
         for (const format of ["Letter", "A4"] as const) expect(pdfPages(await page.pdf({ format, printBackground: true })), `${format} pages`).toBe(1);

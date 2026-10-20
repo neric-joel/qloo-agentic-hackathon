@@ -3,7 +3,7 @@ import { expect, test } from "./fixtures";
 import { SiteChrome } from "./pages/site-chrome";
 
 /**
- * /method: what the price is, what it was tested against, and where the test failed. The failed pre-set test is
+ * /method: what the score is, what it was tested against, and where the test failed. The failed pre-set test is
  * the page's first finding and has to stay on it, with the same figures wherever else they are quoted.
  */
 
@@ -19,7 +19,7 @@ test.describe("how we know (/method)", () => {
     const article = page.getByRole("article");
     await expect(article).toContainText("This page says what that number is, what we checked it against, and where the check fell short.");
 
-    for (const name of ["The short version", "What the price is", "What we tested it against", "What taste overlap cannot tell you", "How the rest works"]) {
+    for (const name of ["The short version", "What the score is", "What we tested it against", "What taste overlap cannot tell you", "How the rest works"]) {
       await expect(article.getByRole("region", { name }).getByRole("heading", { level: 2, name })).toBeVisible();
     }
     // The failed test is the first thing said, before any section title.
@@ -34,10 +34,15 @@ test.describe("how we know (/method)", () => {
     const short = article.getByRole("region", { name: "The short version" });
 
     await expect(short).toContainText("Taste overlap put 46.8% of complained-about clashes in the 25% highest-ranked clashes among that day’s pairs, 7.8 points ahead of genre tags.");
-    await expect(short).toContainText("Popularity did better. On the same test, popularity, another Qloo field, reached 57.8%");
-    await expect(short).toContainText("The check on suggested moves failed too");
-    await expect(short).toContainText("the bar was 10");
-    await expect(short).toContainText("exploratory follow-ups on the same data did not establish an advantage over popularity for the app’s full price.");
+    // The failed test is stated once, in the short version's first item: the miss, popularity's figure, the moves check.
+    const failed = short.getByRole("listitem").first();
+    await expect(failed).toContainText("It missed the bar. Popularity did better: another Qloo field, it reached 57.8%.");
+    await expect(failed).toContainText(/The check on suggested moves missed its bar too \(\d+(\.\d+)? index points against 10\)\./);
+    await expect(failed.getByRole("link", { name: "See the full comparison below" })).toHaveAttribute("href", "#tested");
+    // The exploratory follow-ups' finding for the full price is stated where they are reported, in the test's section.
+    const tested = article.getByRole("region", { name: "What we tested it against" });
+    await expect(tested).toContainText("The exploratory follow-up did not establish an advantage over popularity.");
+    await expect(tested).toContainText("so the full price did not establish an advantage over popularity.");
 
     // The figure draws the same four numbers, with the bar that was set.
     const chart = short.getByRole("figure", { name: "Complained-about clashes in the day’s highest 25%, by method" });
@@ -67,8 +72,12 @@ test.describe("how we know (/method)", () => {
     await expect(rows.filter({ hasText: "Genre-tag overlap" })).toContainText("39.0%");
     await expect(rows.filter({ hasText: /^Random/ })).toContainText("26.3%");
     await expect(rows.filter({ hasText: /^Random/ })).toContainText("0.500");
-    await expect(tested).toContainText("It missed the bar.");
+    // The section refers to the failed test stated in the short version ("It missed the bar." is pinned there) rather
+    // than restating it.
+    await expect(tested).toContainText("The failed test above is this table read against the bar we set before running it, for taste overlap alone.");
     await expect(tested).toContainText("So the test does not show that taste overlap predicts the clashes people complain about, and we do not claim it.");
+    // Its correlation with popularity is stated here, where the test is reported (the home page links here for it).
+    await expect(tested).toContainText(/It is nearly unrelated to popularity \(correlation 0\.\d+\), so it is a separate signal from popularity\./);
     await expect(tested).toContainText("One festival drives much of the favourable result.");
     await expect(tested).toContainText("Intervals resample whole festival days.");
     await expect(tested.getByRole("complementary", { name: "Exploratory follow-up, run after the test failed" })).toBeVisible();
@@ -84,10 +93,10 @@ test.describe("how we know (/method)", () => {
     const followUp = page.getByRole("region", { name: "What we tested it against" }).getByRole("group", { name: "Taste inside the full price (exploratory)" });
     const heading = followUp.getByRole("heading", { level: 3, name: "Taste inside the full price (exploratory)" });
     await expect(heading).toBeVisible();
-    await expect(followUp).toContainText("Run after the test failed, on the same 68 scored pairs, so it is exploratory.");
+    await expect(followUp).toContainText("Run after the failed test above, on the same 68 scored pairs, so it is exploratory.");
     await expect(followUp).toContainText("so the full price did not establish an advantage over popularity.");
     await expect(followUp).toContainText("This check did not establish that taste adds to time and draw.");
-    await expect(followUp).toContainText("So the price depends on the real taste values");
+    await expect(followUp).toContainText("So the full price depends on the real taste values, which is not the same as taste adding to time and draw.");
     await expect(followUp).not.toContainText(/beats|better than popularity/);
     // One row per festival group, with the small one left uninterpreted.
     const table = followUp.getByRole("table");
@@ -143,8 +152,8 @@ test.describe("how we know (/method)", () => {
 
   test("the contents links jump to their sections and mark the current one", async ({ page }) => {
     const contents = page.getByRole("navigation", { name: "On this page" });
-    await expect(contents.getByRole("link")).toHaveText(["1What the price is", "2What we tested it against", "3What taste overlap cannot tell you", "4How the rest works"]);
-    for (const [label, id] of [["What we tested it against", "tested"], ["What taste overlap cannot tell you", "limits"], ["How the rest works", "the-rest"], ["What the price is", "price"]] as const) {
+    await expect(contents.getByRole("link")).toHaveText(["1What the score is", "2What we tested it against", "3What taste overlap cannot tell you", "4How the rest works"]);
+    for (const [label, id] of [["What we tested it against", "tested"], ["What taste overlap cannot tell you", "limits"], ["How the rest works", "the-rest"], ["What the score is", "price"]] as const) {
       const link = contents.getByRole("link", { name: label });
       await link.click();
       await expect(page).toHaveURL(new RegExp(`#${id}$`));

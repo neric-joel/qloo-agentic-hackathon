@@ -13,7 +13,7 @@ const PAGES = [
   { name: "home, Riot Fest", url: `/?preset=${DAYS.riot.id}`, saved: true, h1: "Which clash is worth moving?" },
   { name: "/method", url: "/method", saved: false, h1: "How we know" },
   { name: "/check", url: "/check", saved: false, h1: "Check a draft grid against your rules" },
-  { name: "/brief", url: `/brief?preset=${DAYS.glastonbury.id}&day=0&moves=gurriers~woodsies~0~1215`, saved: true, h1: "Glastonbury Festival 2025 Sunday: where the clash budget goes" },
+  { name: "/brief", url: `/brief?preset=${DAYS.glastonbury.id}&day=0&moves=gurriers~woodsies~0~1215`, saved: true, h1: "Glastonbury Festival 2025 Sunday: where the clashes fall" },
 ] as const;
 
 test.describe("pages load clean", () => {

@@ -1,5 +1,7 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
+import { READY_TIMEOUT } from "../helpers";
+
 /** The header, footer and theme control every page shares. */
 export class SiteChrome {
   readonly header: Locator;
@@ -20,10 +22,11 @@ export class SiteChrome {
 
   /**
    * Waits until the page has hydrated. The theme button only learns its choice once the app's own code runs
-   * in the browser ("Color theme" becomes "Color theme: System"), so a click made before that is lost.
+   * in the browser ("Color theme" becomes "Color theme: System"), so a click made before that is lost. A busy
+   * dev server can take longer than the default expect timeout to deliver that code (`READY_TIMEOUT`).
    */
   async waitForHydration(): Promise<void> {
-    await expect(this.themeButton).toHaveAccessibleName(/^Color theme: (Light|Dark|System)$/);
+    await expect(this.themeButton).toHaveAccessibleName(/^Color theme: (Light|Dark|System)$/, { timeout: READY_TIMEOUT });
   }
 
   /** The two page links. Under 640 px they live in the Menu panel, which has to be open to see them. */

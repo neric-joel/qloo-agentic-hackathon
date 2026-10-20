@@ -172,7 +172,8 @@ test.describe("hero decision", () => {
 
     const top = async (locator: Locator) => (await locator.boundingBox())?.y ?? Number.NaN;
     const kicker = home.card.getByText(/ · saved Qloo reading built /);
-    const hidden = home.card.getByText(/^A hidden clash, 1 of \d+ on this day: main genres differ/);
+    // The hidden line states its scope: one of the day's hidden clashes, among the day's ranked clashes.
+    const hidden = home.card.getByText(/^A hidden clash, 1 of \d+ among the day’s \d+ ranked clashes: main genres differ/);
     const ranks = home.card.getByText(/^Time alone ranks this pair #\d+, time and draw \(Qloo popularity\) #\d+, with taste #\d+\./);
     const index = home.card.getByText("Clash Budget Index", { exact: true });
     const scale = home.card.getByText(/^A score, not money: 100 = the average random valid timetable of this lineup\. Lower is better\./);

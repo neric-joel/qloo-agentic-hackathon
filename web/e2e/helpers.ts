@@ -6,6 +6,13 @@ export const DAYS = {
   riot: { id: "riot-fest-2026-sun", title: "Riot Fest 2026, Sunday" },
 } as const;
 
+/**
+ * How long a page-readiness wait may take: hydration, and the day's data arriving from the API. On a dev server
+ * running four workers this can pass the default 10 s expect timeout, so readiness waits (not assertions about
+ * content) use the navigation timeout instead. A wait on an element returns as soon as it holds.
+ */
+export const READY_TIMEOUT = 30_000;
+
 /** The two lines the site must always say, wherever the figures come from. */
 export const HONESTY = {
   reading: "A reading, not a verdict.",

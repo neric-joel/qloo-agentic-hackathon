@@ -7,8 +7,10 @@ import { buildDecisionCopy, NO_PRICED_CLASH, parseDecision, sharedTimeline } fro
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
 import { parsePreset } from "@/lib/preset";
 import { parseRuleFixes, plannedNote, STAGE_FIT_GLOSS } from "@/lib/rule-fix";
+import { checkAdd, encodeMoves, type PlanAnswer, type StackMove, type StackStep } from "@/lib/stack";
 
 import {
+  ADD_TO_PLAN,
   builtDate,
   datelineWithReading,
   DecisionCard,
@@ -16,18 +18,24 @@ import {
   focusShown,
   hiddenClashLine,
   INDEX_SCALE,
+  IndexChange,
   indexDelta,
   isHiddenDecision,
   isInventedDecision,
   KEEP_MOVE,
+  KeepMoveOffer,
+  keepPressKind,
+  planAtPress,
   KEPT_AGREE,
   KEPT_IN_PLAN,
   MOVE_CHOICE_LINE,
   PairRecheck,
   RECHECK_PAIR,
+  REPLACE_PLAN,
   savedReadingLine,
   SEE_YOUR_PLAN,
   seeYourPlan,
+  STRIP_LEGEND,
   tasteOverlapOf,
   timelineSpans,
 } from "./decision-card";
@@ -221,7 +229,7 @@ describe("DecisionCard", () => {
       "Clash Budget Index",
       "104.2 → 98.4",
       "Selected and scored by this app’s index. A reading, not a verdict.",
-      "Solid: where the sets play now.",
+      "No other overlap gets longer.",
       "How this was chosen",
       "The costliest clash with a set that has a legal place that lowers the index",
       "Move one set: of the 4 legal places on the 5-minute grid",
@@ -328,9 +336,10 @@ describe("DecisionCard", () => {
     expect(laneLabels(figure).map((lines) => lines.length)).toEqual([3, 3, 3]);
     expect(figure).not.toMatch(/font-mono[^"]*">(1|2)</);
     expect(figure).not.toMatch(/font-mono[^"]*">(now|tested)</);
-    // One legend line under the strip names the three marks, 12 px under it with no rule above it.
-    expect(plain).toContain("Solid: where the sets play now. Dashed: tested. Hatched: time shared.");
-    expect(html).toMatch(/<figcaption class="mt-3 text-\[0\.8125rem\] leading-snug text-muted-foreground">Solid:/);
+    // Under the strip, one line says what else the move changes, 8 px under it with no rule above it; how to
+    // read the marks is the end of the strip's accessible name, not a printed legend.
+    expect(html).toMatch(/<figcaption data-side-effects="" class="mt-2 text-\[0\.8125rem\] leading-snug text-muted-foreground">No other overlap gets longer\.<\/figcaption>/);
+    expect(figure).toMatch(/<p class="sr-only">[^<]*Solid: where the sets play now\. Dashed: tested\. Hatched: time shared\.<\/p>/);
     expect(figure).not.toMatch(/border-t/);
   });
 
@@ -460,10 +469,8 @@ describe("DecisionCard", () => {
     expect(figure.match(/sm:grid sm:grid-cols-\[9\.5rem_minmax\(0,1fr\)\]/g)).toHaveLength(4);
     // Names wrap, never cut: no truncation in the figure.
     expect(figure).not.toMatch(/\btruncate\b|line-clamp|text-ellipsis/);
-    // The key line under it, word for word.
-    expect(text(/<figcaption[\s\S]*?<\/figcaption>/.exec(figure)?.[0] ?? "")).toBe(
-      "Solid: where the sets play now. Dashed: tested. Hatched: time shared.",
-    );
+    // The line under it, word for word: what else the move changes (here, nothing gets longer).
+    expect(text(/<figcaption[\s\S]*?<\/figcaption>/.exec(figure)?.[0] ?? "")).toBe("No other overlap gets longer.");
   });
 
   it("reads the published times back from the card's own drawing, so the strip computes nothing new", () => {
@@ -645,7 +652,7 @@ describe("DecisionCard", () => {
     expect(renderToStaticMarkup(createElement(DecisionCard, { copy: copy() }))).not.toContain("lg:hidden");
     // The skeleton holds the same 44 px block in the same place, below 1024 px only.
     const skeleton = renderToStaticMarkup(createElement(DecisionCardSkeleton));
-    expect(skeleton).toMatch(/<div class="mt-4 flex h-11 items-center lg:hidden max-sm:mt-3"><div class="rounded-sm bg-muted h-11 w-37"><\/div><\/div><div class="mt-3 flex h-62.5 flex-col justify-around max-lg:mt-4 max-sm:mt-3">/);
+    expect(skeleton).toMatch(/<div class="mt-4 flex h-11 items-center lg:hidden max-sm:mt-3"><div class="rounded-sm bg-muted h-11 w-37"><\/div><\/div><div class="mt-3 flex h-61.5 flex-col justify-around max-lg:mt-4 max-sm:mt-3 max-sm:h-57">/);
   });
 
   it("titles the disclosure 'Show the working' with no subtitle, and holds line 3 only with a rule line", () => {
@@ -859,6 +866,124 @@ describe("Keep this move, confirmed in place", () => {
   });
 });
 
+describe("Keep this move on a plan that already holds steps (P1)", () => {
+  // The card's own move (Bo Diddly Squat to Side 21:30) and another kept move (invented).
+  const move = copy().seedMove as StackMove;
+  const other: StackMove = { actId: "cy", stageId: "main", day: 0, start: "16:00" };
+  const change: StackStep = { rule: { aId: "ann", bId: "bo" }, moves: [{ actId: "ann", stageId: "main", day: 0, start: "19:00" }] };
+  const ready: PlanAnswer = { status: "ready", plan: { publishedBudget: 104.2, budget: 97.1, steps: [], clashes: [], options: null } };
+
+  it("keeps the move at once on an empty plan, and asks Add or Replace only when the plan holds other steps", () => {
+    // Empty, or a page that does not pass the plan: one press keeps the move, exactly as before.
+    expect(keepPressKind(undefined, move, false)).toBe("keep");
+    expect(keepPressKind([], move, false)).toBe("keep");
+    expect(keepPressKind([other], null, false)).toBe("keep");
+    // Other steps held: never a silent replace.
+    expect(keepPressKind([other], move, false)).toBe("offer");
+    expect(keepPressKind([change], move, false)).toBe("offer");
+    // The plan holds this move already (alone or with others): it says so and changes nothing.
+    expect(keepPressKind([move], move, false)).toBe("already");
+    expect(keepPressKind([other, { ...move }], move, false)).toBe("already");
+    expect(keepPressKind([other], move, true)).toBe("already");
+  });
+
+  it("reads the plan a press is about from the page, or from the tab's stored plan before the page has scored it", () => {
+    const stored = vi.fn(() => [other] as readonly StackStep[]);
+    // The page's scored plan wins; the store is not even read.
+    expect(planAtPress([change], stored)).toEqual([change]);
+    expect(stored).not.toHaveBeenCalled();
+    // An empty plan from the page (its first answer not in yet after a reload): the tab's stored plan, so the
+    // press offers Add or Replace instead of replacing a plan it cannot see yet.
+    expect(planAtPress([], stored)).toEqual([other]);
+    expect(keepPressKind(planAtPress([], stored), move, false)).toBe("offer");
+    expect(keepPressKind(planAtPress([], () => [move]), move, false)).toBe("already");
+    expect(keepPressKind(planAtPress([], () => []), move, false)).toBe("keep");
+    // No plan from the page at all (the server HTML): nothing to read (the two reads above are the only ones).
+    expect(planAtPress(undefined, stored)).toEqual([]);
+    expect(stored).toHaveBeenCalledTimes(2);
+  });
+
+  it("draws the card the same with an empty plan as with none, and draws no offer before a press", () => {
+    const card = (props: Record<string, unknown>) =>
+      renderToStaticMarkup(createElement(DecisionCard, { copy: copy(), onOpenMove: () => null, ...props }));
+    expect(card({ plan: [] })).toBe(card({}));
+    const holding = card({ plan: [other], kept: { move: false, change: false } });
+    expect(holding).not.toContain("data-keep-offer");
+    expect(text(holding)).not.toContain(ADD_TO_PLAN);
+    expect(text(holding)).not.toContain(REPLACE_PLAN);
+    // The card's limits stay where they were, with no click, whatever the plan holds.
+    expect(text(working(holding).outside)).toContain("Selected and scored by this app’s index. A reading, not a verdict.");
+  });
+
+  it("offers Add first (the outline button) and Replace (ghost), 44 px each, under what the plan holds, with no id", () => {
+    expect([ADD_TO_PLAN, REPLACE_PLAN]).toEqual(["Add to your plan", "Replace your plan"]);
+    const offer = (state: Parameters<typeof KeepMoveOffer>[0]["offer"], held: readonly StackStep[] = [other]) =>
+      renderToStaticMarkup(createElement(KeepMoveOffer, { offer: state, held, onAdd: () => {}, onReplace: () => {} }));
+    const open = offer({ state: "open" });
+    expect(text(open)).toBe("Your plan already holds 1 kept move. Add to your plan Replace your plan");
+    expect(open).toMatch(/role="group" aria-label="Keep this move: add it to your plan, or replace your plan"/);
+    expect(open).toMatch(/data-variant="outline" data-size="default" class="[^"]*\bh-11\b[^"]*"[^>]*>Add to your plan<\/button>/);
+    expect(open).toMatch(/data-variant="ghost" data-size="default" class="[^"]*\bh-11\b[^"]*"[^>]*>Replace your plan<\/button>/);
+    expect(open.indexOf(ADD_TO_PLAN)).toBeLessThan(open.indexOf(REPLACE_PLAN));
+    expect(open).not.toMatch(/\bid="|rounded-full|shadow|bg-(primary|success)|text-(primary|success)/);
+    // A kept change counts as a step.
+    expect(text(offer({ state: "open" }, [other, change]))).toContain("Your plan already holds 2 kept steps.");
+    // While the whole plan is scored, Add is unavailable and says what is happening; the spinner moves only
+    // when motion is allowed.
+    const checking = offer({ state: "checking" });
+    expect(checking).toMatch(/aria-disabled="true"[^>]*>.*Add to your plan<\/button>/);
+    expect(checking).toContain("motion-safe:animate-spin");
+    expect(text(checking)).toContain("Scoring your plan with this move added.");
+    // Refused for good: the reason in words, and Replace alone. Refused for now: both ways stay.
+    const reason = "Not added: your plan already moves Bo Diddly Squat, and a plan moves each set once. Your plan is unchanged.";
+    const refused = offer({ state: "rejected", reason, retry: false });
+    expect(text(refused)).toBe(`Your plan already holds 1 kept move. ${REPLACE_PLAN} ${reason}`);
+    const failed = offer({ state: "rejected", reason, retry: true });
+    expect(text(failed)).toContain(ADD_TO_PLAN);
+    expect(text(failed)).toContain(REPLACE_PLAN);
+  });
+
+  it("adds only once the engine scored the whole plan, and leaves the plan unchanged when it refuses", async () => {
+    const kept: StackStep[] = [other];
+    const check = vi.fn(async (steps: readonly StackStep[]) => (steps.length === 2 ? ready : ({ status: "error" } as PlanAnswer)));
+    const act = copy().moveAct ?? "";
+    expect(act).toBe("Bo Diddly Squat");
+    const outcome = await checkAdd(kept, { act, move }, check, "move");
+    // One question, about the kept move then this one, and the choice names the plan it was scored with.
+    expect(check).toHaveBeenCalledWith([other, move]);
+    expect(outcome).toEqual({ kind: "ready", choice: { mode: "add", base: encodeMoves(kept) }, count: 2 });
+    const invalid = await checkAdd(kept, { act, move }, async () => ({ status: "invalid" }), "move");
+    expect(invalid).toEqual({
+      kind: "rejected",
+      reason: "Not added: with your kept moves in place, the timetable engine finds this is no longer a legal place for Bo Diddly Squat. Your plan is unchanged.",
+      retry: false,
+    });
+    expect(kept).toEqual([other]);
+  });
+});
+
+describe("a Clash Budget Index change as one line (the hero's treatment)", () => {
+  it("prints the two readings in the index type and the change in words, with the day's range, and no bars or chip", () => {
+    const html = renderToStaticMarkup(
+      createElement(IndexChange, { before: 116.7, after: 113.2, range: { low: 92, high: 109 }, verdict: "This plan scores 4.2 index points above that range." }),
+    );
+    expect(text(html)).toBe(
+      "116.7 → 113.2 116.7 to 113.2, −3.5 index points · Clash Budget Index · lower is better The middle 80% of random valid timetables of this lineup score 92 to 109. This plan scores 4.2 index points above that range.",
+    );
+    // The same figure type as the hero's index; the words carry the direction, so no colour, bar or chip.
+    expect(html).toMatch(/<span class="type-numeral text-\[1\.75rem\] leading-none tabular-nums"><span aria-hidden="true">116\.7 → 113\.2<\/span>/);
+    expect(html).not.toMatch(/bg-success|text-success|text-primary|rounded-bar|\btag\b|bg-muted|bg-ink/);
+    expect(html.match(/<p[ >]/g)).toHaveLength(2);
+    // A rise says so in words too; no reading, no line.
+    expect(text(renderToStaticMarkup(createElement(IndexChange, { before: 98.4, after: 99, range: null })))).toContain("+0.6 index points");
+    expect(renderToStaticMarkup(createElement(IndexChange, { before: null, after: 99, range: null }))).toBe("");
+  });
+
+  it("moves the strip's legend into its accessible name, word for word", () => {
+    expect(STRIP_LEGEND).toBe("Solid: where the sets play now. Dashed: tested. Hatched: time shared.");
+  });
+});
+
 describe("the index scale in the card", () => {
   it("prints the scale, the attribution and the limit as one paragraph ending the index block, on a published and an invented day", () => {
     expect(INDEX_SCALE).toBe("A score, not money: 100 = the average random valid timetable of this lineup. Lower is better.");
@@ -934,6 +1059,29 @@ describe("the hidden clash in the card", () => {
     );
     // The board's Hidden label means the same: main genre tags differ, taste overlap among the day's highest.
     expect(LABEL_META.hidden.explain).toBe("The acts' main genre tags differ, but their taste overlap is among the day's highest.");
+  });
+
+  it("says the count's scope, out of the day's ranked clashes, when the page passes both counts from the same list", () => {
+    const card = copy();
+    const taste = tasteOverlapOf(card);
+    const html = renderToStaticMarkup(
+      createElement(DecisionCard, { copy: card, onOpenMove: () => null, hiddenCount: 5, rankedCount: 15, genres: ["Garage Rock", "Folk Pop"] }),
+    );
+    expect(text(working(html).outside)).toContain(
+      `A hidden clash, 1 of 5 among the day’s 15 ranked clashes: main genres differ (Garage Rock, Folk Pop), yet their taste overlap ranks ${taste} of 100 on this bill, among the day’s highest.`,
+    );
+    expect(hiddenClashLine({ count: 5, ranked: 15, genres: null, taste: "97" })).toBe(
+      "A hidden clash, 1 of 5 among the day’s 15 ranked clashes: main genres differ, yet their taste overlap ranks 97 of 100 on this bill, among the day’s highest.",
+    );
+    // The invented day says so, and names no source.
+    expect(hiddenClashLine({ count: 2, ranked: 9, genres: null, taste: "70", invented: true })).toBe(
+      "A hidden clash, 1 of 2 among the invented day’s 9 ranked clashes: main genres differ, yet their invented taste overlap ranks 70 of 100 on this bill, among the day’s highest.",
+    );
+    // A ranked count that cannot hold the Hidden count, or none at all, leaves the scope out rather than guess it.
+    expect(hiddenClashLine({ count: 5, ranked: 3, genres: null, taste: "97" })).toMatch(/^A hidden clash, 1 of 5 on this day: /);
+    expect(hiddenClashLine({ count: 5, ranked: null, genres: null, taste: "97" })).toMatch(/^A hidden clash, 1 of 5 on this day: /);
+    expect(hiddenClashLine({ count: 5, ranked: 15.5, genres: null, taste: "97" })).toMatch(/^A hidden clash, 1 of 5 on this day: /);
+    expect(hiddenClashLine({ count: null, ranked: 15, genres: null, taste: "97" })).toMatch(/^A hidden clash: /);
   });
 
   it("says nothing of the kind for a pair without the Hidden label", () => {
@@ -1297,7 +1445,7 @@ describe("the side-by-side comparison in the card", () => {
 describe("why this move and not a bigger gain", () => {
   it("says in the working, beside line 2, that the move is chosen by clash, not by gain, and only with a move", () => {
     expect(MOVE_CHOICE_LINE).toBe(
-      "Chosen by clash, not by gain: the lowest-index single move for the day’s costliest clash that has one. A move for another clash can lower the index more; Try a move prices the legal places of other sets.",
+      "Chosen by clash, not by gain: the lowest-index single move for the day’s costliest clash that has one. A move for another clash can lower the index more; Try a move scores the legal places of other sets.",
     );
     const html = renderToStaticMarkup(createElement(DecisionCard, { copy: copy(), onOpenMove: () => null }));
     const { region, outside } = working(html);
@@ -1354,7 +1502,7 @@ describe("a listed change row", () => {
   it("shows the note that the plan already moves a set, and the gloss only beside a stage-fit flag", () => {
     const plain = row({ note: plannedNote(rule, rule.fixes[0], new Set(["ann"])) });
     expect(plain).toContain(
-      "Found on the published day; your plan already moves Ann Arbor, so the receipt after pricing is what counts.",
+      "Found on the published day; your plan already moves Ann Arbor, so the index with your plan applied is what counts.",
     );
     expect(plain).toContain("Keep this change");
     expect(plain).not.toContain("A stage-fit flag marks");

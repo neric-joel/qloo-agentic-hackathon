@@ -16,6 +16,7 @@ import { formatClock } from "@/lib/timetable";
 
 import {
   BestPlaceColumn,
+  START_WITH,
   TestedPlace,
   TryAMove,
   bestPlace,
@@ -572,7 +573,7 @@ describe("Start with names the partner of every row, from the one map the card r
     const day = preset.festival.timetable[0]?.day ?? 0;
     const ranked = topClashes(preset.report.clashes, day, Number.POSITIVE_INFINITY);
     const moved = new Set(kept.map((move) => move.actId));
-    const starters = startingSets(ranked, () => false).filter((set) => !moved.has(set.actId));
+    const starters = startingSets(ranked, () => false).filter((set) => !moved.has(set.actId)).slice(0, START_WITH);
     expect(starters.length).toBeGreaterThan(0);
     const timetable = applyMoves(preset.festival.timetable, kept);
     let named = 0;
@@ -619,7 +620,7 @@ describe("Start with names the partner of every row, from the one map the card r
       const cardMove = cardFor(preset, ranked, sprints.id)!;
       expect(cardMove.receipt).toContain("Katy J Pearson");
       const html = renderToStaticMarkup(createElement(TryAMove, { preset, day: 0, ranked, isLocked: () => false, cardMove }));
-      const starters = startingSets(ranked, () => false);
+      const starters = startingSets(ranked, () => false).slice(0, START_WITH);
       const row = rowsOf(html, starters).find((item) => item.actId === sprints.id);
       expect(row).toEqual({ actId: sprints.id, minutes: 45, partner: "Katy J Pearson" });
       // The same facts in two lines: "Woodsies · to 15:00", then "45 min with Katy J Pearson" on its own line.

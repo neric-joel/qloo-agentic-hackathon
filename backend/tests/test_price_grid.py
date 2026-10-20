@@ -257,7 +257,10 @@ def test_names_match_whatever_their_case_spacing_accents_or_leading_the(tmp_path
 
 
 def test_under_80_percent_found_is_not_a_saved_day_and_80_percent_is(tmp_path):
-    serve(tmp_path)
+    """With live pricing on, a body no saved day holds is the 422 the page offers the live step after."""
+    transport = RefusingTransport()
+    qloo = QlooClient("test-key", transport=transport, backoff=0, max_rps=None)
+    serve(tmp_path, qloo, NoLimiter(), price_grid_enabled=True)
     names = scored_names(invented(), 4)
     four_of_five = names + ["Nobody Pasted This"]
     three_of_five = names[:3] + ["Nobody Pasted This", "Nor This"]
@@ -269,6 +272,33 @@ def test_under_80_percent_found_is_not_a_saved_day_and_80_percent_is(tmp_path):
     assert missed.json() == {
         "detail": {"code": "not_a_saved_day", "message": "These acts are not on a saved festival day."}
     }
+    assert transport.asked == 0 and qloo._reserved == 0  # saved never falls back to live
+
+
+def test_with_live_off_no_saved_day_is_a_200_answer_with_no_request(tmp_path):
+    """Live pricing off (the default): a saved body no saved day holds is answered 200 with a status, so the
+    browser logs no error, and nothing is priced, reserved, limited or asked."""
+    serve(tmp_path)  # Qloo and the limiter both fail on any use; live is off
+    names = scored_names(invented(), 3)
+    acts = names + ["Nobody Pasted This", "Nor This"]
+    with TestClient(app) as client:
+        response = price(client, acts, [[names[0], "Nobody Pasted This"]])
+    assert response.status_code == 200 and no_store(response), response.text
+    assert response.json() == {
+        "mode": "saved",
+        "status": "no_saved_day",
+        "requests_used": 0,
+        "message": gridprice.NO_SAVED_DAY,
+    }
+    assert "Nobody" not in response.text  # no name is echoed
+
+
+@pytest.mark.parametrize("settings", [{"qloo_api_key": None}, {"qloo_record_fixtures": True}])
+def test_a_switch_on_without_a_key_or_while_recording_is_still_live_off_for_no_saved_day(tmp_path, settings):
+    serve(tmp_path, price_grid_enabled=True, **settings)
+    with TestClient(app) as client:
+        response = price(client, LIVE_NAMES[:4], [LIVE_NAMES[:2]])
+    assert response.status_code == 200 and response.json()["status"] == "no_saved_day"
 
 
 def test_a_pair_with_an_act_found_but_not_scored_is_unpriced_with_no_signal(tmp_path):
@@ -472,6 +502,83 @@ def test_the_published_days_costliest_movable_clashes_price_from_the_saved_day_w
             assert pairs[0] == ["Sprints", "Katy J Pearson"] and len(pairs) == 10
         checked += 1
     assert checked >= 1
+
+
+def movable_pairs(preset, day: int, limit: int) -> list[list[str]]:
+    """The day's ranked clashes, costliest first, both-locked passed over, as names: what /check compares."""
+    slots = {slot.act_id: slot for slot in preset.festival.timetable}
+    names = {act.id: act.name for act in preset.festival.acts}
+    clashes = [c for c in preset.report.get("clashes", []) if c["day"] == day]
+    movable = [c for c in clashes if not (slots[c["a"]["act_id"]].locked and slots[c["b"]["act_id"]].locked)]
+    return [[names[c["a"]["act_id"]], names[c["b"]["act_id"]]] for c in movable[:limit]]
+
+
+def pair_names(pairs: list[list[str]]) -> list[str]:
+    """The names a minimal saved body sends: only those of the pairs, each once, in pair order."""
+    return list(dict.fromkeys(name for pair in pairs for name in pair))
+
+
+@pytest.mark.skipif(not any(REAL_PRESETS.glob("*.json")), reason="no built presets (a clean clone has none)")
+def test_a_minimal_saved_body_of_only_the_compared_pairs_names_finds_the_same_saved_day():
+    """Data minimisation (saved mode only): /check now sends only the names in the pairs it compares. On each
+    built day that body still matches that day (Glastonbury 2025 Sunday among them), every pair is priced as
+    with the whole lineup, and nothing is asked: live pricing is switched on with a transport that refuses
+    every request and a limiter that fails on any use. Statuses and counts only: no value is read."""
+    from app.presets import _load_all
+
+    days = _load_all(str(REAL_PRESETS))
+    transport = RefusingTransport()
+    qloo = QlooClient("test-key", transport=transport, backoff=0, max_rps=None)
+    serve(REAL_PRESETS, qloo, NoLimiter(), price_grid_enabled=True)
+    found: list[str] = []
+    for preset in days.values():
+        if preset.synthetic or not isinstance(preset.report, dict):
+            continue
+        day = min(slot.day for slot in preset.festival.timetable)
+        pairs = movable_pairs(preset, day, gridprice.SAVED_MAX_PAIRS)
+        if not pairs:
+            continue
+        acts = pair_names(pairs)
+        assert gridprice.MIN_ACTS <= len(acts) <= 2 * len(pairs)
+        with TestClient(app) as client:
+            response = price(client, acts, pairs)
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["source"] == "saved_day" and body["preset_id"] == preset.id, preset.id
+        assert body["requests_used"] == 0 and body["coverage"]["acts"] == len(acts)
+        assert [pair["status"] for pair in body["pairs"]] == ["priced"] * len(pairs), preset.id
+        found.append(preset.id)
+    assert transport.asked == 0 and qloo._reserved == 0
+    if "glastonbury-2025-sun" in days:
+        assert "glastonbury-2025-sun" in found
+
+
+def test_a_minimal_saved_body_from_the_invented_day_finds_the_invented_day():
+    """The /check sample: its five longest movable overlaps, with only their names, still match the invented
+    day (with the built days as candidates too) and price with no request."""
+    preset = invented()
+    slots = sorted(preset.festival.timetable, key=lambda slot: (slot.day, slot.start))
+    day = min(slot.day for slot in slots)
+    names = {act.id: act.name for act in preset.festival.acts}
+    overlaps = []
+    for i, x in enumerate(slots):
+        for y in slots[i + 1 :]:
+            shared = min(x.end, y.end) - max(x.start, y.start)
+            if x.day == y.day == day and shared > 0 and x.act_id != y.act_id and not (x.locked and y.locked):
+                overlaps.append((-shared, names[x.act_id], names[y.act_id]))
+    pairs = [[a, b] for _, a, b in sorted(overlaps)[:5]]
+    acts = pair_names(pairs)
+    assert len(pairs) == 5 and len(acts) >= gridprice.MIN_ACTS
+    transport = RefusingTransport()
+    qloo = QlooClient("test-key", transport=transport, backoff=0, max_rps=None)
+    folder = REAL_PRESETS if any(REAL_PRESETS.glob("*.json")) else Path(".")
+    serve(folder, qloo, NoLimiter(), price_grid_enabled=True)
+    with TestClient(app) as client:
+        response = price(client, acts, pairs)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["source"] == "invented_day" and body["preset_id"] == preset.id
+    assert body["requests_used"] == 0 and transport.asked == 0
 
 
 def test_a_name_two_acts_of_the_day_share_is_ambiguous_never_matched_and_never_priced(tmp_path):
@@ -722,7 +829,9 @@ def test_a_body_over_16_kb_is_a_413_before_it_is_read_and_the_largest_legal_body
         slash = client.post(
             PATH + "/", content=b" " * (16 * 1024 + 1), headers={"content-type": "application/json"}
         )
-    assert legal.status_code == 422 and code(legal) == "not_a_saved_day"  # parsed: the route's own answer
+    assert (
+        legal.status_code == 200 and legal.json()["status"] == "no_saved_day"
+    )  # parsed: the route's own answer
     assert over.status_code == 413 and over.json() == {"detail": "Request too large."} and no_store(over)
     assert slash.status_code == 413
 

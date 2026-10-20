@@ -4,7 +4,8 @@ A recordings file is ``<recordings_dir>/<preset_id>.json`` holding ``{"preset_id
 run keeps the events exactly as the backend streamed them, each with ``t``, the milliseconds since the run
 started. Like presets, the files hold Qloo-derived data: they ship with the deployment, never with the
 repository. A run that breaks the rules below is skipped with a warning and never served; a file that cannot
-be read is skipped whole. Nothing here raises into a request.
+be read is skipped whole. Nothing here raises into a request. A run's ``model`` (which language model wrote
+it) stays in the saved file and is never served: a visitor sees the run, not the vendor behind it.
 """
 
 from __future__ import annotations
@@ -148,8 +149,24 @@ def get_recordings(settings: Annotated[Settings, Depends(get_settings)]) -> dict
     return load_recordings(str(settings.recordings_dir))
 
 
+class ServedRun(BaseModel):
+    """A recorded run as the endpoint serves it: every saved field except ``model``."""
+
+    id: str
+    title: str
+    question: str
+    captured_at: str
+    events: list[TimedEvent]
+
+
+def served(run: Recording) -> ServedRun:
+    return ServedRun(
+        id=run.id, title=run.title, question=run.question, captured_at=run.captured_at, events=run.events
+    )
+
+
 class RecordedRuns(BaseModel):
-    runs: list[Recording]
+    runs: list[ServedRun]
 
 
 @router.get("/{preset_id}/recordings", response_model=RecordedRuns)
@@ -163,4 +180,4 @@ def get_preset_recordings(
     if preset_id not in presets:
         raise HTTPException(status_code=404, detail=f"No preset {preset_id!r}.")
     response.headers["Cache-Control"] = CACHE_CONTROL
-    return RecordedRuns(runs=recordings.get(preset_id, []))
+    return RecordedRuns(runs=[served(run) for run in recordings.get(preset_id, [])])

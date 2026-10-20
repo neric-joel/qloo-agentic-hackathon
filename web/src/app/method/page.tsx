@@ -20,6 +20,7 @@ import {
   formatDiffInterval,
   formatInterval,
   countsNote,
+  disagreementSentence,
   tasteInPriceReading,
   formatP,
   formatPct,
@@ -313,30 +314,23 @@ function ShortVersion() {
       <div className={`${BODY_CELL} xl:row-span-2 xl:row-start-1`}>
         <MethodsDiagram />
         <ul className={`mt-5 max-w-[76ch] text-[0.9375rem] ${LEADING} sm:text-base`}>
+          {/* The failed test, said once on the page with its numbers (round 33): every later mention on the page
+              points back here or sits in the test's own section. */}
           <li className="pb-4 text-base font-medium sm:text-lg sm:leading-[1.5]">
             <strong className="font-semibold">The test we set before building failed.</strong>{" "}
             Taste overlap put {formatPct(taste.topQuarterPct)} of complained-about clashes in the{" "}
             {scale.topQuarterPct}% highest-ranked clashes among that day&rsquo;s pairs,{" "}
             {backtest.leadOverGenrePoints} points ahead of genre tags. The bar we wrote down before
             building was {backtest.bar.topQuarterPct}% and {backtest.bar.leadOverGenrePoints} points
-            ahead.
-          </li>
-          <li className={SHORT_ROW}>{HELD_LINE}</li>
-          <li className={SHORT_ROW}>
-            Popularity did better. On the same test, popularity, another Qloo field, reached{" "}
-            {formatPct(popularity.topQuarterPct)}, and exploratory
-            follow-ups on the same data did not establish an advantage over popularity for the app&rsquo;s
-            full price.{" "}
+            ahead. It missed the bar. Popularity did better: another Qloo field, it reached{" "}
+            {formatPct(popularity.topQuarterPct)}. The check on suggested moves missed its bar too
+            ({moves.measuredPoints} index points against {moves.barPoints}).{" "}
             <a href="#tested" className={TEXT_LINK}>
               See the full comparison below
             </a>
             .
           </li>
-          <li className={SHORT_ROW}>
-            The check on suggested moves failed too: taste-overlap suggestions differed from popularity-only
-            ones by {moves.measuredPoints} index points (one point is {scale.indexPointPct}% of the average
-            random timetable&rsquo;s cost); the bar was {moves.barPoints}.
-          </li>
+          <li className={SHORT_ROW}>{HELD_LINE}</li>
           <li className={SHORT_ROW}>
             It ranks a day&rsquo;s clashes and tests moves against timetable rules. Taste overlap is a
             rank, not attendance.
@@ -444,7 +438,7 @@ const QLOO_CALLS: readonly {
       { name: "take", value: <Token>3</Token> },
     ],
     returns: "Candidate entities. We keep the one whose name matches and use its id as the act's identity.",
-    live: "Sent live only by the pasted-grid price in live mode and the agent's tools, where switched on.",
+    live: "Sent live only by the pasted-grid score in live mode and the agent's tools, where switched on.",
   },
   {
     path: "/v2/insights",
@@ -460,7 +454,7 @@ const QLOO_CALLS: readonly {
       },
     ],
     returns: "How strongly the signal act's audience leans toward each listed act. Ranked within the day, this becomes taste overlap.",
-    live: "Sent live by the pair re-check (two of its three requests), the pasted-grid price in live mode and the agent's tools, where switched on.",
+    live: "Sent live by the pair re-check (two of its three requests), the pasted-grid score in live mode and the agent's tools, where switched on.",
   },
   {
     path: "/v2/analysis/compare",
@@ -662,8 +656,9 @@ function QlooCalls() {
 }
 
 /**
- * The failed pre-set test and the exploratory result that followed it, in one block so neither is read
- * alone. Closed until opened; the line above it on the page says what it did not establish.
+ * The exploratory result that followed the failed pre-set test, which it names as the test stated above (round 33:
+ * the failed test is stated once, in the short version). Closed until opened; the line above it on the page says
+ * what it did not establish.
  */
 function Exploratory() {
   return (
@@ -677,9 +672,7 @@ function Exploratory() {
       >
         <div className="space-y-3 pb-4">
           <p>
-            <strong className="font-semibold">The test we set before building failed:</strong> taste overlap
-            reached {formatPct(taste.topQuarterPct)} against a bar of {backtest.bar.topQuarterPct}%. What
-            follows was run afterwards, on the same saved pairs, so it is exploratory.
+            Run after the failed test above, on the same saved pairs, so it is exploratory.
           </p>
           <p>
             <strong className="font-semibold">What held,</strong> on this press-skewed complaint set: taste
@@ -721,7 +714,9 @@ const TASTE_ADDS_NOT_ESTABLISHED = "This check did not establish that taste adds
 /**
  * Taste inside the full price, the second exploratory follow-up, in the open under its own heading: the full price
  * against popularity, against the same price with taste overlap held the same for every pair (time and draw only),
- * and against shuffled taste values; then the same by festival, Glastonbury against the four US festivals. Every
+ * and against shuffled taste values; then the same by festival, Glastonbury against the four US festivals; then
+ * (round 33) what that split may mean for use, labelled a hypothesis, where taste overlap and popularity disagree,
+ * what a location would cost, and a replication test that has not been run. Every
  * figure is read from `METHOD_FIGURES.tasteInPrice`, and what each interval says is read from the figures
  * (`tasteInPriceReading`), so the words can never contradict the numbers. The heading is neutral: it names what was
  * checked, not a gain. A ruled table like the backtest's, on paper; no colour carries a value.
@@ -735,39 +730,89 @@ function TasteInPrice() {
       <h3 id={`${TASTE_IN_PRICE_ID}-heading`} className="text-lg leading-snug font-semibold break-words">
         Taste inside the full price (exploratory)
       </h3>
-      <div className="mt-2 space-y-3">
+      {/* Its paragraphs keep the running text's measure from 1280px, as a section body's do; the table spans the column. */}
+      <div className="mt-2 space-y-3 xl:[&>p]:max-w-[76ch]">
         <p>
-          Run after the test failed, on the same {backtest.scoredPairs} scored pairs, so it is exploratory. The full
-          price, which multiplies taste overlap by shared time and draw, scored AUC {formatAuc(fullPrice.auc)}{" "}
-          (interval {formatInterval(fullPrice.auc95)}); popularity alone scored {formatAuc(pop)}. The difference is{" "}
-          {formatDiff(pairedVsPopularity.diff)} (interval {formatDiffInterval(pairedVsPopularity.interval)}), so the
-          full price did not establish an advantage over popularity.
+          Run after the failed test above, on the same {backtest.scoredPairs} scored pairs, so it is exploratory. The
+          full price (the index&rsquo;s pair score: taste overlap &times; shared time &times; Qloo popularity) scored
+          AUC {formatAuc(fullPrice.auc)} (interval {formatInterval(fullPrice.auc95)}); popularity alone scored{" "}
+          {formatAuc(pop)}. The difference is {formatDiff(pairedVsPopularity.diff)} (interval{" "}
+          {formatDiffInterval(pairedVsPopularity.interval)}), so the full price did not establish an advantage over
+          popularity.
         </p>
         <p>
           With taste taken out, every pair given the same taste overlap so that only shared time and draw are left,
-          the price scored {formatAuc(tasteRemoved.auc)} (interval {formatInterval(tasteRemoved.auc95)}). The full
-          price minus that is {formatDiff(pairedVsTasteRemoved.diff)} (interval{" "}
+          the same score reached {formatAuc(tasteRemoved.auc)} (interval {formatInterval(tasteRemoved.auc95)}). The
+          full price minus that is {formatDiff(pairedVsTasteRemoved.diff)} (interval{" "}
           {formatDiffInterval(pairedVsTasteRemoved.interval)}).{" "}
           {said.tasteAddsIncludesZero ? <strong className="font-semibold">{TASTE_ADDS_NOT_ESTABLISHED}</strong> : null}{" "}
           With the taste values shuffled among each day&rsquo;s pairs, {formatCount(shuffled.shuffles)} times, the full
           price fell to {formatAuc(shuffled.mean)} on average ({scale.intervalPct}% of shuffles between{" "}
-          {formatAuc(shuffled.range95[0])} and {formatAuc(shuffled.range95[1])}). So the price depends on the real
-          taste values, which is not the same as taste adding to time and draw.
+          {formatAuc(shuffled.range95[0])} and {formatAuc(shuffled.range95[1])}). So the full price depends on the
+          real taste values, which is not the same as taste adding to time and draw.
         </p>
         <TasteByFestival />
+        <ScopedReading />
+        <p>{disagreementSentence()}</p>
         <p>
-          At {tasteInPrice.festivals[0].label}, adding taste raised the price&rsquo;s AUC by{" "}
-          {formatAuc(tasteInPrice.glastonburyTasteAdds.diff)} (interval{" "}
-          {formatDiffInterval(tasteInPrice.glastonburyTasteAdds.interval)}, resampled by complaint); over the{" "}
-          {numberWord(backtest.usFestivals)} US festivals it lowered it by{" "}
-          {formatAuc(Math.abs(tasteInPrice.usTasteAdds.diff))} (interval{" "}
-          {formatDiffInterval(tasteInPrice.usTasteAdds.interval)}). US complaints mostly name the day&rsquo;s biggest
-          acts, which popularity already ranks well. Location is untested: these rankings were made without a
-          location, and asking again for the US festival days with each festival&rsquo;s city would cost{" "}
-          {formatCount(tasteInPrice.locationRequests)} Qloo requests.
+          Location is untested: these rankings were made without a location, and asking again for the US festival
+          days with each festival&rsquo;s city would cost {formatCount(tasteInPrice.locationRequests)} Qloo requests.
         </p>
+        <ReplicationTest />
       </div>
     </div>
+  );
+}
+
+/**
+ * What the split by festival may mean for use, under the per-festival table (round 33): each sample's result with its
+ * sign and interval, its size and its source inline, then a hypothesis labelled as one, with the confound that the
+ * two samples differ in more than act size. Every figure from `METHOD_FIGURES`; whether the US interval holds zero is
+ * read from the figures.
+ */
+function ScopedReading() {
+  const [glasto, us] = tasteInPrice.festivals;
+  const { glastonburyTasteAdds: up, usTasteAdds: down } = tasteInPrice;
+  const usHoldsZero = down.interval[0] <= 0 && 0 <= down.interval[1];
+  return (
+    <>
+      <p>
+        On the {glasto.label} complaints ({glasto.complaintPairs} complaint pairs in {glasto.complaints} clusters, all
+        from one {backtest.glastonbury.source} clash guide about mid-card acts), adding taste raised the full
+        price&rsquo;s AUC by {formatAuc(up.diff)} (interval {formatDiffInterval(up.interval)}, resampled by complaint).
+        On the {numberWord(backtest.usFestivals)} US festivals ({us.complaintPairs} complaint pairs in {us.complaints}{" "}
+        clusters, press complaints that mostly named the day&rsquo;s biggest acts, which popularity already ranks
+        well), adding taste lowered it by {formatAuc(Math.abs(down.diff))} (interval{" "}
+        {formatDiffInterval(down.interval)}
+        {usHoldsZero ? ", includes 0" : ""}).
+      </p>
+      <p>
+        <strong className="font-semibold">A hypothesis for use, not a result:</strong> taste overlap may matter most
+        for mid-card clashes; for clashes between the day&rsquo;s biggest acts, time and draw already carry most of the
+        signal. The two samples also differ in festival, complaint source and act size, so this split cannot say
+        which of those drives it. Untested beyond this data.
+      </p>
+    </>
+  );
+}
+
+/**
+ * The replication test that has not been run (round 33), as one paragraph with a plain bold lead, no kicker: held-out
+ * bills that do not exist yet, scoring fixed in advance, complaints gathered the same way, a paired comparison on the
+ * same pairs and a success threshold stated before any data. It promises no date beyond the bills' year and no result.
+ */
+function ReplicationTest() {
+  const { replication } = METHOD_FIGURES;
+  return (
+    <p>
+      <strong className="font-semibold">A replication test we have not run.</strong> It needs data that does not exist
+      yet: the {replication.billsYear} bills of the same {numberWord(backtest.festivals)} festivals, scored when their
+      set times are published and before any complaint is collected. The scoring would be fixed and written down before
+      that data arrives, and complaints collected the same way as here. On the same complained-about pairs, the full
+      price would be compared with the same score with taste held constant, as a paired difference, counted a success
+      only if that difference&rsquo;s {scale.intervalPct}% interval lies above {replication.successAbove}. Both arms
+      keep Qloo&rsquo;s popularity; a baseline with no Qloo data has not been tested.
+    </p>
   );
 }
 
@@ -883,7 +928,7 @@ function Sources() {
 
 /** The page's sections, in order, for its running order. */
 const CONTENTS: readonly { id: string; title: string }[] = [
-  { id: "price", title: "What the price is" },
+  { id: "price", title: "What the score is" },
   { id: "tested", title: "What we tested it against" },
   { id: "limits", title: "What taste overlap cannot tell you" },
   { id: "the-rest", title: "How the rest works" },
@@ -925,8 +970,8 @@ export default function MethodPage() {
           </h1>
           <p className="mt-4 max-w-2xl text-lg leading-snug font-medium sm:text-xl xl:col-span-12">
             <BySyntheticDay
-              real="Clash Control prices set-time clashes with a number it derives from Qloo data."
-              invented="Clash Control prices set-time clashes with a number it calculates from taste-overlap and draw figures. The day this server is showing is an invented example, so its figures are invented and no Qloo request was made for it."
+              real="Clash Control scores set-time clashes with a number it derives from Qloo data."
+              invented="Clash Control scores set-time clashes with a number it calculates from taste-overlap and draw figures. The day this server is showing is an invented example, so its figures are invented and no Qloo request was made for it."
             />{" "}
             This page says what that number is, what we checked it against, and where the check fell short.
           </p>
@@ -942,10 +987,10 @@ export default function MethodPage() {
         </div>
       </header>
 
-      <Section id="price" title="What the price is">
+      <Section id="price" title="What the score is">
         <p className="font-mono text-base font-medium sm:text-lg">
-          Price = taste overlap &times; share of the shorter set played at once &times; combined draw &times;
-          rarity factor.
+          Pair score = taste overlap &times; share of the shorter set played at once &times; combined draw
+          &times; rarity factor.
         </p>
         <p>
           Taste overlap is an app-derived rank of how alike Qloo ranks two audiences in taste, relative
@@ -954,12 +999,12 @@ export default function MethodPage() {
         <MoreDetails summary="How the score is calculated">
           <div className="space-y-4 pb-4">
             <p>
-              A clash&rsquo;s price is its taste overlap, times the share of the shorter set that the two
+              A clash&rsquo;s pair score is its taste overlap, times the share of the shorter set that the two
               sets play at once (counted only for sets on the same day and on different stages), times the
               two acts&rsquo; draw (their geometric mean), times a rarity factor of {price.rarityFloor} plus
               the average of the two acts&rsquo; rarity. On both saved days every act carries the neutral
               rarity {price.neutralRarity}, so the factor is {price.neutralFactor.toFixed(1)} for every pair
-              and does not move any price. The invented example day, which a server shows when it has no
+              and does not move any score. The invented example day, which a server shows when it has no
               built day, is the exception: its acts carry their own rarity.
             </p>
             <p>
@@ -978,8 +1023,8 @@ export default function MethodPage() {
               does not look close to everyone, and scales the result {overlapLow} to {overlapHigh}.
             </p>
             <p>
-              The Clash Budget Index is {scale.indexMultiplier} times the day&rsquo;s total price divided
-              by the mean total price of {index.baselineSamples} sampled random valid timetables of the
+              The Clash Budget Index is {scale.indexMultiplier} times the day&rsquo;s total pair score
+              divided by the mean total of {index.baselineSamples} sampled random valid timetables of the
               same lineup, in which each set stays inside its allowed window and stages and locked sets
               stay put. Lower
               is better. {COUNTS_ONLY_NEUTRAL}
@@ -1012,16 +1057,11 @@ export default function MethodPage() {
           </p>
         </MoreDetails>
         <BacktestTable />
+        {/* The failed test is stated once, in the short version; here it is referred to, not restated (round 33). */}
         <p>
-          We set the bar before running the test: taste overlap alone had to put at least{" "}
-          {backtest.bar.topQuarterPct}% of those clashes in the top quarter and finish{" "}
-          {backtest.bar.leadOverGenrePoints} points ahead of genre tags. It reached{" "}
-          {formatPct(taste.topQuarterPct)}, {backtest.leadOverGenrePoints} points ahead.{" "}
-          <strong className="font-semibold">It missed the bar.</strong>
-        </p>
-        <p>
-          Popularity, also a Qloo field, did better than taste overlap on this test. So the test does
-          not show that taste overlap predicts the clashes people complain about, and we do not claim it.
+          The failed test above is this table read against the bar we set before running it, for taste
+          overlap alone. So the test does not show that taste overlap predicts the clashes people complain
+          about, and we do not claim it.
         </p>
         <p>
           What it does show: in this test taste overlap ranked the complained-about clashes above
@@ -1069,7 +1109,7 @@ export default function MethodPage() {
             {coverage.days
               .map((day) => `${day.scored} of ${day.total} sets (${formatWholePct(day.pct)})`)
               .join(" and ")}
-            . Where there is none, the app leaves the clash unpriced and says so.
+            . Where there is none, the app leaves the clash out of the score and says so.
           </li>
           <li>
             The Clash Budget Index compares a timetable with random valid timetables of the same
@@ -1112,7 +1152,8 @@ export default function MethodPage() {
           <p>
             Before building this we set a check: suggestions made with taste overlap had to differ from
             suggestions made with popularity alone by {moves.barPoints} index points on the Glastonbury
-            Sunday, graded on the same matrix. They differed by {moves.measuredPoints}, with{" "}
+            Sunday, graded on the same matrix. They differed by {moves.measuredPoints} index points (one point
+            is {scale.indexPointPct}% of the average random timetable&rsquo;s cost), with{" "}
             {moves.movesDiffer} of {moves.movesCompared} moves different, so{" "}
             <strong className="font-semibold">the check failed as written.</strong>
           </p>

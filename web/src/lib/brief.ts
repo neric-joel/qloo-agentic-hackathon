@@ -30,7 +30,7 @@ import {
   type Decision,
   type Tradeoff,
 } from "./decision";
-import { currentPlacement } from "./moves";
+import { clockMinutes, currentPlacement } from "./moves";
 import { planVerdict, publishedVerdict, raisesIndex } from "./plan-copy";
 import type { BaselineStats, Preset } from "./preset";
 import {
@@ -91,11 +91,11 @@ export function briefIntro(festival: string, synthetic: boolean): string {
     : `Scored by this app from the published timetable. ${festival} does not use Clash Control.`;
 }
 
-/** In place of the table when a day has no priced clash. */
+/** In place of the table when a day has no scored clash ("scored", as the index is, round 33). */
 export function noPricedClashes(synthetic: boolean): string {
   return synthetic
-    ? "No priced clashes on this day: no two priced acts play at the same time."
-    : "No priced clashes on this day: no two acts with a Qloo signal play at the same time.";
+    ? "No scored clashes on this day: no two scored acts play at the same time."
+    : "No scored clashes on this day: no two acts with a Qloo signal play at the same time.";
 }
 
 /**
@@ -172,7 +172,7 @@ export function indexSentence(index: number | null): string {
     : `Clash Budget Index ${formatIndex(index)}.`;
 }
 
-/** "Taste overlap is priced for 36 of 39 sets; 3 have no usable Qloo signal and are not priced." */
+/** "Taste overlap is scored for 36 of 39 sets; 3 have no usable Qloo signal and are not priced." */
 export function coverageSentence(
   figures: Pick<DayFigures, "scored" | "total" | "unpriced">,
   synthetic = false,
@@ -183,9 +183,133 @@ export function coverageSentence(
       ? `Taste overlap is invented for all ${pluralize(total, "set")}.`
       : `Taste overlap is invented for ${scored} of ${pluralize(total, "set")}; ${unpriced === 1 ? "1 is" : `${unpriced} are`} not priced.`;
   }
-  if (unpriced === 0) return `Taste overlap is priced for all ${pluralize(total, "set")}.`;
+  if (unpriced === 0) return `Taste overlap is scored for all ${pluralize(total, "set")}.`;
   const rest = unpriced === 1 ? "1 has no usable Qloo signal and is not priced" : `${unpriced} have no usable Qloo signal and are not priced`;
-  return `Taste overlap is priced for ${scored} of ${pluralize(total, "set")}; ${rest}.`;
+  return `Taste overlap is scored for ${scored} of ${pluralize(total, "set")}; ${rest}.`;
+}
+
+/** The brief's heading after the festival and the day: "Glastonbury Festival 2025 Sunday: where the clashes fall". */
+export const BRIEF_HEADING_TAIL = "where the clashes fall";
+
+/**
+ * Under the published day's table: the pair that taste overlap lowers furthest among the day's costliest on time and
+ * draw (`otherHalfPair` in the taste lens, from the same saved lens lists the home page reads), as a candidate to
+ * keep. Ranks only: it says nothing about how many people the pair shares. On the invented day it says so, and it
+ * credits no source on either day.
+ */
+export function candidateLine(
+  pair: { readonly a: string; readonly b: string; readonly from: number; readonly to: number },
+  synthetic = false,
+): string {
+  const lead = synthetic ? "On this invented day, taste also lowers" : "Taste also lowers";
+  return `${lead}: ${pair.a} × ${pair.b} ranks #${pair.from} on time and draw, #${pair.to} with taste: a candidate to keep.`;
+}
+
+/**
+ * Beside each kept move, on paper only: what the head of programming decided about it, to circle, and a line for
+ * their initials. Never a verdict of the page's own.
+ */
+export const DECISION_CHOICES = "Decision: move / keep as published / kept on purpose";
+export const DECISION_INITIALS = "Initials:";
+
+// ------------------------------------------------------------------------------------ shared minutes
+
+/** One set's place as the minutes count it: the day, the stage and the time in minutes from the day's start. */
+type MinutePlace = { day: number; stage: string; start: number; end: number };
+
+/** Minutes two sets play at once: only on the same day and on different stages, as the index counts them. */
+function minutesShared(a: MinutePlace | undefined, b: MinutePlace | undefined): number {
+  if (!a || !b || a.day !== b.day || a.stage === b.stage) return 0;
+  return Math.max(0, Math.min(a.end, b.end) - Math.max(a.start, b.start));
+}
+
+export type SharedMinutes = {
+  /** How many clashes the fixed set holds: the published day's ranked clashes, as the home page counts them. */
+  ranked: number;
+  /** Minutes those pairs share on the published timetable, and with the plan. */
+  before: number;
+  after: number;
+  /**
+   * Every other pair of sets: the minutes of new or longer overlap the plan adds (each pair's increase, summed), and
+   * the pair with the largest increase; null when no overlap outside the set gets longer.
+   */
+  outside: { added: number; longest: { a: string; b: string; minutes: number } | null };
+};
+
+/**
+ * Timetable minutes before and after a plan, over ONE fixed set of pairs: the published day's ranked clashes (the
+ * same list, and so the same count, as the home page's "5 of the 15 ranked clashes"). Because a plan can also move a
+ * set into a new overlap, the pairs outside that set are counted too, as the minutes of new or longer overlap the
+ * plan adds. Minutes of the timetable only: no attendance, people or money. Null when the day has no ranked clash or
+ * a step's times cannot be read.
+ */
+export function sharedMinutes(
+  preset: Pick<Preset, "festival" | "report">,
+  day: number,
+  plan: Pick<Plan, "steps">,
+): SharedMinutes | null {
+  const ranked = topClashes(preset.report.clashes, day, Number.POSITIVE_INFINITY);
+  if (ranked.length === 0) return null;
+  const published = new Map<string, MinutePlace>(
+    preset.festival.timetable.map((slot) => [
+      slot.act_id,
+      { day: slot.day, stage: slot.stage_id, start: slot.start, end: slot.end },
+    ]),
+  );
+  const moved = new Map(published);
+  for (const step of plan.steps) {
+    for (const place of isPlanRuleStep(step) ? step.moves : [step]) {
+      const start = clockMinutes(place.start);
+      const end = clockMinutes(place.end);
+      if (start === null || end === null || end <= start) return null;
+      moved.set(place.actId, { day: place.day, stage: place.stageId, start, end });
+    }
+  }
+  const key = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+  const inSet = new Set(ranked.map((clash) => key(clash.a.act_id, clash.b.act_id)));
+  let before = 0;
+  let after = 0;
+  for (const clash of ranked) {
+    before += minutesShared(published.get(clash.a.act_id), published.get(clash.b.act_id));
+    after += minutesShared(moved.get(clash.a.act_id), moved.get(clash.b.act_id));
+  }
+  // Only a pair with a moved set can change: each moved set against every other set, each pair once.
+  const names = new Map(preset.festival.acts.map((act) => [act.id, act.name]));
+  const movedIds = [...moved.keys()].filter((id) => moved.get(id) !== published.get(id));
+  const seen = new Set<string>();
+  let added = 0;
+  let longest: SharedMinutes["outside"]["longest"] = null;
+  for (const id of movedIds) {
+    for (const other of published.keys()) {
+      const pair = key(id, other);
+      if (other === id || inSet.has(pair) || seen.has(pair)) continue;
+      seen.add(pair);
+      const gain = minutesShared(moved.get(id), moved.get(other)) - minutesShared(published.get(id), published.get(other));
+      if (gain <= 0) continue;
+      added += gain;
+      if (!longest || gain > longest.minutes) {
+        longest = { a: names.get(id) ?? id, b: names.get(other) ?? other, minutes: gain };
+      }
+    }
+  }
+  return { ranked: ranked.length, before, after, outside: { added, longest } };
+}
+
+/**
+ * "Shared minutes in the published day’s 15 ranked clashes: 640 → 610 with your plan. Outside them, the plan adds
+ * 15 min of new or longer overlap (longest: A × B, 15 min)." The outside clause is always said, so the subtotal is
+ * never read as the plan's whole effect on the timetable.
+ */
+export function sharedMinutesSentence(minutes: SharedMinutes): string {
+  const one = minutes.ranked === 1;
+  const set = one ? "the published day’s one ranked clash" : `the published day’s ${minutes.ranked} ranked clashes`;
+  const lead = `Shared minutes in ${set}: ${minutes.before} → ${minutes.after} with your plan.`;
+  const where = one ? "Outside it" : "Outside them";
+  const { added, longest } = minutes.outside;
+  const outside = longest
+    ? `${where}, the plan adds ${added} min of new or longer overlap (longest: ${longest.a} × ${longest.b}, ${longest.minutes} min).`
+    : `${where}, no overlap gets longer.`;
+  return `${lead} ${outside}`;
 }
 
 // ------------------------------------------------------------------------------------ clashes
@@ -461,6 +585,42 @@ export function tableOnPaper(steps: readonly BriefStep[], columns: 1 | 2, withTr
   if (!withTradeoff) return true;
   const lines = steps.reduce((sum, step) => sum + stepLines(step, columns), 0);
   return lines / columns < TALL_PLAN_LINES;
+}
+
+/** Which of the plan's extras the printed sheet keeps: the shared-minutes line and the per-step decision lines. */
+export type PaperExtras = { minutes: boolean; decisions: boolean };
+
+/** The most printed lines of steps (a kept change counting one more) that leave room on paper for the minutes line. */
+const MINUTES_PAPER_LINES = 6;
+
+/** The most printed lines of steps, counted the same way, that leave room for the decision lines in one column. */
+const DECISIONS_PAPER_LINES = 8;
+
+/**
+ * What a full sheet leaves off paper first, so it stays one Letter and one A4 page without smaller type or a dropped
+ * caveat: the shared-minutes line (two printed lines), then the decision lines. Both stay on the screen (where the
+ * decision lines are not shown at all). In one column a decision line sits beside its step's first line, so it costs
+ * no line for a single move and one for a kept change, whose long first line wraps around it; that line is counted
+ * with the steps. In two columns each takes two lines under its step. Measured with headless Chrome on Letter and A4
+ * (print media, 10 mm margins) on the Glastonbury Sunday, one to seven kept moves and kept changes, with and without
+ * the comparison: with these limits no printed sheet ran past 97% of a Letter page except plans that already did
+ * before these lines.
+ *
+ * - The minutes line: one column only, never beside the comparison and the published day's one-row table together
+ *   (the Devpost's single kept move: 96.8% of a Letter page without it, 100% with it), and at most six printed lines
+ *   of steps.
+ * - The decision lines: in one column, at most eight printed lines of steps; in two columns, at most four lines down
+ *   each column (four single moves).
+ */
+export function onPaper(steps: readonly BriefStep[], columns: 1 | 2, withTradeoff = false): PaperExtras {
+  const lines = steps.reduce((sum, step) => sum + stepLines(step, columns), 0) / columns;
+  if (columns === 2) return { minutes: false, decisions: lines <= HEAVY_PLAN_LINES };
+  const counted = lines + steps.filter(isBriefRuleStep).length;
+  const besideTable = withTradeoff && tableOnPaper(steps, columns, withTradeoff);
+  return {
+    minutes: !besideTable && counted <= MINUTES_PAPER_LINES,
+    decisions: counted <= DECISIONS_PAPER_LINES,
+  };
 }
 
 /**

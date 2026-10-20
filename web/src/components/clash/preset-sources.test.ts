@@ -21,7 +21,7 @@ describe("PresetSources", () => {
   it("points to /method for the definitions and keeps the day's draw spread, which /method does not state", () => {
     const html = render();
     const plain = text(html);
-    expect(plain).toContain("Draw, taste overlap, clash price and the Clash Budget Index are defined on How we know .");
+    expect(plain).toContain("Draw, taste overlap and the index are defined on How we know .");
     expect(html).toMatch(/<a[^>]*href="\/method"[^>]*>How we know<\/a>/);
     expect(plain).toMatch(/Draw \(Qloo popularity\): \d+ of \d+ acts on this day score 90 or more out of 100\./);
     // The long definitions are gone from the home page.

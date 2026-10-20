@@ -44,9 +44,12 @@ describe("the dial's settle", () => {
       renderToStaticMarkup(createElement(BudgetDial, { index: 116.71, baseline: BASELINE, compact: true, synthetic })),
     )?.[0] ?? "";
     const published = caption(false).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-    expect(published).toContain("By this index, the published timetable scores 17% above the average random valid timetable.");
-    expect(published).toContain("Lower is better; 100 is the average of random valid timetables of this lineup.");
-    expect(published).toContain("It counts only what clashes cost");
+    expect(published).toContain(
+      "By this index, the published timetable scores 116.7, where 100 is the average random valid timetable and higher means more clash cost.",
+    );
+    // Round 33: the hero's scale line says the random timetables are of this lineup, so the caption gives the
+    // direction and the cost's parts.
+    expect(published).toContain("Lower is better. It counts only what clashes cost");
     // The timetable and its average are named once, in the sentence, not again in the explanation.
     expect(published.match(/published timetable/g)).toHaveLength(1);
     expect(published.split(" ").length).toBeLessThanOrEqual(45);
@@ -194,13 +197,13 @@ describe("the dial's shading", () => {
 
   it("keeps 'lower is better' in the board's caption, under a hairline across the block's own width", () => {
     expect(html).toMatch(/<figcaption class="mt-4 border-t border-border pt-4"/);
-    expect(html).toContain("Lower is better; 100 is the average of random valid timetables of this lineup.");
+    expect(html).toContain('<p data-index-explain="" class="mt-2 text-[0.8125rem] leading-relaxed text-muted-foreground">Lower is better. ');
   });
 
   it("sets the sentence at 15px semibold over a 13px muted explanation on a 1.625 line, never clamped", () => {
     const caption = /<figcaption[\s\S]*?<\/figcaption>/.exec(html)?.[0] ?? "";
     expect(caption).toContain(
-      '<p class="text-[0.9375rem] leading-snug font-semibold">By this index, the published timetable scores 17% above the average random valid timetable.</p>',
+      '<p class="text-[0.9375rem] leading-snug font-semibold">By this index, the published timetable scores 116.7, where 100 is the average random valid timetable and higher means more clash cost.</p>',
     );
     expect(caption).toContain('<p data-index-explain="" class="mt-2 text-[0.8125rem] leading-relaxed text-muted-foreground">');
     expect(caption).not.toMatch(/line-clamp|truncate|overflow-hidden/);

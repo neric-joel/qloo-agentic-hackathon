@@ -68,16 +68,14 @@ export function rangePosition(
 
 /**
  * Where the day sits against random valid timetables, as a reading of the index rather than a verdict
- * on the festival: "By this index, the published timetable scores 17% above the average random valid
- * timetable", "... 14% below ...", or "... scores level with ...". The index is taste-overlap cost, so
- * above means more of it; every caller sets "Lower is better" beside the sentence. On the invented day
- * the timetable is called invented, not published.
+ * on the festival, with its direction stated in the sentence itself: "By this index, the published
+ * timetable scores 116.7, where 100 is the average random valid timetable and higher means more clash
+ * cost." (one decimal, as the dial prints it). Every caller also sets "Lower is better" beside it. On
+ * the invented day the timetable is called invented, not published, and nothing credits Qloo.
  */
 export function describeVsRandom(index: number, synthetic = false): string {
-  const delta = Math.round(index - 100);
   const lead = `By this index, the ${synthetic ? "invented" : "published"} timetable scores`;
-  if (delta === 0) return `${lead} level with the average random valid timetable`;
-  return `${lead} ${Math.abs(delta)}% ${delta > 0 ? "above" : "below"} the average random valid timetable`;
+  return `${lead} ${index.toFixed(1)}, where 100 is the average random valid timetable and higher means more clash cost`;
 }
 
 /** How far the random valid timetables behind the index may move each set. */

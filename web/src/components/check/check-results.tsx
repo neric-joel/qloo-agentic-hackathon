@@ -61,6 +61,11 @@ type Props = {
   between?: ReactNode;
   /** Drawn after the pairs, before the closing paragraph: the list of decisions. */
   after?: ReactNode;
+  /**
+   * One line under the count of sets that share time, saying why it differs from the count the home page
+   * ranks (a published day loaded here, when its saved counts add up to this count); null for none.
+   */
+  countNote?: string | null;
   /** A rule break's row button: show that grid row. Left out, the rows are plain text. */
   onRow?: (row: number) => void;
   /** The break whose rows stay marked in the draft table, by its decision id. */
@@ -331,6 +336,7 @@ export function CheckResults({
   trialHeadingRef,
   between,
   after,
+  countNote = null,
   onRow,
   selectedBreak = null,
   onSelectBreak,
@@ -483,6 +489,7 @@ export function CheckResults({
         <h2 id={RESULT_IDS.shared} className="type-title scroll-mt-24 print:text-[13pt]">
           Sets that share time ({pairCountLabel(shared.length)})
         </h2>
+        {countNote ? <p className="mt-2 max-w-prose text-sm leading-relaxed text-foreground">{countNote}</p> : null}
         {shared.length === 0 ? (
           <p className="mt-3">No two sets on different acts share a minute.</p>
         ) : (

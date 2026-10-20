@@ -6,10 +6,14 @@ import { useSearchParams } from "next/navigation";
 import { ArrowLeft, LoaderCircle, Lock, Printer } from "lucide-react";
 
 import { DiamondGlyph } from "@/components/clash/marks";
+import { otherHalfPair } from "@/components/clash/taste-lens";
 import { TradeoffTable } from "@/components/clash/tradeoff-table";
 import { Button } from "@/components/ui/button";
 import {
   BRIEF_CLASHES,
+  BRIEF_HEADING_TAIL,
+  DECISION_CHOICES,
+  DECISION_INITIALS,
   HIDDEN_NOTE,
   NO_MOVES,
   READING_NOTE,
@@ -21,6 +25,7 @@ import {
   briefSteps,
   briefTitle,
   briefTradeoff,
+  candidateLine,
   clashesCaption,
   clashesTitle,
   coverageSentence,
@@ -32,10 +37,13 @@ import {
   indexSentence,
   noPricedClashes,
   isBriefRuleStep,
+  onPaper,
   planClashLines,
   planClashesTitle,
   planSummary,
   planVerdictSentence,
+  sharedMinutes,
+  sharedMinutesSentence,
   sourceHosts,
   heavyPlan,
   tableClashes,
@@ -46,6 +54,7 @@ import {
 import { daysWithSets } from "@/lib/clashes";
 import { requestDecision, type Decision } from "@/lib/decision";
 import { DO_NOT_USE } from "@/lib/demand";
+import { parseLenses, type Lenses } from "@/lib/lenses";
 import { MOCK_PRESET_ID, mockPreset, mockPresetList } from "@/lib/mock-preset";
 import { MOCK_STREAM_ENABLED } from "@/lib/mock-stream";
 import { PLAN_CAVEAT, RAISES_MARK } from "@/lib/plan-copy";
@@ -75,6 +84,11 @@ export type Outcome =
       preset: Preset;
       plan: Plan | null;
       decision: Decision | null;
+      /**
+       * The day's two rankings (`GET /api/presets/{id}/lenses`), for the line under the published day's table that
+       * names the clash taste overlap lowers furthest. Null, or absent, when they did not load: the line is left out.
+       */
+      lenses?: Lenses | null;
       /** True when the page was opened with no link: the server's first published day, nothing kept. */
       bare?: boolean;
     }
@@ -97,12 +111,36 @@ export function chooseBriefPreset(list: readonly Pick<PresetSummary, "id" | "syn
   return (list.find((item) => item.synthetic !== true) ?? list[0])?.id ?? null;
 }
 
+/**
+ * The brief's own reads skip the browser's HTTP cache. The API marks its answers `stale-while-revalidate`, so a
+ * second read of an address the page (or the timetable before it) already read is answered from the cache and
+ * starts a background revalidation, which keeps the page from ever reaching network idle. The brief reads each
+ * address once, fresh, and shows the same figures.
+ */
+const READ: RequestInit = { headers: { Accept: "application/json" }, cache: "no-store" };
+
 /** The server's festival days, from `GET /api/presets`; in mock mode the synthetic day only. */
 async function loadList(signal: AbortSignal): Promise<PresetSummary[]> {
   if (MOCK_STREAM_ENABLED) return mockPresetList();
-  const response = await fetch("/api/presets", { signal, headers: { Accept: "application/json" } });
+  const response = await fetch("/api/presets", { ...READ, signal });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return parsePresetList(await response.json());
+}
+
+/**
+ * One day's two rankings, for the candidate-to-keep line. Never fails the brief: mock mode, an older server, a
+ * failed request, an unreadable answer or one for another day all give null, and the sheet prints without the line.
+ */
+async function loadLenses(id: string, day: number | null, signal: AbortSignal): Promise<Lenses | null> {
+  if (MOCK_STREAM_ENABLED || day === null) return null;
+  try {
+    const response = await fetch(`/api/presets/${encodeURIComponent(id)}/lenses?day=${day}`, { ...READ, signal });
+    if (!response.ok) return null;
+    const lenses = parseLenses(await response.json());
+    return lenses && lenses.day === day ? lenses : null;
+  } catch {
+    return null;
+  }
 }
 
 /** A bare /brief: the chosen day with no plan and no comparison. Any failure is "could not load", never "unavailable". */
@@ -110,7 +148,9 @@ async function loadBareBrief(signal: AbortSignal): Promise<Outcome> {
   try {
     const id = chooseBriefPreset(await loadList(signal));
     if (id === null) return { status: "error" };
-    return { status: "ready", preset: await loadPreset(id, signal), plan: null, decision: null, bare: true };
+    const preset = await loadPreset(id, signal);
+    const lenses = await loadLenses(id, resolveDay(preset, null), signal);
+    return { status: "ready", preset, plan: null, decision: null, lenses, bare: true };
   } catch {
     return { status: "error" };
   }
@@ -127,19 +167,17 @@ async function loadPreset(id: string, signal: AbortSignal): Promise<Preset> {
     if (id !== MOCK_PRESET_ID) throw new NotFound();
     return mockPreset();
   }
-  const response = await fetch(`/api/presets/${encodeURIComponent(id)}`, {
-    signal,
-    headers: { Accept: "application/json" },
-  });
+  const response = await fetch(`/api/presets/${encodeURIComponent(id)}`, { ...READ, signal });
   if (response.status === 404) throw new NotFound();
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return parsePreset(await response.json());
 }
 
 /**
- * The preset and, only when the link carries kept moves, their plan, priced by the server, and the day's
- * decision (for the card's side-by-side comparison). The decision never fails the brief: an older server, a
- * failed request or mock mode leaves it null, and the brief prints without the comparison.
+ * The preset and, only when the link carries kept moves, their plan, scored by the server, and the day's
+ * decision (for the card's side-by-side comparison), with the day's two rankings. The decision and the rankings
+ * never fail the brief: an older server, a failed request or mock mode leaves them null, and the brief prints
+ * without the comparison or the candidate-to-keep line.
  */
 async function loadBrief(
   id: string,
@@ -157,7 +195,10 @@ async function loadBrief(
         : Promise.resolve(null),
     ]);
     if (moves.length > 0 && plan === null) return { status: "error" };
-    return { status: "ready", preset, plan, decision };
+    // The rankings are asked for only once the day is known to exist: an unknown day or link sends no request for
+    // them. A link with no day opens on the first day with sets.
+    const lenses = await loadLenses(id, resolveDay(preset, dayText), signal);
+    return { status: "ready", preset, plan, decision, lenses };
   } catch (error) {
     return error instanceof NotFound ? { status: "missing" } : { status: "error" };
   }
@@ -314,6 +355,7 @@ export function BriefScreen({
         day={day}
         plan={state.plan}
         tradeoff={briefTradeoff(state.preset, state.decision, moves, day)}
+        lenses={state.lenses ?? null}
         bare={state.bare === true}
         className="mt-4 print:mt-0"
       />
@@ -366,6 +408,28 @@ function LockedMark() {
     <span className="inline-flex items-center gap-1 font-semibold whitespace-nowrap text-foreground">
       <Lock aria-hidden="true" className="size-3 print:size-[9pt]" />
       both locked
+    </span>
+  );
+}
+
+/**
+ * Beside a kept step, on paper only: what the head of programming decided about it, to circle, and a line for their
+ * initials (a 1px rule in the control-edge ink, as the sign-off's lines are). Muted text, as the step's own second
+ * line; never shown on the screen, and never a verdict of the page's own. `beside` floats it to the right of the
+ * step's first line (one column of steps); otherwise it is its own line under the step (two columns).
+ */
+function DecisionMark({ beside }: { beside: boolean }) {
+  return (
+    <span
+      data-decision
+      className={cn(
+        "hidden text-muted-foreground print:text-[9pt]",
+        beside ? "print:float-right print:ml-[10pt] print:block" : "print:block",
+      )}
+    >
+      {DECISION_CHOICES}
+      <span className="ml-[8pt]">{DECISION_INITIALS}</span>{" "}
+      <span className="inline-block w-[40pt] border-b border-border-strong" />
     </span>
   );
 }
@@ -510,6 +574,7 @@ export function BriefContent({
   day,
   plan,
   tradeoff = null,
+  lenses = null,
   bare = false,
   className,
 }: {
@@ -518,6 +583,8 @@ export function BriefContent({
   plan: Plan | null;
   /** The decision card's two changes side by side, when the plan holds one of them. */
   tradeoff?: BriefTradeoff | null;
+  /** The day's two rankings, for the candidate-to-keep line under the published day's table; null leaves it out. */
+  lenses?: Lenses | null;
   /** Opened with no link: says how a kept move gets here. */
   bare?: boolean;
   className?: string;
@@ -529,26 +596,37 @@ export function BriefContent({
   const steps = plan && plan.steps.length > 0 ? briefSteps(preset, plan, tradeoff?.moveReceipt ?? null) : [];
   const withMoves = steps.length > 0;
   const twoColumns = steps.length > 3;
+  const columns = twoColumns ? 2 : 1;
   // A long plan shortens the published-day table to three clashes so the sheet stays on one page.
-  const limit = withMoves ? tableClashes(steps, twoColumns ? 2 : 1, tradeoff !== null) : BRIEF_CLASHES;
+  const limit = withMoves ? tableClashes(steps, columns, tradeoff !== null) : BRIEF_CLASHES;
   const rows = briefRows(preset, day, limit);
   // A tall plan with the comparison on the sheet has no room for the published day's one-row table on paper:
   // the comparison names the same clash and says what each change leaves of it. It stays on the screen.
-  const tableOnPage = !withMoves || tableOnPaper(steps, twoColumns ? 2 : 1, tradeoff !== null);
+  const tableOnPage = !withMoves || tableOnPaper(steps, columns, tradeoff !== null);
   const tableTitle = clashesTitle(rows.length, withMoves);
   const planLines = plan && withMoves ? planClashLines(plan) : [];
   const verdict = plan && withMoves ? planVerdictSentence(plan, figures.range) : null;
   const synthetic = preset.synthetic === true;
   const hosts = sourceHosts(preset);
   const tableCaption = "brief-clashes-caption";
+  // Under the published day's table: the clash taste overlap lowers furthest among the day's costliest on time and
+  // draw, as the home page names it, from the same two rankings. The invented day's wording credits no source.
+  const fallen = lenses && lenses.day === day ? otherHalfPair(lenses) : null;
+  const candidate = fallen ? candidateLine(fallen, synthetic) : null;
+  // What the plan does to the timetable's shared minutes, over the published day's ranked clashes and outside them.
+  const minutes = plan && withMoves ? sharedMinutes(preset, day, plan) : null;
+  // The minutes line and the decision lines are the first things a full sheet leaves off paper (they stay on the
+  // screen, where the decision line is not shown at all): the minutes line first, then the decision lines.
+  const paper = onPaper(steps, columns, tradeoff !== null);
 
+  // On paper the coverage sentence runs on after the band sentence, in the room its last line leaves.
   const dayBlock = (
     <Block title="The day">
-      <p>
+      <p className="print:inline">
         <strong className="font-semibold">{indexSentence(figures.index)}</strong>
         {band ? ` ${band}` : ""}
-      </p>
-      <p className="mt-1 print:mt-[2pt]">{coverageSentence(figures, synthetic)}</p>
+      </p>{" "}
+      <p className="mt-1 print:mt-0 print:inline">{coverageSentence(figures, synthetic)}</p>
     </Block>
   );
 
@@ -566,6 +644,11 @@ export function BriefContent({
           <p className="mt-2 text-sm text-muted-foreground print:mt-[3pt] print:text-[9pt]">
             {HIDDEN_NOTE} {READING_NOTE}
           </p>
+          {candidate ? (
+            <p data-candidate className="mt-1 text-sm print:mt-[1pt] print:text-[9pt]">
+              {candidate}
+            </p>
+          ) : null}
         </>
       )}
     </Block>
@@ -615,6 +698,11 @@ export function BriefContent({
               <p className="mt-1 print:mt-0 print:inline">{verdict}</p>
             </>
           ) : null}
+          {minutes ? (
+            <p data-shared-minutes className={cn("mt-1 print:mt-[2pt]", !paper.minutes && "print:hidden")}>
+              {sharedMinutesSentence(minutes)}
+            </p>
+          ) : null}
           {/* Up to three steps are one column. More are two columns, and on paper they flow down the
               first column and then the second, so a long kept change never stretches a row. */}
           <ol
@@ -623,9 +711,12 @@ export function BriefContent({
               twoColumns && "md:grid-cols-2 print:block print:columns-2 print:gap-x-[24px]",
             )}
           >
-            {steps.map((step) =>
-              isBriefRuleStep(step) ? (
+            {steps.map((step) => {
+              // On paper only: beside the step's first line in one column, under the step in two.
+              const decision = paper.decisions ? <DecisionMark beside={!twoColumns} /> : null;
+              return isBriefRuleStep(step) ? (
                 <li key={step.n} className={cn("min-w-0 break-inside-avoid", twoColumns && "print:mb-[2pt]")}>
+                  {twoColumns ? null : decision}
                   <span className="font-semibold break-words print:text-[9pt]">
                     <span className="tabular-nums">{step.n}.</span> {step.line}
                   </span>
@@ -635,9 +726,11 @@ export function BriefContent({
                     </span>
                     {step.raises ? RAISES_MARK : null} · {step.receipt}
                   </span>
+                  {twoColumns ? decision : null}
                 </li>
               ) : (
                 <li key={step.n} className={cn("min-w-0 break-inside-avoid", twoColumns && "print:mb-[2pt]")}>
+                  {twoColumns ? null : decision}
                   <span className="font-semibold break-words print:text-[9pt]">
                     <span className="tabular-nums">{step.n}.</span> {step.act} · {step.place}
                   </span>
@@ -649,9 +742,10 @@ export function BriefContent({
                     {step.raises ? RAISES_MARK : null}
                     {step.receipt ? <> · {step.receipt}</> : null}
                   </span>
+                  {twoColumns ? decision : null}
                 </li>
-              ),
-            )}
+              );
+            })}
           </ol>
           {tradeoff ? (
             <TradeoffTable
@@ -675,7 +769,7 @@ export function BriefContent({
 
         <Block title={planClashesTitle(planLines.length)}>
           {planLines.length === 0 ? (
-            <p className="text-muted-foreground">None priced.</p>
+            <p className="text-muted-foreground">None scored.</p>
           ) : (
             <ol
               className={cn(
@@ -718,7 +812,7 @@ export function BriefContent({
         id="brief-heading"
         className="type-title mt-2 text-[1.625rem] break-words sm:text-[2.125rem] print:mt-[2pt] print:text-[16pt]"
       >
-        {festival} {dayLabel}: where the clash budget goes
+        {festival} {dayLabel}: {BRIEF_HEADING_TAIL}
       </h1>
       <p className="mt-2 text-muted-foreground print:mt-[3pt]">{briefIntro(festival, synthetic)}</p>
 

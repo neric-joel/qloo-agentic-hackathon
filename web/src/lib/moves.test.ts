@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  RECORDED_RUN_NOTE,
   clashChanges,
   clockMinutes,
   concurrentActs,
   currentPlacement,
+  fromRecordedRun,
+  isFromRecordedRun,
   movableSets,
   nextRankedPair,
   parseMoves,
@@ -381,5 +384,26 @@ describe("nextRankedPair", () => {
     });
     expect(nextRankedPair(ranked, new Set(["act-two", "act-three"]), cannotMove)).toBeNull();
     expect(nextRankedPair([], new Set(), cannotMove)).toBeNull();
+  });
+});
+
+describe("where a kept move came from", () => {
+  const move = { actId: "act-two", stageId: "tent", day: 0, start: "21:05" };
+
+  it("marks a move kept from a recorded agent run, and nothing else about it", () => {
+    const marked = fromRecordedRun(move);
+    expect(marked).toEqual({ ...move, source: "recorded-run" });
+    expect(isFromRecordedRun(marked)).toBe(true);
+    // The move it was made from is left as it was.
+    expect(move).not.toHaveProperty("source");
+    expect(RECORDED_RUN_NOTE).toBe("(from a recorded agent run)");
+  });
+
+  it("reads a move saved before the source existed, or kept any other way, as not from a run", () => {
+    expect(isFromRecordedRun(move)).toBe(false);
+    expect(isFromRecordedRun({ ...move, source: "card" })).toBe(false);
+    expect(isFromRecordedRun({ ...move, source: undefined })).toBe(false);
+    expect(isFromRecordedRun(null)).toBe(false);
+    expect(isFromRecordedRun(undefined)).toBe(false);
   });
 });

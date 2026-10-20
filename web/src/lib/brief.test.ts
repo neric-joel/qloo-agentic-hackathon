@@ -7,6 +7,9 @@ import BriefPage, { metadata } from "@/app/brief/page";
 
 import {
   BRIEF_CLASHES,
+  BRIEF_HEADING_TAIL,
+  DECISION_CHOICES,
+  DECISION_INITIALS,
   HOW_TO_READ,
   HIDDEN_NOTE,
   NO_MOVES,
@@ -14,6 +17,7 @@ import {
   TO_DECIDE,
   bandSentence,
   baselineNote,
+  candidateLine,
   comparisonPairNote,
   briefRows,
   briefSteps,
@@ -28,11 +32,15 @@ import {
   hiddenSentence,
   indexSentence,
   isBriefRuleStep,
+  noPricedClashes,
+  onPaper,
   planClashLines,
   planClashesTitle,
   planSummary,
   planVerdictSentence,
   savedDate,
+  sharedMinutes,
+  sharedMinutesSentence,
   sourceHosts,
   stageChangeText,
   heavyPlan,
@@ -40,7 +48,9 @@ import {
   tableOnPaper,
   type BriefStep,
 } from "./brief";
+import { qlooCredits } from "./credit";
 import { buildDecisionCopy, parseDecision } from "./decision";
+import type { Lenses } from "./lenses";
 import { PLAN_CAVEAT } from "./plan-copy";
 import type { PairClash, Preset, SetSlot } from "./preset";
 import type { Plan, PlanRuleStep, PlanStep, StackStep } from "./stack";
@@ -282,14 +292,14 @@ describe("the day's figures", () => {
     expect(formatIndex(91)).toBe("91.0");
   });
 
-  it("says how many sets are priced, with and without unscored acts", () => {
+  it("says how many sets are scored, with and without unscored acts (round 33: 'scored', as the index is)", () => {
     expect(coverageSentence(dayFigures(makePreset()))).toBe(
-      "Taste overlap is priced for 7 of 8 sets; 1 has no usable Qloo signal and is not priced.",
+      "Taste overlap is scored for 7 of 8 sets; 1 has no usable Qloo signal and is not priced.",
     );
     expect(coverageSentence({ scored: 36, total: 39, unpriced: 3 })).toBe(
-      "Taste overlap is priced for 36 of 39 sets; 3 have no usable Qloo signal and are not priced.",
+      "Taste overlap is scored for 36 of 39 sets; 3 have no usable Qloo signal and are not priced.",
     );
-    expect(coverageSentence({ scored: 12, total: 12, unpriced: 0 })).toBe("Taste overlap is priced for all 12 sets.");
+    expect(coverageSentence({ scored: 12, total: 12, unpriced: 0 })).toBe("Taste overlap is scored for all 12 sets.");
   });
 
   it("places the index below, inside or above the middle 80%, as the page prints them", () => {
@@ -469,7 +479,8 @@ describe("the brief sheet", () => {
   it("prints the exact copy, with no moves kept", () => {
     const text = sheetText(makePreset(), null);
     expect(text).toContain("Clash brief · Test Fest 2026, Sunday");
-    expect(text).toContain("Test Fest 2026 Sunday: where the clash budget goes");
+    expect(text).toContain("Test Fest 2026 Sunday: where the clashes fall");
+    expect(text).not.toContain("clash budget goes");
     expect(text).toContain("Scored by this app from the published timetable. Test Fest 2026 does not use Clash Control.");
     expect(text).toContain(
       "Clash Budget Index 116.7. The middle 80% of random valid timetables of this lineup score 92 to 109; the published timetable reads above that range.",
@@ -1019,5 +1030,245 @@ describe("the brief's table caption and stage changes (round 32, V7)", () => {
     // The card's own table is untouched: the note is the brief's.
     const card = buildDecisionCopy(preset, parseDecision(both))?.tradeoff;
     expect(card?.rows.find((row) => row.id === "sets")?.rule).toBe("2 (Act One and Act Three)");
+  });
+});
+
+// ------------------------------------------------------------------------------------ round 33 (E6)
+
+/** The day's two rankings, invented: Act Four and Act Six fall furthest once taste counts (#2 to #6). */
+function lensesFor(day = 0, overrides: Partial<Lenses> = {}): Lenses {
+  return {
+    day,
+    ranked: 5,
+    with_taste: [],
+    without_taste: [
+      { a: "Act Two", b: "Act Three", a_id: "act-two", b_id: "act-three", rank: 1, rank_with_taste: 2 },
+      { a: "Act Four", b: "Act Six", a_id: "act-four", b_id: "act-six", rank: 2, rank_with_taste: 6 },
+      { a: "Act One", b: "Act Three", a_id: "act-one", b_id: "act-three", rank: 3, rank_with_taste: 4 },
+    ],
+    only_with_taste: 1,
+    only_without_taste: 1,
+    apart: [],
+    ...overrides,
+  };
+}
+
+/** The sheet's HTML, with lenses and an optional comparison. */
+function sheetHtml(preset: Preset, plan: Plan | null, extra: Record<string, unknown> = {}): string {
+  return renderToStaticMarkup(createElement(BriefContent, { preset, day: 0, plan, ...extra }));
+}
+
+function plainOf(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&#x27;|&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+describe("the brief's title and the index's words (round 33)", () => {
+  it("says where the clashes fall, with no money word", () => {
+    expect(BRIEF_HEADING_TAIL).toBe("where the clashes fall");
+    for (const plan of [null, PLAN]) {
+      const html = sheetHtml(makePreset(), plan);
+      expect(html).toMatch(/<h1 id="brief-heading"[^>]*>Test Fest 2026 Sunday: where the clashes fall<\/h1>/);
+      expect(plainOf(html)).not.toMatch(/clash budget goes|is priced for|None priced|priced clashes/);
+    }
+  });
+
+  it("says a day with no clash has no scored clash, on both kinds of day", () => {
+    expect(noPricedClashes(false)).toBe("No scored clashes on this day: no two acts with a Qloo signal play at the same time.");
+    expect(noPricedClashes(true)).toBe("No scored clashes on this day: no two scored acts play at the same time.");
+    const empty = makePreset({ report: { ...makePreset().report, clashes: [] } });
+    expect(plainOf(sheetHtml(empty, null))).toContain(noPricedClashes(false));
+  });
+});
+
+describe("the candidate to keep (round 33)", () => {
+  const LINE = "Taste also lowers: Act Four × Act Six ranks #2 on time and draw, #6 with taste: a candidate to keep.";
+
+  it("words the pair taste overlap lowers furthest by its two ranks, and only ranks", () => {
+    const pair = { a: "Act Four", b: "Act Six", from: 2, to: 6 };
+    expect(candidateLine(pair)).toBe(LINE);
+    expect(candidateLine(pair, true)).toBe(
+      "On this invented day, taste also lowers: Act Four × Act Six ranks #2 on time and draw, #6 with taste: a candidate to keep.",
+    );
+    for (const line of [candidateLine(pair), candidateLine(pair, true)]) {
+      expect(line).not.toMatch(/Qloo|attend|people|fans|crowd/i);
+    }
+  });
+
+  it("is printed under the published day's table, after its notes, from the day's own rankings", () => {
+    const html = sheetHtml(makePreset(), null, { lenses: lensesFor() });
+    const text = plainOf(html);
+    expect(text).toContain(LINE);
+    expect(text.indexOf(LINE)).toBeGreaterThan(text.indexOf(READING_NOTE));
+    expect(text.indexOf(LINE)).toBeLessThan(text.indexOf("How to read this"));
+    // Inside the table's block, on paper as on the screen, in the sheet's own ink: no colour of its own.
+    const block = html.match(/<section aria-labelledby="brief-the-five-costliest-clashes"[\s\S]*?<\/section>/)?.[0] ?? "";
+    expect(block).toContain(`<p data-candidate="true" class="mt-1 text-sm print:mt-[1pt] print:text-[9pt]">${LINE}</p>`);
+    // With a plan it stays under the published day's table, before the plan's moves.
+    const withPlan = plainOf(sheetHtml(makePreset(), PLAN, { lenses: lensesFor() }));
+    expect(withPlan.indexOf(LINE)).toBeGreaterThan(withPlan.indexOf("before these moves"));
+  });
+
+  it("is left out without the rankings, for another day's rankings, and when no pair falls", () => {
+    const none = (lenses: Lenses | null) => plainOf(sheetHtml(makePreset(), null, { lenses }));
+    expect(none(null)).not.toContain("a candidate to keep");
+    expect(none(lensesFor(1))).not.toContain("a candidate to keep");
+    expect(
+      none(lensesFor(0, { without_taste: [{ a: "Act Two", b: "Act Three", a_id: "act-two", b_id: "act-three", rank: 1, rank_with_taste: 1 }] })),
+    ).not.toContain("a candidate to keep");
+    expect(plainOf(sheetHtml(makePreset(), null))).not.toContain("a candidate to keep");
+  });
+
+  it("credits no Qloo on the invented day, with a plan and its minutes and decision lines on the sheet", () => {
+    const invented = makePreset({ synthetic: true });
+    const text = plainOf(sheetHtml(invented, PLAN, { lenses: lensesFor() }));
+    expect(text).toContain("On this invented day, taste also lowers: Act Four × Act Six ranks #2 on time and draw");
+    expect(text).toContain("Shared minutes in the published day’s 6 ranked clashes");
+    expect(text).toContain(DECISION_CHOICES);
+    expect(qlooCredits(text)).toEqual([]);
+  });
+});
+
+describe("the decision line beside each kept step (round 33)", () => {
+  it("is the head of programming's choice to circle and a line for initials, on paper only", () => {
+    expect(DECISION_CHOICES).toBe("Decision: move / keep as published / kept on purpose");
+    expect(DECISION_INITIALS).toBe("Initials:");
+    const html = sheetHtml(makePreset(), PLAN);
+    const marks = html.match(/<span data-decision="true"[^>]*>[\s\S]*?<\/span><\/span>/g) ?? [];
+    expect(marks).toHaveLength(PLAN.steps.length);
+    for (const mark of marks) {
+      // Never on the screen; on paper it sits to the right of its step's first line, in the step's muted ink.
+      expect(mark).toMatch(/class="hidden text-muted-foreground print:text-\[9pt\] print:float-right print:ml-\[10pt\] print:block"/);
+      expect(plainOf(mark)).toBe(`${DECISION_CHOICES} ${DECISION_INITIALS}`);
+      // The line to write on is a 1px rule in the control-edge ink, as the sign-off's are: a mark, never a box.
+      expect(mark).toContain('<span class="inline-block w-[40pt] border-b border-border-strong"></span>');
+    }
+    // Inside each step, before its first line, so it floats beside it.
+    const steps = html.match(/<li class="min-w-0 break-inside-avoid">[\s\S]*?<\/li>/g) ?? [];
+    expect(steps).toHaveLength(PLAN.steps.length);
+    for (const step of steps) expect(step.indexOf("data-decision")).toBeLessThan(step.indexOf("font-semibold"));
+    expect(sheetHtml(makePreset(), null)).not.toContain("data-decision");
+  });
+
+  it("takes its own line under each step in two columns, and leaves paper when the steps run long", () => {
+    const four: Plan = {
+      ...PLAN,
+      steps: [...PLAN.steps, step("act-six", "Act Six", "North Field", "north", "21:00", "22:00", 105)],
+    };
+    const html = sheetHtml(makePreset(), four);
+    const marks = html.match(/<span data-decision="true"[^>]*>/g) ?? [];
+    expect(marks).toHaveLength(4);
+    for (const mark of marks) expect(mark).toBe('<span data-decision="true" class="hidden text-muted-foreground print:text-[9pt] print:block">');
+    const steps = html.match(/<li class="min-w-0 break-inside-avoid print:mb-\[2pt\]">[\s\S]*?<\/li>/g) ?? [];
+    for (const item of steps) expect(item.indexOf("data-decision")).toBeGreaterThan(item.indexOf("font-semibold"));
+    // Five single moves in two columns: the decision lines are the second thing left off paper.
+    const five: Plan = { ...four, steps: [...four.steps, step("act-seven", "Act Seven", "South Tent", "south", "21:00", "22:00", 104)] };
+    expect(sheetHtml(makePreset(), five)).not.toContain("data-decision");
+  });
+});
+
+describe("the shared minutes of a plan (round 33)", () => {
+  const preset = makePreset();
+
+  it("counts one fixed set, the published day's ranked clashes, before and with the plan", () => {
+    // Day 0 ranks six clashes; on the published timetable they share 45 + 30 + 45 + 60 + 30 + 0 minutes (the
+    // last pair is on one stage, so it shares none). PLAN moves Act One onto Act Three's times and shortens nothing.
+    expect(sharedMinutes(preset, 0, PLAN)).toEqual({ ranked: 6, before: 210, after: 240, outside: { added: 0, longest: null } });
+    expect(sharedMinutesSentence(sharedMinutes(preset, 0, PLAN)!)).toBe(
+      "Shared minutes in the published day’s 6 ranked clashes: 210 → 240 with your plan. Outside them, no overlap gets longer.",
+    );
+  });
+
+  it("always says what the plan adds outside that set, with the longest new or longer overlap", () => {
+    // Act Seven to The Barn at 14:00: it leaves Act Six (60 minutes fewer in the set) and lands on Act One and Act Two,
+    // two pairs that are not ranked clashes today (60 and 45 new minutes).
+    const plan: Plan = { ...PLAN, steps: [step("act-seven", "Act Seven", "The Barn", "barn", "14:00", "15:00", 110)] };
+    const minutes = sharedMinutes(preset, 0, plan)!;
+    expect(minutes).toEqual({
+      ranked: 6,
+      before: 210,
+      after: 150,
+      outside: { added: 105, longest: { a: "Act Seven", b: "Act One", minutes: 60 } },
+    });
+    expect(sharedMinutesSentence(minutes)).toBe(
+      "Shared minutes in the published day’s 6 ranked clashes: 210 → 150 with your plan. Outside them, the plan adds 105 min of new or longer overlap (longest: Act Seven × Act One, 60 min).",
+    );
+  });
+
+  it("moves every set of a kept change", () => {
+    // Act Two to The Barn 15:30, Act Three to South Tent 14:15: three ranked pairs change, and nothing outside grows.
+    const plan: Plan = { ...PLAN, steps: [ruleStep(108)] };
+    expect(sharedMinutes(preset, 0, plan)).toEqual({ ranked: 6, before: 210, after: 135, outside: { added: 0, longest: null } });
+  });
+
+  it("gives nothing when the day has no ranked clash or a step's times cannot be read", () => {
+    expect(sharedMinutes(preset, 5, PLAN)).toBeNull();
+    const unreadable: Plan = { ...PLAN, steps: [{ ...PLAN.steps[0], start: "9pm" }] };
+    expect(sharedMinutes(preset, 0, unreadable)).toBeNull();
+  });
+
+  it("names one ranked clash in the singular, and speaks of timetable minutes only", () => {
+    const one = sharedMinutesSentence({ ranked: 1, before: 45, after: 30, outside: { added: 0, longest: null } });
+    expect(one).toBe("Shared minutes in the published day’s one ranked clash: 45 → 30 with your plan. Outside it, no overlap gets longer.");
+    const sentences = [
+      one,
+      sharedMinutesSentence({ ranked: 15, before: 815, after: 800, outside: { added: 15, longest: { a: "A", b: "B", minutes: 15 } } }),
+    ];
+    for (const sentence of sentences) expect(sentence).not.toMatch(/attend|people|fans|crowd|audience|revenue|money|\$|£/i);
+  });
+
+  it("is printed with a plan, under its summary, and never without one", () => {
+    const text = sheetText(makePreset(), PLAN);
+    const line = "Shared minutes in the published day’s 6 ranked clashes: 210 → 240 with your plan. Outside them, no overlap gets longer.";
+    expect(text).toContain(line);
+    expect(text.indexOf(line)).toBeGreaterThan(text.indexOf("3 kept moves"));
+    expect(text.indexOf(line)).toBeLessThan(text.indexOf("1. Act One"));
+    expect(sheetText(makePreset(), null)).not.toContain("Shared minutes");
+    expect(sheetText(makePreset(), { ...PLAN, steps: [{ ...PLAN.steps[0], end: "later" }] })).not.toContain("Shared minutes");
+  });
+
+  it("leaves paper first, and stays on the screen, when the sheet is full", () => {
+    // Three moves in one column: on paper.
+    expect(sheetHtml(makePreset(), PLAN)).toMatch(/<p data-shared-minutes="true" class="mt-1 print:mt-\[2pt\]">/);
+    // The card's single move with the comparison and the published day's one-row table: screen only.
+    const tradeoff = briefTradeoff(makePreset(), parseDecision(decisionRaw()), [CARD_MOVE], 0);
+    const single: Plan = {
+      ...PLAN,
+      steps: [{ ...PLAN.steps[0], act: "Act Two", actId: "act-two", stage: "The Barn", stageId: "barn", start: "14:30", end: "15:30" }],
+    };
+    expect(sheetHtml(makePreset(), single, { tradeoff })).toMatch(/<p data-shared-minutes="true" class="mt-1 print:mt-\[2pt\] print:hidden">/);
+  });
+});
+
+describe("what a full sheet leaves off paper (round 33)", () => {
+  const move = (n: number): BriefStep => ({ n, act: "A", place: "P", shift: "s", before: "1.0", after: "0.9", raises: false, receipt: null });
+  const change = (n: number): BriefStep => ({ n, line: "L", before: "1.0", after: "0.9", raises: false, receipt: "r" });
+  const moves = (count: number) => Array.from({ length: count }, (_, i) => move(i + 1));
+
+  it("keeps both on paper for up to three single moves in one column", () => {
+    for (const count of [1, 2, 3]) expect(onPaper(moves(count), 1)).toEqual({ minutes: true, decisions: true });
+    // Beside the comparison: two or three moves leave the published day's table to the screen, so both fit.
+    expect(onPaper(moves(2), 1, true)).toEqual({ minutes: true, decisions: true });
+    expect(onPaper(moves(3), 1, true)).toEqual({ minutes: true, decisions: true });
+    expect(onPaper([change(1), move(2)], 1, true)).toEqual({ minutes: true, decisions: true });
+  });
+
+  it("drops the minutes line first: beside the comparison and the one-row table, or past six lines of steps", () => {
+    // The Devpost's single kept move with the comparison.
+    expect(onPaper(moves(1), 1, true)).toEqual({ minutes: false, decisions: true });
+    // A kept change and two moves: seven lines, and one more for the change's decision line.
+    expect(onPaper([change(1), move(2), move(3)], 1)).toEqual({ minutes: false, decisions: true });
+    // Four single moves are two columns: no minutes line on paper.
+    expect(onPaper(moves(4), 2)).toEqual({ minutes: false, decisions: true });
+  });
+
+  it("then the decision lines, for longer plans", () => {
+    expect(onPaper([change(1), change(2), change(3)], 1)).toEqual({ minutes: false, decisions: false });
+    for (const count of [5, 6, 7, 8]) expect(onPaper(moves(count), 2)).toEqual({ minutes: false, decisions: false });
+    expect(onPaper([change(1), ...moves(4).map((step, i) => ({ ...step, n: i + 2 }))], 2, true)).toEqual({ minutes: false, decisions: false });
   });
 });

@@ -194,7 +194,20 @@ export const METHOD_FIGURES = {
     glastonburyTasteAdds: { diff: 0.201, interval: [0.111, 0.277] },
     usTasteAdds: { diff: -0.065, interval: [-0.163, 0.025] },
     locationRequests: 347,
+    /**
+     * Where the two rankings disagree, in aggregate only (the pair-level table stays in the private folder):
+     * complained-about pairs that taste overlap puts in their day's top quarter (within-day percentile 0.75 or more)
+     * while popularity puts them in the bottom half (under 0.5), out of the scored pairs, the complaint clusters
+     * they come from, and how many of them are also in the top quarter on time and draw (the taste-removed price).
+     */
+    tasteOverPopularity: { pairs: 4, ofPairs: 68, clusters: 2, alsoTopOnTimeAndDraw: 4 },
   },
+  /**
+   * A replication test that has not been run: held-out bills that do not exist yet (`billsYear`, the same
+   * festivals), scored before any complaint is collected, with the paired difference (full price minus the
+   * taste-removed price) counted a success only if its interval lies above `successAbove`.
+   */
+  replication: { billsYear: 2027, successAbove: 0 },
   coverage: {
     /** Acts across the five festivals tested with a usable Qloo signal (strong or weak). */
     usableActs: 449,
@@ -339,6 +352,28 @@ export function tasteInPriceReading(
     tasteAddsAboveZero: figures.pairedVsTasteRemoved.interval[0] > 0,
     popularityIncludesZero: holdsZero(figures.pairedVsPopularity.interval),
   };
+}
+
+/**
+ * Where taste overlap and popularity disagree on the complained-about clashes, aggregate only, with the clause
+ * that all of them are also high on time and draw in the same sentence: "Complained-about clashes that taste
+ * overlap put in their day's top quarter while popularity put them in the bottom half: 4 of 68, from 2 complaint
+ * clusters; all 4 were also in the top quarter on time and draw."
+ */
+export function disagreementSentence(
+  figures: {
+    readonly pairs: number;
+    readonly ofPairs: number;
+    readonly clusters: number;
+    readonly alsoTopOnTimeAndDraw: number;
+  } = METHOD_FIGURES.tasteInPrice.tasteOverPopularity,
+): string {
+  const { pairs, ofPairs, clusters, alsoTopOnTimeAndDraw } = figures;
+  const also =
+    alsoTopOnTimeAndDraw === pairs
+      ? `all ${pairs} were also in the top quarter on time and draw`
+      : `${alsoTopOnTimeAndDraw} of the ${pairs} were also in the top quarter on time and draw`;
+  return `Complained-about clashes that taste overlap put in their day’s top quarter while popularity put them in the bottom half: ${pairs} of ${ofPairs}, from ${clusters} complaint ${clusters === 1 ? "cluster" : "clusters"}; ${also}.`;
 }
 
 /** "18,762": a count with thousands separators. */

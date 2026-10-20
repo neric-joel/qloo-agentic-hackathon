@@ -25,6 +25,7 @@ import {
   clockWindow,
   formatClock,
   isCloseName,
+  normalizeName,
   parseGrid,
   pairCountLabel,
   removePairLine,
@@ -47,15 +48,28 @@ import {
   type Decisions,
 } from "@/lib/check-decisions";
 import {
+  MAX_SCORE_MOVES,
   PRICE_COPY,
+  SCORE_COPY,
+  SCORE_LIMIT,
+  defaultOrder,
   loadPublishedDay,
   loadPublishedTimetable,
+  loadServableDays,
+  matchServableDay,
+  movesIn,
   priceGridLive,
   priceRequest,
   requestPrice,
+  scoreStepOf,
+  scoreSteps,
   sourceBanner,
+  type IndexScore,
   type PriceMode,
+  type PriceRequest,
   type PublishedDay,
+  type ScoreStep,
+  type ServableDay,
 } from "@/lib/check-price";
 import {
   SAMPLE_GRID,
@@ -81,6 +95,7 @@ import {
   wasPlace,
   workingLabel,
   type TrialChange,
+  type TrialResult,
   type TrialTarget,
 } from "@/lib/check-trial";
 
@@ -92,7 +107,7 @@ import { DecisionList, type DecisionPatch } from "./check-decision";
 import { CheckPrice, type PriceOrder, type PriceState } from "./check-price";
 import { BREAK_HEADING, BreakDisc, CheckResults, CheckState, breakMarks, nextStep, rowsInOrder } from "./check-results";
 import { CheckReview } from "./check-review";
-import { TEXT_ACTION, type TrialState, type TrialUi } from "./check-trial-panel";
+import { TEXT_ACTION, splitChanges, type TrialState, type TrialUi } from "./check-trial-panel";
 
 /**
  * A text action in the sheet's name row ("Download a template", "Check an invented sample"): a ghost
@@ -119,12 +134,23 @@ type Run = {
   arrival?: boolean;
   /** The sample's pair rules dropped since the last check because the new grid has none of their acts. */
   removed?: string[];
-  /** The checked grid is the published day "Check a published day" loaded: its label. */
+  /** The checked grid is the published day "Check a published day" loaded: its label, as the brief prints it. */
   published?: string | null;
+  /** The same label on screen, without the pair-count line (which sits under the count of overlaps). */
+  publishedLabel?: string | null;
+  /** Why this page counts more overlaps than the home page ranks (`publishedPairsLine`); null when it does not add up. */
+  pairsLine?: string | null;
 };
 
-/** The pasted grid with some changes tried on it: a copy held in this tab, never the paste itself. */
-type Working = { report: CheckReport; applied: TrialChange[] };
+/**
+ * The pasted grid with some changes tried on it: a copy held in this tab, never the paste itself. `steps`
+ * holds each applied change as a rule step of the published day (null when it is not one), so a later
+ * change can be scored on top of them.
+ */
+type Working = { report: CheckReport; applied: TrialChange[]; steps: (ScoreStep | null)[] };
+
+/** The index of the first listed changes of one search, by change, and the line over them. */
+type Scores = { targetId: string; map: ReadonlyMap<TrialChange, IndexScore | "scoring">; note: string };
 
 /** What "Copy link to this grid" did: copied, or shown to copy by hand, or refused as too long. */
 type Share = { status: "copied" | "manual"; link: string } | { status: "too-long" } | null;
@@ -146,10 +172,18 @@ const GRID_COLUMNS = ["Act", "Stage", "Start", "End", "Locked"] as const;
 const GRID_LINE = "font-mono text-[0.8125rem] leading-5";
 const IDLE: PriceState = { phase: "idle" };
 
-/** The published day's label for a check of it: with its pair counts when they match the overlaps found. */
-function publishedRunLabel(published: PublishedInput, outcome: CheckOutcome): string {
-  const line = outcome.ok ? publishedPairsLine(outcome.report.shared.length, published.pairCounts ?? null) : null;
-  return line ? `${published.label} ${line}` : published.label;
+/**
+ * The published day's labels for a check of it: the brief's, with its pair counts when they match the
+ * overlaps found, and the screen's, whose pair-count line sits under the count of overlaps instead.
+ */
+function publishedRun(published: PublishedInput, outcome: CheckOutcome): Pick<Run, "published" | "publishedLabel" | "pairsLine"> {
+  // The one reason must account for every pair the page leaves unranked: each has an act with no usable signal.
+  const quiet = new Set((published.ranking?.noSignal ?? []).map(normalizeName));
+  const withoutSignal = outcome.ok
+    ? outcome.report.shared.filter((pair) => quiet.has(pair.a.actKey) || quiet.has(pair.b.actKey)).length
+    : 0;
+  const line = outcome.ok ? publishedPairsLine(outcome.report.shared.length, published.pairCounts ?? null, withoutSignal) : null;
+  return { published: line ? `${published.label} ${line}` : published.label, publishedLabel: published.label, pairsLine: line };
 }
 
 /** Minutes from local midnight now. */
@@ -889,10 +923,13 @@ function saveFile(name: string, text: string, type: string) {
 
 /**
  * The check page's one interactive piece. Everything pasted stays in this component's state: no
- * storage and no cookie, and no request until the visitor presses Compare audience overlap (then only the act
- * names and the pairs to price go, through `requestPrice`). Decisions are state too, so they are gone
- * when the tab closes or reloads, and the page says so. A share link carries the grid in its hash,
- * which no request includes.
+ * storage and no cookie, and nothing of a paste leaves until the visitor presses Compare audience overlap
+ * (then only the compared pairs and their act names go, through `requestPrice`). The other requests carry
+ * nothing of a paste: GETs of this app's own public timetables (on load, the health switch and the day
+ * list; after a pasted grid is checked, the published days and the pairs each one's page prints), and, on a
+ * published day as loaded here, the what-if POST that scores the first changes a search the visitor started
+ * lists (that public timetable's ids). Decisions are state too, so they are gone when the tab closes or
+ * reloads, and the page says so. A share link carries the grid in its hash, which no request includes.
  */
 export function CheckTool({
   initial = EMPTY,
@@ -924,6 +961,10 @@ export function CheckTool({
   const publishedRef = useRef<PublishedInput | null>(null);
   const [published, setPublished] = useState<PublishedInput | null>(null);
   const [publishedNote, setPublishedNote] = useState("");
+  // The published days a pasted grid may be on, read once after the first pasted grid is checked (never on
+  // load, for the sample or for a published day): which pairs the saved server can serve. GETs of this app's
+  // own public timetables, carrying nothing of the visitor's. Null until read.
+  const [servable, setServable] = useState<ServableDay[] | null>(null);
   // The invented sample opens as a table; a paste is edited as text.
   const [view, setView] = useState<GridView>(startWithSample ? "table" : "csv");
   // "Clear" switches to the text and focuses it once it is back in view.
@@ -960,7 +1001,13 @@ export function CheckTool({
   const [note, setNote] = useState("");
   const [trial, setTrial] = useState<TrialState | null>(null);
   const [price, setPrice] = useState<PriceState>(IDLE);
+  // The request the last press sent: the step words its answer by it, even if the pairs a new press would
+  // send change meanwhile (the published days above finish loading). Dropped with the answer.
+  const [pressed, setPressed] = useState<PriceRequest | null>(null);
   const [priceOrder, setPriceOrder] = useState<PriceOrder>("minutes");
+  const [scores, setScores] = useState<Scores | null>(null);
+  // The index scoring of a search's listed changes; a new search, a check or an edit drops its answers.
+  const scoreAbort = useRef<AbortController | null>(null);
   const [share, setShare] = useState<Share>(null);
   // Targets searched with "Find a change" since the last check, for the draft review.
   const [searched, setSearched] = useState<ReadonlySet<string>>(() => new Set());
@@ -1038,6 +1085,18 @@ export function CheckTool({
     return () => controller.abort();
   }, []);
 
+  // After the first pasted grid is checked (not the sample, not a published day), the published days and the
+  // pairs each one's page prints are read once, so Compare fills its slots with pairs the saved server serves.
+  const wantServable = run !== null && run.outcome.ok && !run.sample && !run.published;
+  useEffect(() => {
+    if (!wantServable || servable !== null) return;
+    const controller = new AbortController();
+    void loadServableDays(controller.signal).then((days) => {
+      if (!controller.signal.aborted) setServable(days);
+    });
+    return () => controller.abort();
+  }, [wantServable, servable]);
+
   // After a check that read the grid, or a change tried on it, the first result heading takes focus.
   useEffect(() => {
     const heading = headingRef.current;
@@ -1060,12 +1119,16 @@ export function CheckTool({
     searchToken.current += 1;
     if (searchTimer.current !== null) window.clearTimeout(searchTimer.current);
     searchTimer.current = null;
+    scoreAbort.current?.abort();
+    scoreAbort.current = null;
+    setScores(null);
   }, []);
 
   const dropPrice = useCallback(() => {
     priceAbort.current?.abort();
     priceAbort.current = null;
     setPrice(IDLE);
+    setPressed(null);
     setPriceOrder("minutes");
   }, []);
 
@@ -1103,7 +1166,9 @@ export function CheckTool({
         sample: isSampleInput(next),
         checkedAt: nowMinutes(),
         removed,
-        published: isPublishedInput(next, publishedNow) && publishedNow ? publishedRunLabel(publishedNow, outcome) : null,
+        ...(isPublishedInput(next, publishedNow) && publishedNow
+          ? publishedRun(publishedNow, outcome)
+          : { published: null, publishedLabel: null, pairsLine: null }),
       }));
     },
     [stopSearch, dropPrice],
@@ -1274,12 +1339,28 @@ export function CheckTool({
   const shown = working?.report ?? pasted;
   /** The text on show is the text last checked, and it read: the right column says Checked, not Preview. */
   const checkedNow = run !== null && Boolean(outcome?.ok) && !stale;
-  // A published day loaded here compares its saved day's own ranked clashes; a pasted grid its longest overlaps.
-  const request = shown ? priceRequest(shown, run?.published && published ? (published.ranking ?? null) : null) : null;
+  // A published day loaded here compares its saved day's own ranked clashes; a pasted grid whose names are on
+  // a published day, the pairs that day's page prints first; any other grid, its longest overlaps.
+  const ranking = run?.published && published ? (published.ranking ?? null) : null;
+  const servedDay =
+    shown && servable && run && !run.sample && !run.published
+      ? matchServableDay([...new Set(shown.sets.map((set) => set.act))], servable)
+      : null;
+  const request = shown ? priceRequest(shown, ranking, servedDay) : null;
+  // The step words an answer by the request that was sent; a new press sends the request as it is now.
+  const priceShown = price.phase !== "idle" && pressed ? pressed : request;
+  // A change Find a change lists is scored on the index only on a published day as loaded here.
+  const scoreIds = run?.published && published?.ids ? published.ids : null;
   /** The grid on show and the settings it was checked with: what the link and the .csv carry. */
   const shownInput: CheckInput | null =
     run && shown ? { ...run.input, grid: working ? gridText(working.report.sets) : run.input.grid } : null;
   const shareHashText = shownInput ? shareHash(shownInput) : "";
+
+  /** The decisions marked "Kept on purpose": Find a change leaves out, by default, a change that ends one. */
+  const keptIds = useMemo(
+    () => new Set([...decisions.values()].filter((decision) => decision.status === "kept").map((decision) => decision.id)),
+    [decisions],
+  );
 
   function findChange(target: TrialTarget, label: string) {
     if (!shown || !pasted || stale) return;
@@ -1297,12 +1378,54 @@ export function CheckTool({
         setTrial({ targetId: id, label, running: false, progress: null, result: next.value });
         setSearched((current) => new Set(current).add(id));
         setNote(`${label.replace(/\.$/, "")}. ${next.value.summary}`);
+        scoreListed(next.value, id, target);
         return;
       }
       setTrial({ targetId: id, label, running: true, progress: next.value, result: null });
       searchTimer.current = window.setTimeout(tick, 0);
     };
     searchTimer.current = window.setTimeout(tick, 0);
+  }
+
+  /**
+   * After a search the visitor started (Find a change), on a published day as loaded here: the first 3
+   * changes it lists are scored on that day's index, each with the changes already applied before it, by
+   * `POST /api/presets/{id}/whatif` (rule steps of the public timetable; no Qloo request). At most 3 calls
+   * for one press, all at once, never retried, never on load; a refusal or failure is said in words. On any
+   * other grid the line over the list says why nothing is scored.
+   */
+  function scoreListed(result: TrialResult, forTarget: string, target: TrialTarget) {
+    if (!shown) return;
+    const { sameStage, stageChange } = splitChanges(result, keptIds);
+    const first = [...sameStage, ...stageChange].slice(0, SCORE_LIMIT);
+    if (first.length === 0) return;
+    if (!scoreIds) {
+      setScores({ targetId: forTarget, map: new Map(), note: SCORE_COPY.unavailable });
+      return;
+    }
+    const earlier = working?.steps ?? [];
+    const notScored = (reason: string): IndexScore => ({ status: "not_scored", reason });
+    const plans = first.map((change) => {
+      if (earlier.some((step) => step === null)) return { change, score: notScored(SCORE_COPY.earlier), steps: null };
+      const step = scoreStepOf(shown, target.rows, change.moves, scoreIds);
+      if (!step) return { change, score: notScored(SCORE_COPY.noPair), steps: null };
+      const steps = [...(earlier as ScoreStep[]), step];
+      if (movesIn(steps) > MAX_SCORE_MOVES) return { change, score: notScored(SCORE_COPY.tooMany), steps: null };
+      return { change, score: "scoring" as const, steps };
+    });
+    const controller = new AbortController();
+    scoreAbort.current = controller;
+    const note = SCORE_COPY.scope(first.length, earlier.length > 0);
+    setScores({ targetId: forTarget, map: new Map(plans.map((plan) => [plan.change, plan.score])), note });
+    for (const plan of plans) {
+      if (!plan.steps) continue;
+      void scoreSteps(scoreIds.presetId, plan.steps, controller.signal).then((score) => {
+        if (controller.signal.aborted) return;
+        setScores((current) =>
+          current && current.targetId === forTarget ? { ...current, map: new Map(current.map).set(plan.change, score) } : current,
+        );
+      });
+    }
   }
 
   function tryChange(change: TrialChange) {
@@ -1324,10 +1447,16 @@ export function CheckTool({
       );
     }
     const report = applyChange(shown, change);
+    // On a published day the change is kept as a rule step too, so a later change is scored on top of it.
+    const step = scoreIds && target ? scoreStepOf(shown, target.rows, change.moves, scoreIds) : null;
     setTrial(null);
     setShowAll(false);
     setShare(null);
-    setWorking((current) => ({ report, applied: [...(current?.applied ?? []), change] }));
+    setWorking((current) => ({
+      report,
+      applied: [...(current?.applied ?? []), change],
+      steps: [...(current?.steps ?? []), step],
+    }));
     setNote(`Change applied to a working copy of the grid. ${announcement({ ok: true, report })}`);
   }
 
@@ -1343,18 +1472,29 @@ export function CheckTool({
   }
 
   async function priceIt(mode: PriceMode) {
-    if (!request || stale || price.phase === "loading") return;
+    // The live step asks about the request the saved press was answered for; a first press, the one on show.
+    const sending = mode === "live" && pressed ? pressed : request;
+    if (!sending || stale || price.phase === "loading") return;
     priceAbort.current?.abort();
     const controller = new AbortController();
     priceAbort.current = controller;
+    setPressed(sending);
     setPrice({ phase: "loading", mode });
     setNote("");
-    const result = await requestPrice(request, mode, controller.signal);
+    const result = await requestPrice(sending, mode, controller.signal);
     if (controller.signal.aborted) return;
     priceAbort.current = null;
     if (result.status === "ready") {
       setPrice({ phase: "ready", answer: result.answer });
+      // A published day opens in this app's ranking (its pairs in the order they were chosen); a paste longest first.
+      setPriceOrder(defaultOrder(result.answer.basis));
       setNote(sourceBanner(result.answer));
+    } else if (result.status === "not_saved" && result.liveOff) {
+      // The server answered (200, no request used) that no saved day holds these acts and it does not compare
+      // live: nothing to offer but a published day.
+      setLive(false);
+      setPrice({ phase: "not_saved" });
+      setNote(PRICE_COPY.liveOff);
     } else if (result.status === "not_saved") {
       // Ask the server again whether it prices live before offering it; no answer counts as off.
       const on = await priceGridLive(controller.signal);
@@ -1362,7 +1502,7 @@ export function CheckTool({
       setLive(on);
       setPrice({ phase: "not_saved" });
       setNote(
-        !on ? PRICE_COPY.liveOff : run?.published ? PRICE_COPY.publishedNotSaved : PRICE_COPY.notSaved(request.liveActs.length, request.need),
+        !on ? PRICE_COPY.liveOff : run?.published ? PRICE_COPY.publishedNotSaved : PRICE_COPY.notSaved(sending.liveActs.length, sending.need),
       );
     } else if (result.status === "refused") {
       setPrice({ phase: "refused", mode, code: result.code, message: result.message });
@@ -1372,12 +1512,6 @@ export function CheckTool({
       setNote(PRICE_COPY.error);
     }
   }
-
-  /** The decisions marked "Kept on purpose": Find a change leaves out, by default, a change that ends one. */
-  const keptIds = useMemo(
-    () => new Set([...decisions.values()].filter((decision) => decision.status === "kept").map((decision) => decision.id)),
-    [decisions],
-  );
 
   async function copyLink() {
     if (!shownInput) return;
@@ -1396,6 +1530,8 @@ export function CheckTool({
     }
   }
 
+  // The index of the listed changes belongs to the search on show only.
+  const shownScores = scores && trial && scores.targetId === trial.targetId ? scores : null;
   const trialUi: TrialUi = {
     state: trial,
     stale,
@@ -1406,6 +1542,8 @@ export function CheckTool({
       stopSearch();
       setTrial(null);
     },
+    scores: shownScores?.map,
+    scoreNote: shownScores?.note ?? null,
   };
 
   const listed = shown ? visibleDecisions(decisions, shown) : [];
@@ -1417,7 +1555,8 @@ export function CheckTool({
           applied: working?.applied ?? [],
           decisions: listed,
           price: price.phase === "ready" ? price.answer : null,
-          priceSkipped: request?.skipped ?? [],
+          priceSkipped: priceShown?.skipped ?? [],
+          priceOrder,
           sample: run.sample,
           published: run.published ?? null,
           checkedAt: run.checkedAt,
@@ -1752,7 +1891,11 @@ export function CheckTool({
                   {SAMPLE_LABEL}
                 </p>
               ) : null}
-              {run.published ? <p className="text-sm leading-relaxed font-semibold text-foreground print:hidden">{run.published}</p> : null}
+              {/* On screen the label alone: the line on how the overlaps found become the ranked ones sits under
+                  the count of sets that share time (the brief prints both together). */}
+              {run.published ? (
+                <p className="text-sm leading-relaxed font-semibold text-foreground print:hidden">{run.publishedLabel ?? run.published}</p>
+              ) : null}
               {run.removed && run.removed.length > 0 ? (
                 <div className="space-y-1 print:hidden">
                   {run.removed.map((notice) => (
@@ -1816,9 +1959,11 @@ export function CheckTool({
                 selectedBreak={picked?.id ?? null}
                 onSelectBreak={selectBreak}
                 numbered={!working && !stale}
+                // The published day's overlaps against the clashes its page ranks: only for that day as loaded.
+                countNote={working ? null : (run.pairsLine ?? null)}
                 between={
                   <CheckPrice
-                    request={request}
+                    request={priceShown}
                     noOverlap={shown.shared.length === 0}
                     state={price}
                     order={priceOrder}
@@ -1827,6 +1972,8 @@ export function CheckTool({
                     stale={stale}
                     live={live}
                     published={Boolean(run.published)}
+                    publishedTitle={publishedDay?.title ?? null}
+                    onTryPublished={() => void loadPublished()}
                   />
                 }
                 after={

@@ -46,7 +46,10 @@ export type ServerSummary = {
   synthetic: boolean;
   /** The Clash Budget Index, rounded to a whole number; null when the day has none. */
   index: number | null;
-  /** The dial's sentence for the index ("By this index, the published timetable scores 17% above ..."); null without one. */
+  /**
+   * The dial's sentence for the index, its direction in the sentence ("By this index, the published timetable scores
+   * 116.7, where 100 is the average random valid timetable and higher means more clash cost"); null without one.
+   */
   vsRandom: string | null;
   /** The hero's one-line figure for narrow screens (`figureLine`); null without an index. */
   figure: string | null;
@@ -66,8 +69,8 @@ export type ServerSummary = {
 
 /**
  * The hero's one-line figure for narrow screens, the same sentence the dial prints: "117 on the Clash
- * Budget Index. By this index, the published timetable scores 17% above the average random valid
- * timetable. Lower is better."
+ * Budget Index. By this index, the published timetable scores 116.7, where 100 is the average random valid
+ * timetable and higher means more clash cost. Lower is better."
  */
 export function figureLine(index: number, synthetic = false): string {
   return `${Math.round(index)} on the Clash Budget Index. ${describeVsRandom(index, synthetic)}. Lower is better.`;

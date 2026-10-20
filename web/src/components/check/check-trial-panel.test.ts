@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import { runCheck } from "@/lib/check";
 import { pairDecisionId } from "@/lib/check-decisions";
+import { SCORE_COPY, type IndexScore } from "@/lib/check-price";
 import { SAMPLE_GRID, SAMPLE_SETTINGS } from "@/lib/check-sample";
 import {
   TRIAL_COPY,
@@ -19,7 +20,7 @@ import {
   type TrialResult as Result,
 } from "@/lib/check-trial";
 
-import { SIGN_OFF_CLASS, STAGE_SIGN_OFF, TrialResult, splitChanges, type TrialUi } from "./check-trial-panel";
+import { SIGN_OFF_CLASS, STAGE_SIGN_OFF, TrialResult, scoreLine, splitChanges, type TrialUi } from "./check-trial-panel";
 
 // Every name below is invented for the test (the invented sample).
 
@@ -157,5 +158,51 @@ describe("a change that ends a clash you kept on purpose (R32 K7)", () => {
     expect(text(html)).toContain(`Changes that end a clash you kept on purpose (${all})`);
     expect(text(html)).toContain(`All ${all} changes found end a clash you kept on purpose, so none is listed.`);
     expect(html.indexOf("<ol")).toBeGreaterThan(html.indexOf("<details class=\"group cc-disclosure"));
+  });
+});
+
+describe("the first changes listed, scored on a published day's index (C6)", () => {
+  const changes = found.changes.slice(0, 4);
+  if (changes.length < 4) throw new Error("the sample's first break should list four changes");
+
+  /** The panel with an index per change (as the page fills it after the visitor's own search) and the line over it. */
+  function scored(scores: ReadonlyMap<TrialChange, IndexScore | "scoring">, note: string | null): string {
+    const result: Result = { ...found, changes, sameStageMore: [] };
+    const ui: TrialUi = {
+      state: { targetId: targetId(target), label: "x", running: false, progress: null, result },
+      onFind: () => {},
+      onApply: () => {},
+      onClose: () => {},
+      scores,
+      scoreNote: note,
+    };
+    return renderToStaticMarkup(createElement(TrialResult, { target, ui }));
+  }
+
+  it("prints each scored change's index before and after under it, the line over the list, and nothing on the rest", () => {
+    const map = new Map<TrialChange, IndexScore | "scoring">([
+      [changes[0], { status: "scored", before: 116.71, after: 115.12 }],
+      [changes[1], { status: "not_scored", reason: SCORE_COPY.limit }],
+      [changes[2], "scoring"],
+    ]);
+    const html = scored(map, SCORE_COPY.scope(3));
+    const page = text(html);
+    expect(page).toContain(SCORE_COPY.scope(3).replace(/&#x27;/g, "'"));
+    expect(page.indexOf(SCORE_COPY.scope(3))).toBeLessThan(page.indexOf("Index 116.7 → 115.1."));
+    expect(page).toContain("Index 116.7 → 115.1.");
+    expect(page).toContain("Index not scored: this server’s limit on what-if requests was reached.");
+    expect(html).toContain('aria-busy="true" class="mt-0.5 text-sm font-semibold break-words text-foreground">Scoring on the index.</p>');
+    // One index line each for the three scored, none for the fourth; ink text, no chip or colour.
+    expect(page.match(/Index \d|Index not scored|Scoring on the index/g)).toHaveLength(3);
+    expect(scoreLine({ status: "scored", before: 116.71, after: 115.12 })).toBe("Index 116.7 → 115.1.");
+    expect(html).not.toMatch(/bg-(?:success|good|green)|text-(?:success|green)/);
+  });
+
+  it("says why nothing is scored where scoring is not available, and adds no index line", () => {
+    const page = text(scored(new Map(), SCORE_COPY.unavailable));
+    expect(page).toContain("Index scoring is available on the published days only.");
+    expect(page).not.toMatch(/Index \d|Index not scored/);
+    // No line and no index when the page passes none (the panel as it was).
+    expect(text(drawn(changes))).not.toMatch(/Index scoring|Index \d/);
   });
 });

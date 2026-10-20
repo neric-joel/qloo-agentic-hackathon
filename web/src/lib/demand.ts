@@ -40,7 +40,8 @@ export const DO_NOT_USE =
   "Do not use this to set fees, billing order or an artist’s worth, or for crowd capacity, safety or attendance.";
 
 /**
- * What pricing a new bill would cost, as the pilot's fold prints it. The pilot itself offers only what costs no
+ * What pricing a new bill would cost, for the Devpost page (the home page no longer prints it: beside a zero-quota
+ * offer it read as a contradiction). The pilot itself offers only what costs no
  * Qloo request (a walk through a published day's brief, and rule checks that run in the browser); pricing a new
  * bill is not offered, and would run only with the festival's OK. Comparing a bill's longest overlaps through
  * /check: at most 35 requests for a grid (one search per act and one audience ranking per act in a priced pair)

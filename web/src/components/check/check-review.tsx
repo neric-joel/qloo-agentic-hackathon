@@ -22,11 +22,12 @@ export const REVIEW_COPY = {
 
 /**
  * The "Compared with Qloo data" line: "not yet" until an answer is on show, then how many pairs and
- * from where. The invented day is never called Qloo data.
+ * from where. The invented day is never called Qloo data. After no saved day matched, the grid as checked
+ * has had its answer: the rail stops offering Compare until the grid changes (a new check resets it).
  */
 export function comparedLine(state: PriceState): { value: string; done: boolean } {
   if (state.phase === "loading") return { value: "Comparing now", done: false };
-  if (state.phase === "not_saved") return { value: "Not yet · no saved day matched", done: false };
+  if (state.phase === "not_saved") return { value: "Not compared · no saved day matched", done: false };
   if (state.phase === "error") return { value: "Not yet · the server did not answer", done: false };
   if (state.phase === "refused") return { value: "Not yet · refused, see the step", done: false };
   if (state.phase !== "ready") return { value: "Not yet", done: false };
@@ -143,7 +144,7 @@ export function CheckReview({
           </Row>
           <Row label="Compared with Qloo data" strong={compared.done}>
             {compared.value}
-            {!compared.done && price.phase !== "loading" ? (
+            {!compared.done && price.phase !== "loading" && price.phase !== "not_saved" ? (
               <>
                 <br />
                 <a

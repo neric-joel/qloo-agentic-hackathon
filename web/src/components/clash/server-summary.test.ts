@@ -68,7 +68,9 @@ describe("ClashControlFallback", () => {
   it("renders the server summary of the selected preset instead of skeletons", () => {
     const html = text(renderToStaticMarkup(createElement(ClashControlFallback, { intro: null, summary: otherSummary() })));
     expect(html).toContain("Other Fest, Sunday: the costliest clash");
-    expect(html).toContain("86 By this index, the published timetable scores 14% below the average random valid timetable.");
+    expect(html).toContain(
+      "86 By this index, the published timetable scores 86.4, where 100 is the average random valid timetable and higher means more clash cost.",
+    );
     expect(html).not.toContain("Tiny Fest, Saturday");
   });
 

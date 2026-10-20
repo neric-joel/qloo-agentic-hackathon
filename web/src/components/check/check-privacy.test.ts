@@ -179,8 +179,9 @@ describe("the page and its results", () => {
   it("offers pricing under the results with the exact words, and no live button before the saved attempt", () => {
     expect(page).toContain("Compare audience overlap (optional)");
     expect(page).not.toContain("Add audience overlap");
+    // C2: a saved press sends only the 7 names of the 5 pairs it compares, never the grid's other 17 acts.
     expect(page).toContain(
-      "The checks above ran in your browser and used no Qloo data. To compare audience overlap for the 5 longest overlaps, we send the 24 act names and the pairs to this site’s server to look for saved audience data. No times, stages or rules are sent; names are not stored or logged. If no saved day matches, nothing is compared: live Qloo pricing is off on this server.",
+      "Rule checks used no Qloo data. Compare sends this site’s server the 5 longest movable overlaps and their 7 act names, never times, stages or rules; names are not stored or logged. With no saved day, nothing is compared: live Qloo comparison is off here.",
     );
     // Until the server says live pricing is on, nothing on the page offers to ask Qloo.
     expect(page).not.toContain("you can choose to ask Qloo");
@@ -189,7 +190,7 @@ describe("the page and its results", () => {
     expect(page).not.toMatch(/Price the \d+ longest/);
     expect(page).not.toContain("Ask Qloo for these");
     expect(page).toContain(
-      "Each value is a rank within a lineup, not attendance: from a saved day, a rank among that day’s lineup; from Qloo live, a rank among the acts sent. The Clash Budget Index needs a full priced day and is not computed here.",
+      "Each value is a rank within a lineup, not attendance: from a saved day, a rank among that day’s lineup; from Qloo live, a rank among the acts sent. The Clash Budget Index needs a full scored day and is not computed here.",
     );
     expect(page).not.toMatch(/a rank among the acts you pasted/i);
   });
@@ -302,7 +303,7 @@ describe("the page and its results", () => {
     // The privacy line and the consent text before Compare are never inside a closed disclosure.
     const open = html.replace(/<details(?![^>]*\bopen\b)[^>]*>[\s\S]*?<\/details>/g, " ");
     expect(text(open)).toContain(CHECK_COPY.privacy);
-    expect(text(open)).toContain("we send the 24 act names and the pairs to this site’s server");
+    expect(text(open)).toContain("Compare sends this site’s server the 5 longest movable overlaps and their 7 act names");
     expect(text(open)).toContain("Each value is a rank within a lineup, not attendance");
   });
 
@@ -599,9 +600,9 @@ const NETWORK: readonly [string, RegExp][] = [
 ];
 
 // The two UI primitives the route draws with (a button and the Table / CSV switch) import only React and
-// `cn`; neither fetches.
+// `cn`; neither fetches. `@/lib/lenses` is read by the price module for its parser only (asserted below).
 const ALLOWED_IMPORT =
-  /^(react|react-dom|lucide-react|next|next\/link|@\/components\/ui\/button|@\/components\/ui\/segmented-control|@\/lib\/check|@\/lib\/check-sample|@\/lib\/check-trial|@\/lib\/check-flag|@\/lib\/check-decisions|@\/lib\/check-share|@\/lib\/check-price|@\/lib\/agent-status|@\/lib\/art|@\/lib\/utils|@\/components\/check\/.+|\.\/.+)$/;
+  /^(react|react-dom|lucide-react|next|next\/link|@\/components\/ui\/button|@\/components\/ui\/segmented-control|@\/lib\/check|@\/lib\/check-sample|@\/lib\/check-trial|@\/lib\/check-flag|@\/lib\/check-decisions|@\/lib\/check-share|@\/lib\/check-price|@\/lib\/agent-status|@\/lib\/art|@\/lib\/utils|@\/lib\/lenses|@\/components\/check\/.+|\.\/.+)$/;
 
 describe("the check route holds no network call", () => {
   it("finds the route's files", () => {
@@ -633,24 +634,43 @@ describe("the check route holds no network call", () => {
     });
   }
 
-  it("has its fetches in the price module only: one POST with the price body, and one bodiless GET of this app's own API", () => {
+  it("has its fetches in the price module only: the Compare POST, a published day's what-if POST and bodiless GETs of this app's own API", () => {
     const source = readFileSync(FETCH_MODULE, "utf8");
-    expect(source.match(/\bfetch\s*\(/g)).toHaveLength(2);
+    expect(source.match(/\bfetch\s*\(/g)).toHaveLength(3);
+    // The one POST that carries any of a paste: the price body, on the Compare press.
     expect(source).toMatch(/fetch\("\/api\/price-grid", \{/);
     expect(source).toMatch(/body: priceBody\(request, mode\)/);
-    // The GET carries no body and reads only the health switch and the published days, never Qloo.
+    // The what-if POST carries rule steps of a published day's public timetable (its ids and start times),
+    // never a pasted name: `scoreStepOf` maps each name to the published day's id or makes no step.
+    expect(source).toMatch(/fetch\(`\/api\/presets\/\$\{encodeURIComponent\(presetId\)\}\/whatif`, \{/);
+    expect(source).toMatch(/body: scoreBody\(steps\)/);
+    // The GETs carry no body and read only the health switch and the public timetables, never Qloo.
     const get = source.slice(source.indexOf("async function getJson("), source.indexOf("export async function priceGridLive("));
     expect(get).toMatch(/fetch\(url, \{\s*method: "GET"/);
     expect(get).not.toMatch(/body/);
-    const urls = [...source.matchAll(/getJson\(([^,)]+)/g)].map((match) => match[1].trim());
-    expect(urls.sort()).toEqual(["\"/api/health\"", "\"/api/presets\"", "`/api/presets/${encodeURIComponent(id", "url: string"].sort());
+    const urls = [...new Set([...source.matchAll(/getJson\((["`][^"`]*["`])/g)].map((match) => match[1]))].sort();
+    expect(urls).toEqual(
+      ['"/api/health"', '"/api/presets"', "`/api/presets/${encodeURIComponent(id)}/lenses?day=${day}`", "`/api/presets/${encodeURIComponent(id)}`"].sort(),
+    );
     expect(source).not.toMatch(/qloo\.com|api\.qloo/i);
     const users = ROUTE_FILES.filter((f) => /\brequestPrice\b/.test(readFileSync(f, "utf8"))).map((f) => relative(SRC, f).replaceAll("\\", "/"));
     expect(users.sort()).toEqual(["components/check/check-tool.tsx", "lib/check-price.ts"]);
     // The press is the only caller: `requestPrice` is reached from the price handler alone.
     const tool = readFileSync(join(SRC, "components", "check", "check-tool.tsx"), "utf8");
     expect(tool.match(/requestPrice\(/g)).toHaveLength(1);
-    expect(tool).toMatch(/async function priceIt\(mode: PriceMode\)[\s\S]*?await requestPrice\(request, mode, controller\.signal\)/);
+    expect(tool).toMatch(/async function priceIt\(mode: PriceMode\)[\s\S]*?await requestPrice\(sending, mode, controller\.signal\)/);
+    // The what-if POST is made from one place, after a Find a change search the visitor started, and only
+    // on a published day as loaded here (its ids); nothing on load.
+    expect(tool.match(/scoreSteps\(/g)).toHaveLength(1);
+    expect(tool).toMatch(/const scoreIds = run\?\.published && published\?\.ids \? published\.ids : null;/);
+    expect(tool).toMatch(
+      /function scoreListed\([\s\S]*?if \(!scoreIds\) \{[\s\S]*?return;\s*\}[\s\S]*?scoreSteps\(scoreIds\.presetId, plan\.steps, controller\.signal\)/,
+    );
+    expect(tool.match(/\bscoreListed\(/g)).toHaveLength(2);
+    expect(tool).toMatch(/if \(next\.done\) \{[\s\S]*?scoreListed\(next\.value, id, target\);/);
+    // The public timetables are read once, after a pasted grid is checked (never the sample, a published day or on load).
+    expect(tool.match(/loadServableDays\(/g)).toHaveLength(1);
+    expect(tool).toMatch(/const wantServable = run !== null && run\.outcome\.ok && !run\.sample && !run\.published;/);
   });
 
   it("imports nothing from the preset API, the preset modules or a hook that fetches", () => {
@@ -662,6 +682,11 @@ describe("the check route holds no network call", () => {
       }
     }
     expect(bad).toEqual([]);
+    // The lens module is read for its parser alone (the pairs a saved day serves), never its own fetch.
+    const lensUsers = ROUTE_FILES.filter((f) => /@\/lib\/lenses/.test(readFileSync(f, "utf8"))).map((f) => relative(SRC, f).replaceAll("\\", "/"));
+    expect(lensUsers).toEqual(["lib/check-price.ts"]);
+    expect(readFileSync(FETCH_MODULE, "utf8")).toMatch(/import \{ parseLenses \} from "@\/lib\/lenses";/);
+    for (const file of ROUTE_FILES) expect(readFileSync(file, "utf8"), relative(SRC, file)).not.toMatch(/fetchLenses/);
   });
 
   it("reads only the flag from the layout chain it shares: the layout's own code stores nothing of a paste", () => {

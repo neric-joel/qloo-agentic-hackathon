@@ -3,9 +3,11 @@ import { TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   PRICE_COPY,
+  PRICE_LIMITS,
   comparedPairs,
   coverageLine,
   coverageParts,
+  extraNames,
   notCompared,
   notComparedLine,
   notComparedText,
@@ -15,10 +17,14 @@ import {
   scopeNote,
   sentActs,
   sourceBanner,
+  type PairOrder,
   type PriceAnswer,
   type PriceMode,
   type PriceRequest,
 } from "@/lib/check-price";
+import { cn } from "@/lib/utils";
+
+import { TEXT_ACTION } from "./check-trial-panel";
 
 /** What the page holds of pricing for the grid on show. Reset by every check and every change tried. */
 export type PriceState =
@@ -30,12 +36,13 @@ export type PriceState =
   | { phase: "refused"; mode: PriceMode; code: string; message: string }
   | { phase: "error"; mode: PriceMode };
 
-export type PriceOrder = "minutes" | "overlap";
+/** How the compared pairs are listed (see `PairOrder`): a published day opens in its own ranking. */
+export type PriceOrder = PairOrder;
 
 const PANEL = "rounded-lg border border-surface-edge bg-card p-5 sm:p-6";
 
 const TOGGLE =
-  "min-h-10 rounded-md border border-border-strong px-3 text-sm font-semibold hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-pressed:border-foreground aria-pressed:bg-foreground aria-pressed:text-background";
+  "min-h-11 rounded-md border border-border-strong px-3 text-sm font-semibold hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-pressed:border-foreground aria-pressed:bg-foreground aria-pressed:text-background";
 
 /** One key per pair of names (a NUL cannot be in a name the check reads). */
 function pairKey(a: string, b: string): string {
@@ -48,8 +55,11 @@ function pairKey(a: string, b: string): string {
  * or a refusal keeps every result above and offers a retry where one can help, never a re-check.
  * Not printed: the brief lists the compared overlaps when there are any.
  *
- * After an answer the values come first (the source line, the compared pairs and the order sentence), then
- * one count line for the overlaps not compared, and a closed fold that gives each one's reason in words.
+ * After an answer: the source line, (a published day) the worked-example line, the computed order sentence,
+ * the sort control and the compared values (a published day opens in this app's ranking, the order its pairs
+ * were chosen in; a pasted grid longest first), then one count line for the overlaps not compared and a
+ * closed fold that gives each one's reason in words. After no saved day matched with live comparison off,
+ * one text action loads the published day ("Try it on ...").
  */
 export function CheckPrice({
   request,
@@ -61,6 +71,8 @@ export function CheckPrice({
   stale,
   live = false,
   published = false,
+  publishedTitle = null,
+  onTryPublished,
 }: {
   /** What a press would send; null when the grid has too few acts or no overlap. */
   request: PriceRequest | null;
@@ -79,12 +91,14 @@ export function CheckPrice({
   live?: boolean;
   /** The grid on show is the published day "Check a published day" loaded: it compares in saved mode only. */
   published?: boolean;
+  /** The published day "Check a published day" offers: after no saved day matched, the one way on. */
+  publishedTitle?: string | null;
+  onTryPublished?: () => void;
 }) {
   const k = request?.overlaps.length ?? 0;
   const n = request?.acts.length ?? 0;
   const liveN = request ? sentActs(request, "live").length : 0;
   const busy = state.phase === "loading";
-  const omitted = request?.omitted ?? 0;
   const savedButton = (
     <Button type="button" variant="outline" disabled={busy || stale} onClick={() => onPrice("saved")}>
       {PRICE_COPY.button}
@@ -108,7 +122,7 @@ export function CheckPrice({
       ) : (
         <>
           <p className="mt-2 max-w-prose text-[0.9375rem] leading-relaxed">
-            {PRICE_COPY.intro(k, n, omitted, live, request.basis)}
+            {PRICE_COPY.intro(k, n, live, request.basis, request.served ?? null, extraNames(request))}
           </p>
           {state.phase === "idle" ? <div className="mt-4">{savedButton}</div> : null}
           {state.phase === "loading" ? (
@@ -147,11 +161,18 @@ export function CheckPrice({
                   </Button>
                 </>
               ) : (
-                <p className="text-sm leading-relaxed">{live ? PRICE_COPY.publishedNotSaved : PRICE_COPY.liveOff}</p>
+                <>
+                  <p className="text-sm leading-relaxed">{live ? PRICE_COPY.publishedNotSaved : PRICE_COPY.liveOff}</p>
+                  {!published && publishedTitle && onTryPublished ? (
+                    <button type="button" className={cn(TEXT_ACTION, "mt-1 -ml-2 h-auto py-2.5 text-left whitespace-normal")} onClick={onTryPublished}>
+                      {PRICE_COPY.tryPublished(publishedTitle)}
+                    </button>
+                  ) : null}
+                </>
               )}
             </div>
           ) : null}
-          {answer ? <PricedList answer={answer} order={order} onOrder={onOrder} /> : null}
+          {answer ? <PricedList answer={answer} order={order} onOrder={onOrder} dayTitle={request.served?.title ?? null} /> : null}
           <NotCompared request={request} answer={answer} />
           <p className="mt-4 max-w-prose text-sm leading-relaxed text-muted-foreground">{scopeNote(answer, request)}</p>
         </>
@@ -208,50 +229,76 @@ function Coverage({ answer }: { answer: PriceAnswer }) {
   );
 }
 
+/** The sort control's choices: a published day's own ranking first, then the two sorts every answer has. */
+function orderChoices(answer: PriceAnswer): readonly (readonly [PriceOrder, string])[] {
+  const sorts = [
+    ["minutes", PRICE_COPY.longestFirst],
+    ["overlap", PRICE_COPY.overlapFirst],
+  ] as const;
+  return answer.basis === "saved_ranking" ? [["selection", PRICE_COPY.rankingFirst], ...sorts] : sorts;
+}
+
 /**
- * The answer: where it came from, the compared values (in the order chosen) and the order sentence, then
- * (a published day) the line that says how its pairs were chosen, then what happened to each act sent.
+ * The answer: where it came from, then (a published day) how its pairs were chosen, then the computed order
+ * sentence, the sort control and the compared values in the order chosen, then what happened to each act
+ * sent. A published day's ten values all show; a pasted grid shows five, the rest in a closed fold. When
+ * no pair sent got a value because none is one the saved day's page prints, one line says so.
  */
 function PricedList({
   answer,
   order,
   onOrder,
+  dayTitle = null,
 }: {
   answer: PriceAnswer;
   order: PriceOrder;
   onOrder: (order: PriceOrder) => void;
+  /** The published day a pasted grid's names are on, when the page knows it. */
+  dayTitle?: string | null;
 }) {
   const reorder = orderLine(answer);
   const values = comparedPairs(answer, order);
+  const open = answer.basis === "saved_ranking" ? values : values.slice(0, PRICE_LIMITS.shownOpen);
+  const more = values.slice(open.length);
+  const row = (pair: PriceAnswer["pairs"][number]) => (
+    <li key={pairKey(pair.a, pair.b)} className="py-2.5 text-sm font-semibold break-words first:pt-0 last:pb-0">
+      {pairLine(pair, answer)}
+    </li>
+  );
+  const unserved =
+    values.length === 0 && answer.pairs.length > 0 && answer.pairs.every((pair) => pair.reason === "not_ranked_on_saved_day");
   return (
     <div className="mt-4">
       <p className="rounded-md bg-background p-3 text-sm font-semibold leading-relaxed">{sourceBanner(answer)}</p>
+      {answer.basis === "saved_ranking" ? (
+        <p className="mt-3 max-w-prose text-sm leading-relaxed">{PRICE_COPY.workedExample}</p>
+      ) : null}
+      {reorder ? <p className="mt-3 text-sm font-semibold">{reorder}</p> : null}
+      {unserved ? <p className="mt-3 max-w-prose text-sm leading-relaxed">{PRICE_COPY.noneServed(dayTitle)}</p> : null}
       {values.length > 1 ? (
         <div role="group" aria-label={PRICE_COPY.sortLabel} className="mt-3 flex flex-wrap gap-2">
-          {(
-            [
-              ["minutes", PRICE_COPY.longestFirst],
-              ["overlap", PRICE_COPY.overlapFirst],
-            ] as const
-          ).map(([value, label]) => (
+          {orderChoices(answer).map(([value, label]) => (
             <button key={value} type="button" aria-pressed={order === value} onClick={() => onOrder(value)} className={TOGGLE}>
               {label}
             </button>
           ))}
         </div>
       ) : null}
-      {values.length > 0 ? (
+      {open.length > 0 ? (
         <ol aria-label="Compared overlaps" className="mt-3 divide-y divide-border">
-          {values.map((pair) => (
-            <li key={pairKey(pair.a, pair.b)} className="py-2.5 text-sm font-semibold break-words first:pt-0 last:pb-0">
-              {pairLine(pair, answer)}
-            </li>
-          ))}
+          {open.map(row)}
         </ol>
       ) : null}
-      {reorder ? <p className="mt-3 text-sm font-semibold">{reorder}</p> : null}
-      {answer.basis === "saved_ranking" ? (
-        <p className="mt-2 max-w-prose text-sm leading-relaxed">{PRICE_COPY.workedExample}</p>
+      {more.length > 0 ? (
+        <details className="group cc-disclosure mt-2">
+          <summary className="cc-disclosure-summary text-sm">
+            {PRICE_COPY.moreCompared(more.length)}
+            <span aria-hidden="true" className="cc-disclosure-mark" />
+          </summary>
+          <ol aria-label="More compared overlaps" className="divide-y divide-border pb-2">
+            {more.map(row)}
+          </ol>
+        </details>
       ) : null}
       <Coverage answer={answer} />
     </div>

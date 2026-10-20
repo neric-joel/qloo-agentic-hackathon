@@ -54,7 +54,7 @@ describe("the failed bar (M11)", () => {
     const next = text(after.slice(0, after.indexOf("</ul>")));
     expect(next.indexOf("The test we set before building failed.")).toBe(0);
     expect(next).toContain("The bar we wrote down before building was 60");
-    expect(next).toContain("Popularity did better.");
+    expect(next).toContain("It missed the bar. Popularity did better:");
     expect(html).toMatch(new RegExp(`Bar we set: <span class="font-mono tabular-nums">${bar}(<!-- -->)?%</span>`));
     // Each value sits beside its own bar, not in a far-right column.
     expect(html.match(/<span data-bar-value="true"/g)).toHaveLength(4);
@@ -351,26 +351,37 @@ describe("the page's labels and short version (round 18)", () => {
     expect(html).toContain('<h2 id="short-heading" class="type-title break-words xl:col-span-4">The short version</h2>');
   });
 
-  it("keeps bold only on the failed pre-set test, and states the failed test and the popularity result once each (round 32)", () => {
+  it("keeps bold only on the failed pre-set test, and states the failed test, popularity's result and the moves check once, in one row (round 33)", () => {
     const short = html.slice(html.indexOf('id="short-heading"'), html.indexOf("</section>", html.indexOf('id="short-heading"')));
     expect(short.match(/<strong/g)).toHaveLength(1);
     expect(short).toContain('<strong class="font-semibold">The test we set before building failed.</strong>');
-    const { moves, scale } = METHOD_FIGURES;
+    const { backtest, moves } = METHOD_FIGURES;
     const popularity = methodRow("popularity");
-    expect(text(short)).toContain(
-      `Popularity did better. On the same test, popularity, another Qloo field, reached ${popularity.topQuarterPct.toFixed(1)}%, and exploratory follow-ups on the same data did not establish an advantage over popularity for the app's full price. See the full comparison below`,
-    );
-    expect(text(short)).toContain(
-      `The check on suggested moves failed too: taste-overlap suggestions differed from popularity-only ones by ${moves.measuredPoints} index points (one point is ${scale.indexPointPct}% of the average random timetable's cost); the bar was ${moves.barPoints}.`,
+    const first = text(short.slice(short.indexOf("<li"), short.indexOf("</li>")));
+    expect(first).toContain(
+      `The bar we wrote down before building was ${backtest.bar.topQuarterPct}% and ${backtest.bar.leadOverGenrePoints} points ahead. It missed the bar. Popularity did better: another Qloo field, it reached ${popularity.topQuarterPct.toFixed(1)}%. The check on suggested moves missed its bar too (${moves.measuredPoints} index points against ${moves.barPoints}). See the full comparison below`,
     );
     expect(text(short)).toContain("Taste overlap is a rank, not attendance.");
-    // Each said once: the failed pre-set test, popularity's result and the exploratory answer.
+    // Each said once on the short version, and the failed test's figures are not restated anywhere else on the page
+    // outside the eye-only verdict (round 33, E2).
     const once = (needle: RegExp) => (text(short).match(needle) ?? []).length;
     expect(once(/The test we set before building failed/g)).toBe(1);
     expect(once(/after the test failed/g)).toBe(0);
     expect(once(/did better/g)).toBe(1);
-    expect(once(/advantage over popularity|better than popularity/g)).toBe(1);
+    expect((first.match(/missed the bar/g) ?? []).length).toBe(1);
+    expect(once(/advantage over popularity|better than popularity/g)).toBe(0);
     expect(short).toContain('href="#tested"');
+    // The prose only: the eye-only verdict and the figures (the chart's bar labels, the tables) left out.
+    const page = text(
+      html
+        .replace(/<div aria-hidden="true" data-short-verdict="true"[\s\S]*?<\/div><\/section>/, "</section>")
+        .replace(/<figure[\s\S]*?<\/figure>/g, " "),
+    );
+    expect(page.match(/46\.8%/g)).toHaveLength(1);
+    expect(page.match(/did better/g)).toHaveLength(1);
+    expect(page.match(/missed the bar/gi)).toHaveLength(1);
+    expect(page.match(/The test we set before building failed/g)).toHaveLength(1);
+    expect(page).toContain("The failed test above is this table read against the bar we set before running it");
   });
 });
 
@@ -386,7 +397,7 @@ describe("the short version and the contents card (round 19)", () => {
     const list = short.slice(short.indexOf("<ul"));
     // No edge of any kind (the link's decoration-border-strong underline is not an edge).
     expect(list).not.toMatch(/(?<![w-])border(-[tblrxy])?(?![w-])|divide-/);
-    expect(list.match(/<li/g)).toHaveLength(5);
+    expect(list.match(/<li/g)).toHaveLength(3);
   });
 
   it("draws no full-width rule between the page's sections, and frames the table once with inset row rules", () => {
@@ -429,7 +440,7 @@ describe("the short version and the contents card (round 19)", () => {
     expect(entries.map((m) => m[3])).toEqual(["1", "2", "3", "4"]);
     expect(entries.map((m) => m[1])).toEqual(["price", "tested", "limits", "the-rest"]);
     expect(entries.map((m) => m[5])).toEqual([
-      "What the price is",
+      "What the score is",
       "What we tested it against",
       "What taste overlap cannot tell you",
       "How the rest works",
@@ -881,14 +892,16 @@ describe("taste inside the full price, the second exploratory follow-up (round 3
   });
 
   it("prints every figure from METHOD_FIGURES and says it did not establish an advantage over popularity", () => {
+    // "Full price" is the backtest's name for the index's pair score, defined once in its own clause (round 33, E1).
     expect(blockText).toContain(
-      "Run after the test failed, on the same 68 scored pairs, so it is exploratory. The full price, which multiplies taste overlap by shared time and draw, scored AUC 0.746 (interval 0.675 to 0.812); popularity alone scored 0.722. The difference is +0.024 (interval -0.074 to +0.136), so the full price did not establish an advantage over popularity.",
+      "Run after the failed test above, on the same 68 scored pairs, so it is exploratory. The full price (the index's pair score: taste overlap × shared time × Qloo popularity) scored AUC 0.746 (interval 0.675 to 0.812); popularity alone scored 0.722. The difference is +0.024 (interval -0.074 to +0.136), so the full price did not establish an advantage over popularity.",
+    );
+    expect(blockText.match(/the index's pair score/g)).toHaveLength(1);
+    expect(blockText).toContain(
+      "With taste taken out, every pair given the same taste overlap so that only shared time and draw are left, the same score reached 0.754 (interval 0.690 to 0.828). The full price minus that is -0.009 (interval -0.102 to +0.079). This check did not establish that taste adds to time and draw.",
     );
     expect(blockText).toContain(
-      "With taste taken out, every pair given the same taste overlap so that only shared time and draw are left, the price scored 0.754 (interval 0.690 to 0.828). The full price minus that is -0.009 (interval -0.102 to +0.079). This check did not establish that taste adds to time and draw.",
-    );
-    expect(blockText).toContain(
-      "With the taste values shuffled among each day's pairs, 1,000 times, the full price fell to 0.652 on average (95% of shuffles between 0.593 and 0.706). So the price depends on the real taste values, which is not the same as taste adding to time and draw.",
+      "With the taste values shuffled among each day's pairs, 1,000 times, the full price fell to 0.652 on average (95% of shuffles between 0.593 and 0.706). So the full price depends on the real taste values, which is not the same as taste adding to time and draw.",
     );
     expect(visible).toContain("so the full price did not establish an advantage over popularity.");
     expect(visible).toContain("This check did not establish that taste adds to time and draw.");
@@ -910,11 +923,39 @@ describe("taste inside the full price, the second exploratory follow-up (round 3
     expect(blockText).toContain("AUC by festival, exploratory (0.5 means no better than chance)");
   });
 
-  it("says in two plain sentences why the US differs and that location is untested, with its cost", () => {
+  it("states each sample's result with its sign, interval, size and source, then a labelled hypothesis with its confound (round 33, E3)", () => {
     expect(blockText).toContain(
-      "At Glastonbury 2025, adding taste raised the price's AUC by 0.201 (interval +0.111 to +0.277, resampled by complaint); over the four US festivals it lowered it by 0.065 (interval -0.163 to +0.025). US complaints mostly name the day's biggest acts, which popularity already ranks well. Location is untested: these rankings were made without a location, and asking again for the US festival days with each festival's city would cost 347 Qloo requests.",
+      "On the Glastonbury 2025 complaints (14 complaint pairs in 8 clusters, all from one NME clash guide about mid-card acts), adding taste raised the full price's AUC by 0.201 (interval +0.111 to +0.277, resampled by complaint). On the four US festivals (54 complaint pairs in 34 clusters, press complaints that mostly named the day's biggest acts, which popularity already ranks well), adding taste lowered it by 0.065 (interval -0.163 to +0.025, includes 0).",
+    );
+    expect(blockText).toContain(
+      "A hypothesis for use, not a result: taste overlap may matter most for mid-card clashes; for clashes between the day's biggest acts, time and draw already carry most of the signal. The two samples also differ in festival, complaint source and act size, so this split cannot say which of those drives it. Untested beyond this data.",
+    );
+    // After the per-festival table, still labelled exploratory, and the hypothesis after the two results.
+    expect(block.indexOf("A hypothesis for use")).toBeGreaterThan(block.indexOf("</table>"));
+    expect(blockText.indexOf("A hypothesis for use")).toBeGreaterThan(blockText.indexOf("adding taste lowered it"));
+    expect(blockText).toContain("exploratory");
+    expect(blockText).not.toMatch(/cross-genre|it did not\b/i);
+    expect(blockText).toContain(
+      "Location is untested: these rankings were made without a location, and asking again for the US festival days with each festival's city would cost 347 Qloo requests.",
     );
     expect(blockText).not.toMatch(/\bbeats?\b|better than popularity|predicts|validated|proves|pre-registered|What taste adds/i);
+  });
+
+  it("states the disagreement count once, aggregate only, with no pair named (round 33, E4)", () => {
+    expect(blockText).toContain(
+      "Complained-about clashes that taste overlap put in their day's top quarter while popularity put them in the bottom half: 4 of 68, from 2 complaint clusters; all 4 were also in the top quarter on time and draw.",
+    );
+    expect(text(html).match(/4 of 68/g)).toHaveLength(1);
+  });
+
+  it("describes a replication test that has not been run, with its threshold stated before any data and no result promised (round 33, E5)", () => {
+    expect(blockText).toContain(
+      "A replication test we have not run. It needs data that does not exist yet: the 2027 bills of the same five festivals, scored when their set times are published and before any complaint is collected. The scoring would be fixed and written down before that data arrives, and complaints collected the same way as here. On the same complained-about pairs, the full price would be compared with the same score with taste held constant, as a paired difference, counted a success only if that difference's 95% interval lies above 0. Both arms keep Qloo's popularity; a baseline with no Qloo data has not been tested.",
+    );
+    // A plain bold lead, never a kicker or a heading of its own.
+    expect(block).toContain('<strong class="font-semibold">A replication test we have not run.</strong>');
+    expect(block).not.toContain("type-kicker");
+    expect(blockText).not.toMatch(/pre-registered|settle|will show|will find|would show that/i);
   });
 
   it("keeps the anchors other pages link to", () => {
@@ -934,5 +975,28 @@ describe("the Hidden label's definition (round 32, V6)", () => {
     );
     // One definition of the label: the old "with no shared genre tag" wording of the label is gone.
     expect(plain).not.toContain("top tenth, with no shared genre tag");
+  });
+});
+
+describe("the lede and the index's words (round 33, E1)", () => {
+  const html = renderToStaticMarkup(createElement(MethodPage));
+  const plain = text(html);
+
+  it("opens with 'scores', as the home page does, and leaves no money word for the index outside the defined 'full price'", () => {
+    expect(plain).toContain(
+      "Clash Control scores set-time clashes with a number it derives from Qloo data. This page says what that number is, what we checked it against, and where the check fell short.",
+    );
+    expect(plain).not.toMatch(/Clash Control prices/);
+    // Outside the backtest's defined name "full price" (and its table column), and the anchor id kept for links,
+    // the page says score or index.
+    // formulaNote (lib/credit.ts, shared with the home page) still says "the printed price" inside the closed fold.
+    const words =
+      plain
+        .replace(/full price/gi, "")
+        .replace(/the printed price/, "")
+        .match(/\b(price|prices|priced|unpriced|pricing)\b/gi) ?? [];
+    expect(words).toEqual([]);
+    expect(html).toContain('id="price"');
+    expect(plain).toContain("Pair score = taste overlap × share of the shorter set played at once × combined draw × rarity factor.");
   });
 });

@@ -435,7 +435,7 @@ export function fixStep(rule: Pick<RuleFixes, "a" | "b">, fix: RuleFix): RuleSta
  * receipt says whether it does, so the words claim no outcome yet.
  */
 export function keptChangeAnnouncement(aAct: string, bAct: string): string {
-  return `Kept a change meant to keep ${aAct} and ${bAct} apart. Pricing your plan.`;
+  return `Kept a change meant to keep ${aAct} and ${bAct} apart. Scoring your plan.`;
 }
 
 /** The same for a row of the panel. */
@@ -445,7 +445,7 @@ export function keepAnnouncement(rule: Pick<RuleFixes, "a" | "b">): string {
 
 /** What the status region says when the kept change took the place of the plan's earlier one for the pair. */
 export function replacedChangeAnnouncement(aAct: string, bAct: string): string {
-  return `Replaced the earlier change for ${aAct} and ${bAct}. Pricing your plan.`;
+  return `Replaced the earlier change for ${aAct} and ${bAct}. Scoring your plan.`;
 }
 
 /** What the status region says when Keep is pressed for a step the plan already holds. */
@@ -453,8 +453,8 @@ export const ALREADY_KEPT = "Already in your plan.";
 
 /**
  * Under a row whose change was found on the published day while the plan already moves one of its
- * sets or the pair itself: the listed figures are the published day's, so the receipt after pricing
- * is what counts. Null when the plan moves none of them. `moved` holds the ids the plan moves
+ * sets or the pair itself: the listed figures are the published day's, so the index with your plan
+ * applied is what counts. Null when the plan moves none of them. `moved` holds the ids the plan moves
  * (without the step this row would replace).
  */
 export function plannedNote(rule: Pick<RuleFixes, "a" | "b">, fix: RuleFix, moved: ReadonlySet<string>): string | null {
@@ -471,7 +471,7 @@ export function plannedNote(rule: Pick<RuleFixes, "a" | "b">, fix: RuleFix, move
   ];
   if (touched.length === 0) return null;
   const names = touched.length === 1 ? touched[0] : `${touched.slice(0, -1).join(", ")} and ${touched.at(-1)}`;
-  return `Found on the published day; your plan already moves ${names}, so the receipt after pricing is what counts.`;
+  return `Found on the published day; your plan already moves ${names}, so the index with your plan applied is what counts.`;
 }
 
 /** A plain gloss for "stage-fit flag", worded from the engine: draw rank against the size tier of the stage. */

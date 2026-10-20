@@ -31,7 +31,9 @@ export function SyntheticProvider({ initial = false, children }: { initial?: boo
   useEffect(() => {
     if (MOCK_STREAM_ENABLED) return; // the simulated-data banner already covers this build
     const controller = new AbortController();
-    fetch("/api/presets", { signal: controller.signal, headers: { Accept: "application/json" } })
+    // no-store: the list's shared-cache header (stale-while-revalidate) would otherwise start a background
+    // revalidation in the browser that never settles, so the page never reaches network idle.
+    fetch("/api/presets", { signal: controller.signal, headers: { Accept: "application/json" }, cache: "no-store" })
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error("no list"))))
       .then((raw: unknown) => {
         const flag = syntheticFromList(raw);

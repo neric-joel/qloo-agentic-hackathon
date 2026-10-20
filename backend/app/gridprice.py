@@ -9,7 +9,11 @@ repository).
 
 ``mode: "saved"`` matches the names to a saved festival day, or to the invented example day, which is always a
 candidate, and reads the values the day was built with. It never calls Qloo and never takes a limiter slot.
-Under 80% of the names found on every day is a 422 (``not_a_saved_day``). On a real day only the pairs the
+Under 80% of the names found on every day is, while live pricing is off on this server, a 200 with
+``status: "no_saved_day"`` and ``requests_used`` 0 (nothing priced, nothing the browser need log as an
+error); with live pricing on it is a 422 (``not_a_saved_day``), the answer the page offers the live step
+after. A saved value does not depend on the other names sent, so a body may hold only the names of the pairs
+it asks about (and enough names of the day to match it). On a real day only the pairs the
 home page prints a taste overlap or a taste rank for get a value (``pair.taste_pairs``: the day's ranked
 clashes, its clash receipts and twins, and the pairs of its "Two rankings of this day" lens), each the saved
 value the page's own arithmetic reads; any other pair is ``not_ranked_on_saved_day``. The invented day is
@@ -129,6 +133,10 @@ PAIR_NOT_IN_ACTS = "Every pair must name two of the acts sent."
 SAME_ACT_PAIR = "A pair must name two different acts."
 DUPLICATE_PAIR = "Each pair can be sent once."
 NOT_A_SAVED_DAY = "These acts are not on a saved festival day."
+NO_SAVED_DAY = (
+    "These acts are not on a saved festival day, and live pricing is off on this server, so nothing was "
+    "compared. No Qloo request was sent."
+)
 TOO_FEW_FOUND = "Qloo matched fewer than 4 of these acts, so nothing was priced."
 SWITCHED_OFF = "Live pricing is switched off on this server. A saved day still prices."
 PAUSED = (
@@ -194,6 +202,15 @@ class GridPrice(BaseModel):
     pairs: list[GridPair]
     requests_used: int
     scope_note: str
+
+
+class GridNoSavedDay(BaseModel):
+    """A saved body no saved day holds, while live pricing is off here: nothing priced, no request sent."""
+
+    mode: Literal["saved"]
+    status: Literal["no_saved_day"]
+    requests_used: int
+    message: str
 
 
 class NotLive(Exception):
@@ -486,7 +503,7 @@ def live_enabled(settings: Settings) -> bool:
     return settings.price_grid_enabled and bool(settings.qloo_api_key) and not settings.qloo_record_fixtures
 
 
-@router.post("/price-grid", response_model=GridPrice)
+@router.post("/price-grid", response_model=GridPrice | GridNoSavedDay)
 async def price_grid(
     body: GridPriceRequest,
     request: Request,
@@ -495,7 +512,7 @@ async def price_grid(
     settings: Annotated[Settings, Depends(get_settings)],
     qloo: Annotated[QlooClient, Depends(get_qloo)],
     limiter: Annotated[RunLimiter, Depends(get_price_grid_limiter)],
-) -> GridPrice:
+) -> GridPrice | GridNoSavedDay:
     """Price up to 10 pairs (saved) or 5 (live) of a pasted day by taste overlap, from a saved day or (opt-in)
     from Qloo now.
 
@@ -509,6 +526,12 @@ async def price_grid(
             answer = price_saved(acts, pairs, saved_days(presets))
         except LookupError:
             log.info("Grid price, saved: %d acts, %d pairs, no saved day", len(acts), len(pairs))
+            if not live_enabled(settings):
+                # Nothing the page could do next, so an answer, not an error; saved never falls back to live
+                response.headers.update(NO_STORE)
+                return GridNoSavedDay(
+                    mode="saved", status="no_saved_day", requests_used=0, message=NO_SAVED_DAY
+                )
             raise _refuse(422, "not_a_saved_day", NOT_A_SAVED_DAY) from None
         log.info(
             "Grid price, saved, on %s: %d acts, %d pairs, %d priced",

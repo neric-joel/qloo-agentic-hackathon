@@ -1,6 +1,7 @@
 import type { Ref } from "react";
 
 import { Button } from "@/components/ui/button";
+import { SCORE_COPY, type IndexScore } from "@/lib/check-price";
 
 import {
   TRIAL_COPY,
@@ -78,7 +79,20 @@ export type TrialUi = {
    * the list by default and offered only inside a closed fold: opening it is the explicit override.
    */
   kept?: ReadonlySet<string>;
+  /**
+   * The index of the first listed changes on a published day (at most 3, scored after the search the visitor
+   * started), by change; "scoring" while the answer is on its way. Left out, no change shows an index.
+   */
+  scores?: ReadonlyMap<TrialChange, IndexScore | "scoring">;
+  /** One line over the list: which changes are scored on the index, or why none can be. */
+  scoreNote?: string | null;
 };
+
+/** A change's index line, in words: the index before and after, or why it was not scored. */
+export function scoreLine(score: IndexScore | "scoring"): string {
+  if (score === "scoring") return SCORE_COPY.scoring;
+  return score.status === "scored" ? SCORE_COPY.scored(score.before, score.after) : SCORE_COPY.notScored(score.reason);
+}
 
 function ChangeItem({
   change,
@@ -86,8 +100,11 @@ function ChangeItem({
   gloss,
   stale,
   endsKept = false,
+  score = null,
 }: {
   change: TrialChange;
+  /** This change's index on the published day, or why not; null when it is not scored. */
+  score?: IndexScore | "scoring" | null;
   onApply: (change: TrialChange) => void;
   /** The grid or settings changed since the last check: nothing is tried until the next one. */
   stale: boolean;
@@ -125,6 +142,11 @@ function ChangeItem({
       {rise ? <p className="mt-0.5 text-sm break-words text-warning">{rise}</p> : null}
       <p className="mt-0.5 text-sm text-muted-foreground">{sizeLine(change)}</p>
       {change.stageChanges > 0 ? <p className={SIGN_OFF_CLASS}>{STAGE_SIGN_OFF}</p> : null}
+      {score ? (
+        <p aria-busy={score === "scoring" ? true : undefined} className="mt-0.5 text-sm font-semibold break-words text-foreground">
+          {scoreLine(score)}
+        </p>
+      ) : null}
       <Button type="button" variant="outline" size="sm" className="mt-3" disabled={stale} onClick={() => onApply(change)}>
         {TRIAL_COPY.tryIt}
         <span className="sr-only">: {change.lines.join(" and ")}</span>
@@ -167,13 +189,21 @@ function TrialPanel({
         {TRIAL_COPY.heading}
       </h3>
       <p className="mt-1.5 break-words">{result.summary}</p>
+      {listed.length > 0 && ui.scoreNote ? <p className="mt-2 text-sm leading-relaxed">{ui.scoreNote}</p> : null}
       {sameStage.length === 0 && stageChange.length > 0 ? (
         <p className="mt-3 text-sm font-medium text-foreground">{TRIAL_COPY.noSameStage}</p>
       ) : null}
       {listed.length > 0 ? (
         <ol className="mt-3 divide-y divide-border border-y border-border py-3">
           {sameStage.map((change, index) => (
-            <ChangeItem key={`same-${index}`} change={change} onApply={ui.onApply} gloss={index === 0} stale={ui.stale === true} />
+            <ChangeItem
+              key={`same-${index}`}
+              change={change}
+              onApply={ui.onApply}
+              gloss={index === 0}
+              stale={ui.stale === true}
+              score={ui.scores?.get(change) ?? null}
+            />
           ))}
           {stageChange.map((change, index) => (
             <ChangeItem
@@ -182,6 +212,7 @@ function TrialPanel({
               onApply={ui.onApply}
               gloss={sameStage.length === 0 && index === 0}
               stale={ui.stale === true}
+              score={ui.scores?.get(change) ?? null}
             />
           ))}
         </ol>

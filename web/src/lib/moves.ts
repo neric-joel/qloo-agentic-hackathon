@@ -285,3 +285,22 @@ export function clashChanges(
     }),
   };
 }
+
+/**
+ * Where a kept move came from, when the plan should say so: a place a recorded agent run tested and the
+ * visitor kept with Keep this place. A move kept any other way carries no source.
+ */
+export type MoveSource = "recorded-run";
+
+/** What the plan list prints after a move kept from a recorded agent run. */
+export const RECORDED_RUN_NOTE = "(from a recorded agent run)";
+
+/** The same move, marked as kept from a recorded agent run. Its place, and how it compares, do not change. */
+export function fromRecordedRun<T extends object>(move: T): T & { source: MoveSource } {
+  return { ...move, source: "recorded-run" };
+}
+
+/** True when a kept move came from a recorded agent run. An older kept move, with no source, never did. */
+export function isFromRecordedRun(move: object | null | undefined): boolean {
+  return Boolean(move && "source" in move && (move as { source?: unknown }).source === "recorded-run");
+}

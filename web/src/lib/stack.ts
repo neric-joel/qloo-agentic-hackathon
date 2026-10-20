@@ -18,7 +18,7 @@
 import { budgetDelta, changeLabel, oneDecimal } from "./agent-session";
 import { pluralize } from "./format";
 import { isRecord } from "./events";
-import { clockMinutes, parseMoves, type MovesResult, type Placement } from "./moves";
+import { clockMinutes, isFromRecordedRun, parseMoves, type MoveSource, type MovesResult, type Placement } from "./moves";
 import type { SetSlot } from "./preset";
 
 /** The most moves one plan holds, counted over every step (a two-set change counts 2); the server refuses a ninth. */
@@ -27,8 +27,12 @@ export const MAX_STACK = 8;
 /** How many priced places a plan request asks for, as `GET /moves` does. */
 export const PLAN_LIMIT = 8;
 
-/** One kept move: where and when the set plays in the plan. `start` is "20:30". */
-export type StackMove = { actId: string; stageId: string; day: number; start: string };
+/**
+ * One kept move: where and when the set plays in the plan. `start` is "20:30". `source` says where it came
+ * from when the plan list should say so (a recorded agent run); it never changes how the move is compared,
+ * encoded or sent, and a move saved before it existed simply has none.
+ */
+export type StackMove = { actId: string; stageId: string; day: number; start: string; source?: MoveSource };
 
 /**
  * One kept change from "Keep two sets apart": the pair it serves and the one or two moves of the
@@ -131,7 +135,7 @@ export function seedOutcome(
   return plan.length > 0 ? { kind: "replace", dropped: plan.length } : { kind: "fresh", dropped: 0 };
 }
 
-/** One step of a priced plan, as the server words and prices it. */
+/** One step of a scored plan, as the server words and scores it. */
 export type PlanStep = {
   act: string;
   actId: string;
@@ -704,16 +708,35 @@ function sessionStore(): PlanStorage | null {
   }
 }
 
-/** The plan kept for this preset in this tab, or an empty one. Never throws. */
+/**
+ * Where the plan's notes on its moves are kept beside it: the single moves kept from a recorded agent run,
+ * encoded as the plan is. A plan saved before this key existed has none, and loads as it always did.
+ */
+export function planSourcesKey(presetId: string): string {
+  return `${planStorageKey(presetId)}:recorded-run`;
+}
+
+/** The plan kept for this preset in this tab, or an empty one, with each move's source when one was kept. Never throws. */
 export function readStoredMoves(presetId: string, storage: PlanStorage | null = sessionStore()): StackStep[] {
   try {
-    return storage ? decodeMoves(storage.getItem(planStorageKey(presetId))) : [];
+    if (!storage) return [];
+    const steps = decodeMoves(storage.getItem(planStorageKey(presetId)));
+    let marked: StackStep[] = [];
+    try {
+      marked = decodeMoves(storage.getItem(planSourcesKey(presetId)));
+    } catch {
+      marked = [];
+    }
+    if (marked.length === 0) return steps;
+    return steps.map((step) =>
+      !isRuleStackStep(step) && marked.some((other) => sameStep(other, step)) ? { ...step, source: "recorded-run" as const } : step,
+    );
   } catch {
     return [];
   }
 }
 
-/** Keeps the plan for this preset in this tab; an empty plan removes it. Never throws. */
+/** Keeps the plan for this preset in this tab (with which moves came from a recorded run); an empty plan removes it. Never throws. */
 export function storeMoves(
   presetId: string,
   moves: readonly StackStep[],
@@ -721,9 +744,94 @@ export function storeMoves(
 ): void {
   try {
     if (!storage) return;
-    if (moves.length === 0) storage.removeItem(planStorageKey(presetId));
-    else storage.setItem(planStorageKey(presetId), encodeMoves(moves));
+    if (moves.length === 0) {
+      storage.removeItem(planStorageKey(presetId));
+      storage.removeItem(planSourcesKey(presetId));
+      return;
+    }
+    storage.setItem(planStorageKey(presetId), encodeMoves(moves));
+    const marked = moves.filter((step) => !isRuleStackStep(step) && isFromRecordedRun(step));
+    if (marked.length === 0) storage.removeItem(planSourcesKey(presetId));
+    else storage.setItem(planSourcesKey(presetId), encodeMoves(marked));
   } catch {
     // Storage can be full or blocked; the plan still works for this page's life.
   }
+}
+
+// ------------------------------------------------------------------------------------ add or replace
+
+/**
+ * How a step offered from outside "Try a move" meets a plan that already holds steps: `replace` makes it the
+ * whole plan; `add` puts it after the kept steps, and only while the plan still holds exactly `base` (the
+ * steps, encoded, that the timetable engine scored together with it before the press).
+ */
+export type PlanChoice = { mode: "add"; base: string } | { mode: "replace" };
+
+/** What an Add found before anything changed: the choice to hand to the plan, or why it is not added. */
+export type AddCheck =
+  | { kind: "ready"; choice: PlanChoice; count: number }
+  | { kind: "rejected"; reason: string; retry: boolean };
+
+/** "kept move" when every step is a single move, else "kept step" (a kept change moves two sets). */
+export function keptWord(steps: readonly StackStep[]): string {
+  return steps.every((step) => !isRuleStackStep(step)) ? "kept move" : "kept step";
+}
+
+/**
+ * Whether a move can be added to the plan, checked before anything changes: the plan must not move its set
+ * already and must have room, and then the timetable engine scores the COMBINED plan (the kept steps, then
+ * this move: `check`, the page's own /whatif) and must accept it. Ready: the choice to hand to the plan, with
+ * the steps it was scored on. Otherwise the reason in words, and whether trying again could help; nothing is
+ * kept. `noun` names what is being added in the one reason that needs it ("place", "move").
+ */
+export async function checkAdd(
+  kept: readonly StackStep[],
+  place: { act: string; move: StackMove },
+  check: (steps: readonly StackStep[]) => Promise<PlanAnswer>,
+  noun = "place",
+): Promise<AddCheck> {
+  if (movedActs(kept).has(place.move.actId)) {
+    return {
+      kind: "rejected",
+      reason: `Not added: your plan already moves ${place.act}, and a plan moves each set once. Your plan is unchanged.`,
+      retry: false,
+    };
+  }
+  if (moveCount(kept) + 1 > MAX_STACK) {
+    return {
+      kind: "rejected",
+      reason: `Not added: your plan already holds ${MAX_STACK} moves, the most it can. Your plan is unchanged.`,
+      retry: false,
+    };
+  }
+  const steps = [...kept, place.move];
+  const answer = await check(steps);
+  if (answer.status === "ready") {
+    return { kind: "ready", choice: { mode: "add", base: encodeMoves(kept) }, count: steps.length };
+  }
+  if (answer.status === "invalid") {
+    return {
+      kind: "rejected",
+      reason: `Not added: with your kept moves in place, the timetable engine finds this is no longer a legal place for ${place.act}. Your plan is unchanged.`,
+      retry: false,
+    };
+  }
+  return {
+    kind: "rejected",
+    reason: `Not added: your plan could not be scored with this ${noun} just now. Your plan is unchanged.`,
+    retry: true,
+  };
+}
+
+/**
+ * What the status says once the plan holds the step, read from what the plan really holds (`kept`) against
+ * what it held before the press (`before`): "Added: 2 kept moves." when every earlier step is still there,
+ * "Replaced your 1 kept move." when they went. Null for a plan that was empty.
+ */
+export function keepNote(before: readonly StackStep[], kept: readonly StackStep[]): string | null {
+  if (before.length === 0) return null;
+  const stayed = before.every((step) => kept.some((held) => sameStep(held, step)));
+  return stayed
+    ? `Added: ${pluralize(kept.length, keptWord(kept))}.`
+    : `Replaced your ${pluralize(before.length, keptWord(before))}.`;
 }

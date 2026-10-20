@@ -6,6 +6,7 @@ import {
   PRICE_COPY,
   comparedPairs,
   coverageLine,
+  defaultOrder,
   notCompared,
   notComparedLine,
   notComparedText,
@@ -13,6 +14,7 @@ import {
   pairLine,
   rankScope,
   sourceBanner,
+  type PairOrder,
   type PassedOverlap,
   type PriceAnswer,
   type ScopeOf,
@@ -26,9 +28,13 @@ export const BRIEF_ROWS = 25;
 
 export const BRIEF_FOOTER = "Computed in your browser from the pasted grid.";
 
+/** The same for a published day loaded here, which was not pasted. */
+export const BRIEF_FOOTER_PUBLISHED = "Computed in your browser from the published timetable.";
+
 /** The footer: where the figures came from, and what any taste overlap on the brief is a rank among. */
-export function briefFooter(price: ScopeOf | null): string {
-  return price ? `${BRIEF_FOOTER} Taste overlap: ${rankScope(price)}` : BRIEF_FOOTER;
+export function briefFooter(price: ScopeOf | null, published = false): string {
+  const from = published ? BRIEF_FOOTER_PUBLISHED : BRIEF_FOOTER;
+  return price ? `${from} Taste overlap: ${rankScope(price)}` : from;
 }
 
 /** "Snapshot: the invented sample as checked at 14:05, with 1 change applied in a working copy." */
@@ -100,6 +106,7 @@ export function CheckBrief({
   decisions,
   price,
   priceSkipped = [],
+  priceOrder,
   sample = false,
   published = null,
   checkedAt = null,
@@ -112,6 +119,8 @@ export function CheckBrief({
   price: PriceAnswer | null;
   /** Overlaps the compare step passed over before its request (both sets locked, or no usable signal). */
   priceSkipped?: readonly PassedOverlap[];
+  /** The order the compared values are listed in on screen; left out, the answer's default (`defaultOrder`). */
+  priceOrder?: PairOrder;
   /** The checked snapshot is the invented sample: the brief says so under its title. */
   sample?: boolean;
   /** The checked snapshot is a published day loaded by "Check a published day": its label, printed under the title. */
@@ -176,9 +185,10 @@ export function CheckBrief({
           <p className="mt-[2pt]">
             {sourceBanner(price)} {coverageLine(price)}.
           </p>
-          <Capped items={comparedPairs(price, "minutes").map((pair) => pairLine(pair, price))} />
-          {reorder ? <p className="mt-[2pt]">{reorder}</p> : null}
+          {/* The screen's order: how the pairs were chosen, the computed order sentence, then the values. */}
           {price.basis === "saved_ranking" ? <p className="mt-[2pt]">{PRICE_COPY.workedExample}</p> : null}
+          {reorder ? <p className="mt-[2pt]">{reorder}</p> : null}
+          <Capped items={comparedPairs(price, priceOrder ?? defaultOrder(price.basis)).map((pair) => pairLine(pair, price))} />
           {missedLine ? (
             <>
               <p className="mt-[2pt]">{missedLine}</p>
@@ -188,7 +198,7 @@ export function CheckBrief({
         </section>
       ) : null}
 
-      <p className="mt-[8pt] border-t border-border pt-[3pt] text-[8pt]">{briefFooter(price)}</p>
+      <p className="mt-[8pt] border-t border-border pt-[3pt] text-[8pt]">{briefFooter(price, Boolean(published))}</p>
     </div>
   );
 }

@@ -106,6 +106,11 @@ export type TrialChange = {
   ends?: string[];
   sharedBefore: SharedTotals;
   sharedAfter: SharedTotals;
+  /**
+   * The overlaps that share more time after this change than before, counted, and the longest of them by its
+   * minutes after (`was` 0: a new overlap). Optional for an older caller.
+   */
+  grown?: { count: number; longest: { a: string; b: string; was: number; minutes: number } | null };
 };
 
 export type TrialResult = {
@@ -765,6 +770,22 @@ function sharedRiseOf(before: CheckReport, after: CheckReport): number {
   return rise;
 }
 
+/** The overlaps a change lengthens or creates, counted, and the longest of them after the change. */
+function grownOf(before: CheckReport, after: CheckReport): NonNullable<TrialChange["grown"]> {
+  const was = new Map(before.shared.map((pair) => [pairRows(pair), pair.minutes]));
+  let count = 0;
+  let longest: NonNullable<TrialChange["grown"]>["longest"] = null;
+  for (const pair of after.shared) {
+    const previous = was.get(pairRows(pair)) ?? 0;
+    if (pair.minutes <= previous) continue;
+    count += 1;
+    if (!longest || pair.minutes > longest.minutes) {
+      longest = { a: pair.a.act, b: pair.b.act, was: previous, minutes: pair.minutes };
+    }
+  }
+  return { count, longest };
+}
+
 function buildChange(report: CheckReport, target: TrialTarget, search: Search, candidate: Candidate): TrialChange {
   const moves: TrialMove[] = candidate.places
     .map((place) => {
@@ -811,6 +832,7 @@ function buildChange(report: CheckReport, target: TrialTarget, search: Search, c
     ends,
     sharedBefore: totals(report),
     sharedAfter: totals(after),
+    grown: grownOf(report, after),
   };
 }
 
@@ -955,23 +977,43 @@ export function raisesSharedTotal(change: TrialChange): boolean {
 }
 
 /**
+ * "Longest new overlap: A × B, 45 min" (or "Longest overlap that grows: A × B, 20 → 45 min"): the one a
+ * programmer would look at, from the change's own `grown`; null without it.
+ */
+export function longestGrownLine(change: Pick<TrialChange, "grown">): string | null {
+  const longest = change.grown?.longest;
+  if (!longest) return null;
+  return longest.was > 0
+    ? `Longest overlap that grows: ${longest.a} × ${longest.b}, ${longest.was} → ${longest.minutes} min`
+    : `Longest new overlap: ${longest.a} × ${longest.b}, ${longest.minutes} min`;
+}
+
+/**
  * The warning on a change that lengthens an overlap elsewhere or raises the grid's shared minutes; null when
- * it does neither. When the total rises it gives the gross rise on the pairs that get longer (and, if other
- * overlaps shrink, the net change the grid line shows); when only some overlaps get longer and others
- * shorter it says that, so the line never contradicts the grid line above it.
+ * it does neither. It names the worst overlap the change creates or lengthens (`longestGrownLine`), the one a
+ * programmer would look at. When the total rises it also gives the gross rise on the pairs that get longer
+ * (and, if other overlaps shrink, the net change the grid line shows). When the total does not rise it
+ * says how many overlaps get longer, never a summed minute figure, and that the grid total falls or stays,
+ * so the line never contradicts the grid line above it.
  */
 export function sharedRiseLine(change: TrialChange): string | null {
   const net = change.sharedAfter.minutes - change.sharedBefore.minutes;
+  const longest = longestGrownLine(change);
   if (net > 0) {
     // The warning is the gross rise on the pairs that get longer (what `sharedRise` sums), not the grid's net change:
     // a pair that falls by 30 while another rises by 45 is 45 minutes added elsewhere, and a net 15 on the grid line.
     const rise = Math.max(change.sharedRise, net);
-    return rise > net
-      ? `Shared time elsewhere rises by ${minutesLabel(rise)}. Other overlaps get shorter, so the grid total rises by ${minutesLabel(net)}.`
-      : `Shared time elsewhere rises by ${minutesLabel(rise)}.`;
+    const head =
+      rise > net
+        ? `Shared time elsewhere rises by ${minutesLabel(rise)}. Other overlaps get shorter, so the grid total rises by ${minutesLabel(net)}.`
+        : `Shared time elsewhere rises by ${minutesLabel(rise)}.`;
+    return longest ? `${head} ${longest}.` : head;
   }
   if (change.sharedRise > 0) {
-    return `Some overlaps elsewhere get ${minutesLabel(change.sharedRise)} longer in all; others get shorter, so the grid total ${net < 0 ? "falls" : "stays the same"}.`;
+    const total = `others get shorter, so the grid total ${net < 0 ? "falls" : "stays the same"}`;
+    const n = change.grown?.count ?? 0;
+    if (!longest) return `Some overlaps elsewhere get longer; ${total}.`;
+    return `${longest}${n > 1 ? ` (${n} overlaps get longer)` : ""}; ${total}.`;
   }
   return null;
 }

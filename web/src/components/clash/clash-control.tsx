@@ -602,19 +602,29 @@ function PresetPicker({
 type BorrowedWall = { forId: string; evidence: Evidence; title: string };
 
 /**
+ * Whether a day shows another day's sourced hidden-clash examples: only a published day with none of its own.
+ * Never the invented day, which credits nothing to Qloo, and never in mock mode.
+ */
+export function borrowsWall(preset: Pick<Preset, "evidence" | "synthetic">, mock: boolean = MOCK_STREAM_ENABLED): boolean {
+  const own = (preset.evidence?.hidden_wall.length ?? 0) > 0;
+  return !own && preset.synthetic !== true && !mock;
+}
+
+/** The published days a day may read examples from, in the server's order: never itself, never the invented day. */
+export function wallLenders(presets: readonly PresetSummary[], id: string): string[] {
+  return presets.filter((item) => item.id !== id && item.synthetic !== true).map((item) => item.id);
+}
+
+/**
  * The hidden-clash examples are cross-festival (each names its own festival and day), but a build saves
  * them with one festival day. A published day with none of its own shows another published day's, read
- * from the saved preset (a GET of a saved file: no Qloo request). Never on the invented day, which credits
- * nothing to Qloo, and never in mock mode. Null until found, or when no day has any.
+ * from the saved preset (a GET of a saved file: no Qloo request), labelled with the day they are saved with
+ * (`wallCount`). Skipped as `borrowsWall` says. Null until found, or when no day has any.
  */
 function useBorrowedWall(presets: readonly PresetSummary[], preset: Preset): BorrowedWall | null {
-  const own = (preset.evidence?.hidden_wall.length ?? 0) > 0;
-  const skip = own || preset.synthetic === true || MOCK_STREAM_ENABLED;
+  const skip = !borrowsWall(preset);
   const [found, setFound] = useState<BorrowedWall | null>(null);
-  const others = presets
-    .filter((item) => item.id !== preset.id && item.synthetic !== true)
-    .map((item) => item.id)
-    .join("|");
+  const others = wallLenders(presets, preset.id).join("|");
   useEffect(() => {
     if (skip || others === "") return;
     const controller = new AbortController();
@@ -745,6 +755,19 @@ function PresetView({
   // The card's clash, for its three readings; only while the card is for the day on show.
   const decisionClash =
     decisionState.status === "ready" && decisionState.decision.day === day ? decisionState.decision.clash : null;
+  // The card's move for Try a move, with the card's pair: "Start with" lists its two sets, and "Keep two sets
+  // apart" opens on it.
+  const cardMove = useMemo(
+    () =>
+      decisionCopy?.seedMove && decisionCopy.moveReceipt
+        ? {
+            move: decisionCopy.seedMove,
+            receipt: decisionCopy.moveReceipt,
+            pair: decisionClash ? { aId: decisionClash.aId, bId: decisionClash.bId } : null,
+          }
+        : null,
+    [decisionCopy, decisionClash],
+  );
   const lensRank = useMemo(() => drawerRank(lenses), [lenses]);
   const actName = (id: string) => festival.acts.find((act) => act.id === id)?.name ?? id;
   // Both land on the agent section's heading: the recorded runs sit level with it from 1024 px, and the list
@@ -806,13 +829,19 @@ function PresetView({
               <DecisionCard
                 copy={decisionCopy}
                 kept={cardKept}
+                plan={keptSteps}
                 onOpenMove={
                   decisionCopy.seedMove
-                    ? () => {
+                    ? (choice) => {
                         const move = decisionCopy.seedMove;
                         if (!move) return null;
-                        const note = replacedNote(keptSteps, move);
-                        setSeedStep((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, step: move, from: "card" }));
+                        const note = choice?.mode === "add" ? null : replacedNote(keptSteps, move);
+                        setSeedStep((previous) => ({
+                          nonce: (previous?.nonce ?? 0) + 1,
+                          step: move,
+                          from: "card",
+                          ...(choice ?? {}),
+                        }));
                         return note;
                       }
                     : undefined
@@ -856,6 +885,7 @@ function PresetView({
                 }
                 onOpenPair={decisionPair ? (trigger) => openClash(decisionPair, trigger) : undefined}
                 hiddenCount={cardHiddenCount}
+                rankedCount={decisionClash ? ranked.length : undefined}
                 genres={cardGenres}
               />
             ) : decisionState.status === "loading" ? (
@@ -913,8 +943,8 @@ function PresetView({
           <BoardFrame labelledBy="board-heading">
             {/* One header block: the dateline and heading on the left; on the right the festival tabs with
                 "How Qloo was used" right under them (8 px), right-aligned from 1024 px and at the left on a
-                phone. */}
-            <div className="mb-8 flex flex-wrap items-end justify-between gap-x-8 gap-y-4 pb-4">
+                phone. 32 px of paper under it (no rule), then the board's 24 px. */}
+            <div className="mb-8 flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
               <div className="min-w-0">
                 <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
                   {synthetic ? "Invented timetable" : "Published timetable"} · {preset.title}
@@ -1072,7 +1102,7 @@ function PresetView({
             seedStep={seedStep}
             seedRule={seedRule}
             onKeptChange={setKeptSteps}
-            cardMove={decisionCopy?.seedMove && decisionCopy.moveReceipt ? { move: decisionCopy.seedMove, receipt: decisionCopy.moveReceipt } : null}
+            cardMove={cardMove}
           />
         }
         agent={
@@ -1093,7 +1123,9 @@ function PresetView({
           />
         }
         sources={
-          <div id={SOURCES_ID}>
+          // The compact sources block has 16px of its own above, so a jump to it keeps 48px more clear of the
+          // sticky header and section nav.
+          <div id={SOURCES_ID} className="scroll-mt-12">
             <PresetSources preset={preset} />
           </div>
         }

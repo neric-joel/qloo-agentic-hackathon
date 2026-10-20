@@ -6,7 +6,7 @@ import { ArrowRight, ArrowUp, FileText, Undo2 } from "lucide-react";
 
 import { ProvenanceChip } from "@/components/kernel";
 import { Button } from "@/components/ui/button";
-import { currentPlacement } from "@/lib/moves";
+import { RECORDED_RUN_NOTE, currentPlacement, isFromRecordedRun } from "@/lib/moves";
 import type { Preset } from "@/lib/preset";
 import { PLAN_CAVEAT, RAISES_MARK, planVerdict, raisesIndex } from "@/lib/plan-copy";
 import {
@@ -23,8 +23,7 @@ import {
   type StackStep,
 } from "@/lib/stack";
 
-import { BudgetMove } from "./budget-move";
-import { DECISION_HEADING_ID } from "./decision-card";
+import { DECISION_HEADING_ID, IndexChange } from "./decision-card";
 
 /** The plan's actions: undo the last kept step, start over, and open the plan as a brief. */
 function PlanActions({
@@ -83,8 +82,8 @@ function PlanActions({
 }
 
 /**
- * "Your tested moves": the kept steps priced together by the timetable engine. The published
- * reading is Now and the plan's is After; a single move shows how it shifts its set, a kept change
+ * "Your tested moves": the kept steps scored together by the timetable engine. The published
+ * reading comes first and the plan's after it, on one index line; a single move shows how it shifts its set, a kept change
  * from "Keep two sets apart" reads as one step (the pair, where each set plays, then the server's
  * receipt for the whole plan); each step shows the Clash Budget Index before and after it; then the
  * moved timetable's costliest clashes and the caveat. Every number comes from the server's answer;
@@ -131,12 +130,7 @@ export function ScratchPlan({
         <ProvenanceChip provenance="derived" size="sm" className="mt-1" synthetic={preset.synthetic === true} />
       </div>
 
-      <BudgetMove
-        before={plan.publishedBudget}
-        after={plan.budget}
-        range={range}
-        verdict={verdict}
-      />
+      <IndexChange before={plan.publishedBudget} after={plan.budget} range={range} verdict={verdict} />
 
       <div className="mt-5 grid gap-6 border-t border-border pt-4 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:gap-8">
         <ol aria-label="Kept moves" className="min-w-0 space-y-3">
@@ -159,6 +153,8 @@ export function ScratchPlan({
               );
             }
             const home = festival.timetable.find((slot) => slot.act_id === step.actId);
+            // A move kept through a recorded agent run's Keep this place says so after it.
+            const fromRun = moves.some((kept) => !isRuleStackStep(kept) && kept.actId === step.actId && isFromRecordedRun(kept));
             const shift = shiftText(currentPlacement(preset, step.actId), step, home ? stageName(home.stage_id) : "");
             return (
               <li key={step.actId} className="min-w-0">
@@ -167,6 +163,7 @@ export function ScratchPlan({
                   <span className="tabular-nums">
                     {step.start}–{step.end}
                   </span>
+                  {fromRun ? <span className="font-normal text-muted-foreground"> {RECORDED_RUN_NOTE}</span> : null}
                 </p>
                 <p className="mt-0.5 text-sm text-muted-foreground">
                   {shift} ·{" "}

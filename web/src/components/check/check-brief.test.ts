@@ -8,7 +8,7 @@ import { parsePriceAnswer, priceRequest, type PriceRequest } from "@/lib/check-p
 import { SAMPLE_GRID, SAMPLE_SETTINGS, publishedLabel } from "@/lib/check-sample";
 import { findChange, targetOfBreak } from "@/lib/check-trial";
 
-import { BRIEF_FOOTER, BRIEF_ROWS, CheckBrief, briefFooter, snapshotLine } from "./check-brief";
+import { BRIEF_FOOTER, BRIEF_FOOTER_PUBLISHED, BRIEF_ROWS, CheckBrief, briefFooter, snapshotLine } from "./check-brief";
 
 // Every name below is invented for the test.
 
@@ -52,8 +52,12 @@ describe("the one-page brief", () => {
     expect(page).toContain(`Changes applied to a working copy (1) ${change.lines[0]} (was`);
     expect(page).toContain("Rule breaks (4)");
     expect(page).toContain("Your decisions (1) Saffron Season and Ivory Lights share 20 minutes: Kept on purpose. Contract.");
-    expect(page).toContain("Compared using the invented example day: its acts and affinities are invented, not Qloo data. No Qloo request was sent. 24 of 24 acts with a usable signal.");
-    expect(page).toContain("Taste overlap 90 / 100, ranked 1 of 5.");
+    // A saved press sends only the names of the pairs it compares (C2): here the 7 acts of the 5 longest overlaps.
+    expect(request.acts).toHaveLength(7);
+    expect(page).toContain(
+      `Compared using the invented example day: its acts and affinities are invented, not Qloo data. No Qloo request was sent. ${request.acts.length} of ${request.acts.length} acts with a usable signal.`,
+    );
+    expect(page).toContain("Taste overlap 90 / 100, taste rank 1 of 5.");
     expect(page).toContain("Taste overlap compared (5 longest overlaps)");
     expect(page).toContain(
       `${BRIEF_FOOTER} Taste overlap: Values come from the invented example day: ranks among its invented lineup, not Qloo data and not attendance.`,
@@ -125,5 +129,9 @@ describe("the one-page brief", () => {
     expect(page).toContain(`Draft check, not a verdict ${label} Snapshot: the published timetable as checked.`);
     expect(snapshotLine({ sample: false, checkedAt: null, applied: 0, published: true })).toBe("Snapshot: the published timetable as checked.");
     expect(snapshotLine({ sample: false, checkedAt: null, applied: 0 })).toBe("Snapshot: the pasted grid as checked.");
+    // A published day was not pasted: its footer says where the figures came from (C7).
+    expect(page).toContain(BRIEF_FOOTER_PUBLISHED);
+    expect(page).not.toContain("from the pasted grid");
+    expect(briefFooter(null, true)).toBe("Computed in your browser from the published timetable.");
   });
 });

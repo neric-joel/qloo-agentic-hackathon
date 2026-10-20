@@ -1,12 +1,26 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
-import { ArrowRight, Check, ChevronRight } from "lucide-react";
+import { ArrowRight, Check, ChevronRight, LoaderCircle } from "lucide-react";
 
 import { ProvenanceChip } from "@/components/kernel";
 import { Button } from "@/components/ui/button";
 import { ATTRIBUTION, type DecisionCopy, type SharedTimeline, type TimelineBar } from "@/lib/decision";
+import { pluralize } from "@/lib/format";
+import { rangeLead } from "@/lib/plan-copy";
 import { ALREADY_KEPT } from "@/lib/rule-fix";
+import {
+  checkAdd,
+  encodeMoves,
+  isRuleStackStep,
+  keptWord,
+  readStoredMoves,
+  sameStep,
+  type PlanAnswer,
+  type PlanChoice,
+  type ScaleRange,
+  type StackStep,
+} from "@/lib/stack";
 import { useInView, useIntroDone } from "@/lib/use-in-view";
 import { formatRange } from "@/lib/timetable";
 import { cn } from "@/lib/utils";
@@ -15,10 +29,14 @@ import { PairStrip, type StripLane } from "./pair-strip";
 import { TradeoffTable } from "./tradeoff-table";
 import { usePairCheckEnabled } from "./use-agent-status";
 import { useAnnouncement } from "./use-announcement";
+import { checkPlan } from "./use-moves";
 
 /** The anchor of the card, for the hero button and the jump links. */
 export const DECISION_ID = "one-decision";
 export const DECISION_HEADING_ID = "decision-heading";
+
+/** No kept steps: shared so its identity never changes. */
+const NO_STEPS: readonly StackStep[] = [];
 
 /** Counted from the first card shown on the page, so the reveal runs once per page load. */
 let revealed = false;
@@ -228,7 +246,7 @@ function LineLabel({ n, className }: { n: number; className?: string }) {
  * frame as the receipt (one 1px rule along the top, nothing else) and the same rows at the heights the
  * receipt's own rows take on the published day the page opens on (the dateline with its saved reading,
  * the heading, the two "why this clash" lines, the index block, below 1024 px the 44 px button under it,
- * the strip of three lanes and its key, the action row, in that order, as the receipt puts them), so the
+ * the strip of three lanes and the line under it, the action row, in that order, as the receipt puts them), so the
  * swap moves nothing below it.
  */
 export function DecisionCardSkeleton() {
@@ -259,7 +277,8 @@ export function DecisionCardSkeleton() {
         <div className="mt-4 flex h-11 items-center lg:hidden max-sm:mt-3">
           <div className={cn(bar, "h-11 w-37")} />
         </div>
-        <div className="mt-3 flex h-62.5 flex-col justify-around max-lg:mt-4 max-sm:mt-3">
+        {/* The strip of three lanes with the line under it: 246 px from 640 px, 228 px below (measured). */}
+        <div className="mt-3 flex h-61.5 flex-col justify-around max-lg:mt-4 max-sm:mt-3 max-sm:h-57">
           {[0, 1, 2].map((lane) => (
             <div key={lane} className="flex items-center gap-3">
               <div className={cn(bar, "h-3 w-24 shrink-0")} />
@@ -277,8 +296,21 @@ export function DecisionCardSkeleton() {
 
 type DecisionCardProps = {
   copy: DecisionCopy;
-  /** Keeps the one move as the plan. Absent in the server HTML, where the page cannot act yet. */
-  onOpenMove?: () => string | null | void;
+  /**
+   * Keeps the one move. Absent in the server HTML, where the page cannot act yet. With no `choice`, or
+   * `{ mode: "replace" }`, the move becomes the whole plan; with `{ mode: "add", base }` it goes after the kept
+   * steps, only while the plan still holds exactly `base` (the seed path of "Try a move"). It may return what
+   * the status line should say about steps it replaced.
+   */
+  onOpenMove?: (choice?: PlanChoice) => string | null | void;
+  /**
+   * The steps the plan holds now (scored). With it, a press of "Keep this move" on a plan that holds other
+   * steps offers "Add to your plan" or "Replace your plan" instead of replacing it; without it (the server
+   * HTML, or a page that does not pass it) the press keeps the move as before.
+   */
+  plan?: readonly StackStep[];
+  /** Scores a whole plan before Add keeps anything; the page's own /whatif for this card's day by default. */
+  check?: (steps: readonly StackStep[]) => Promise<PlanAnswer>;
   /** Opens the rule search for the pair. Absent when there is no rule line to try. */
   onTryRule?: () => void;
   /**
@@ -300,6 +332,11 @@ type DecisionCardProps = {
    * hidden-clash line says "1 of N on this day"; without it, or below 1, that part is left out.
    */
   hiddenCount?: number;
+  /**
+   * How many ranked clashes the day has, from the same list the Hidden count is read from. With it (and the
+   * Hidden count) the hidden-clash line says "1 of 5 among the day's 15 ranked clashes".
+   */
+  rankedCount?: number;
   /** The two acts' main genre tags, for the hidden-clash line; left out unless both are saved. */
   genres?: readonly (string | null)[] | null;
   /**
@@ -366,6 +403,158 @@ export const PLAN_ANCHOR = "your-plan";
 export const INDEX_SCALE = "A score, not money: 100 = the average random valid timetable of this lineup. Lower is better.";
 
 /**
+ * How to read the strip's marks. It is not printed (the line under the strip says what else the move changes,
+ * and each bracket's minutes say the shared time in words); it is the end of the strip's accessible name.
+ */
+export const STRIP_LEGEND = "Solid: where the sets play now. Dashed: tested. Hatched: time shared.";
+
+/**
+ * A Clash Budget Index change as one line, the hero's own treatment: the two readings in the index type
+ * ("116.7 → 113.2"), then the change in words ("−3.5 index points", from `indexDelta`, so it never disagrees
+ * with them) and what the scale means, then the day's range line when it has one, with the caller's verdict.
+ * No chip, no bars and no colour: the words say which way it moved. Nothing when either reading is missing.
+ */
+export function IndexChange({
+  before,
+  after,
+  range,
+  verdict = null,
+  className,
+}: {
+  before: number | null;
+  after: number | null;
+  range: ScaleRange;
+  /** A sentence that follows the range line, such as where a plan sits against that range. */
+  verdict?: string | null;
+  className?: string;
+}) {
+  if (before === null || after === null || !Number.isFinite(before) || !Number.isFinite(after)) return null;
+  const from = before.toFixed(1);
+  const to = after.toFixed(1);
+  const delta = indexDelta(from, to);
+  const lead = rangeLead(range);
+  return (
+    <div data-index-change="" className={cn("mt-3", className)}>
+      <p className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+        <span className="type-numeral text-[1.75rem] leading-none tabular-nums">
+          <span aria-hidden="true">
+            {from} → {to}
+          </span>
+          <span className="sr-only">
+            {from} to {to},
+          </span>
+        </span>
+        <span className="text-[0.8125rem] leading-snug text-muted-foreground">
+          {delta ? (
+            <>
+              <span className="font-mono tabular-nums">{delta.slice(0, delta.indexOf(" "))}</span>
+              {delta.slice(delta.indexOf(" "))}
+              {" · "}
+            </>
+          ) : null}
+          Clash Budget Index · lower is better
+        </span>
+      </p>
+      {lead ? (
+        <p className="mt-1.5 text-xs text-muted-foreground lg:text-[0.8125rem]">
+          {lead}
+          {verdict ? ` ${verdict}` : ""}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * What a press of "Keep this move" does: `already` when the plan holds the move (it says so and changes
+ * nothing), `offer` when the page passed the plan and it holds other steps (Add or Replace is offered and
+ * nothing changes yet), else `keep` (the move is kept at once, as on an empty plan).
+ */
+export function keepPressKind(
+  plan: readonly StackStep[] | undefined,
+  move: DecisionCopy["seedMove"],
+  keptMove: boolean,
+): "already" | "offer" | "keep" {
+  if (keptMove) return "already";
+  if (!plan || plan.length === 0 || !move) return "keep";
+  return plan.some((step) => !isRuleStackStep(step) && sameStep(step, move)) ? "already" : "offer";
+}
+
+/**
+ * The steps a press of "Keep this move" is about: the scored plan the page passed or, while the page has no
+ * answer for it yet (after a reload with a kept plan, the page reports the plan once the engine has scored it),
+ * the plan this tab stored, so a press never replaces a plan the card cannot see yet. None when the page passed
+ * no plan (the server HTML).
+ */
+export function planAtPress(
+  plan: readonly StackStep[] | undefined,
+  stored: () => readonly StackStep[],
+): readonly StackStep[] {
+  if (!plan) return [];
+  return plan.length > 0 ? plan : stored();
+}
+
+/** What the card offers when "Keep this move" is pressed on a plan that already holds other steps. */
+export const ADD_TO_PLAN = "Add to your plan";
+export const REPLACE_PLAN = "Replace your plan";
+
+/** The state of that offer: open, an Add being scored, an Add the engine refused (with why), or a choice sent. */
+export type KeepOffer =
+  | { state: "open" }
+  | { state: "checking" }
+  | { state: "rejected"; reason: string; retry: boolean }
+  | { state: "sent" };
+
+/**
+ * The offer itself, under the pressed button: how many steps the plan holds, then "Add to your plan" (first, the
+ * outline button) and "Replace your plan" (ghost), then what an Add is doing or why it was refused. An Add the
+ * engine refused for good leaves only Replace. Existing Button variants, 44 px each; no id, so the card can draw
+ * one copy per width.
+ */
+export function KeepMoveOffer({
+  offer,
+  held,
+  onAdd,
+  onReplace,
+  addRef,
+  replaceRef,
+  className,
+}: {
+  offer: KeepOffer;
+  /** The steps the plan holds now. */
+  held: readonly StackStep[];
+  onAdd: () => void;
+  onReplace: () => void;
+  addRef?: RefObject<HTMLButtonElement | null>;
+  replaceRef?: RefObject<HTMLButtonElement | null>;
+  className?: string;
+}) {
+  const checking = offer.state === "checking" || offer.state === "sent";
+  const rejected = offer.state === "rejected" ? offer : null;
+  return (
+    <div role="group" aria-label={`${KEEP_MOVE}: add it to your plan, or replace your plan`} data-keep-offer="" className={className}>
+      <p className="text-sm leading-snug text-foreground">Your plan already holds {pluralize(held.length, keptWord(held))}.</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {rejected && !rejected.retry ? null : (
+          <Button ref={addRef} type="button" variant="outline" aria-disabled={checking || undefined} onClick={onAdd}>
+            {offer.state === "checking" ? <LoaderCircle aria-hidden="true" className="motion-safe:animate-spin" /> : null}
+            {ADD_TO_PLAN}
+          </Button>
+        )}
+        <Button ref={replaceRef} type="button" variant="ghost" onClick={onReplace}>
+          {REPLACE_PLAN}
+        </Button>
+      </div>
+      {offer.state === "checking" ? (
+        <p className="mt-1 text-sm leading-snug text-muted-foreground">Scoring your plan with this move added.</p>
+      ) : rejected ? (
+        <p className="mt-1 text-sm leading-snug text-foreground">{rejected.reason}</p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * The pair's taste overlap as line 1 of the working prints it ("their taste overlap is 97 of 100 on this
  * bill"), read back from the card's own copy; null when line 1 does not say it.
  */
@@ -375,24 +564,34 @@ export function tasteOverlapOf(copy: Pick<DecisionCopy, "clashLine">): string | 
 
 /**
  * The hero's own clash, when it carries the board's Hidden label, said concretely: how many of the day's
- * ranked clashes carry that label (`count`, left out without it), the two main genres (left out unless
- * both are saved) and the taste overlap line 1 prints. It keeps the board's definition
+ * ranked clashes carry that label (`count`, left out without it) and, with `ranked`, out of how many ranked
+ * clashes ("1 of 5 among the day's 15 ranked clashes"), the two main genres (left out unless both are saved)
+ * and the taste overlap line 1 prints. It keeps the board's definition
  * (`LABEL_META.hidden.explain`: the main genre tags differ, and the taste overlap is among the day's
  * highest). Names no source; on the invented day it says the day and the overlap are invented.
  */
 export function hiddenClashLine({
   count,
+  ranked,
   genres,
   taste,
   invented = false,
 }: {
   count?: number | null;
+  /** The day's ranked clashes, from the list the count is read from; with it the count says its scope. */
+  ranked?: number | null;
   genres?: readonly (string | null | undefined)[] | null;
   taste: string | null;
   invented?: boolean;
 }): string {
   const day = invented ? "this invented day" : "this day";
-  const share = count !== undefined && count !== null && Number.isInteger(count) && count >= 1 ? `, 1 of ${count} on ${day}` : "";
+  const counted = count !== undefined && count !== null && Number.isInteger(count) && count >= 1;
+  const scoped = counted && ranked !== undefined && ranked !== null && Number.isInteger(ranked) && ranked >= count;
+  const share = scoped
+    ? `, 1 of ${count} among ${invented ? "the invented day’s" : "the day’s"} ${ranked} ranked clashes`
+    : counted
+      ? `, 1 of ${count} on ${day}`
+      : "";
   const named = (genres ?? []).map((genre) => genre?.trim() ?? "").filter(Boolean);
   const which = genres && genres.length === 2 && named.length === 2 ? ` (${named[0]}, ${named[1]})` : "";
   const overlap = invented ? "invented taste overlap" : "taste overlap";
@@ -455,7 +654,7 @@ export function datelineWithReading(title: string, saved: SavedReading | null | 
  * its two sets' lowest-index places.
  */
 export const MOVE_CHOICE_LINE =
-  "Chosen by clash, not by gain: the lowest-index single move for the day’s costliest clash that has one. A move for another clash can lower the index more; Try a move prices the legal places of other sets.";
+  "Chosen by clash, not by gain: the lowest-index single move for the day’s costliest clash that has one. A move for another clash can lower the index more; Try a move scores the legal places of other sets.";
 
 /** The working's text action that opens this pair's clash drawer, where the live re-check asks before it sends. */
 export const RECHECK_PAIR = "Re-check this pair with Qloo (3 requests)";
@@ -566,6 +765,8 @@ function PairRecheckWhenOn({ onOpenPair }: { onOpenPair: (trigger: HTMLElement) 
 export function DecisionCard({
   copy,
   onOpenMove,
+  plan,
+  check,
   onTryRule,
   onKeepChange,
   kept,
@@ -573,6 +774,7 @@ export function DecisionCard({
   hiddenLabel,
   readings,
   hiddenCount,
+  rankedCount,
   genres,
   saved,
   onOpenPair,
@@ -608,6 +810,52 @@ export function DecisionCard({
     focusShown([earlyLinkRef.current, rowLinkRef.current]);
   }, [focusAsk, keptShown]);
 
+  // A press on a plan that already holds other steps never replaces it silently: it offers Add (scored whole
+  // first, exactly as Keep this place does) or Replace, for the plan it was pressed on (`steps`; `stored` when that
+  // was the tab's stored plan, before the page had the plan's first answer). A changed plan, or the move kept,
+  // puts the offer away.
+  const [offer, setOffer] = useState<{
+    base: string;
+    steps: readonly StackStep[];
+    stored: boolean;
+    key: number;
+    at: KeepOffer;
+  } | null>(null);
+  const held = plan ?? NO_STEPS;
+  const heldKey = encodeMoves(held);
+  const offerShown =
+    offer !== null && !keptShown && (offer.base === heldKey || (offer.stored && held.length === 0)) ? offer.at : null;
+  const earlyAddRef = useRef<HTMLButtonElement | null>(null);
+  const rowAddRef = useRef<HTMLButtonElement | null>(null);
+  const earlyReplaceRef = useRef<HTMLButtonElement | null>(null);
+  const rowReplaceRef = useRef<HTMLButtonElement | null>(null);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  // A choice the plan did not take within a few seconds (it changed under it) is offered again, never left dead.
+  const sentKey = offerShown?.state === "sent" ? offer?.key : null;
+  useEffect(() => {
+    if (sentKey === null || sentKey === undefined) return;
+    const timer = window.setTimeout(() => {
+      setOffer((previous) => (previous && previous.key === sentKey && previous.at.state === "sent" ? { ...previous, at: { state: "open" } } : previous));
+    }, 3000);
+    return () => window.clearTimeout(timer);
+  }, [sentKey]);
+  // Focus follows the offer: to Add when it opens, to Replace when an Add is refused (the way still open).
+  const offerFocus = offerShown && (offerShown.state === "open" || offerShown.state === "rejected") ? `${offer?.key}:${offerShown.state}` : null;
+  useEffect(() => {
+    if (!offerFocus) return;
+    const refused = offerFocus.endsWith(":rejected");
+    const shown = refused
+      ? focusShown([earlyReplaceRef.current, rowReplaceRef.current])
+      : focusShown([earlyAddRef.current, rowAddRef.current]);
+    if (!shown && !refused) focusShown([earlyReplaceRef.current, rowReplaceRef.current]);
+  }, [offerFocus]);
+
   // M1, the hero receipt: once the interactive card is in view (or 1.2 s after it mounts), the shared
   // time hatches in, the tested slot flies, the bracket under what is left shrinks and the index counts
   // down. The server HTML is the final frame; under reduced motion and in print nothing plays. While
@@ -638,20 +886,65 @@ export function DecisionCard({
     if (!reducedMotion()) rootRef.current?.classList.add("cc-card-enter");
   }, []);
 
-  function openMove() {
+  /** Hands the move to the plan (`choice`: replace, the default, or add after the steps it was scored with). */
+  function keepMove(choice?: PlanChoice, added?: string) {
     if (!onOpenMove) return;
     setPressed(true);
     setFocusAsk((previous) => ({ key: previous.key + 1, at: Date.now() }));
+    setHeroPlay(null);
+    setPlayKey((key) => key + 1);
+    const extra = choice ? onOpenMove(choice) : onOpenMove();
+    say([copy.testing, added ?? null, typeof extra === "string" ? extra : null].filter(Boolean).join(" "));
+  }
+
+  function openMove() {
+    if (!onOpenMove) return;
+    const steps = planAtPress(plan, () => readStoredMoves(copy.presetId));
+    const kind = keepPressKind(steps, copy.seedMove, Boolean(kept?.move));
     // Pressing it again for a move the plan already holds changes nothing and says so.
-    if (kept?.move) {
+    if (kind === "already") {
+      setPressed(true);
+      setFocusAsk((previous) => ({ key: previous.key + 1, at: Date.now() }));
       say(ALREADY_KEPT);
       onOpenMove();
       return;
     }
-    setHeroPlay(null);
-    setPlayKey((key) => key + 1);
-    const extra = onOpenMove();
-    say([copy.testing, typeof extra === "string" ? extra : null].filter(Boolean).join(" "));
+    // The plan holds other steps: ask first, Add or Replace; nothing changes yet.
+    if (kind === "offer") {
+      const stored = held.length === 0;
+      setOffer((previous) => ({ base: encodeMoves(steps), steps, stored, key: (previous?.key ?? 0) + 1, at: { state: "open" } }));
+      say(`Your plan already holds ${pluralize(steps.length, keptWord(steps))}. Add this move to it, or replace your plan.`);
+      return;
+    }
+    keepMove();
+  }
+
+  async function addMove() {
+    const move = copy.seedMove;
+    if (!move || !offer || !offerShown || offerShown.state === "checking" || offerShown.state === "sent") return;
+    const { base: key, steps: base, stored, key: number } = offer;
+    setOffer({ base: key, steps: base, stored, key: number, at: { state: "checking" } });
+    say("Scoring your plan with this move added.");
+    const outcome = await checkAdd(
+      base,
+      { act: copy.moveAct ?? copy.timeline?.movingName ?? "this set", move },
+      check ?? ((steps) => checkPlan(copy.presetId, steps)),
+      "move",
+    );
+    if (!alive.current) return;
+    if (outcome.kind === "rejected") {
+      setOffer({ base: key, steps: base, stored, key: number + 1, at: { state: "rejected", reason: outcome.reason, retry: outcome.retry } });
+      say(outcome.reason);
+      return;
+    }
+    setOffer({ base: key, steps: base, stored, key: number, at: { state: "sent" } });
+    keepMove(outcome.choice, `Added: ${pluralize(outcome.count, keptWord([...base, move]))}.`);
+  }
+
+  function replaceMove() {
+    if (!offerShown || offerShown.state === "sent") return;
+    setOffer((previous) => (previous ? { ...previous, at: { state: "sent" } } : previous));
+    keepMove({ mode: "replace" });
   }
 
   function tryRule() {
@@ -718,7 +1011,7 @@ export function DecisionCard({
   // fact of the board, never the teal of a Qloo figure.
   const hiddenLine = isHiddenDecision(copy) ? (
     <p data-hidden-line="" className="text-sm leading-snug">
-      {hiddenClashLine({ count: hiddenCount, genres, taste: tasteOverlapOf(copy), invented })}
+      {hiddenClashLine({ count: hiddenCount, ranked: rankedCount, genres, taste: tasteOverlapOf(copy), invented })}
     </p>
   ) : null;
   // The working's last lines on a published day: where the reading came from, with the Recorded stamp,
@@ -747,12 +1040,24 @@ export function DecisionCard({
   // first screen holds the result, its one filled action and the clash. From 1024 px this copy is
   // display:none and the action row's copy shows instead: one copy displayed at every width, neither
   // with an id. Both call the same `openMove`, so the M1 play and its replay start from either.
+  // The Add or Replace offer sits under whichever copy of the button is displayed (one copy per width).
   const earlyMove =
     showMove && hasIndex ? (
       <div className="mt-4 lg:hidden max-sm:mt-3">
         <Button type="button" variant="default" className={wrap} onClick={openMove}>
           {KEEP_MOVE}
         </Button>
+        {offerShown ? (
+          <KeepMoveOffer
+            offer={offerShown}
+            held={offer?.steps ?? held}
+            onAdd={addMove}
+            onReplace={replaceMove}
+            addRef={earlyAddRef}
+            replaceRef={earlyReplaceRef}
+            className="mt-2"
+          />
+        ) : null}
         <KeptNotice shown={keptShown} linkRef={earlyLinkRef} className={keptShown ? "mt-1" : undefined} />
       </div>
     ) : null;
@@ -765,10 +1070,18 @@ export function DecisionCard({
       data-shared-time=""
       className={cn("mt-3 w-full min-w-0 max-sm:mt-4", earlyMove && "max-lg:mt-4 max-sm:mt-3")}
     >
-      <PairStrip lanes={lanes} description={timelineText} motion={motion} evenPitch />
-      <figcaption className="mt-3 text-[0.8125rem] leading-snug text-muted-foreground">
-        Solid: where the sets play now. Dashed: tested. Hatched: time shared.
-      </figcaption>
+      {/* How to read the marks ends the strip's accessible name; the line under it says what else the move changes. */}
+      <PairStrip
+        lanes={lanes}
+        description={timelineText ? `${timelineText} ${STRIP_LEGEND}` : STRIP_LEGEND}
+        motion={motion}
+        evenPitch
+      />
+      {copy.sideEffects ? (
+        <figcaption data-side-effects="" className="mt-2 text-[0.8125rem] leading-snug text-muted-foreground">
+          {copy.sideEffects}
+        </figcaption>
+      ) : null}
     </figure>
   ) : null;
 
@@ -874,7 +1187,18 @@ export function DecisionCard({
         ) : null}
         {workingToggle}
       </div>
-      {/* The row's own confirmation, shown with the row's button (from 1024 px when the card has the early copy). */}
+      {/* The row's own offer and confirmation, shown with the row's button (from 1024 px when the card has the early copy). */}
+      {showMove && offerShown ? (
+        <KeepMoveOffer
+          offer={offerShown}
+          held={offer?.steps ?? held}
+          onAdd={addMove}
+          onReplace={replaceMove}
+          addRef={rowAddRef}
+          replaceRef={rowReplaceRef}
+          className={cn("mt-2", earlyMove && "max-lg:hidden")}
+        />
+      ) : null}
       {showMove ? (
         <KeptNotice
           shown={keptShown}

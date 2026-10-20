@@ -63,6 +63,9 @@ export { stripDomain };
 /** Where the section sits on the page, for links that point at it. */
 export const TRY_A_MOVE_ID = "try-a-move";
 
+/** How many sets "Start with" lists: the card's pair (or the costliest clash's two sets); the select holds every other. */
+export const START_WITH = 2;
+
 /**
  * The kept plan's anchor ("See your plan" links here). It takes focus (tabIndex -1), and its scroll margin
  * clears the sticky site header (64 px) plus, from 768 px, the sticky section nav (44 px), with room to spare.
@@ -1113,16 +1116,28 @@ export function TryAMove({
     heading.focus({ preventScroll: true });
   }, [result, choiceKey]);
 
+  // Two sets to start with (`START_WITH`): the decision card's pair when both may move, else the sets of the
+  // day's costliest clashes; every other set stays one pick away in the select under them.
+  const cardA = cardMove?.pair?.aId ?? null;
+  const cardB = cardMove?.pair?.bId ?? null;
   const starters = useMemo(() => {
     if (moves.length > 0 && state.plan) {
       const pickable = sets.map((set) => ({
         ...set,
         locked: set.locked || isLocked(set.actId),
       }));
-      return planStarters(state.plan.clashes, pickable, moved);
+      return planStarters(state.plan.clashes, pickable, moved, START_WITH);
     }
-    return startingSets(ranked, isLocked).filter((set) => !moved.has(set.actId));
-  }, [moves.length, state.plan, sets, ranked, isLocked, moved]);
+    const free = (id: string) => !moved.has(id) && !isLocked(id) && sets.some((set) => set.actId === id && !set.locked);
+    const lead = (cardA && cardB ? [cardA, cardB] : []).filter(free).flatMap((id) => {
+      const set = sets.find((item) => item.actId === id);
+      return set ? [{ actId: set.actId, name: set.name }] : [];
+    });
+    const rest = startingSets(ranked, isLocked).filter(
+      (set) => !moved.has(set.actId) && !lead.some((item) => item.actId === set.actId),
+    );
+    return [...lead, ...rest].slice(0, START_WITH);
+  }, [moves.length, state.plan, sets, ranked, isLocked, moved, cardA, cardB]);
 
   // After the first kept step: the next clash in the published day's ranking that no kept step addresses (the
   // plan's own ranking is not recomputed for it), and the set in it that may move.
@@ -1646,7 +1661,9 @@ export function TryAMove({
                 stage={seedStage}
                 end={seedEnd}
                 minutes={seedMinutes}
-                strip={seedFigures?.strip ?? null}
+                // The card's own move: the decision card above draws this same before/after strip, so here
+                // the figures stand alone. A set the visitor picks still gets its strip (BestPlaceColumn).
+                strip={null}
                 check={seedCheck}
                 changes={seedChanges}
                 keepFull={used >= MAX_STACK}

@@ -27,13 +27,13 @@ export type ReadingRank = { rank: number; of?: number; tied?: number } | null | 
 export type SharedPair = { aId: string; bId: string; minutes: number };
 
 /**
- * Every pair of the day's sets that share time, leaving out acts the report could not price: the
+ * Every pair of the day's sets that share time, leaving out acts the report could not score: the
  * same pairs the lens rankings rank (their count is the lens's "of N"). Read from the timetable, not
  * from the report's clash list, which holds only the costliest pairs.
  */
 export function concurrentPairs(preset: Pick<Preset, "festival" | "report">, day: number): SharedPair[] {
-  const unpriced = new Set(preset.report.coverage.unscored.map((act) => act.act_id));
-  const slots = preset.festival.timetable.filter((slot) => slot.day === day && !unpriced.has(slot.act_id));
+  const unscored = new Set(preset.report.coverage.unscored.map((act) => act.act_id));
+  const slots = preset.festival.timetable.filter((slot) => slot.day === day && !unscored.has(slot.act_id));
   const pairs: SharedPair[] = [];
   for (let i = 0; i < slots.length; i += 1) {
     for (let k = i + 1; k < slots.length; k += 1) {
@@ -45,11 +45,11 @@ export function concurrentPairs(preset: Pick<Preset, "festival" | "report">, day
 }
 
 export type ThreeReadings = {
-  /** Minutes shared alone, among the day's concurrent priced pairs; ties share a place. */
+  /** Minutes shared alone, among the day's concurrent scored pairs; ties share a place. */
   time: ReadingRank;
   /** Draw and time shared: the lens block's ranking without taste overlap. */
   draw: ReadingRank;
-  /** Draw, time and taste overlap: the price this page uses, as the lens block ranks it. */
+  /** Draw, time and taste overlap: the index this page uses, as the lens block ranks it. */
   taste: ReadingRank;
 };
 
@@ -64,7 +64,7 @@ function lensRank(rank: number | null, of: number | undefined): ReadingRank {
 /**
  * The pair's place in three rankings of the same timetable. The two with draw come from the lens data
  * the "What taste overlap changes" block prints, read from the same entry, so the two never disagree;
- * the one on minutes alone is counted from the day's concurrent priced pairs. Nothing is estimated:
+ * the one on minutes alone is counted from the day's concurrent scored pairs. Nothing is estimated:
  * a reading the data does not hold is undefined.
  */
 export function threeReadings(
@@ -184,19 +184,19 @@ const LABEL_ROOM = 0.3;
 /**
  * One reading on the shared axis: its place set in the 1.75rem numeral with "of N" (its own count) and
  * any tie under it, beside the marker and above the 2px border-strong axis line. The ink dot sits on a
- * 2px card halo; the price used here has the larger dot. The axis has 8px ticks at #1 and at #maxOf,
+ * 2px card halo; the index used here has the larger dot. The axis has 8px ticks at #1 and at #maxOf,
  * and one more at the reading's own last place when it ranks fewer pairs than the longest reading.
  * The label sits right of the marker, or left of it once the marker is past 70% of the track (or of the
  * reading's own shorter track), so it never runs over the track's ends.
  */
-function RankPlace({ reading, maxOf, price }: { reading: PlacedReading; maxOf: number; price: boolean }) {
+function RankPlace({ reading, maxOf, used }: { reading: PlacedReading; maxOf: number; used: boolean }) {
   const at = rankX(reading.rank, maxOf);
   const end = rankX(reading.of, maxOf);
   const flip = end - at < LABEL_ROOM && at > end - at;
   const room = (flip ? at : 1 - at) * 100;
   const tie = tieText(reading.tied);
   const pos = `${at * 100}%`;
-  const offset = price ? "14px" : "12px";
+  const offset = used ? "14px" : "12px";
   return (
     <div className="min-w-0 px-2" data-at={at} data-flip={flip ? "" : undefined}>
       <div
@@ -227,7 +227,7 @@ function RankPlace({ reading, maxOf, price }: { reading: PlacedReading; maxOf: n
           data-marker=""
           className={cn(
             "absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-card bg-foreground",
-            price ? "size-4" : "size-3",
+            used ? "size-4" : "size-3",
           )}
           style={{ left: pos }}
         />
@@ -257,7 +257,7 @@ function ReadingValue({ reading }: { reading: ReadingRank }) {
 /**
  * The three readings as one comparative figure: three rows on one shared rank axis, #1 at the left,
  * every row placed by the same `rankX`. Each row keeps its own "of N"; there is no card per row, and
- * the price used here (the last row) differs only by its semibold label and its larger dot, never a
+ * the index used here (the last row) differs only by its semibold label and its larger dot, never a
  * border, a fill or vermilion, because it is not a cost. Rows are divided by 1px hairlines. Under the
  * rows, one axis caption built from the readings. A reading with no figure keeps its text and no marker;
  * with no placeable reading there is no axis and the rows print as text.
@@ -268,7 +268,7 @@ function ReadingsFigure({ steps }: { steps: readonly TriptychStep[] }) {
     <div data-rank-figure="">
       <ol className="divide-y divide-border">
         {steps.map((step, i) => {
-          const price = i === steps.length - 1;
+          const used = i === steps.length - 1;
           return (
             <li
               key={step.key}
@@ -276,11 +276,11 @@ function ReadingsFigure({ steps }: { steps: readonly TriptychStep[] }) {
               className="grid gap-y-3 py-4 first:pt-0 sm:grid-cols-[13rem_minmax(0,1fr)] sm:items-end sm:gap-x-6"
             >
               <div className="min-w-0">
-                <p className={cn("text-sm leading-5", price ? "font-semibold" : "font-normal")}>{step.label}</p>
+                <p className={cn("text-sm leading-5", used ? "font-semibold" : "font-normal")}>{step.label}</p>
                 <p className="text-[0.8125rem] leading-snug text-muted-foreground">{step.gloss}</p>
               </div>
               {maxOf !== null && placed(step.reading) ? (
-                <RankPlace reading={step.reading} maxOf={maxOf} price={price} />
+                <RankPlace reading={step.reading} maxOf={maxOf} used={used} />
               ) : (
                 <div className={cn("min-w-0", maxOf !== null && "px-2")}>
                   <ReadingValue reading={step.reading} />
@@ -337,7 +337,7 @@ function triptychParts(
     {
       key: "taste",
       label: synthetic ? "Time + draw + invented taste" : "Time + draw + Qloo taste",
-      gloss: "Taste overlap added: the price used here",
+      gloss: "Taste overlap added: the index used here",
       reading: readings.taste,
     },
   ];
@@ -347,7 +347,7 @@ function triptychParts(
 
 /**
  * "What Qloo changes", its own block right after the hero: the decision's clash ranked on minutes
- * shared alone, on time and draw, and on time, draw and Qloo taste overlap (the price used here), on
+ * shared alone, on time and draw, and on time, draw and Qloo taste overlap (the index used here), on
  * the same timetable. Every rank is read by `threeReadings` from the lens data and the day's
  * concurrent pairs, never typed. It shows what taste changes and says in the same line that this does
  * not make the taste order right. On the invented day every figure is labelled as made up. The home
@@ -364,7 +364,7 @@ export function WhatQlooChanges({
   className,
 }: {
   lenses: Lenses | null;
-  /** The day's concurrent priced pairs (`concurrentPairs`). */
+  /** The day's concurrent scored pairs (`concurrentPairs`). */
   pairs: readonly SharedPair[];
   aId: string;
   bId: string;
@@ -409,10 +409,13 @@ export type TasteSectionClash = { aId: string; bId: string; aName: string; bName
 /**
  * The taste section, right after the hero: one telling of what Qloo taste overlap changes. With the
  * decision's clash and the lens data it ranks that clash three ways (minutes alone, time and draw, the
- * price used here) with its claim and limit visible; the equal-popularity pairs and the day's two
- * rankings each sit in one closed disclosure whose summary says what is inside. The failed test closes
- * the section, always: it renders with no clash, no lens data, no twins and on the invented day, and
- * never inside a disclosure.
+ * index used here) with its claim and limit visible; the equal-popularity pairs and the day's two
+ * rankings each sit in one closed disclosure whose summary says what is inside. When taste leaves the
+ * card's pair where time and draw put it (Riot Fest's "#1 either way"), the clash taste lowers leads the
+ * readings; when taste moves the pair (Glastonbury), it follows them. The failed test is always there,
+ * last in reading order and never inside a disclosure: from 1024px under the heading in the left column,
+ * beside the readings; below that, after the folds. It renders with no clash, no lens data, no twins and
+ * on the invented day.
  */
 export function TasteSection({
   clash,
@@ -427,11 +430,11 @@ export function TasteSection({
   /** The decision card's clash; null while the card is loading or is for another day. */
   clash: TasteSectionClash | null;
   lenses: Lenses | null;
-  /** The day's concurrent priced pairs (`concurrentPairs`). */
+  /** The day's concurrent scored pairs (`concurrentPairs`). */
   pairs: readonly SharedPair[];
   twins: readonly Twin[];
   acts: readonly Act[];
-  /** The day's priced concurrent clashes, costliest first: a lens row opens its drawer from here. */
+  /** The day's scored concurrent clashes, costliest first: a lens row opens its drawer from here. */
   ranked: readonly PairClash[];
   onOpen: (clash: PairClash, trigger: HTMLElement | null) => void;
   synthetic?: boolean;
@@ -446,12 +449,45 @@ export function TasteSection({
   const otherHalf = fallen
     ? otherHalfLine(fallen, fallenClash ? formatOverlap(fallenClash.audience_overlap) : null, synthetic)
     : null;
+  // When taste leaves the card's pair where time and draw put it ("#N either way"), the clash taste lowers is the
+  // finding, so its line leads the readings; when taste moves the pair, the readings lead and the line follows.
+  const unmoved = parts !== null && parts.readings.draw?.rank !== undefined && parts.readings.draw?.rank === parts.readings.taste?.rank;
+  const otherHalfBlock = otherHalf ? (
+    <p data-other-half="" className={cn("max-w-prose text-[0.9375rem] leading-relaxed", unmoved ? "mb-6" : "mt-3")}>
+      {otherHalf}
+    </p>
+  ) : null;
+  const folds =
+    twins.length > 0 || lenses ? (
+      <div className="space-y-3">
+        {twins.length > 0 ? (
+          <MoreDetails summary={`Equal-popularity pairs (${twins.length})`}>
+            <TwinCards twins={twins} acts={acts} synthetic={synthetic} embedded className="mt-4 mb-3" />
+          </MoreDetails>
+        ) : null}
+        {lenses ? (
+          <MoreDetails
+            summary={
+              <span>
+                Two rankings of this day{" "}
+                <span className="font-normal text-muted-foreground">({lenses.ranked} costliest clashes)</span>
+              </span>
+            }
+          >
+            <TasteLens lenses={lenses} ranked={ranked} onOpen={onOpen} synthetic={synthetic} embedded className="mt-4 mb-3" />
+          </MoreDetails>
+        ) : null}
+      </div>
+    ) : null;
   return (
     <section id={WHAT_QLOO_ID} aria-labelledby="what-qloo-heading">
       <div className="container-page py-16 lg:py-20">
         {clash && parts ? (
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] lg:gap-10">
-            <div className="min-w-0">
+          // From 1024px: the heading and its line in the left column, the failed test under them in the same
+          // column (so the column has no hole beside the figure), and the readings, their claim and the two folds
+          // on the right. In reading order (and on a phone): heading, readings, folds, then the failed test last.
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] lg:grid-rows-[auto_1fr] lg:gap-x-10 lg:gap-y-0">
+            <div className="min-w-0 lg:col-start-1 lg:row-start-1">
               <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
                 {parts.title}
                 {synthetic ? " · Invented day" : ""}
@@ -463,56 +499,29 @@ export function TasteSection({
                 {clash.aName} and {clash.bName}, the clash in the decision above, ranked three ways.
               </p>
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+              {unmoved ? otherHalfBlock : null}
               {/* One figure: the three readings on one shared rank axis; on a phone each row stacks. */}
               <ReadingsFigure steps={parts.steps} />
-              <p className="mt-4 max-w-prose font-semibold">{parts.line}</p>
+              {/* The claim and its limit, as wide as the figure it reads, so it holds one line from 1280px. */}
+              <p className="mt-4 font-semibold">{parts.line}</p>
               {parts.caption ? (
                 <p className="mt-1.5 max-w-prose text-[0.8125rem] leading-snug">{parts.caption}</p>
               ) : null}
-              {otherHalf ? (
-                <p data-other-half="" className="mt-3 max-w-prose text-[0.9375rem] leading-relaxed">
-                  {otherHalf}
-                </p>
-              ) : null}
+              {unmoved ? null : otherHalfBlock}
+              {folds ? <div className="mt-8">{folds}</div> : null}
             </div>
+            <FailedTestNote className="mt-2 min-w-0 lg:col-start-1 lg:row-start-2 lg:mt-10" synthetic={synthetic} />
           </div>
         ) : (
-          <h2 id="what-qloo-heading" className="type-title">
-            {whatChangesTitle(synthetic)}
-          </h2>
+          <>
+            <h2 id="what-qloo-heading" className="type-title">
+              {whatChangesTitle(synthetic)}
+            </h2>
+            {folds ? <div className="mt-8">{folds}</div> : null}
+            <FailedTestNote className="mt-12" synthetic={synthetic} />
+          </>
         )}
-
-        {twins.length > 0 || lenses ? (
-          <div className="mt-8 space-y-3">
-            {twins.length > 0 ? (
-              <MoreDetails summary={`Equal-popularity pairs (${twins.length})`}>
-                <TwinCards twins={twins} acts={acts} synthetic={synthetic} embedded className="mt-4 mb-3" />
-              </MoreDetails>
-            ) : null}
-            {lenses ? (
-              <MoreDetails
-                summary={
-                  <span>
-                    Two rankings of this day{" "}
-                    <span className="font-normal text-muted-foreground">({lenses.ranked} costliest clashes)</span>
-                  </span>
-                }
-              >
-                <TasteLens
-                  lenses={lenses}
-                  ranked={ranked}
-                  onOpen={onOpen}
-                  synthetic={synthetic}
-                  embedded
-                  className="mt-4 mb-3"
-                />
-              </MoreDetails>
-            ) : null}
-          </div>
-        ) : null}
-
-        <FailedTestNote className="mt-12" synthetic={synthetic} />
       </div>
     </section>
   );

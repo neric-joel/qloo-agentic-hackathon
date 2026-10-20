@@ -52,11 +52,15 @@ import {
   type StackStep,
 } from "@/lib/stack";
 
+import { DISCLOSURE_ROW_CLASS, DISCLOSURE_SUMMARY_CLASS, DisclosureMark } from "./more-details";
 import { PairStrip, bracketWords } from "./pair-strip";
 import { useAnnouncement } from "./use-announcement";
 
 /** Where the section sits, for links and the seed's scroll. */
 export const KEEP_APART_ID = "keep-apart";
+
+/** The closed disclosure's summary in Try a move: what is inside, on one line at 390 px. */
+export const KEEP_APART_SUMMARY = "Keep two sets apart: moves that end one overlap";
 
 /** Under a change that moves a set to another stage: the production side has to agree before it is used. */
 export const STAGE_SIGN_OFF = "Changes stage: needs production sign-off";
@@ -382,8 +386,9 @@ export function ChangeCard({
  * on the timetable as ghost slots that replace the kept plan's ghosts while they show; that preview
  * is separate from the kept plan. "Keep this change" adds a listed change to the plan as one step
  * (a two-set change counts 2 of its 8 moves), closes the preview and moves focus to the plan card;
- * the plan prices it and the brief prints it. The index shown is the route's, for information: it
- * does not order the list.
+ * the plan scores it and the brief prints it. The index shown is the route's, for information: it
+ * does not order the list. On the home page it sits inside Try a move as one closed disclosure (summary
+ * `KEEP_APART_SUMMARY`), which opens by itself when the decision card asks for a pair.
  */
 export function KeepApart({
   preset,
@@ -414,6 +419,9 @@ export function KeepApart({
   const resultHeadingId = useId();
   const pairHintId = useId();
   const sectionRef = useRef<HTMLElement | null>(null);
+  const foldRef = useRef<HTMLDetailsElement | null>(null);
+  // Closed until the visitor opens it, or the decision card asks for a pair.
+  const [open, setOpen] = useState(false);
   const resultRef = useRef<HTMLHeadingElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
   const refusedRef = useRef<HTMLParagraphElement | null>(null);
@@ -554,6 +562,7 @@ export function KeepApart({
     seedA !== seedB
   ) {
     setHandledSeed(seedNonce);
+    setOpen(true);
     setFirst(seedA);
     setSecond(seedB);
     setPreviewing(null);
@@ -568,7 +577,8 @@ export function KeepApart({
     if (seedNonce === 0) return;
     wantsFocus.current = true;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    sectionRef.current?.scrollIntoView({
+    // The fold's row first, so its summary (the section's visible name) shows above the opened section.
+    (foldRef.current ?? sectionRef.current)?.scrollIntoView({
       block: "start",
       behavior: reduce ? "auto" : "smooth",
     });
@@ -653,7 +663,7 @@ export function KeepApart({
   }
   /**
    * Under a row that is not kept yet: it replaces the plan's earlier change for this pair, and/or the plan
-   * already moves a set it was found for on the published day, so the receipt after pricing is what counts.
+   * already moves a set it was found for on the published day, so the index with your plan applied is what counts.
    */
   function noteOf(fix: RuleFix, fixes: RuleFixes): string | null {
     if (!onKeep) return null;
@@ -692,200 +702,223 @@ export function KeepApart({
   const note = result ? lockedNote(result) : null;
 
   return (
-    <section
-      id={KEEP_APART_ID}
-      ref={sectionRef}
-      aria-labelledby="keep-apart-heading"
-      className="mt-16 grid gap-x-12 lg:col-span-12 lg:grid-cols-12 lg:items-start"
+    // One closed disclosure under Try a move's result: a ruled row with its caret, the summary naming what is
+    // inside. Native <details>, so it opens by keyboard (Enter or Space on the summary) and without JavaScript;
+    // the card's seed opens it from state. Closing it takes any rule preview off the board.
+    <details
+      ref={foldRef}
+      data-keep-apart-fold=""
+      open={open}
+      onToggle={(event) => {
+        const now = event.currentTarget.open;
+        setOpen(now);
+        if (!now && previewing !== null) {
+          setPreviewing(null);
+          onPreview?.(null);
+        }
+      }}
+      className={cn("group mt-6 scroll-mt-12 lg:col-span-12", DISCLOSURE_ROW_CLASS)}
     >
-      <div className="lg:col-span-5">
-        <h3 id="keep-apart-heading" className="type-title">
-          Keep two sets apart
-        </h3>
-        <p className="mt-2 max-w-prose text-[0.9375rem] leading-relaxed">
-          Choose two overlapping sets. Find the moves that end the overlap without breaking a rule.
-        </p>
-        <div className="mt-4 grid gap-x-6 gap-y-4 sm:grid-cols-2 sm:items-start lg:grid-cols-1">
-          <div className="min-w-0">
-            <label htmlFor={firstId} className="block text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
-              First set
-            </label>
-            <SetSelect
-              id={firstId}
-              value={first}
-              display={fieldDisplay(sets, first)}
-              describedBy={needsPair ? pairHintId : undefined}
-              onChange={(event) => changePick(setFirst, event.target.value)}
-            >
-              <option value="" disabled>
-                Choose a set
-              </option>
-              <SetOptions groups={groups} />
-            </SetSelect>
-          </div>
-          <div className="min-w-0">
-            <label htmlFor={secondId} className="block text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
-              Second set
-            </label>
-            <SetSelect
-              id={secondId}
-              value={second}
-              display={fieldDisplay(sets, second)}
-              describedBy={needsPair ? pairHintId : undefined}
-              onChange={(event) => changePick(setSecond, event.target.value)}
-            >
-              <option value="" disabled>
-                Choose a set
-              </option>
-              {partnerGroups.partners.length > 0 ? (
-                <optgroup label={`Share time with ${byId.get(first)?.name ?? "the first set"}`}>
-                  {partnerGroups.partners.flatMap((group) =>
-                    group.sets.map((set) => (
-                      <option key={set.actId} value={set.actId}>
-                        {set.start} {set.name} · {group.label}
-                        {set.locked ? " (locked)" : ""}
-                      </option>
-                    )),
-                  )}
-                </optgroup>
-              ) : null}
-              <SetOptions groups={partnerGroups.others} />
-            </SetSelect>
-          </div>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 sm:col-span-2 lg:col-span-1">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={!canSearch}
-              aria-describedby={needsPair ? pairHintId : undefined}
-              className={cn(needsPair && "border-border bg-transparent text-muted-foreground disabled:opacity-100")}
-              onClick={() => run(first, second)}
-            >
-              Find changes that end this overlap
-            </Button>
-            {needsPair ? (
-              <p id={pairHintId} className="text-[0.8125rem] text-muted-foreground">
-                Pick two sets first
-              </p>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-6 min-w-0 lg:col-span-7 lg:mt-0" aria-busy={search.status === "loading"}>
-        {strip ? <ChosenPairStrip a={strip.a} b={strip.b} /> : null}
-        <div className={cn(strip && search.status !== "idle" && "mt-6")}>
-        {search.status === "loading" ? (
-          <div className="flex min-h-20 items-center gap-2 rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">
-            <LoaderCircle aria-hidden="true" className="size-4 motion-safe:animate-spin" />
-            Searching {SEARCH_COVERS} for {byId.get(first)?.name ?? "the first set"} and{" "}
-            {byId.get(second)?.name ?? "the second set"}
-          </div>
-        ) : search.status === "error" ? (
-          <div role="alert" className="rounded-md border border-destructive bg-card p-4">
-            <p className="text-[0.9375rem] font-semibold">Could not run this search.</p>
-            <Button ref={retryRef} type="button" variant="outline" className="mt-3" onClick={() => run(first, second)}>
-              <RotateCcw aria-hidden="true" />
-              Try again
-            </Button>
-          </div>
-        ) : search.status === "refused" ? (
-          <p
-            ref={refusedRef}
-            role="alert"
-            tabIndex={-1}
-            className="rounded-md border border-border-strong bg-card p-4 text-[0.9375rem] font-semibold outline-none"
-          >
-            {search.message}
+      <summary className={DISCLOSURE_SUMMARY_CLASS}>
+        {KEEP_APART_SUMMARY}
+        <DisclosureMark />
+      </summary>
+      <section
+        id={KEEP_APART_ID}
+        ref={sectionRef}
+        aria-labelledby="keep-apart-heading"
+        className="mt-4 mb-2 grid scroll-mt-12 gap-x-12 lg:grid-cols-12 lg:items-start"
+      >
+        <div className="lg:col-span-5">
+          {/* The summary above shows the name; the heading keeps it for the region and the heading list. */}
+          <h3 id="keep-apart-heading" className="sr-only">
+            Keep two sets apart
+          </h3>
+          <p className="max-w-prose text-[0.9375rem] leading-relaxed">
+            Choose two overlapping sets. Find the moves that end the overlap without breaking a rule.
           </p>
-        ) : result ? (
-          <div>
-            <h4
-              id={resultHeadingId}
-              ref={resultRef}
-              tabIndex={-1}
-              className="text-[0.9375rem] leading-6 font-semibold outline-none"
-            >
-              Keeping {result.a.act} and {result.b.act} apart
-            </h4>
-            {result.holds ? (
-              <p className="mt-2 text-[0.9375rem] font-semibold">
-                {result.a.act} and {result.b.act} do not share any time on this timetable, so the rule already holds.
-              </p>
-            ) : result.a.locked && result.b.locked ? (
-              <p className="mt-2 text-[0.9375rem] font-semibold">{BOTH_LOCKED}</p>
-            ) : (
-              <>
-                {note ? <p className="mt-2 text-[0.9375rem] font-semibold">{note}</p> : null}
-                {result.fixes.length === 0 ? (
-                  <p className="mt-2 text-[0.9375rem] font-semibold">{NO_RESULT}</p>
-                ) : (
-                  <>
-                    <ol aria-label="Changes that end the overlap" className="mt-3 grid gap-3 sm:grid-cols-2">
-                      {rows.map(({ fix, similar }, i) => (
-                        <ChangeCard
-                          key={fix.moves.map((move) => `${move.actId}@${move.start}`).join("+")}
-                          fix={fix}
-                          similar={similar}
-                          n={i + 1}
-                          before={before}
-                          dayLabel={dayLabel}
-                          pressed={activePreview === i}
-                          keepState={keepStateOf(fix, result)}
-                          roomText={roomTextOf(fix, result)}
-                          note={noteOf(fix, result)}
-                          onPreview={() => previewFix(fix, i, result)}
-                          onKeep={() => keepFix(fix, result)}
-                          buttonRef={(element) => {
-                            if (element) previewButtons.current.set(i, element);
-                            else previewButtons.current.delete(i);
-                          }}
-                        />
-                      ))}
-                    </ol>
-                    {/* What the search covered, set directly under the changes it qualifies. */}
-                    <p className="mt-2.5 max-w-prose text-[0.8125rem] leading-relaxed text-muted-foreground">
-                      {searchedSentence(result)} {SEARCH_RULE} {reordered ? SAME_STAGE_FIRST : SMALLEST_FIRST}{" "}
-                      {result.singleSetPlaces === 0
-                        ? "This search found no single-set place that ends it."
-                        : `${pluralize(result.singleSetPlaces, "single-set place")} end${result.singleSetPlaces === 1 ? "s" : ""} it.`}
-                      {result.fixesFound > covered ? ` Showing ${covered} of ${result.fixesFound} changes found.` : ""}
-                      {covered > rows.length
-                        ? " A change that moves the same sets to the same stages, with starts within 5 minutes, shares a row."
-                        : ""}
-                    </p>
-                    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-                      <Button type="button" variant="outline" disabled={activePreview === null} onClick={clearPreview}>
-                        Clear preview
-                      </Button>
-                      <p className="min-w-0 flex-1 basis-64 text-xs leading-relaxed text-muted-foreground lg:text-[0.8125rem]">
-                        {INDEX_NOTE}
-                      </p>
-                    </div>
-                    {activePreview !== null ? (
-                      <p className="mt-2 text-xs leading-relaxed text-muted-foreground lg:text-[0.8125rem]">
-                        This is a tested timetable, not a kept change. While it shows, it replaces any kept plan’s
-                        ghosts on the timetable; Clear preview brings them back. The links and rank badges still
-                        describe the published day.
-                      </p>
-                    ) : null}
-                  </>
-                )}
-              </>
-            )}
+          <div className="mt-4 grid gap-x-6 gap-y-4 sm:grid-cols-2 sm:items-start lg:grid-cols-1">
+            <div className="min-w-0">
+              <label htmlFor={firstId} className="block text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
+                First set
+              </label>
+              <SetSelect
+                id={firstId}
+                value={first}
+                display={fieldDisplay(sets, first)}
+                describedBy={needsPair ? pairHintId : undefined}
+                onChange={(event) => changePick(setFirst, event.target.value)}
+              >
+                <option value="" disabled>
+                  Choose a set
+                </option>
+                <SetOptions groups={groups} />
+              </SetSelect>
+            </div>
+            <div className="min-w-0">
+              <label htmlFor={secondId} className="block text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
+                Second set
+              </label>
+              <SetSelect
+                id={secondId}
+                value={second}
+                display={fieldDisplay(sets, second)}
+                describedBy={needsPair ? pairHintId : undefined}
+                onChange={(event) => changePick(setSecond, event.target.value)}
+              >
+                <option value="" disabled>
+                  Choose a set
+                </option>
+                {partnerGroups.partners.length > 0 ? (
+                  <optgroup label={`Share time with ${byId.get(first)?.name ?? "the first set"}`}>
+                    {partnerGroups.partners.flatMap((group) =>
+                      group.sets.map((set) => (
+                        <option key={set.actId} value={set.actId}>
+                          {set.start} {set.name} · {group.label}
+                          {set.locked ? " (locked)" : ""}
+                        </option>
+                      )),
+                    )}
+                  </optgroup>
+                ) : null}
+                <SetOptions groups={partnerGroups.others} />
+              </SetSelect>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 sm:col-span-2 lg:col-span-1">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!canSearch}
+                aria-describedby={needsPair ? pairHintId : undefined}
+                className={cn(needsPair && "border-border bg-transparent text-muted-foreground disabled:opacity-100")}
+                onClick={() => run(first, second)}
+              >
+                Find changes that end this overlap
+              </Button>
+              {needsPair ? (
+                <p id={pairHintId} className="text-[0.8125rem] text-muted-foreground">
+                  Pick two sets first
+                </p>
+              ) : null}
+            </div>
           </div>
-        ) : null}
         </div>
-      </div>
 
-      <p role="status" aria-live="polite" className="sr-only">
-        {announcement ||
-          (result && !result.holds
-            ? result.fixes.length > 0
-              ? `${pluralize(result.fixesFound, "change")} found for ${result.a.act} and ${result.b.act}.`
-              : NO_RESULT
-            : "")}
-      </p>
-    </section>
+        <div className="mt-6 min-w-0 lg:col-span-7 lg:mt-0" aria-busy={search.status === "loading"}>
+          {strip ? <ChosenPairStrip a={strip.a} b={strip.b} /> : null}
+          <div className={cn(strip && search.status !== "idle" && "mt-6")}>
+          {search.status === "loading" ? (
+            <div className="flex min-h-20 items-center gap-2 rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">
+              <LoaderCircle aria-hidden="true" className="size-4 motion-safe:animate-spin" />
+              Searching {SEARCH_COVERS} for {byId.get(first)?.name ?? "the first set"} and{" "}
+              {byId.get(second)?.name ?? "the second set"}
+            </div>
+          ) : search.status === "error" ? (
+            <div role="alert" className="rounded-md border border-destructive bg-card p-4">
+              <p className="text-[0.9375rem] font-semibold">Could not run this search.</p>
+              <Button ref={retryRef} type="button" variant="outline" className="mt-3" onClick={() => run(first, second)}>
+                <RotateCcw aria-hidden="true" />
+                Try again
+              </Button>
+            </div>
+          ) : search.status === "refused" ? (
+            <p
+              ref={refusedRef}
+              role="alert"
+              tabIndex={-1}
+              className="rounded-md border border-border-strong bg-card p-4 text-[0.9375rem] font-semibold outline-none"
+            >
+              {search.message}
+            </p>
+          ) : result ? (
+            <div>
+              <h4
+                id={resultHeadingId}
+                ref={resultRef}
+                tabIndex={-1}
+                className="text-[0.9375rem] leading-6 font-semibold outline-none"
+              >
+                Keeping {result.a.act} and {result.b.act} apart
+              </h4>
+              {result.holds ? (
+                <p className="mt-2 text-[0.9375rem] font-semibold">
+                  {result.a.act} and {result.b.act} do not share any time on this timetable, so the rule already holds.
+                </p>
+              ) : result.a.locked && result.b.locked ? (
+                <p className="mt-2 text-[0.9375rem] font-semibold">{BOTH_LOCKED}</p>
+              ) : (
+                <>
+                  {note ? <p className="mt-2 text-[0.9375rem] font-semibold">{note}</p> : null}
+                  {result.fixes.length === 0 ? (
+                    <p className="mt-2 text-[0.9375rem] font-semibold">{NO_RESULT}</p>
+                  ) : (
+                    <>
+                      <ol aria-label="Changes that end the overlap" className="mt-3 grid gap-3 sm:grid-cols-2">
+                        {rows.map(({ fix, similar }, i) => (
+                          <ChangeCard
+                            key={fix.moves.map((move) => `${move.actId}@${move.start}`).join("+")}
+                            fix={fix}
+                            similar={similar}
+                            n={i + 1}
+                            before={before}
+                            dayLabel={dayLabel}
+                            pressed={activePreview === i}
+                            keepState={keepStateOf(fix, result)}
+                            roomText={roomTextOf(fix, result)}
+                            note={noteOf(fix, result)}
+                            onPreview={() => previewFix(fix, i, result)}
+                            onKeep={() => keepFix(fix, result)}
+                            buttonRef={(element) => {
+                              if (element) previewButtons.current.set(i, element);
+                              else previewButtons.current.delete(i);
+                            }}
+                          />
+                        ))}
+                      </ol>
+                      {/* What the search covered, set directly under the changes it qualifies. */}
+                      <p className="mt-2.5 max-w-prose text-[0.8125rem] leading-relaxed text-muted-foreground">
+                        {searchedSentence(result)} {SEARCH_RULE} {reordered ? SAME_STAGE_FIRST : SMALLEST_FIRST}{" "}
+                        {result.singleSetPlaces === 0
+                          ? "This search found no single-set place that ends it."
+                          : `${pluralize(result.singleSetPlaces, "single-set place")} end${result.singleSetPlaces === 1 ? "s" : ""} it.`}
+                        {result.fixesFound > covered ? ` Showing ${covered} of ${result.fixesFound} changes found.` : ""}
+                        {covered > rows.length
+                          ? " A change that moves the same sets to the same stages, with starts within 5 minutes, shares a row."
+                          : ""}
+                      </p>
+                      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                        <Button type="button" variant="outline" disabled={activePreview === null} onClick={clearPreview}>
+                          Clear preview
+                        </Button>
+                        <p className="min-w-0 flex-1 basis-64 text-xs leading-relaxed text-muted-foreground lg:text-[0.8125rem]">
+                          {INDEX_NOTE}
+                        </p>
+                      </div>
+                      {activePreview !== null ? (
+                        <p className="mt-2 text-xs leading-relaxed text-muted-foreground lg:text-[0.8125rem]">
+                          This is a tested timetable, not a kept change. While it shows, it replaces any kept plan’s
+                          ghosts on the timetable; Clear preview brings them back. The links and rank badges still
+                          describe the published day.
+                        </p>
+                      ) : null}
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          ) : null}
+          </div>
+        </div>
+
+        <p role="status" aria-live="polite" className="sr-only">
+          {announcement ||
+            (result && !result.holds
+              ? result.fixes.length > 0
+                ? `${pluralize(result.fixesFound, "change")} found for ${result.a.act} and ${result.b.act}.`
+                : NO_RESULT
+              : "")}
+        </p>
+      </section>
+    </details>
   );
 }

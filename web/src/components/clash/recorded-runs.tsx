@@ -61,23 +61,23 @@ export function RecordedRuns({
         className={cn("border-b border-border", (heading || description) && "mt-3")}
       >
         {runs.map((run) => (
+          // Below 640 px the question runs the full width and its title shares the next line with Replay; from
+          // 640 px the question and its title sit in one column and Replay beside them, as before.
           <li
             key={run.id}
-            className="grid grid-cols-[minmax(0,1fr)] gap-x-6 border-t border-border py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-baseline"
+            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 border-t border-border py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-baseline sm:gap-x-6"
           >
-            <div className="min-w-0">
-              <p className="text-[0.9375rem] leading-relaxed break-words">{run.question}</p>
-              <p className="mt-0.5 text-[0.8125rem] text-muted-foreground">
-                {run.title}
-                {qlooCounts ? ` · ${runQlooLine(run)}` : null}
-              </p>
-            </div>
+            <p className="col-span-2 text-[0.9375rem] leading-relaxed break-words sm:col-span-1">{run.question}</p>
+            <p className="col-start-1 row-start-2 min-w-0 text-[0.8125rem] text-muted-foreground">
+              {run.title}
+              {qlooCounts ? ` · ${runQlooLine(run)}` : null}
+            </p>
             <Button
               type="button"
               variant="ruled"
               disabled={disabled}
               onClick={() => onPlay(run)}
-              className="mt-1 justify-self-start sm:mt-0"
+              className="col-start-2 row-start-2 justify-self-end sm:row-span-2 sm:row-start-1 sm:self-start sm:justify-self-start"
             >
               Replay
               <span className="sr-only"> the recorded run: {run.title}</span>

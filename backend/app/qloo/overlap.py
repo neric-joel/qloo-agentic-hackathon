@@ -2,7 +2,9 @@
 
 For each act A, one Insights call scores every other act on the lineup for A's audience
 (``filter.results.entities`` shortlist ranking). Rows are rank-normalized so acts with very
-different popularity are comparable, then the two directions are averaged into a symmetric matrix.
+different popularity are comparable, then the two directions are averaged into a symmetric matrix. A pair
+scored in only one direction keeps that one score and is marked; a pair scored in neither is unknown and is
+left out, never written as 0.
 Control acts from unrelated genres are scored alongside the lineup: if they don't land near the
 bottom, the signal can't discriminate and the result says so instead of pretending.
 """
@@ -12,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import re
 import unicodedata
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from typing import Any, Literal
@@ -50,6 +52,9 @@ class OverlapResult:
     control_rank: float | None  # mean percentile of control acts (lower is better)
     source: Literal["qloo"] = "qloo"
     notes: list[str] = field(default_factory=list)
+    # act name -> act name -> how many directions the value rests on: 2 (both acts' rankings scored the
+    # other) or 1 (only one did). A pair of usable acts with no entry here has no score: it is unknown.
+    directions: dict[str, dict[str, int]] = field(default_factory=dict)
 
 
 def _genres(entity: dict[str, Any]) -> list[str]:
@@ -225,6 +230,49 @@ def percentiles(scores: dict[str, float]) -> dict[str, float]:
     return out
 
 
+def combine_rows(
+    acts: Sequence[ResolvedAct], rows: Mapping[str, Mapping[str, float]]
+) -> tuple[dict[str, dict[str, float]], dict[str, dict[str, int]]]:
+    """Each pair's overlap (the mean of the directions present) and how many directions it rests on.
+
+    ``rows`` maps an act's entity id to its percentile row. A pair present in neither row gets no value and
+    no direction count: it is unknown, not 0.
+    """
+    values: dict[str, dict[str, float]] = {a.name: {} for a in acts}
+    directions: dict[str, dict[str, int]] = {a.name: {} for a in acts}
+    for a in acts:
+        for b in acts:
+            if a is b:
+                continue
+            ab = rows.get(a.entity_id or "", {}).get(b.entity_id or "")
+            ba = rows.get(b.entity_id or "", {}).get(a.entity_id or "")
+            pair = [v for v in (ab, ba) if v is not None]
+            if pair:
+                values[a.name][b.name] = round(sum(pair) / len(pair), 4)
+                directions[a.name][b.name] = len(pair)
+    return values, directions
+
+
+def _pairs(count: int) -> str:
+    return "1 pair" if count == 1 else f"{count} pairs"
+
+
+def direction_notes(acts: Sequence[ResolvedAct], directions: Mapping[str, Mapping[str, int]]) -> list[str]:
+    """Plain notes on pairs scored from one direction only and pairs with no score at all."""
+    one_way = unknown = 0
+    for index, a in enumerate(acts):
+        for b in acts[index + 1 :]:
+            found = directions.get(a.name, {}).get(b.name)
+            one_way += found == 1
+            unknown += found is None
+    notes = []
+    if one_way:
+        notes.append(f"{_pairs(one_way)} scored from one direction only: one act's ranking had no score.")
+    if unknown:
+        notes.append(f"No overlap score either way for {_pairs(unknown)}; left out, not scored as zero.")
+    return notes
+
+
 async def build_overlap(
     client: QlooClient,
     names: Sequence[str],
@@ -255,17 +303,8 @@ async def build_overlap(
             return act.entity_id, {}
 
     rows = dict(await asyncio.gather(*(row_for(a) for a in usable)))
-
-    values: dict[str, dict[str, float]] = {a.name: {} for a in usable}
-    for a in usable:
-        for b in usable:
-            if a is b:
-                continue
-            ab = rows[a.entity_id].get(b.entity_id)
-            ba = rows[b.entity_id].get(a.entity_id)
-            pair = [v for v in (ab, ba) if v is not None]
-            if pair:
-                values[a.name][b.name] = round(sum(pair) / len(pair), 4)
+    values, directions = combine_rows(usable, rows)
+    notes.extend(direction_notes(usable, directions))
 
     control_scores = [row[cid] for row in rows.values() for cid in control_ids if cid in row]
     control_rank = round(sum(control_scores) / len(control_scores), 3) if control_scores else None
@@ -274,7 +313,12 @@ async def build_overlap(
         notes.append("Control acts did not rank near the bottom; overlap scores may not discriminate here.")
 
     return OverlapResult(
-        acts=acts, values=values, discriminates=discriminates, control_rank=control_rank, notes=notes
+        acts=acts,
+        values=values,
+        discriminates=discriminates,
+        control_rank=control_rank,
+        notes=notes,
+        directions=directions,
     )
 
 

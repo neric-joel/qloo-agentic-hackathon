@@ -111,7 +111,7 @@ describe("HiddenWall: one switcher for every example", () => {
 
   it("sets the Recorded badge beside the source link, and the count line as the exhibit's closing line after the source details, in 13px muted type", () => {
     const html = renderToStaticMarkup(createElement(HiddenWall, { evidence: evidence(8, 13) }));
-    const lead = html.indexOf("The sourced examples below go further");
+    const lead = html.indexOf("The sourced examples go further");
     const tabs = html.indexOf("data-pair-nav");
     const count = html.indexOf("Showing 8 of 13");
     const next = html.indexOf("Next pair");
@@ -195,8 +195,8 @@ describe("HiddenWall: one switcher for every example", () => {
     for (const cls of ["rounded-lg", "border-surface-edge", "bg-card"]) expect(card.split(" ")).not.toContain(cls);
     expect(html).not.toContain("data-ring-rule");
     // The heading and the lead stay open above the exhibit.
-    expect(html.indexOf("The sourced examples below go further")).toBeGreaterThan(-1);
-    expect(html.indexOf("The sourced examples below go further")).toBeLessThan(html.indexOf("data-ring-card"));
+    expect(html.indexOf("The sourced examples go further")).toBeGreaterThan(-1);
+    expect(html.indexOf("The sourced examples go further")).toBeLessThan(html.indexOf("data-ring-card"));
     // Printed cards link their source in ink with a border-strong underline, never vermilion.
     expect(html).not.toContain("text-primary underline");
   });
@@ -250,8 +250,9 @@ describe("HiddenWall wording", () => {
     );
     const paragraphs = (html.match(/<p[^>]*>[\s\S]*?<\/p>/g) ?? []).map(text);
     const lead =
-      "The sourced examples below go further: pairs the press or fans called out that have no genre tag in common, yet their taste overlap is among the highest of that day.";
-    // The lead is its paragraph's one sentence, followed only by the link to /method.
+      "The sourced examples go further: pairs the press or fans called out with no genre tag in common, yet their taste overlap is among the highest of that day.";
+    expect(WALL_LEAD).toBe(lead);
+    // With no day line, the lead is its paragraph's one sentence, followed only by the link to /method.
     expect(paragraphs).toContain(`${lead} How often such pairs drew complaints`);
     expect(lead.split(" ").length).toBeLessThanOrEqual(32);
 
@@ -359,7 +360,7 @@ describe("HiddenWall: one definition of Hidden, the day's count, no lift figure"
 
   it("defines the board's label once, true to clash_label: main genre tags differ, taste overlap in the bill's top tenth", () => {
     expect(HIDDEN_DEFINITION).toBe(
-      "On the timetable, Hidden means the acts’ main genre tags differ while their taste overlap is among the day’s highest (the top tenth of the bill’s priced pairs).",
+      "On the timetable, Hidden means the acts’ main genre tags differ while their taste overlap is in the top tenth of the bill’s priced pairs.",
     );
     const html = renderToStaticMarkup(createElement(HiddenWall, { evidence: evidence(8, 13), day: five }));
     const plain = text(html);
@@ -370,6 +371,33 @@ describe("HiddenWall: one definition of Hidden, the day's count, no lift figure"
     expect(plain).toContain(`${WALL_LEAD} How often such pairs drew complaints`);
     expect(WALL_LEAD).toContain("no genre tag in common");
     expect(WALL_LEAD).toContain("taste overlap is among the highest of that day");
+  });
+
+  it("sets both definitions in one paragraph: the label's, the day's count, then the examples' rule and the link", () => {
+    // Round 33 (H5): the board definition and the sourced-examples definition were two paragraphs; now one.
+    const html = renderToStaticMarkup(createElement(HiddenWall, { evidence: evidence(8, 13), day: five }));
+    const intro = html.slice(0, html.indexOf("data-ring-card"));
+    const paragraphs = intro.match(/<p[^>]*>[\s\S]*?<\/p>/g) ?? [];
+    expect(paragraphs).toHaveLength(1);
+    const merged = paragraphs[0] ?? "";
+    expect(merged).toMatch(/^<p data-hidden-definition="" class="mt-2 max-w-\[70ch\] text-\[0\.9375rem\] leading-\[1\.55\] lg:max-w-none">/);
+    expect(text(merged)).toBe(
+      `${HIDDEN_DEFINITION} On this day, 5 of the 15 ranked clashes carry the Hidden label. ${WALL_LEAD} How often such pairs drew complaints`,
+    );
+    // Every wall line stays in the open: the rule, "no genre tag in common", the count line and "not a test".
+    const open = text(html.replace(/<details[^>]*>[\s\S]*?<\/details>/g, ""));
+    for (const line of [
+      "taste overlap is among the highest of that day",
+      "No genre tag in common",
+      "Showing 8 of 13 sourced examples. The other 5 are not saved with this day.",
+      "not a test of how well the measure spots such clashes",
+    ]) {
+      expect(open, line).toContain(line);
+    }
+    // With the examples only, or the day's line only, the paragraph holds what there is.
+    expect(text(renderToStaticMarkup(createElement(HiddenWall, { evidence: null, day: five })))).toContain(
+      `${HIDDEN_DEFINITION} On this day, 5 of the 15 ranked clashes carry the Hidden label.`,
+    );
   });
 
   it("counts the day's Hidden clashes from the ranked list, naming one or two, and says so when there are none", () => {
@@ -412,6 +440,21 @@ describe("HiddenWall: one definition of Hidden, the day's count, no lift figure"
     expect(html).toContain("Showing 8 of 13 sourced examples, saved with Test Fest 2025, Sunday. The other 5 are not saved with that day.");
     expect(html).not.toContain("not saved with this day");
     expect(html).toContain("Ann Arbor × Bo Diddly Squat (#9)");
+  });
+
+  it("labels another published day's examples with that day's title, as Riot Fest shows Glastonbury's", () => {
+    // Round 32's scope addition, kept in round 33 (H8): a published day with no examples of its own shows another
+    // published day's, labelled with the day they are saved with. The counts here are invented.
+    const label = wallCount(8, 13, "Glastonbury 2025, Sunday");
+    expect(label).toBe(
+      "Showing 8 of 13 sourced examples, saved with Glastonbury 2025, Sunday. The other 5 are not saved with that day.",
+    );
+    const html = renderToStaticMarkup(
+      createElement(HiddenWall, { evidence: evidence(8, 13), day: none, savedWith: "Glastonbury 2025, Sunday" }),
+    );
+    const open = text(html.replace(/<details[^>]*>[\s\S]*?<\/details>/g, ""));
+    expect(open).toContain(label);
+    expect(open).not.toContain("not saved with this day");
   });
 
   it("credits nothing to Qloo on the invented day in its new lines", () => {

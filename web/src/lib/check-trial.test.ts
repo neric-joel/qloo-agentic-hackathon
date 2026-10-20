@@ -20,6 +20,7 @@ import {
   gridText,
   raisesSharedTotal,
   sharedEffect,
+  longestGrownLine,
   sharedRiseLine,
   sizeLine,
   targetId,
@@ -209,13 +210,27 @@ describe("the sample: each planted break gets a result", () => {
         expect(change.sharedAfter.minutes - change.sharedBefore.minutes).toBe(net);
         expect(raisesSharedTotal(change)).toBe(net > 0);
         const line = sharedRiseLine(change);
+        // The worst overlap the change creates or lengthens, from the page's own pair list: the longest after it.
+        const grown = after.shared.filter((p) => p.minutes > (was.get(key(p)) ?? 0));
+        expect(change.grown?.count).toBe(grown.length);
+        const worst = grown.reduce<(typeof grown)[number] | null>((best, p) => (!best || p.minutes > best.minutes ? p : best), null);
+        const named = worst
+          ? (was.get(key(worst)) ?? 0) > 0
+            ? `Longest overlap that grows: ${worst.a.act} × ${worst.b.act}, ${was.get(key(worst))} → ${worst.minutes} min`
+            : `Longest new overlap: ${worst.a.act} × ${worst.b.act}, ${worst.minutes} min`
+          : null;
         if (net > 0) {
           // The warning is the gross rise on the pairs that get longer; the grid line keeps the net change.
           expect(rise).toBeGreaterThanOrEqual(net);
           expect(line).toContain(`Shared time elsewhere rises by ${rise} ${rise === 1 ? "minute" : "minutes"}.`);
           if (rise > net) expect(line).toContain(`the grid total rises by ${net} ${net === 1 ? "minute" : "minutes"}.`);
+          if (named) expect(line).toContain(`${named}.`);
         } else if (rise > 0) {
-          expect(line).toMatch(/^Some overlaps elsewhere get \d+ minutes? longer in all; others get shorter, so the grid total (falls|stays the same)\.$/);
+          // C6: the worst one named, never a summed "N minutes longer in all".
+          expect(line).toBe(
+            `${named}${grown.length > 1 ? ` (${grown.length} overlaps get longer)` : ""}; others get shorter, so the grid total ${net < 0 ? "falls" : "stays the same"}.`,
+          );
+          expect(line).not.toMatch(/longer in all/);
         } else expect(line).toBeNull();
       }
     }
@@ -233,6 +248,25 @@ describe("the sample: each planted break gets a result", () => {
     expect(sharedEffect(change)).toContain("sharing 100 minutes → 4 pairs sharing 115 minutes");
     // No pair shrinks: gross and net are the same number, and the line is the plain one.
     expect(sharedRiseLine({ ...change, sharedRise: 15 } as TrialChange)).toBe("Shared time elsewhere rises by 15 minutes.");
+  });
+
+  it("names the worst overlap a change creates or lengthens, never a sum, when the grid total does not rise (C6)", () => {
+    const base = {
+      sharedRise: 345,
+      pairBefore: null,
+      sharedBefore: { pairs: 79, minutes: 3485 },
+      sharedAfter: { pairs: 79, minutes: 3455 },
+    };
+    const created = { ...base, grown: { count: 8, longest: { a: "Louis Dunford", b: "Gurriers", was: 0, minutes: 45 } } } as TrialChange;
+    expect(sharedRiseLine(created)).toBe("Longest new overlap: Louis Dunford × Gurriers, 45 min (8 overlaps get longer); others get shorter, so the grid total falls.");
+    const grows = { ...base, grown: { count: 1, longest: { a: "Ash Meadow", b: "Brass Lantern", was: 20, minutes: 45 } } } as TrialChange;
+    expect(sharedRiseLine(grows)).toBe("Longest overlap that grows: Ash Meadow × Brass Lantern, 20 → 45 min; others get shorter, so the grid total falls.");
+    expect(sharedRiseLine({ ...created, sharedAfter: base.sharedBefore } as TrialChange)).toContain("so the grid total stays the same.");
+    for (const change of [created, grows]) expect(sharedRiseLine(change)).not.toMatch(/345|longer in all/);
+    // When the total rises the line keeps the rise, and names the worst one after it.
+    const rising = { ...created, sharedRise: 45, sharedAfter: { pairs: 80, minutes: 3530 } } as TrialChange;
+    expect(sharedRiseLine(rising)).toBe("Shared time elsewhere rises by 45 minutes. Longest new overlap: Louis Dunford × Gurriers, 45 min.");
+    expect(longestGrownLine({})).toBeNull();
   });
 
   it("keeps every new place inside the day's span, and one-set moves on the 5-minute grid", () => {

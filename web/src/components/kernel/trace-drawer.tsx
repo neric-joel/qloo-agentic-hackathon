@@ -92,6 +92,12 @@ export type TraceDrawerProps = {
   title?: string;
   /** The invented day: the notes under the counts do not describe saved Qloo responses. */
   synthetic?: boolean;
+  /**
+   * A recorded run that sent no Qloo request and scored every place it tested with the day's saved Qloo
+   * reading (the agent panel reads this from the recording). With no request listed, the drawer then says so
+   * instead of "did not use Qloo data". Never on the invented day, which has no saved Qloo reading.
+   */
+  savedReading?: boolean;
   /** Replaces the opening paragraph (which describes a live run). */
   description?: ReactNode;
   /** Replaces the run id line at the bottom. */
@@ -100,6 +106,31 @@ export type TraceDrawerProps = {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 };
+
+/**
+ * Under "No Qloo requests in this run." for a recorded run that sent none and scored every place it tested
+ * with the day's saved Qloo reading (the panel reads both from the recording).
+ */
+export const SAVED_READING_NOTE =
+  "This run sent no new Qloo request; every place it tested was scored with this day’s saved Qloo reading.";
+
+/** The same place for anything else with no request listed, and always on the invented day. */
+export const NO_QLOO_NOTE =
+  "Whatever this run produced did not use Qloo data. Check the label on each value to see where it came from.";
+
+/** Which of the two notes a drawer with no request listed prints: the saved-reading one never on the invented day. */
+export function noRequestsNote(savedReading: boolean, synthetic: boolean): string {
+  return savedReading && !synthetic ? SAVED_READING_NOTE : NO_QLOO_NOTE;
+}
+
+/**
+ * The drawer's status line: a run still streaming says so; a run with an id has finished; a ledger that is not
+ * a run (the day's saved build, one pair's requests) has nothing to finish, so it says nothing.
+ */
+export function runStatusText(live: boolean, runId?: string): string | null {
+  if (live) return "The run is still going. New requests are added here as they happen.";
+  return runId ? "The run has finished." : null;
+}
 
 /**
  * "How Qloo was used": every request the run sent to Qloo, with method, path, parameters, status,
@@ -119,6 +150,7 @@ export function TraceDrawer({
   hideIcon = false,
   title = "How Qloo was used",
   synthetic = false,
+  savedReading = false,
   description,
   footnote,
   open,
@@ -242,14 +274,13 @@ export function TraceDrawer({
                 : "Cached means answered from this app’s cache. Recorded means replayed from a saved Qloo response, not fetched live."}
           </p>
 
-          {/* Always mounted, so the end of the run is announced even while this drawer is open. */}
+          {/* Always mounted, so the end of a run is announced even while this drawer is open. A ledger that is
+              not a run (the day's saved build, one pair's requests) has no run to finish, so it says nothing. */}
           <p
             role="status"
             className={cn("text-sm text-muted-foreground", live ? "mb-5" : "sr-only")}
           >
-            {live
-              ? "The run is still going. New requests are added here as they happen."
-              : "The run has finished."}
+            {runStatusText(live, runId)}
           </p>
 
           {qlooCalls !== undefined && qlooCalls !== total ? (
@@ -261,10 +292,7 @@ export function TraceDrawer({
           {total === 0 ? (
             <div className="rounded-md bg-background p-5">
               <p className="font-semibold">No Qloo requests in this run.</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Whatever this run produced did not use Qloo data. Check the label on each value to
-                see where it came from.
-              </p>
+              <p className="mt-1 text-sm text-muted-foreground">{noRequestsNote(savedReading, synthetic)}</p>
             </div>
           ) : (
             <div className="space-y-8">

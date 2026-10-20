@@ -116,7 +116,8 @@ def test_a_valid_recording_is_served_in_order_with_its_request_id(served):
     assert response.status_code == 200
     assert response.headers["cache-control"].startswith("public, s-maxage=")
     runs = response.json()["runs"]
-    assert runs == [good]  # untouched: same fields, same events, same order
+    # untouched apart from the model id: same fields, same events, same order
+    assert runs == [{key: value for key, value in good.items() if key != "model"}]
     result = next(e["event"] for e in runs[0]["events"] if e["event"]["type"] == "tool_result")
     assert result["requests"][0]["request_id"] == REQUEST_ID and result["requests"][0]["cached"] is False
 
@@ -139,6 +140,16 @@ def test_no_recordings_directory_means_no_runs(tmp_path):
         assert get_runs("a-day").json() == {"runs": []}
     finally:
         app.dependency_overrides.clear()
+
+
+def test_the_served_runs_never_name_the_model_that_wrote_them(served):
+    write_recordings(served, "a-day", [run("one"), run("two")])
+    response = get_runs("a-day")
+    assert response.status_code == 200
+    assert [r["id"] for r in response.json()["runs"]] == ["one", "two"]
+    assert all("model" not in r for r in response.json()["runs"])
+    assert "test-model" not in response.text
+    assert Recording.model_validate(run("one")).model == "test-model"  # the saved file still keeps it
 
 
 def backwards() -> dict:
@@ -218,6 +229,36 @@ needs_presets = pytest.mark.skipif(
     not all((PRESETS / f"{preset_id}.json").is_file() for preset_id in PRESET_IDS),
     reason="the real presets are not built in this checkout",
 )
+
+
+def model_words(model: str) -> list[str]:
+    """The words of a model id ("vendor-family-version" -> vendor, family), each long enough to search for."""
+    return [part for part in model.replace("_", "-").replace(".", "-").split("-") if len(part) >= 3]
+
+
+@needs_presets
+@pytest.mark.parametrize("preset_id", PRESET_IDS)
+def test_the_shipped_recordings_are_served_without_any_model_or_vendor_name(preset_id):
+    """The saved files keep which model wrote a run; the response has no model key and none of its words."""
+    saved = PRESETS / "recordings" / f"{preset_id}.json"
+    if not saved.is_file():
+        pytest.skip("no recordings saved for this day in this checkout")
+    raw = json.loads(saved.read_text(encoding="utf-8"))
+    words = {word.casefold() for r in raw["runs"] for word in model_words(str(r.get("model") or ""))}
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        presets_dir=PRESETS, recordings_dir=PRESETS / "recordings", _env_file=None
+    )
+    try:
+        with TestClient(app) as client:
+            response = client.get(f"/api/presets/{preset_id}/recordings")
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200
+    runs = response.json()["runs"]
+    assert runs, "the saved runs are served"
+    assert all("model" not in r for r in runs)
+    body = response.text.casefold()
+    assert words and not [word for word in sorted(words) if word in body]
 
 
 def load_script():

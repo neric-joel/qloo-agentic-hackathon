@@ -13,6 +13,7 @@ import {
   METHOD_FIGURES,
   clusterClause,
   countsNote,
+  disagreementSentence,
   formatAuc,
   formatCount,
   exploratoryReading,
@@ -201,7 +202,33 @@ describe("method figures", () => {
       glastonburyTasteAdds: { diff: 0.201, interval: [0.111, 0.277] },
       usTasteAdds: { diff: -0.065, interval: [-0.163, 0.025] },
       locationRequests: 347,
+      tasteOverPopularity: { pairs: 4, ofPairs: 68, clusters: 2, alsoTopOnTimeAndDraw: 4 },
     });
+  });
+
+  it("pins where taste overlap and popularity disagree, aggregate only, with the time-and-draw clause in the same sentence (round 33, E4)", () => {
+    const t = METHOD_FIGURES.tasteInPrice.tasteOverPopularity;
+    expect(t).toEqual({ pairs: 4, ofPairs: 68, clusters: 2, alsoTopOnTimeAndDraw: 4 });
+    expect(t.ofPairs).toBe(backtest.scoredPairs);
+    expect(t.alsoTopOnTimeAndDraw).toBeLessThanOrEqual(t.pairs);
+    expect(t.clusters).toBeLessThanOrEqual(t.pairs);
+    expect(disagreementSentence()).toBe(
+      "Complained-about clashes that taste overlap put in their day’s top quarter while popularity put them in the bottom half: 4 of 68, from 2 complaint clusters; all 4 were also in the top quarter on time and draw.",
+    );
+    // The clause stays attached to the count when it is not all of them.
+    expect(disagreementSentence({ pairs: 4, ofPairs: 68, clusters: 1, alsoTopOnTimeAndDraw: 3 })).toBe(
+      "Complained-about clashes that taste overlap put in their day’s top quarter while popularity put them in the bottom half: 4 of 68, from 1 complaint cluster; 3 of the 4 were also in the top quarter on time and draw.",
+    );
+    // Rendered once on /method, in the open, inside the taste-inside-the-price block; no pair is named.
+    const text = pageText();
+    expect(text.split("4 of 68, from 2 complaint clusters; all 4 were also in the top quarter on time and draw.")).toHaveLength(2);
+    expect(text.indexOf("Complained-about clashes that taste overlap put")).toBeGreaterThan(
+      text.indexOf("Taste inside the full price (exploratory)"),
+    );
+  });
+
+  it("pins the replication test's bills year and success line (round 33, E5)", () => {
+    expect(METHOD_FIGURES.replication).toEqual({ billsYear: 2027, successAbove: 0 });
   });
 
   it("agrees with itself: the festival rows add up, each difference matches its AUCs, and the readings follow the intervals", () => {
@@ -301,10 +328,10 @@ describe("method figures", () => {
     expect(price.rarityFloor + (price.neutralRarity + price.neutralRarity) / 2).toBe(price.neutralFactor);
     const text = pageText();
     expect(text).toContain(
-      "A clash's price is its taste overlap, times the share of the shorter set that the two sets play at once",
+      "A clash's pair score is its taste overlap, times the share of the shorter set that the two sets play at once",
     );
     expect(text).toContain("times the two acts' draw (their geometric mean), times a rarity factor of 0.5 plus the average of the two acts' rarity");
-    expect(text).toContain("the mean total price of 300 sampled random valid timetables");
+    expect(text).toContain("the mean total of 300 sampled random valid timetables");
   });
 
   it("pins the stand-in draw to the engine's own table when the backend source is in the tree", () => {
@@ -428,7 +455,7 @@ describe("/method page", () => {
     const text = pageText();
     expect(text).toContain("How we know");
     expect(text).toContain("The test we set before building failed.");
-    expect(text).toContain("It reached 46.8%, 7.8 points ahead. It missed the bar.");
+    expect(text).toContain("The bar we wrote down before building was 60% and 10 points ahead. It missed the bar.");
     expect(text).toContain("the check failed as written.");
     expect(text).toContain("68 scored pairs from 42 complaints");
     expect(text).toContain("Sixteen more could not be scored");
@@ -436,7 +463,7 @@ describe("/method page", () => {
     expect(text).toContain("36 of 39 sets (92%) and 31 of 34 sets (91%)");
     expect(text).toContain("Back to the timetable");
     // The failed gate comes before the method details.
-    expect(text.indexOf("failed")).toBeLessThan(text.indexOf("What the price is"));
+    expect(text.indexOf("failed")).toBeLessThan(text.indexOf("What the score is"));
   });
 
   it("renders the backtest table with one row per method", () => {
@@ -520,10 +547,10 @@ describe("/method page", () => {
     expect(section.match(/\d/g)).toBeNull();
   });
 
-  it("opens with five short-version rows (popularity's result and the moves check one each), the last saying what the measure is", () => {
+  it("opens with three short-version rows (the failed test with popularity and the moves check, what held, what the measure is), round 33", () => {
     const html = renderToStaticMarkup(createElement(MethodPage));
     const box = html.match(/<section aria-labelledby="short-heading"[\s\S]*?<\/section>/)?.[0] ?? "";
-    expect(box.match(/<li/g)).toHaveLength(5);
+    expect(box.match(/<li/g)).toHaveLength(3);
     const text = pageText();
     expect(text).toContain(
       "It ranks a day's clashes and tests moves against timetable rules. Taste overlap is a rank, not attendance.",
@@ -540,6 +567,8 @@ describe("/method page", () => {
       "Taste overlap put 46.8% of complained-about clashes in the 25% highest-ranked clashes among that day's pairs, 7.8 points ahead of genre tags. The bar we wrote down before building was 60% and 10 points ahead.",
     );
     expect(text).toContain("7.1 index points (one point is 1% of the average random timetable's cost)");
+    // The short version names the moves check's figures; the index point is defined where the check is described.
+    expect(text).toContain("The check on suggested moves missed its bar too (7.1 index points against 10).");
     expect(text).toContain(
       "AUC (0.5 means no better than chance; 1 means every listed clash ranks above every unlisted pair)",
     );
@@ -568,7 +597,7 @@ describe("/method page", () => {
       "Taste overlap is an app-derived rank of how alike Qloo ranks two audiences in taste, relative to that bill. It is not a share of fans and not attendance.",
     );
     expect(text).not.toContain("both directions are turned into ranks");
-    expect(text).toContain("the mean total price of 300 sampled random valid timetables of the same lineup");
+    expect(text).toContain("the mean total of 300 sampled random valid timetables of the same lineup");
   });
 
   it("does not promise a request id Qloo may not send", () => {
@@ -614,26 +643,24 @@ describe("/method exploratory result", () => {
     expect(text).not.toContain("does not separate the measure from chance");
   });
 
-  it("puts the failed pre-set test in the same block as the exploratory result", () => {
+  it("names the failed pre-set test as the one stated above, in the same block as the exploratory result (round 33)", () => {
     const text = textOf(block());
-    expect(text).toContain(
-      "The test we set before building failed: taste overlap reached 46.8% against a bar of 60%.",
-    );
+    expect(text).toContain("Run after the failed test above, on the same saved pairs, so it is exploratory.");
     expect(text.indexOf("failed")).toBeLessThan(text.indexOf("What held"));
-    expect(text).toContain("so it is exploratory");
+    // Not restated here: the failed test's figures are in the short version only.
+    expect(text).not.toContain("46.8%");
   });
 
-  it("puts the exploratory answer in the short version's popularity row, with the failed test above it and a link to the full comparison", () => {
+  it("states the failed test once in the short version, popularity's result inside it, with a link to the full comparison (round 33)", () => {
     const html = renderToStaticMarkup(createElement(MethodPage));
     const box = html.match(/<section aria-labelledby="short-heading"[\s\S]*?<\/section>/)?.[0] ?? "";
     const text = textOf(box);
-    expect(text).toContain(
-      "and exploratory follow-ups on the same data did not establish an advantage over popularity for the app's full price. See the full comparison below .",
-    );
+    expect(text).toContain("It missed the bar. Popularity did better: another Qloo field, it reached 57.8%.");
     expect(box).toMatch(/<a href="#tested"[^>]*>See the full comparison below<\/a>/);
-    expect(text.indexOf("The test we set before building failed.")).toBeLessThan(
-      text.indexOf("exploratory follow-ups on the same data"),
-    );
+    expect(text.indexOf("The test we set before building failed.")).toBeLessThan(text.indexOf("Popularity did better"));
+    // The exploratory answer stays visible in #tested; the short version does not repeat it.
+    expect(text).not.toContain("exploratory");
+    expect(pageText()).toContain("The exploratory follow-up did not establish an advantage over popularity.");
     // The test section below holds the full table; here AUC appears only in the line on what the same test showed,
     // directly after the failed test (round 31).
     const held = text.indexOf("In the same test, taste overlap ranked");
@@ -680,7 +707,7 @@ describe("/method exploratory result", () => {
     expect(textOf(details)).toContain("the square root of their product");
     expect(textOf(details)).toContain("Lower is better.");
     const visible = textOf(section.replace(details, ""));
-    expect(visible).toContain("Price = taste overlap × share of the shorter set played at once × combined draw × rarity factor.");
+    expect(visible).toContain("Pair score = taste overlap × share of the shorter set played at once × combined draw × rarity factor.");
     expect(visible).toContain("It is not a share of fans and not attendance.");
   });
 });

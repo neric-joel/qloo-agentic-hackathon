@@ -8,6 +8,7 @@ import {
   LIMITS_NO_RULE,
   LIMITS_WITH_RULE,
   NO_MOVE,
+  NO_OTHER_LONGER,
   TRADEOFF_NOTE_BRIEF,
   TRADEOFF_NOTE_CARD,
   TRADEOFF_SUBTITLE,
@@ -19,6 +20,7 @@ import {
   parseDecision,
   buildTradeoff,
   sharedTimeline,
+  sideEffectsLine,
 } from "./decision";
 import { STAGE_FIT_GLOSS } from "./rule-fix";
 import { parsePreset } from "./preset";
@@ -178,7 +180,7 @@ describe("buildDecisionCopy", () => {
       rule: { aId: "ann", bId: "bo" },
       moves: [{ actId: "bo", stageId: "side", day: 0, start: "21:30" }],
     });
-    expect(copy.testingChange).toBe("Kept a change meant to keep Ann Arbor and Bo Diddly Squat apart. Pricing your plan.");
+    expect(copy.testingChange).toBe("Kept a change meant to keep Ann Arbor and Bo Diddly Squat apart. Scoring your plan.");
     // A two-set change keeps both moves, in the order the list gives them.
     const two = rawRule();
     two.fixes[0].sets_moved = 2;
@@ -337,6 +339,72 @@ describe("sharedTimeline", () => {
     expect(line.bandAfter).toBeNull();
     const empty = { name: "A", start: 10, end: 10 };
     expect(sharedTimeline(empty, { ...empty, name: "B" }, { start: 10, end: 10 })).toBeNull();
+  });
+});
+
+describe("what else the card's move changes (the line under the strip)", () => {
+  // Timetable minutes only: the mover Mo plays 10:30-11:30 and is tested at 11:30-12:30; Ann is its pair.
+  const timetable = [
+    { act_id: "ann", day: 0, start: 600, end: 660 },
+    { act_id: "mo", day: 0, start: 630, end: 690 },
+    { act_id: "xan", day: 0, start: 700, end: 760 },
+    { act_id: "yul", day: 0, start: 680, end: 720 },
+    { act_id: "zed", day: 1, start: 700, end: 760 },
+    { act_id: "wes", day: 0, start: 600, end: 640 },
+  ];
+  const names = new Map([
+    ["ann", "Ann"],
+    ["mo", "Mo"],
+    ["xan", "Xan"],
+    ["yul", "Yul"],
+    ["zed", "Zed"],
+    ["wes", "Wes"],
+  ]);
+  const mover = { actId: "mo", name: "Mo", day: 0, start: 630, end: 690 };
+
+  it("names the overlap that grows most, then counts the rest that get longer", () => {
+    // Xan: none → 50 min (new); Yul: 10 → 30 min; Zed plays another day; Wes's overlap ends; Ann is the pair.
+    expect(sideEffectsLine(timetable, names, mover, { day: 0, start: 690, end: 750 }, "ann")).toBe(
+      "Also: Mo × Xan, new 50 min overlap; 1 more overlap gets longer.",
+    );
+    // Only an overlap that was already there gets longer: before → after, in timetable minutes.
+    expect(sideEffectsLine(timetable, names, mover, { day: 0, start: 660, end: 720 }, "ann")).toBe(
+      "Also: Mo × Yul, 10 → 40 min overlap; 1 more overlap gets longer.",
+    );
+    expect(
+      sideEffectsLine(timetable.filter((slot) => slot.act_id !== "xan"), names, mover, { day: 0, start: 660, end: 720 }, "ann"),
+    ).toBe("Also: Mo × Yul, 10 → 40 min overlap.");
+  });
+
+  it("says no other overlap gets longer when none starts or grows, and never counts the pair or another day", () => {
+    expect(NO_OTHER_LONGER).toBe("No other overlap gets longer.");
+    // Earlier, at 10:00-11:00: Wes would go from 10 to 40 min, so Wes is taken out; Ann's overlap grows too, but
+    // Ann is the pair the move is for, never a side effect.
+    const quiet = timetable.filter((slot) => slot.act_id !== "wes");
+    expect(sideEffectsLine(quiet, names, mover, { day: 0, start: 600, end: 660 }, "ann")).toBe(NO_OTHER_LONGER);
+    // Moved to another day: Zed's set that day starts to overlap, nothing on the first day does.
+    expect(sideEffectsLine(timetable, names, mover, { day: 1, start: 700, end: 760 }, "ann")).toBe(
+      "Also: Mo × Zed, new 60 min overlap.",
+    );
+  });
+
+  it("is part of the card's copy, from the published times, with the moved set's name and no figure from Qloo", () => {
+    const copy = buildDecisionCopy(preset(), parseDecision(rawDecision()))!;
+    expect(copy.moveAct).toBe("Bo Diddly Squat");
+    // The fixture's move ends the clash and touches no other set.
+    expect(copy.sideEffects).toBe(NO_OTHER_LONGER);
+    // A move onto Main at 16:30 starts an overlap with Cy Twombly (Side 16:40-17:40), and says so.
+    const raw = rawDecision();
+    Object.assign(raw.move, { stage_id: "main", stage: "Main", start: "16:30", end: "18:00", stage_changed: true });
+    const moved = buildDecisionCopy(preset(), parseDecision(raw))!;
+    expect(moved.sideEffects).toBe("Also: Bo Diddly Squat × Cy Twombly, new 60 min overlap.");
+    expect(moved.sideEffects).not.toMatch(/Qloo|taste|index|popularity|fans|crowd/i);
+    // The invented day says the same, with its own (invented) names and no credit to anyone.
+    const invented = parsePreset({ ...(rawTinyPreset() as Raw), synthetic: true });
+    expect(buildDecisionCopy(invented, parseDecision(raw))!.sideEffects).toBe(moved.sideEffects);
+    // Nothing to say without a move.
+    const none = buildDecisionCopy(preset(), parseDecision(rawDecision({ move: null })))!;
+    expect([none.sideEffects, none.moveAct]).toEqual([null, null]);
   });
 });
 

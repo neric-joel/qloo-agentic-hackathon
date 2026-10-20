@@ -6,6 +6,7 @@ import { NO_MOVES, TO_DECIDE } from "@/lib/brief";
 import { qlooCredits } from "@/lib/credit";
 import { DO_NOT_USE } from "@/lib/demand";
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
+import type { Lenses } from "@/lib/lenses";
 import { parsePreset } from "@/lib/preset";
 import type { Plan } from "@/lib/stack";
 
@@ -66,7 +67,7 @@ describe("a bare /brief", () => {
     const html = screen({ status: "ready", preset, plan: null, decision: null, bare: true });
     const plain = text(html);
     expect(h1s(html)).toHaveLength(1);
-    expect(html).toMatch(/<h1 id="brief-heading"[^>]*>[^<]*where the clash budget goes<\/h1>/);
+    expect(html).toMatch(/<h1 id="brief-heading"[^>]*>[^<]*where the clashes fall<\/h1>/);
     expect(plain).toContain(`Tested moves ${BARE_NO_MOVES}`);
     expect(BARE_NO_MOVES).toBe("No moves kept yet. Keep one on the timetable page and it appears here.");
     expect(plain).not.toContain(NO_MOVES);
@@ -163,6 +164,62 @@ describe("the sheet's limits and sign-off (screen and print)", () => {
       expect(classes.filter((name) => /^(rounded|shadow|bg-)/.test(name))).toEqual([]);
       expect([...new Set(classes.filter((name) => name.startsWith("border")))]).toEqual(["border-b", "border-border-strong"]);
     }
+  });
+});
+
+describe("the candidate to keep and the decision lines (round 33)", () => {
+  // Invented rankings of the tiny day: the one pair falls from #1 on time and draw to #3 with taste.
+  const lenses: Lenses = {
+    day: 0,
+    ranked: 1,
+    with_taste: [],
+    without_taste: [{ a: "Ann Arbor", b: "Bo Diddly Squat", a_id: "ann", b_id: "bo", rank: 1, rank_with_taste: 3 }],
+    only_with_taste: 0,
+    only_without_taste: 0,
+    apart: [],
+  };
+  const plan: Plan = {
+    publishedBudget: 112.5,
+    budget: 104.25,
+    steps: [{ act: "Bo Diddly Squat", actId: "bo", move: "Bo Diddly Squat: moved", stage: "Side", stageId: "side", day: 0, start: "21:00", end: "22:00", budgetAfter: 104.25 }],
+    clashes: [{ a: "Ann Arbor", b: "Cy Twombly", points: 3.5 }],
+    options: null,
+  };
+
+  it("prints the candidate line from the rankings the page loaded, and none when they did not load", () => {
+    const line = "Taste also lowers: Ann Arbor × Bo Diddly Squat ranks #1 on time and draw, #3 with taste: a candidate to keep.";
+    expect(text(screen({ status: "ready", preset: published(), plan: null, decision: null, lenses, bare: true }))).toContain(line);
+    expect(text(screen({ status: "ready", preset: published(), plan: null, decision: null, bare: true }))).not.toContain(
+      "a candidate to keep",
+    );
+    expect(text(screen({ status: "ready", preset: published(), plan: null, decision: null, lenses: null }))).not.toContain(
+      "a candidate to keep",
+    );
+  });
+
+  it("words it for the invented day, crediting no Qloo", () => {
+    const plain = text(screen({ status: "ready", preset: invented(), plan: null, decision: null, lenses, bare: true }));
+    expect(plain).toContain("On this invented day, taste also lowers: Ann Arbor × Bo Diddly Squat ranks #1 on time and draw");
+    expect(qlooCredits(plain)).toEqual([]);
+    expect(text(screen({ status: "ready", preset: published(), plan: null, decision: null, lenses, bare: true }))).not.toMatch(
+      /invented/,
+    );
+  });
+
+  it("prints the decision line beside each kept step on paper only, and keeps the sign-off last", () => {
+    const html = renderToStaticMarkup(createElement(BriefContent, { preset: published(), day: 0, plan, lenses }));
+    const marks = html.match(/<span data-decision="true" class="([^"]*)"/g) ?? [];
+    expect(marks).toHaveLength(1);
+    // display:none on the screen (no breakpoint brings it back); a block only in print.
+    const classes = (marks[0] ?? "").replace(/^.*class="/, "").replace(/"$/, "").split(" ");
+    expect(classes).toContain("hidden");
+    expect(classes.filter((name) => /^(sm|md|lg|xl|2xl):/.test(name))).toEqual([]);
+    expect(classes).toContain("print:block");
+    // No colour of its own: the step's muted ink, and no box, chip or fill.
+    expect(classes.filter((name) => /^(bg-|rounded|shadow|border)/.test(name))).toEqual([]);
+    expect(text(html)).toContain("Decision: move / keep as published / kept on purpose Initials:");
+    const signOff = html.match(/<dl data-sign-off="true"[\s\S]*?<\/dl>/)?.[0] ?? "";
+    expect(html.indexOf(signOff) + signOff.length).toBe(html.lastIndexOf("</article>"));
   });
 });
 

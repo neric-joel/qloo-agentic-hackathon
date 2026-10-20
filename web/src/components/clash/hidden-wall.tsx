@@ -214,11 +214,11 @@ const RANK_SCALE = "Both ranks run 0 to 100 within that day’s clashes, not on 
  * pair of priced acts on the bill.
  */
 export const HIDDEN_DEFINITION =
-  "On the timetable, Hidden means the acts’ main genre tags differ while their taste overlap is among the day’s highest (the top tenth of the bill’s priced pairs).";
+  "On the timetable, Hidden means the acts’ main genre tags differ while their taste overlap is in the top tenth of the bill’s priced pairs.";
 
 /** The sourced examples go further than the label: no genre tag in common at all, and called out in public. */
 export const WALL_LEAD =
-  "The sourced examples below go further: pairs the press or fans called out that have no genre tag in common, yet their taste overlap is among the highest of that day.";
+  "The sourced examples go further: pairs the press or fans called out with no genre tag in common, yet their taste overlap is among the highest of that day.";
 
 /** Where /method gives the complaint rate for pairs like the examples (a different population from the label). */
 export const LIMITS_LINK = { href: "/method#limits", label: "How often such pairs drew complaints" } as const;
@@ -283,28 +283,26 @@ export function HiddenWall({
             ? `Hidden clashes: ${pluralize(items.length, "called-out pair")} with no genre tag in common`
             : "Hidden clashes"}
         </h2>
-        {/* The label's definition and the day's count first, then the examples' own rule and, after it, the link
-            to the complaint rate for pairs like the examples: an inline text action whose 12px of padding above
-            and below gives it a 44px hit area without opening the line. */}
-        {/* From 1024px the two sit side by side, each at a readable measure, so the intro stays four lines. */}
-        <div className="mt-2 grid max-w-[70ch] gap-y-2 text-[0.9375rem] leading-[1.55] lg:max-w-none lg:grid-cols-2 lg:gap-x-12">
-          {day ? (
-            <p data-hidden-definition="">
-              {HIDDEN_DEFINITION} {hiddenDayLine(day)}
-            </p>
-          ) : null}
-          {items.length > 0 ? (
-            <p>
-              {WALL_LEAD}{" "}
-              <Link
-                href={LIMITS_LINK.href}
-                className="rounded-sm py-3 font-semibold text-foreground underline decoration-border-strong decoration-1 underline-offset-4 hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring print:no-underline"
-              >
-                {LIMITS_LINK.label}
-              </Link>
-            </p>
-          ) : null}
-        </div>
+        {/* One paragraph: the label's definition and the day's count first, then the examples' own rule and, after
+            it, the link to the complaint rate for pairs like the examples: an inline text action whose 12px of padding
+            above and below gives it a 44px hit area without opening the line. */}
+        {day || items.length > 0 ? (
+          <p data-hidden-definition="" className="mt-2 max-w-[70ch] text-[0.9375rem] leading-[1.55] lg:max-w-none">
+            {day ? `${HIDDEN_DEFINITION} ${hiddenDayLine(day)}` : null}
+            {day && items.length > 0 ? " " : null}
+            {items.length > 0 ? (
+              <>
+                {WALL_LEAD}{" "}
+                <Link
+                  href={LIMITS_LINK.href}
+                  className="rounded-sm py-3 font-semibold text-foreground underline decoration-border-strong decoration-1 underline-offset-4 hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring print:no-underline"
+                >
+                  {LIMITS_LINK.label}
+                </Link>
+              </>
+            ) : null}
+          </p>
+        ) : null}
 
         {/* The caveat that qualifies the finding sits in the finding's column, under the shared-minutes key; the
             count closes the exhibit (after the source details below 1024px, across both halves from 1024px); the

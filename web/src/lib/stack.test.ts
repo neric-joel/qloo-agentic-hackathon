@@ -34,13 +34,20 @@ import {
   shiftText,
   stepMoves,
   storeMoves,
+  type PlanAnswer,
   type PlanRuleStep,
   type PlanStep,
   type RuleStackStep,
   type StackMove,
+  type StackStep,
   moveStepReceipt,
   pairSharedReceipt,
+  checkAdd,
+  keepNote,
+  keptWord,
+  planSourcesKey,
 } from "./stack";
+import { fromRecordedRun, isFromRecordedRun } from "./moves";
 
 /** Synthetic moves on an invented day. */
 const one: StackMove = { actId: "act-one", stageId: "west-stage", day: 0, start: "20:30" };
@@ -463,6 +470,107 @@ describe("plan storage", () => {
     expect(readStoredMoves("example-sun", blocked)).toEqual([]);
     expect(() => storeMoves("example-sun", [one], blocked)).not.toThrow();
     expect(readStoredMoves("example-sun", null)).toEqual([]);
+  });
+
+  it("remembers which kept move came from a recorded agent run, beside the plan and never in it", () => {
+    const storage = memory();
+    const fromRun = fromRecordedRun(two);
+    storeMoves("example-sun", [one, fromRun], storage);
+    // The plan itself is stored exactly as before; the note on its moves sits under its own key.
+    expect(storage.items.get(planStorageKey("example-sun"))).toBe(encodeMoves([one, two]));
+    expect(planSourcesKey("example-sun")).toBe(`${planStorageKey("example-sun")}:recorded-run`);
+    expect(storage.items.get(planSourcesKey("example-sun"))).toBe(encodeMoves([two]));
+    const read = readStoredMoves("example-sun", storage);
+    expect(read).toEqual([one, { ...two, source: "recorded-run" }]);
+    expect(read.map(isFromRecordedRun)).toEqual([false, true]);
+    // The source changes nothing else: the same step, the same link and the same request body.
+    expect(sameStep(read[1], two)).toBe(true);
+    expect(encodeMoves(read)).toBe(encodeMoves([one, two]));
+    expect(briefHref("example-sun", 0, read)).toBe(briefHref("example-sun", 0, [one, two]));
+    // A plan with no such move keeps no note, and an empty plan clears both keys.
+    storeMoves("example-sun", [one], storage);
+    expect(storage.items.has(planSourcesKey("example-sun"))).toBe(false);
+    storeMoves("example-sun", [one, fromRun], storage);
+    storeMoves("example-sun", [], storage);
+    expect([...storage.items.keys()]).toEqual([]);
+  });
+
+  it("loads a plan saved before the note existed, or with a note it cannot read, exactly as before", () => {
+    const storage = memory();
+    // Saved by an older page: the plan alone.
+    storage.items.set(planStorageKey("example-sun"), encodeMoves([one, two]));
+    expect(readStoredMoves("example-sun", storage)).toEqual([one, two]);
+    // A note that cannot be read, or names a move the plan does not hold, marks nothing.
+    storage.items.set(planSourcesKey("example-sun"), "../../x~y~0~2030");
+    expect(readStoredMoves("example-sun", storage)).toEqual([one, two]);
+    storage.items.set(planSourcesKey("example-sun"), encodeMoves([{ ...two, start: "9:10" }]));
+    expect(readStoredMoves("example-sun", storage)).toEqual([one, two]);
+    // A note on its own, with no plan, is no plan.
+    storage.items.delete(planStorageKey("example-sun"));
+    storage.items.set(planSourcesKey("example-sun"), encodeMoves([two]));
+    expect(readStoredMoves("example-sun", storage)).toEqual([]);
+  });
+});
+
+describe("adding a step to a plan that already holds steps (the hero card and Keep this place)", () => {
+  const priced: PlanAnswer = {
+    status: "ready",
+    plan: { publishedBudget: 116.7, budget: 110.2, steps: [], clashes: [], options: null },
+  };
+  const kept: StackStep[] = [one];
+
+  it("asks the engine about the whole plan, kept steps first, before anything is kept", async () => {
+    const check = vi.fn(async (steps: readonly StackStep[]) => (steps.length === 2 ? priced : ({ status: "error" } as PlanAnswer)));
+    const outcome = await checkAdd(kept, { act: "Act Two", move: two }, check, "move");
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(check).toHaveBeenCalledWith([one, two]);
+    expect(outcome).toEqual({ kind: "ready", choice: { mode: "add", base: encodeMoves(kept) }, count: 2 });
+    // The kept steps themselves are never changed by the check.
+    expect(kept).toEqual([one]);
+  });
+
+  it("says why it is not added, in words, and whether trying again could help", async () => {
+    const invalid = await checkAdd(kept, { act: "Act Two", move: two }, async () => ({ status: "invalid" }), "move");
+    expect(invalid).toEqual({
+      kind: "rejected",
+      reason:
+        "Not added: with your kept moves in place, the timetable engine finds this is no longer a legal place for Act Two. Your plan is unchanged.",
+      retry: false,
+    });
+    const failed = await checkAdd(kept, { act: "Act Two", move: two }, async () => ({ status: "error" }), "move");
+    expect(failed).toEqual({
+      kind: "rejected",
+      reason: "Not added: your plan could not be scored with this move just now. Your plan is unchanged.",
+      retry: true,
+    });
+    // The agent's tested place keeps its own noun.
+    const place = await checkAdd(kept, { act: "Act Two", move: two }, async () => ({ status: "error" }));
+    expect(place.kind === "rejected" && place.reason).toBe(
+      "Not added: your plan could not be scored with this place just now. Your plan is unchanged.",
+    );
+  });
+
+  it("never asks about a set the plan already moves, or a ninth move", async () => {
+    const check = vi.fn(async () => priced);
+    const again = await checkAdd([{ ...two, start: "9:10" }], { act: "Act Two", move: two }, check, "move");
+    expect(again).toEqual({
+      kind: "rejected",
+      reason: "Not added: your plan already moves Act Two, and a plan moves each set once. Your plan is unchanged.",
+      retry: false,
+    });
+    const full = Array.from({ length: MAX_STACK }, (_, i) => ({ ...one, actId: `act-${i}` }));
+    expect(await checkAdd(full, { act: "Act Two", move: two }, check, "move")).toMatchObject({ kind: "rejected", retry: false });
+    expect(check).not.toHaveBeenCalled();
+  });
+
+  it("words what the plan holds and what happened, from what it really holds", () => {
+    const change: RuleStackStep = { rule: { aId: "act-four", bId: "act-five" }, moves: [one] };
+    expect(keptWord([one, two])).toBe("kept move");
+    expect(keptWord([change])).toBe("kept step");
+    expect(keepNote([], [two])).toBeNull();
+    expect(keepNote([one], [one, two])).toBe("Added: 2 kept moves.");
+    expect(keepNote([one], [two])).toBe("Replaced your 1 kept move.");
+    expect(keepNote([change], [two])).toBe("Replaced your 1 kept step.");
   });
 });
 

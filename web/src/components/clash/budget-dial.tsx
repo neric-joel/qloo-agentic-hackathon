@@ -353,13 +353,13 @@ export function BudgetDial({
       {compact ? (
         // In the open Index block: a hairline across the block's own width over the sentence (15px
         // semibold), then its explanation at 13px on a 1.625 line, muted, wrapping at the block's
-        // measure. Never clamped. The sentence already names the timetable and the average it is read
-        // against, so the explanation does not say it again: it gives the direction, the lineup and the
-        // cost's parts.
+        // measure. Never clamped. The sentence already names the timetable, the average it is read against
+        // and which way is more clash cost, and the hero's scale line says the random timetables are of this
+        // lineup, so the explanation gives only "Lower is better" and the cost's parts.
         <figcaption className="mt-4 border-t border-border pt-4">
           <p className="text-[0.9375rem] leading-snug font-semibold">{describeVsRandom(index, synthetic)}.</p>
           <p data-index-explain="" className="mt-2 text-[0.8125rem] leading-relaxed text-muted-foreground">
-            Lower is better; 100 is the average of random valid timetables of this lineup. {COUNTS_ONLY}
+            Lower is better. {COUNTS_ONLY}
           </p>
         </figcaption>
       ) : (

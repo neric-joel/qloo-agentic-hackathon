@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import { parseGrid, removePairLine, runCheck, type PairSuggestion } from "@/lib/check";
 import { breakDecisionId } from "@/lib/check-decisions";
-import { PRICE_COPY, parsePriceAnswer, priceBody, priceRequest, thirdParty } from "@/lib/check-price";
+import { PRICE_COPY, defaultOrder, parsePriceAnswer, priceBody, priceRequest, thirdParty } from "@/lib/check-price";
 import {
   SAMPLE_GRID,
   SAMPLE_RULES,
@@ -24,7 +24,7 @@ import { RULE_LABELS } from "@/lib/check";
 import { BOTH_LOCKED, CheckResults, RESULT_IDS, breakMarks, lockNote, nextStep } from "./check-results";
 import { CheckPrice } from "./check-price";
 import { CheckBrief } from "./check-brief";
-import { CheckReview, ruleBreaksValue } from "./check-review";
+import { CheckReview, comparedLine, ruleBreaksValue } from "./check-review";
 import { BreakStrip } from "./check-break-strip";
 import {
   BreakItem,
@@ -1338,9 +1338,49 @@ describe("round 31: the live offer only when the server prices live (C2, C3)", (
   it("on: the consent names Qloo as a third party, then the button", () => {
     const html = renderToStaticMarkup(createElement(CheckPrice, { ...base, state: notSaved, live: true }));
     const page = text(html).replace(/&#x27;/g, "'");
-    expect(page).toContain(thirdParty(request?.acts.length ?? 0));
-    expect(page).toContain(`Ask Qloo for these ${request?.acts.length} acts`);
+    // The live step counts the names a live answer sends (its bounded comparison set), not the saved body's.
+    expect(page).toContain(thirdParty(request?.liveActs.length ?? 0));
+    expect(page).toContain(`Ask Qloo for these ${request?.liveActs.length} acts`);
     expect(page.indexOf("a third party")).toBeLessThan(page.indexOf("Ask Qloo for these"));
+  });
+
+  it("off, after the server's 200 answer: says why, offers the published day once, and the rail stops offering Compare (C4)", () => {
+    const tries: string[] = [];
+    const props = { ...base, state: notSaved, live: false, publishedTitle: "Harbor 2031, Friday", onTryPublished: () => tries.push("published") };
+    const buttons = buttonsOf(CheckPrice(props));
+    expect(buttons.map((button) => button.words)).toEqual(["Try it on Harbor 2031, Friday"]);
+    buttons[0].press();
+    expect(tries).toEqual(["published"]);
+    const html = renderToStaticMarkup(createElement(CheckPrice, props));
+    expect(text(html)).toContain(PRICE_COPY.liveOff);
+    // A text action with a 44px target and the cobalt focus ring; no pill, chip or fill.
+    expect(html).toMatch(/<button type="button" class="[^"]*min-h-11[^"]*focus-visible:outline-ring[^"]*">Try it on Harbor 2031, Friday<\/button>/);
+    // Never on a published day, and not without a day to offer.
+    expect(buttonsOf(CheckPrice({ ...props, published: true }))).toEqual([]);
+    expect(buttonsOf(CheckPrice({ ...props, publishedTitle: null }))).toEqual([]);
+    // The rail says the grid as checked had its answer, and offers Compare again only once the grid changes.
+    expect(comparedLine({ phase: "not_saved" })).toEqual({ value: "Not compared · no saved day matched", done: false });
+    const rail = (price: { phase: "not_saved" } | { phase: "idle" }) =>
+      text(
+        renderToStaticMarkup(
+          createElement(CheckReview, {
+            counts: { sets: 5, stages: 3, breaks: 0, breaksReviewed: 0, pairs: 4, pairsDecided: 0, kept: 0, notChanging: 0, changed: 0, openBreaks: 0, openPairs: 4 },
+            sample: false,
+            price,
+            searched: 0,
+            applied: 0,
+            stale: false,
+            onPrint: () => {},
+            onCopy: () => {},
+            onDownload: () => {},
+            canShare: true,
+            share: null,
+          }),
+        ),
+      );
+    expect(rail({ phase: "not_saved" })).toContain("Compared with Qloo data Not compared · no saved day matched Changes");
+    expect(rail({ phase: "not_saved" })).not.toContain(PRICE_COPY.button);
+    expect(rail({ phase: "idle" })).toContain(`Compared with Qloo data Not yet ${PRICE_COPY.button}`);
   });
 });
 
@@ -1537,6 +1577,12 @@ describe("round 32: a published day compares its own costliest clashes, values f
     expect(publishedPairsLine(7, built.pairCounts)).toBeNull();
     expect(publishedPairsLine(5, { scored: 5, unscored: 0 })).toBeNull();
     expect(publishedPairsLine(8, null)).toBeNull();
+    // C5: one reason only. Here the 3 pairs the page leaves unranked are exactly the 3 overlaps with Echo Field,
+    // the act with no usable signal; were any other pair unranked, the line would need a second reason, so none.
+    const quiet = outcome.report.shared.filter((pair) => [pair.a.act, pair.b.act].includes("Echo Field")).length;
+    expect(quiet).toBe(3);
+    expect(publishedPairsLine(8, built.pairCounts, quiet)).toBe(publishedPairsLine(8, built.pairCounts));
+    expect(publishedPairsLine(8, built.pairCounts, 2)).toBeNull();
   });
 
   it("compares the saved day's costliest clashes in its order, passing over both-locked and no-signal pairs (K1)", () => {
@@ -1550,7 +1596,8 @@ describe("round 32: a published day compares its own costliest clashes, values f
     expect(request.skipped.map((o) => o.reason)).toEqual(["locked", "no_signal"]);
     const body = JSON.parse(priceBody(request, "saved")) as { acts: string[]; mode: string };
     expect(body.mode).toBe("saved");
-    expect(body.acts).toHaveLength(6);
+    // C2: only the names in the 3 pairs compared, never the day's sixth act.
+    expect(body.acts).toEqual(["Brass Lantern", "Ash Meadow", "Flint Harbor", "Delta Choir", "Cedar Bloom"]);
     // The same grid pasted (no ranking) keeps its longest-first rule.
     expect(priceRequest(outcome.report)?.basis).toBe("longest");
   });
@@ -1583,8 +1630,10 @@ describe("round 32: a published day compares its own costliest clashes, values f
     published: true,
   };
 
-  it("draws the source line, the values and the order sentence first, then one count line and a closed fold (K3)", () => {
-    const html = renderToStaticMarkup(createElement(CheckPrice, { ...props, state: { phase: "ready", answer } }));
+  it("opens in this app's ranking, with how the pairs were chosen and the order sentence above the values (K3, C1)", () => {
+    // The page opens a published day's answer in its default order: the order its pairs were chosen in.
+    expect(defaultOrder(answer.basis)).toBe("selection");
+    const html = renderToStaticMarkup(createElement(CheckPrice, { ...props, order: defaultOrder(answer.basis), state: { phase: "ready", answer } }));
     const page = text(html);
     const at = (words: string) => {
       const index = page.indexOf(words);
@@ -1593,13 +1642,22 @@ describe("round 32: a published day compares its own costliest clashes, values f
     };
     const order = [
       at("Compared using a saved festival day. No Qloo request was sent."),
-      at("Brass Lantern × Ash Meadow: 45 min shared. Taste overlap 31 / 100, ranked 2 of 2."),
-      at("Taste overlap changes the order of the 2 compared overlaps: Flint Harbor × Delta Choir moves from 2nd to 1st."),
       at("which already includes taste overlap: a worked example, not a test."),
-      at("3 overlaps not compared: both sets locked (1), no usable Qloo signal (1), no reading served for the pair (1)."),
+      at("Taste overlap changes the order of the 2 compared overlaps: Flint Harbor × Delta Choir moves from 2nd to 1st."),
+      at("This app’s ranking Longest first Highest taste overlap first"),
+      // Row 1 is the saved day's first movable clash, with its taste rank (never "ranked", the hero's word).
+      at("Brass Lantern × Ash Meadow: 45 min shared. Taste overlap 31 / 100, taste rank 2 of 2."),
+      at("Flint Harbor × Delta Choir: 45 min shared. Taste overlap 77 / 100, taste rank 1 of 2."),
+      at("3 overlaps not compared: both sets locked (1), no usable Qloo signal (1), not served (1)."),
       at("Why these were not compared (3)"),
     ];
     expect(order).toEqual([...order].sort((x, y) => x - y));
+    expect(page).not.toMatch(/\branked \d+ of/);
+    // The default sort is pressed; the other two stay, as 44px buttons with the focus ring.
+    expect(html).toMatch(/<button type="button" aria-pressed="true" class="min-h-11 [^"]*focus-visible:outline-ring[^"]*">This app’s ranking<\/button>/);
+    expect(html).toMatch(/aria-pressed="false" class="min-h-11[^"]*">Longest first<\/button>/);
+    // A pasted grid's answer keeps its round-32 choices, Longest first by default.
+    expect(defaultOrder("longest")).toBe("minutes");
     // No grey line before the first value.
     const head = html.slice(0, html.indexOf("Brass Lantern × Ash Meadow: 45 min"));
     expect(head).not.toContain("text-muted-foreground");
@@ -1609,12 +1667,56 @@ describe("round 32: a published day compares its own costliest clashes, values f
     expect(text(fold)).toContain("Delta Choir × Cedar Bloom: 10 min shared. Not compared: both sets are locked, so neither can move; the next clash in the saved day’s ranking is compared instead.");
     expect(text(fold)).toContain("Echo Field × Flint Harbor: 15 min shared. Not compared: the saved day marks an act of this pair as having no usable Qloo signal, so it was not sent.");
     expect(text(fold)).toContain(
-      "Ash Meadow × Cedar Bloom: 30 min shared. Not compared: both acts are on the saved day, but this demo serves readings only for the pairs its timetable page shows, and this pair is not one of them. Shown by minutes only.",
+      "Ash Meadow × Cedar Bloom: 30 min shared. Not served: this site serves saved Qloo values only for the pairs its timetable page prints. Shown by minutes only.",
     );
-    // The intro says how the pairs were chosen, and the "not sent" line is gone: every act name was sent.
-    expect(page).toContain("for the saved day’s 3 costliest clashes that can move");
-    expect(page).toContain("we send the 6 act names and the pairs");
+    // The intro says how the pairs were chosen and that only their names are sent; nothing was left out.
+    expect(page).toContain("the saved day’s 3 costliest movable clashes, by its own ranking, and their 5 act names");
     expect(page).not.toMatch(/are not sent and not compared/);
+  });
+
+  it("lists every value of a paste's answer past the first five in a closed fold, the first five open", () => {
+    const wide = runCheck({
+      grid: Array.from({ length: 16 }, (_, i) => `Act ${String.fromCharCode(65 + i)},Stage ${i % 8},${i < 8 ? "18:00,19:00" : "18:30,19:30"}`).join("\n"),
+      changeover: "",
+      curfew: "",
+      pairs: "",
+    });
+    if (!wide.ok) throw new Error("refused");
+    const day = { id: "x", title: "Wide 2031, Friday", names: new Map(wide.report.sets.map((set) => [set.act.toLowerCase(), set.act])), noSignal: new Set<string>(), pairs: new Set<string>() };
+    const pasted = priceRequest(wide.report, null, day) as NonNullable<ReturnType<typeof priceRequest>>;
+    expect(pasted.basis).toBe("served");
+    expect(pasted.overlaps).toHaveLength(10);
+    const pastedAnswer = parsePriceAnswer(
+      {
+        ...route,
+        pairs: pasted.overlaps.map((o, i) => ({ a: o.a, b: o.b, status: "priced", taste_overlap: 0.05 * (i + 1), pair_rank: pasted.overlaps.length - i, reason: null })),
+      },
+      pasted,
+      "saved",
+    );
+    if (!pastedAnswer) throw new Error("unread");
+    const html = renderToStaticMarkup(
+      createElement(CheckPrice, { ...props, request: pasted, published: false, order: defaultOrder(pastedAnswer.basis), state: { phase: "ready", answer: pastedAnswer } }),
+    );
+    const open = html.replace(/<details(?![^>]*\bopen\b)[^>]*>[\s\S]*?<\/details>/g, " ");
+    expect(text(open).match(/taste rank \d+ of 10/g)).toHaveLength(5);
+    expect(text(html).match(/taste rank \d+ of 10/g)).toHaveLength(10);
+    expect(text(html)).toContain("5 more compared overlaps");
+    // A pasted grid's sort has no "This app's ranking": it opens Longest first.
+    expect(text(html)).not.toContain(PRICE_COPY.rankingFirst);
+    expect(html).toMatch(/aria-pressed="true" class="min-h-11[^"]*">Longest first<\/button>/);
+  });
+
+  it("says in one line when no pair sent got a value because none is one the day's page prints (C3)", () => {
+    const unserved = parsePriceAnswer(
+      { ...route, pairs: route.pairs.map((pair) => ({ ...pair, status: "unpriced", taste_overlap: null, pair_rank: null, reason: "not_ranked_on_saved_day" })) },
+      request,
+      "saved",
+    );
+    if (!unserved) throw new Error("unread");
+    const page = text(renderToStaticMarkup(createElement(CheckPrice, { ...props, state: { phase: "ready", answer: unserved } })));
+    expect(page).toContain(PRICE_COPY.noneServed(null));
+    expect(page).toContain("5 overlaps not compared: both sets locked (1), no usable Qloo signal (1), not served (3).");
   });
 
   it("before the press, counts the passed-over pairs under the button, with the same fold", () => {
@@ -1638,16 +1740,59 @@ describe("round 32: a published day compares its own costliest clashes, values f
     expect(page).not.toContain("a worked example, not a test");
   });
 
-  it("prints the same order on the brief: values, order sentence, worked example, then what was not compared", () => {
+  it("prints the screen's order on the brief: worked example, order sentence, values in this app's ranking, then what was not compared", () => {
     const page = text(
       renderToStaticMarkup(
         createElement(CheckBrief, { report: outcome.report, applied: [], decisions: [], price: answer, priceSkipped: request.skipped, preview: true }),
       ),
     );
     expect(page).toContain("Taste overlap compared (the saved day’s 3 costliest clashes that can move)");
-    expect(page.indexOf("Flint Harbor × Delta Choir: 45 min shared.")).toBeLessThan(page.indexOf("a worked example, not a test"));
-    expect(page.indexOf("a worked example, not a test")).toBeLessThan(page.indexOf("3 overlaps not compared"));
+    const worked = page.indexOf("a worked example, not a test");
+    const sentence = page.indexOf("Taste overlap changes the order of the 2 compared overlaps");
+    const first = page.indexOf("Brass Lantern × Ash Meadow: 45 min shared.");
+    const second = page.indexOf("Flint Harbor × Delta Choir: 45 min shared.");
+    expect([worked, sentence, first, second, page.indexOf("3 overlaps not compared")]).toEqual([worked, sentence, first, second, page.indexOf("3 overlaps not compared")].sort((x, y) => x - y));
+    expect(worked).toBeGreaterThanOrEqual(0);
     expect(page).toContain("Delta Choir × Cedar Bloom: 10 min shared. Not compared: both sets are locked");
+    // The order on screen, when another is chosen, is the one printed.
+    const longest = text(
+      renderToStaticMarkup(
+        createElement(CheckBrief, { report: outcome.report, applied: [], decisions: [], price: answer, priceSkipped: request.skipped, priceOrder: "overlap", preview: true }),
+      ),
+    );
+    expect(longest.indexOf("Flint Harbor × Delta Choir: 45 min shared.")).toBeLessThan(longest.indexOf("Brass Lantern × Ash Meadow: 45 min shared."));
+  });
+
+  it("puts the line on 79 against 68 under the count of sets that share time, once, and only while it adds up (C5)", () => {
+    const line = publishedPairsLine(outcome.report.shared.length, built.pairCounts) as string;
+    const html = renderToStaticMarkup(
+      createElement(CheckResults, {
+        report: outcome.report,
+        decisions: new Map(),
+        onDecide: () => {},
+        showAll: false,
+        onShowAll: () => {},
+        nonce: 1,
+        countNote: line,
+      }),
+    );
+    const page = text(html);
+    const heading = page.indexOf("Sets that share time (8 pairs)");
+    expect(heading).toBeGreaterThanOrEqual(0);
+    expect(page.indexOf(line)).toBeGreaterThan(heading);
+    expect(page.split(line)).toHaveLength(2);
+    // Ink on paper, no muted grey, box or chip.
+    expect(html).toContain(`<p class="mt-2 max-w-prose text-sm leading-relaxed text-foreground">${line}</p>`);
+    const without = text(
+      renderToStaticMarkup(
+        createElement(CheckResults, { report: outcome.report, decisions: new Map(), onDecide: () => {}, showAll: false, onShowAll: () => {}, nonce: 1 }),
+      ),
+    );
+    expect(without).not.toContain("the timetable page ranks");
+    // The page keeps the label and this line apart on screen, and passes the line only for the day as loaded.
+    const source = readFileSync(fileURLToPath(new URL("./check-tool.tsx", import.meta.url)), "utf8");
+    expect(source).toContain("countNote={working ? null : (run.pairsLine ?? null)}");
+    expect(source).toContain("{run.publishedLabel ?? run.published}");
   });
 
   it("reads 0 for rule breaks with nothing to review, never 0 of 0 reviewed (K8)", () => {

@@ -8,8 +8,10 @@ import {
   MIN_REPLAY_MS,
   MIN_STEP_MS,
   TEXT_STEP_MS,
+  orderRecordings,
   parseRecordings,
   replayFinalState,
+  runEnding,
   toReplayBeats,
   type RecordedRun,
 } from "./recorded-run";
@@ -330,5 +332,53 @@ describe("replayFinalState", () => {
     expect(requests.map((item) => [item.record.request_id, item.record.recorded])).toEqual([[REQUEST_ID, true]]);
     expect(state.summary).toMatchObject({ qlooCalls: 1, elapsedMs: 4530 });
     expect(readClashReply(state.results)?.explains[0]).toMatchObject({ a: "Act One", sharedTaste: ["Indie rock"] });
+  });
+});
+
+/** A run whose saved `result` carries these tool results (in call order), with the other events as saved. */
+function endingWith(id: string, toolData: Record<string, Record<string, unknown>>): RecordedRun {
+  const events = rawEvents().map((item) =>
+    item.event.type === "result"
+      ? { ...item, event: { ...item.event, data: { ...(item.event.data as object), tool_data: toolData } } }
+      : item,
+  );
+  return only([rawRun({ id, title: `Run ${id}` }, events)]);
+}
+
+const FOUND = { kind: "move_options", act: "Act Two", movable: true, options: [{ stage: "Side", start: "21:05", clash_budget_after: 99.1 }] };
+const ALLOWED = { kind: "what_if", move: "Act Two: Side 20:00-21:00 -> Side 21:05-22:05", allowed: true, problems: [] };
+const REFUSED = { kind: "what_if", move: "Act Two -> Main 15:30", allowed: false, problems: ["That slot is taken."] };
+const EXPLAINED = { kind: "clash", a: { name: "Act One" }, b: { name: "Act Two" }, minutes_overlapping: 45 };
+
+describe("how a recorded run ends, and the order the panel lists the runs in", () => {
+  it("reads each run's ending from its own tool results, never from its words", () => {
+    // A legal place found, or a tested move the rules allowed: the run ends with a place to keep.
+    expect(runEnding(endingWith("found", { c1: FOUND }))).toBe("keep");
+    expect(runEnding(endingWith("allowed", { c1: ALLOWED }))).toBe("keep");
+    // Refused first, then a legal place found later in the same run: still a place to keep.
+    expect(runEnding(endingWith("refused-then-found", { c1: REFUSED, c2: FOUND }))).toBe("keep");
+    // Every move it tested was refused by the rules.
+    expect(runEnding(endingWith("refused", { c1: REFUSED }))).toBe("refused");
+    // An explanation, a find that listed no place, or a set that cannot move: neither.
+    expect(runEnding(endingWith("explained", { c1: EXPLAINED }))).toBe("other");
+    expect(runEnding(endingWith("nowhere", { c1: { ...FOUND, options: [] } }))).toBe("other");
+    expect(runEnding(endingWith("fixed", { c1: { ...FOUND, movable: false } }))).toBe("other");
+    expect(runEnding(endingWith("empty", {}))).toBe("other");
+  });
+
+  it("lists a run that ends with a place to keep first and a run the rules refuse last, each group in the server's order", () => {
+    // The server's order, as Glastonbury's saved file has it: the refusal first.
+    const served = [
+      endingWith("refusal", { c1: REFUSED }),
+      endingWith("explain", { c1: EXPLAINED }),
+      endingWith("rules-then-move", { c1: FOUND }),
+      endingWith("second-keep", { c1: ALLOWED }),
+    ];
+    expect(orderRecordings(served).map((run) => run.id)).toEqual(["rules-then-move", "second-keep", "explain", "refusal"]);
+    // The served list itself is left as it was, and an ordered list orders to itself.
+    expect(served.map((run) => run.id)).toEqual(["refusal", "explain", "rules-then-move", "second-keep"]);
+    const ordered = orderRecordings(served);
+    expect(orderRecordings(ordered)).toEqual(ordered);
+    expect(orderRecordings([])).toEqual([]);
   });
 });

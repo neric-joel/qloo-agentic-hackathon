@@ -58,20 +58,23 @@ describe("dialFraction and dialPoint", () => {
 });
 
 describe("describeVsRandom", () => {
-  it("reads the gap to the average random valid timetable as a score of this index, not a verdict", () => {
-    expect(describeVsRandom(117)).toBe("By this index, the published timetable scores 17% above the average random valid timetable");
-    expect(describeVsRandom(116.71)).toBe("By this index, the published timetable scores 17% above the average random valid timetable");
-    expect(describeVsRandom(86.48)).toBe("By this index, the published timetable scores 14% below the average random valid timetable");
-    expect(describeVsRandom(100)).toBe("By this index, the published timetable scores level with the average random valid timetable");
-    expect(describeVsRandom(100.3)).toBe("By this index, the published timetable scores level with the average random valid timetable");
+  const TAIL = ", where 100 is the average random valid timetable and higher means more clash cost";
+  it("states the day's index and its direction in the sentence itself, as a score of this index, not a verdict", () => {
+    expect(describeVsRandom(116.71)).toBe(`By this index, the published timetable scores 116.7${TAIL}`);
+    expect(describeVsRandom(117)).toBe(`By this index, the published timetable scores 117.0${TAIL}`);
+    expect(describeVsRandom(86.48)).toBe(`By this index, the published timetable scores 86.5${TAIL}`);
+    expect(describeVsRandom(100)).toBe(`By this index, the published timetable scores 100.0${TAIL}`);
+    // Neither praise nor verdict: no "above" or "below" left for a reader to take as a grade.
+    for (const value of [86.48, 100, 116.71]) expect(describeVsRandom(value)).not.toMatch(/\b(above|below|better|worse)\b/);
   });
 
   it("calls the invented day's timetable invented, never published", () => {
-    expect(describeVsRandom(117, true)).toBe("By this index, the invented timetable scores 17% above the average random valid timetable");
+    expect(describeVsRandom(116.71, true)).toBe(`By this index, the invented timetable scores 116.7${TAIL}`);
     expect(describeVsRandom(117, true)).not.toContain("published");
+    expect(describeVsRandom(117, true)).not.toContain("Qloo");
   });
 
-  it("names no cost the festival bears: no 'more cost', 'less cost' or money word", () => {
+  it("names no cost the festival bears: no taste-overlap cost, price or money word", () => {
     for (const value of [86.48, 100, 117]) {
       expect(describeVsRandom(value)).not.toMatch(/more taste-overlap cost|less taste-overlap cost|price|money/);
     }

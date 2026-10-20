@@ -53,7 +53,7 @@ export type CostliestAfter = { a: string; b: string; minutes: number; points: nu
 export type DecisionMove = DecisionPlace & {
   legalPlaces: number;
   stageChanged: boolean;
-  /** The Clash Budget Index with this one move, as `POST /whatif` prices it. */
+  /** The Clash Budget Index with this one move, as `POST /whatif` scores it. */
   budgetAfter: number;
   minutesSharedAfter: number;
   /** The other set's first place, when it gives the same index. */
@@ -435,7 +435,7 @@ export type DecisionCopy = {
   seedRule: { aId: string; bId: string } | null;
   /** What "Keep this change" keeps: line 3's change as one step of a plan; null without that change. */
   seedChange: RuleStackStep | null;
-  /** The status line a kept change announces first, "Kept a change meant to keep A and B apart. Pricing your plan." */
+  /** The status line a kept change announces first, "Kept a change meant to keep A and B apart. Scoring your plan." */
   testingChange: string | null;
   /** What the Keep button's label says it keeps, "Keep the two-set change"; null without that change. */
   changeLabel: string | null;
@@ -443,6 +443,14 @@ export type DecisionCopy = {
   changeSummary: string | null;
   /** The status line a seeded move announces first, "Testing Sprints at 14:15." */
   testing: string | null;
+  /** The set the move moves, by name, for the words an Add or Replace says; null without a move. */
+  moveAct: string | null;
+  /**
+   * What else the move changes, under the drawing: the other overlaps it starts or lengthens, from the published
+   * timetable's own times ("Also: Sprints × Joy Crookes, new 15 min overlap."), or "No other overlap gets longer.".
+   * Null without a move.
+   */
+  sideEffects: string | null;
   /** The move and the keep-apart change side by side; null unless the card has both. */
   tradeoff: Tradeoff | null;
 };
@@ -519,6 +527,39 @@ export function decisionDateline(
   return `${name} · ${day} · published timetable`;
 }
 
+/** Said under the drawing when the move starts or lengthens no other overlap. */
+export const NO_OTHER_LONGER = "No other overlap gets longer.";
+
+/**
+ * What else one move changes, besides the pair it is for: every other set on the move's day whose overlap with
+ * the moved set starts or gets longer, from the published times alone (timetable minutes, no index, no Qloo
+ * figure), the largest change first. "Also: Sprints × Joy Crookes, new 15 min overlap." or "Also: Sprints ×
+ * Joy Crookes, 10 → 25 min overlap; 1 more overlap gets longer." `NO_OTHER_LONGER` when none does.
+ */
+export function sideEffectsLine(
+  timetable: readonly { act_id: string; day: number; start: number; end: number }[],
+  names: ReadonlyMap<string, string>,
+  mover: { actId: string; name: string; day: number; start: number; end: number },
+  after: { day: number; start: number; end: number },
+  partnerId: string,
+): string {
+  const minutes = (a: { day: number; start: number; end: number }, b: { day: number; start: number; end: number }) => {
+    if (a.day !== b.day) return 0;
+    const window = overlapWindow(a, b);
+    return window ? window.end - window.start : 0;
+  };
+  const longer = timetable
+    .filter((slot) => slot.act_id !== mover.actId && slot.act_id !== partnerId)
+    .map((slot) => ({ name: names.get(slot.act_id) ?? slot.act_id, before: minutes(mover, slot), after: minutes(after, slot) }))
+    .filter((item) => item.after > item.before)
+    .sort((a, b) => b.after - b.before - (a.after - a.before) || a.name.localeCompare(b.name));
+  if (longer.length === 0) return NO_OTHER_LONGER;
+  const [first, ...rest] = longer;
+  const change = first.before === 0 ? `new ${first.after} min overlap` : `${first.before} → ${first.after} min overlap`;
+  const more = rest.length === 0 ? "" : `; ${rest.length} more ${rest.length === 1 ? "overlap gets" : "overlaps get"} longer`;
+  return `Also: ${mover.name} × ${first.name}, ${change}${more}.`;
+}
+
 /**
  * The card for a decision on a preset, or null when there is nothing to show: no decision, no clash
  * in it, or a clash the preset's timetable does not hold. Every figure is the route's or the
@@ -584,6 +625,8 @@ export function buildDecisionCopy(preset: Preset, decision: Decision | null): De
     let seedMove: StackMove | null = null;
     let moveReceipt: string | null = null;
     let testing: string | null = null;
+    let moveAct: string | null = null;
+    let sideEffects: string | null = null;
     if (move && published !== null) {
       const other = move.actId === clash.aId ? actB : actA;
       const otherSlot = move.actId === clash.aId ? slotB : slotA;
@@ -610,6 +653,16 @@ export function buildDecisionCopy(preset: Preset, decision: Decision | null): De
         );
       }
       seedMove = { actId: move.actId, stageId: move.stageId, day: move.day, start: move.start };
+      moveAct = move.act;
+      if (moverSlot && after.start !== null && after.end !== null) {
+        sideEffects = sideEffectsLine(
+          festival.timetable,
+          new Map(festival.acts.map((act) => [act.id, act.name])),
+          { actId: move.actId, name: move.act, day: moverSlot.day, start: moverSlot.start, end: moverSlot.end },
+          { day: move.day, start: after.start, end: after.end > after.start ? after.end : after.end + 1440 },
+          otherSlot.act_id,
+        );
+      }
       moveReceipt = pairSharedReceipt(actA.name, actB.name, move.minutesSharedAfter);
       testing = `Testing ${move.act} at ${move.start}.`;
     }
@@ -650,6 +703,8 @@ export function buildDecisionCopy(preset: Preset, decision: Decision | null): De
           ? changeSummaryLine(decision.rule, decision.rule.fixes[0], published)
           : null,
       testing,
+      moveAct,
+      sideEffects,
       tradeoff: buildTradeoff(decision),
     };
   } catch {

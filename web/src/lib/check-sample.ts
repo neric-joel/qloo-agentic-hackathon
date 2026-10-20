@@ -2,7 +2,7 @@
  * An invented day for "Check an invented sample" on the check page: the 24 acts of the invented example day the
  * API serves when no festival day is built (Lanternfield, four stages), as a draft grid of 25 sets. The
  * act names come from this repo's synthetic generator (random word pairs); no real festival and no
- * real act is meant, and no Qloo data is in them. Because they are that day's acts, "Price" on the
+ * real act is meant, and no Qloo data is in them. Because they are that day's acts, "Compare audience overlap" on the
  * sample is answered from the invented day without a Qloo request, on any clone.
  *
  * Exactly four findings are planted, so the first result is a visible list:
@@ -188,6 +188,19 @@ export type PublishedInput = {
   ranking?: SavedRanking | null;
   /** The saved day's overlapping pairs where both acts have a usable signal, and the others; null when absent. */
   pairCounts?: { scored: number; unscored: number } | null;
+  /**
+   * The public timetable's own ids, so a change Find a change lists can be scored on that day's index:
+   * the preset's id, the day checked, and its acts and stages by normalised name (`normalizeName`).
+   */
+  ids?: PublishedIds | null;
+};
+
+/** A published day's ids for the what-if route: no Qloo value, only the timetable's names and ids. */
+export type PublishedIds = {
+  presetId: string;
+  day: number;
+  acts: ReadonlyMap<string, string>;
+  stages: ReadonlyMap<string, string>;
 };
 
 /** The label above the results and on the brief while the checked grid is a published day. */
@@ -271,11 +284,17 @@ export function publishedDayInput(json: unknown): PublishedInput | null {
       locked: slot.locked,
     })),
   );
+  const presetId = asText(preset.id);
+  const actIds = new Map<string, string>();
+  for (const slot of sets) actIds.set(normalizeName(slot.act), slot.actId);
+  const stageIds = new Map<string, string>();
+  for (const [id, stage] of stages) stageIds.set(normalizeName(stage.name), id);
   return {
     title,
     label: publishedLabel(title),
     ranking: savedRanking(preset.report, acts, day),
     pairCounts: pairCountsOf(preset.report),
+    ids: presetId && /^[\w.-]{1,80}$/.test(presetId) ? { presetId, day, acts: actIds, stages: stageIds } : null,
     input: {
       grid,
       changeover:
@@ -322,13 +341,16 @@ function pairCountsOf(report: unknown): { scored: number; unscored: number } | n
 }
 
 /**
- * The published day's pair counts, said once in its load line, and only when they add up to the overlaps
- * this page found: "79 pairs share time; the timetable page ranks the 68 where both acts have a usable Qloo
- * signal." (The build counts a concurrent pair as priced only when both acts are scored, and the page ranks
- * the priced ones.) Null when the counts are missing or do not match.
+ * The published day's pair counts, said once, and only when one reason accounts for the whole difference:
+ * "79 pairs share time; the timetable page ranks the 68 where both acts have a usable Qloo signal." (The
+ * build ranks a concurrent pair only when it is `known`, both acts scored; backend schedule/metrics.py
+ * `measure`.) Null when the counts are missing or do not add up to the overlaps this page found, or when
+ * `withoutSignal` (this page's overlaps with an act the day marks as having no usable signal) is given and
+ * is not every pair the page leaves unranked, so a second reason would be needed.
  */
-export function publishedPairsLine(shared: number, counts: PublishedInput["pairCounts"]): string | null {
+export function publishedPairsLine(shared: number, counts: PublishedInput["pairCounts"], withoutSignal?: number): string | null {
   if (!counts || counts.unscored === 0 || counts.scored + counts.unscored !== shared) return null;
+  if (withoutSignal !== undefined && withoutSignal !== counts.unscored) return null;
   return `${shared} pairs share time; the timetable page ranks the ${counts.scored} where both acts have a usable Qloo signal.`;
 }
 

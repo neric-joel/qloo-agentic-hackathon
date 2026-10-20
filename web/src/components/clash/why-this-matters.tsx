@@ -5,8 +5,8 @@ import type { CSSProperties, ReactNode } from "react";
 import { BySyntheticDay } from "@/components/site/synthetic-context";
 import { CHECK_LIVE } from "@/lib/check-flag";
 
-import { DEMAND, PAYER_GUESS, PILOT, PILOT_CONTACT, PILOT_TERMS, type Demand } from "@/lib/demand";
-import { METHOD_FIGURES, formatCount, formatPct, methodRow, numberWord, type MethodId } from "@/lib/method-figures";
+import { DEMAND, PAYER_GUESS, PILOT_CONTACT, PILOT_TERMS, type Demand } from "@/lib/demand";
+import { METHOD_FIGURES, formatPct, methodRow, numberWord, type MethodId } from "@/lib/method-figures";
 import { PUBLIC_SOURCES } from "@/lib/public-sources";
 import { PUBLIC_VOICES, type PublicVoice } from "@/lib/public-voices";
 import { cn } from "@/lib/utils";
@@ -108,76 +108,57 @@ function contactHref(contact: string): string {
 }
 
 /**
- * The pilot offer, with its stated limits read from `PILOT`, as one unboxed editorial block under the findings:
- * a 1px border-border rule across its top (a top rule, never a left stripe), 32px of paper, then left-aligned text.
- * From 1024px it sits on the findings' own 12-column grid (the same 48px gutter), so its edges are theirs: the 16px
- * label and the offer at body size in columns 1 to 5, the problem's x; in columns 6 to 12, the voices' x, the way to
- * /check first as a 44px text link with an arrow (never a button, so the viewport keeps one primary action), its words
- * level with the offer's first line (a subgrid row under the label), then the contact in muted at body size, then
- * the request arithmetic in its closed fold. With no /check the contact leads, as before. Below 1024px it is one
- * column at most 68ch wide, in the same order, the link and the contact sharing a line from 640px with a middot
- * between. The columns end where their content ends. The offer is never set larger or
- * heavier than "Who would pay is not known." above it. No card, fill, stat or button. It names no customer, count or
- * reply: it says what would count as success and that one answer is not a market.
+ * The pilot offer as one unboxed editorial block: a 1px border-border rule across its top (a top rule, never a
+ * left stripe), 24px of paper, then left-aligned text at most 68ch wide. From 1024px it sits in the findings' right
+ * columns, under the voices and level with what is not known, so the offer is read beside "Who would pay is not
+ * known." In order: the 16px label, the offer at body size (its success line closes on "One answer is not a
+ * market."), then the way to /check first as a 44px text link with an arrow (never a button, so the viewport keeps
+ * one primary action) and the contact in muted at body size, sharing a line from 640px with a middot between. With
+ * no /check the contact leads, in ink. The offer is never set larger or heavier than "Who would pay is not known.".
+ * No card, fill, stat, fold or button. It names no customer, count or reply, and offers nothing that costs a Qloo
+ * request (the request arithmetic is on the Devpost page, from `PILOT` in lib/demand.ts).
  */
 function PilotOffer({ contact, terms }: { contact: string | null; terms: string | null }) {
-  const { requestsPerBill, monthlyRequests, fullDayRequests } = PILOT;
   return (
-    <div data-pilot className="border-t border-border pt-8">
-      <div className="max-w-[68ch] lg:grid lg:max-w-none lg:grid-cols-12 lg:grid-rows-[auto_auto] lg:gap-x-12 lg:gap-y-2">
-        <div data-pilot-offer className="lg:col-span-5 lg:row-span-2 lg:grid lg:grid-rows-subgrid">
-          <h3 className="text-base leading-snug font-semibold">Pilot offer</h3>
-          <p className="mt-2 lg:mt-0">
-            Walk through the {PILOT_DAY} brief with me and say where it matches how your team would set those
-            times. Your own draft can go through Check a draft grid, whose rule checks run in your browser and send
-            nothing. Success: you say which suggestion you would take or turn down, and why.
-          </p>
-        </div>
-        {/* While /check is live the column opens on its action: the link (16px semibold ink, its arrow, a 44px
-            line), then the contact in muted at body size, then the fold. From 640px the link and the contact share
-            one line, joined by a middot; on a phone, and from 1024px in the right-hand columns, the contact takes
-            its own line under the link. With no /check the contact leads, in ink, as before. The fold sits under
-            both, left-aligned. */}
-        <div data-pilot-next className="mt-3 lg:col-span-7 lg:col-start-6 lg:row-start-2 lg:mt-0">
-          <div className="sm:flex sm:flex-wrap sm:items-center sm:gap-x-2 lg:block">
-            {CHECK_LIVE ? (
-              <>
-                <p className="lg:-mt-2.5">
-                  <Link href="/check" className={cn(LINK, "inline-flex min-h-11 items-center gap-1.5 text-base")}>
-                    Check a draft grid
-                    <ArrowRight aria-hidden="true" className="size-4" />
-                  </Link>
-                </p>
-                <span aria-hidden="true" className="hidden text-muted-foreground sm:inline lg:hidden">
-                  &middot;
-                </span>
-              </>
-            ) : null}
-            <p data-pilot-contact className={CHECK_LIVE ? "text-muted-foreground" : undefined}>
-              {contact ? (
-                <>
-                  Contact:{" "}
-                  <a href={contactHref(contact)} className={LINK}>
-                    {contact}
-                  </a>
-                </>
-              ) : (
-                "Contact is on the Devpost page."
-              )}
+    <div data-pilot className="border-t border-border pt-6">
+      <div data-pilot-offer className="max-w-[68ch]">
+        <h3 className="text-base leading-snug font-semibold">Pilot offer</h3>
+        <p className="mt-2">
+          Walk through the {PILOT_DAY} brief with me and say where it matches how your team would set those
+          times. Your own draft can go through Check a draft grid, whose rule checks run in your browser and send
+          nothing. Success: you say which suggestion you would take or turn down, and why. One answer is not a
+          market.
+        </p>
+      </div>
+      {/* While /check is live the action leads: the link (16px semibold ink, its arrow, a 44px line), then the
+          contact in muted at body size, on one line from 640px joined by a middot; on a phone the contact takes its
+          own line. With no /check the contact leads, in ink, as before. */}
+      <div data-pilot-next className="mt-2 sm:flex sm:flex-wrap sm:items-center sm:gap-x-2">
+        {CHECK_LIVE ? (
+          <>
+            <p>
+              <Link href="/check" className={cn(LINK, "inline-flex min-h-11 items-center gap-1.5 text-base")}>
+                Check a draft grid
+                <ArrowRight aria-hidden="true" className="size-4" />
+              </Link>
             </p>
-          </div>
-          <Fold
-            summaryClassName="justify-start"
-            summary={`About ${requestsPerBill} Qloo requests per bill, only with the festival’s OK`}
-          >
-            <p className="pb-1 text-muted-foreground">
-              Pricing a new bill is not offered: comparing its longest overlaps takes about {requestsPerBill} Qloo
-              requests of the {formatCount(monthlyRequests)} shared this month, and a full-day reading took{" "}
-              {fullDayRequests[0]} and {fullDayRequests[1]}. Either needs the festival&rsquo;s OK. One answer is not a
-              market.
-            </p>
-          </Fold>
-        </div>
+            <span aria-hidden="true" className="hidden text-muted-foreground sm:inline">
+              &middot;
+            </span>
+          </>
+        ) : null}
+        <p data-pilot-contact className={CHECK_LIVE ? "text-muted-foreground" : undefined}>
+          {contact ? (
+            <>
+              Contact:{" "}
+              <a href={contactHref(contact)} className={LINK}>
+                {contact}
+              </a>
+            </>
+          ) : (
+            "Contact is on the Devpost page."
+          )}
+        </p>
       </div>
       {/* The terms, once the owner has confirmed them: in the open under the offer, body size, muted on paper. */}
       {terms ? (
@@ -541,20 +522,43 @@ function VoiceLinks({ voice }: { voice: PublicVoice }) {
 }
 
 /** How many voices print in the open; the rest wait in one disclosure. */
-const VOICES_SHOWN = 3;
+const VOICES_SHOWN = 1;
 
 /** What the public voices show and what they leave untested, word for word wherever it is printed. */
 export const VOICES_LIMIT =
   "These sources show that clashes are a known complaint. Whether programmers would use or pay for this has not been tested.";
 
+/** Said in each voice's attribution line: the statement above it is our paraphrase, not their words. */
+export const OUR_SUMMARY = "(our summary)";
+
 /**
- * What programmers have said in public: the first three as a ruled list, each voice one item with 20px above and
- * below and a 1px border-border rule between items across the column (none above the first). Each paraphrase is
- * 18px at 1.55, 500 weight, in ink, at most 62ch, with no stripe, mark, italic, indent or quotation marks (they are
- * paraphrases, not words said verbatim, so no quotation mark hangs in the margin). The name and the dated source
- * links sit on their own line under each in 13px muted. Every source link stays in the open. One closed
- * disclosure at the list's foot, named for what it holds, carries any other voices and the sentence that limits
- * what they all show.
+ * The one disclosure's summary, on one line at 390 px: how many more statements it holds (the section's heading
+ * already says whose), and the sentence that limits what they all show.
+ */
+export function moreVoicesSummary(count: number): string {
+  if (count === 0) return "What these sources show";
+  const word = numberWord(count);
+  const noun = count === 1 ? "statement" : "statements";
+  return `${word.charAt(0).toUpperCase()}${word.slice(1)} more ${noun}, and what they show`;
+}
+
+/** A voice's attribution line: the name, "(our summary)", then the dated source links, 13px muted. */
+function VoiceAttribution({ voice, className }: { voice: PublicVoice; className?: string }) {
+  return (
+    <p className={cn("text-[0.8125rem] leading-snug text-muted-foreground", className)}>
+      <span className="font-semibold text-foreground">{voice.who}</span> {OUR_SUMMARY}
+      {" · "}
+      <VoiceLinks voice={voice} />
+    </p>
+  );
+}
+
+/**
+ * What programmers have said in public: the first statement open, 18px at 1.55, 500 weight, in ink, at most 62ch,
+ * with no stripe, mark, italic, indent or quotation marks (they are paraphrases, not words said verbatim, and each
+ * attribution says "(our summary)"). The name and the dated source links sit on their own line under it in 13px
+ * muted. One closed disclosure, named for what it holds, carries the other statements (each with its attribution
+ * and links) and the sentence that limits what they all show.
  */
 function PublicVoices() {
   const shown = PUBLIC_VOICES.slice(0, VOICES_SHOWN);
@@ -562,31 +566,22 @@ function PublicVoices() {
   return (
     <div>
       <h3 className={CONCLUSION}>What programmers have said in public</h3>
-      <ul className="mt-1 divide-y divide-border">
+      <ul className="mt-1">
         {shown.map((voice) => (
-          <li key={voice.who} data-voice className="py-5">
+          <li key={voice.who} data-voice className="py-4">
             <p className="max-w-[62ch] text-[1.125rem] leading-[1.55] font-medium text-foreground">{voice.said}</p>
-            <p className="mt-2 text-[0.8125rem] leading-snug text-muted-foreground">
-              <span className="font-semibold text-foreground">{voice.who}</span>
-              {" · "}
-              <VoiceLinks voice={voice} />
-            </p>
+            <VoiceAttribution voice={voice} className="mt-2" />
           </li>
         ))}
       </ul>
-      <Fold
-        className="max-w-[62ch]"
-        summary={rest.length > 0 ? `${rest.map((voice) => voice.who).join("; ")}, and what these sources show` : "What these sources show"}
-      >
+      <Fold className="max-w-[62ch]" summary={moreVoicesSummary(rest.length)}>
         <div className="pb-3">
           {rest.length > 0 ? (
-            <ul className="space-y-2.5 text-sm leading-relaxed">
+            <ul className="space-y-3">
               {rest.map((voice) => (
-                <li key={voice.who} className="max-w-prose">
-                  <span className="font-semibold">{voice.who}:</span> {voice.said}{" "}
-                  <span className="text-muted-foreground">
-                    <VoiceLinks voice={voice} />
-                  </span>
+                <li key={voice.who} data-voice-more className="max-w-prose">
+                  <p>{voice.said}</p>
+                  <VoiceAttribution voice={voice} className="mt-1" />
                 </li>
               ))}
             </ul>
@@ -600,15 +595,16 @@ function PublicVoices() {
   );
 }
 
-/** The taste reading's place in the price, on a published day and on the invented one. */
-export const QLOO_PART = "the part Qloo adds";
-export const QLOO_PART_INVENTED = "the taste-overlap part";
+/** The taste reading's place in the index, on a published day and on the invented one. */
+export const QLOO_PART = "the part Qloo’s taste data adds to the index";
+export const QLOO_PART_INVENTED = "the taste-overlap part of the index";
 
 /**
- * What the failed pre-set test taught us, in its own block: the figure against the bar, that popularity
- * did better, and what that makes the taste reading. It is the last block of the taste section on the
- * home page, always rendered and never inside a disclosure. The AUC figures stay on /method, where AUC
- * is defined; this block links there. Server-rendered.
+ * What the failed pre-set test taught us, in one paragraph under its heading: the figure against the bar, that
+ * popularity did better (with its figure), that the exploratory follow-up did not establish an advantage, and what
+ * that makes the taste reading. It is the last block of the taste section on the home page, always rendered and
+ * never inside a disclosure. The AUC figures and the correlation with popularity stay on /method, where they are
+ * defined; this block links there. Server-rendered.
  */
 export function FailedTestNote({
   className,
@@ -621,7 +617,7 @@ export function FailedTestNote({
   const { backtest } = METHOD_FIGURES;
   const taste = methodRow("taste");
   const popularity = methodRow("popularity");
-  // Nothing on the invented day credits Qloo, so there the price's fourth part is named for what it is.
+  // Nothing on the invented day credits Qloo, so there the index's taste part is named for what it is.
   const part =
     synthetic === undefined ? (
       <BySyntheticDay real={QLOO_PART} invented={QLOO_PART_INVENTED} />
@@ -631,24 +627,18 @@ export function FailedTestNote({
       QLOO_PART
     );
   return (
-    <div className={cn("text-sm leading-relaxed", className)}>
+    <div data-failed-test className={cn("text-sm leading-relaxed", className)}>
       <h3 className="text-base font-semibold">What the failed test taught us.</h3>
-      <div className="mt-2 grid gap-x-8 gap-y-3 lg:grid-cols-2">
-        <p className="max-w-prose">
-          Our test failed: taste overlap put {formatPct(taste.topQuarterPct)} of complained-about clashes in the top
-          quarter of their day, below our {backtest.bar.topQuarterPct}% bar. Popularity, also a Qloo field, did
-          better. It reached {formatPct(popularity.topQuarterPct)}. The exploratory follow-up did not establish an
-          advantage over popularity.
-        </p>
-        <p className="max-w-prose">
-          So the taste reading is a second opinion beside time and draw: it is one of the four parts of the price of
-          each clash, {part}, and never the verdict on its own. It is nearly unrelated to popularity (r ={" "}
-          {backtest.popularityCorrelation}).{" "}
-          <Link href="/method#tested" className={LINK}>
-            How we know
-          </Link>
-        </p>
-      </div>
+      <p className="mt-2 max-w-prose">
+        Our test failed: taste overlap put {formatPct(taste.topQuarterPct)} of complained-about clashes in the top
+        quarter of their day, below our {backtest.bar.topQuarterPct}% bar. Popularity, also a Qloo field, did
+        better. It reached {formatPct(popularity.topQuarterPct)}. The exploratory follow-up did not establish an
+        advantage over popularity. So the taste reading is a second opinion beside time and draw: {part}, never the
+        verdict on its own.{" "}
+        <Link href="/method#tested" className={LINK}>
+          How we know
+        </Link>
+      </p>
     </div>
   );
 }
@@ -656,11 +646,12 @@ export function FailedTestNote({
 /**
  * What is public about the problem and what is not known, right after the taste section and before the board,
  * open on the paper with no rule above it and no card around it. From 1024px it is a 12-column composition: on
- * the left (5 columns) the problem, its finding set large at 20px with the overlap figure under it, then 48px lower
- * what is not known; on the right (7 columns) the public voices as a ruled list. The columns are not balanced. Under
- * both, the pilot offer is an unboxed block under a top rule, full width; the section has no named surface. Below
- * 1024px it is one column: problem, voices, what is not known, pilot. Each finding
- * opens with its conclusion (an existing heading, 18px semibold); the rest sits in its text toggle. The caveats,
+ * the left (5 columns) the problem, its finding set large at 20px as the column's heading with the overlap figure
+ * under it, then 40px lower what is not known; on the right (7 columns) the first public statement with the others
+ * in one fold, then 40px lower the pilot offer, an unboxed block under a top rule, level with what is not known.
+ * Each column stacks on its own, so neither leaves a hole; the section has no named surface. Below 1024px it is one
+ * column with 40px between blocks: problem, voices, what is not known, pilot. The other findings open with their
+ * conclusion (an existing heading, 18px semibold); the rest sits in its text toggle. The caveats,
  * the competitor search's "absence of evidence only" (the first line under its heading, at body size, in ink),
  * what is not known, the pilot offer and every source link stay in the open. The complaint counts are read from
  * `METHOD_FIGURES`; the failed test they were scored in is `FailedTestNote`, in the taste section, and the chart
@@ -686,18 +677,16 @@ export function WhyThisMatters({
         <h2 id="why-this-matters-heading" className="type-title">
           Who has complained, and what nobody has tested
         </h2>
-        <div className="mt-8 grid items-start gap-y-12 text-[0.9375rem] leading-[1.55] lg:grid-cols-12 lg:grid-rows-[auto_1fr] lg:gap-x-12 lg:gap-y-0">
-          <div data-why-col="problem" className="min-w-0 lg:col-span-5 lg:row-start-1">
-            <h3 className={CONCLUSION}>The problem is public</h3>
-            <p data-why-finding className="mt-3 text-xl leading-snug font-medium text-foreground">
+        <div className="mt-8 grid items-start gap-y-10 text-[0.9375rem] leading-[1.55] lg:grid-cols-12 lg:grid-rows-[auto_auto_auto] lg:gap-x-12 lg:gap-y-0">
+          <div data-why-col="problem" className="min-w-0 lg:col-span-5 lg:row-span-2 lg:row-start-1">
+            {/* The finding is the column's heading: the conclusion itself, set at 20px, 500 weight, in ink. */}
+            <h3 data-why-finding className="text-xl leading-snug font-medium text-foreground">
               {complaints.clustersVerified} clashes that fans or the press complained about at {complaints.festivals}{" "}
               festivals had a verified overlap in time.
-            </p>
+            </h3>
+            {/* Who the complaints come from, then, in muted in the same paragraph, that most are about other days. */}
             <p data-why-sources className="mt-2">
-              {COMPLAINT_SOURCES}
-            </p>
-            <p data-why-elsewhere className="mt-2 text-muted-foreground">
-              {COMPLAINTS_ELSEWHERE}
+              {COMPLAINT_SOURCES} <span data-why-elsewhere className="text-muted-foreground">{COMPLAINTS_ELSEWHERE}</span>
             </p>
             <ComplaintFigure />
             <Fold
@@ -708,17 +697,15 @@ export function WhyThisMatters({
             </Fold>
           </div>
 
-          <div data-why-col="voices" className="min-w-0 lg:col-span-7 lg:col-start-6 lg:row-span-2 lg:row-start-1">
+          <div data-why-col="voices" className="min-w-0 lg:col-span-7 lg:col-start-6 lg:row-start-1">
             <PublicVoices />
           </div>
 
-          <div data-why-col="unknown" className="min-w-0 lg:col-span-5 lg:col-start-1 lg:row-start-2 lg:mt-12">
+          <div data-why-col="unknown" className="min-w-0 lg:col-span-5 lg:col-start-1 lg:row-start-3 lg:mt-10">
             <h3 className={CONCLUSION}>No scheduler we found reads audience overlap</h3>
             <p className="mt-2">
-              Our search, October 2026: absence of evidence only. Who would pay is not known.
-            </p>
-            <p data-payer-guess className="mt-2">
-              {PAYER_GUESS}
+              Our search, October 2026: absence of evidence only. Who would pay is not known.{" "}
+              <span data-payer-guess>{PAYER_GUESS}</span>
             </p>
             <Fold className="mt-2" summary="Festival Pro and Lineup Ninja">
               <p className="pb-3">
@@ -728,9 +715,11 @@ export function WhyThisMatters({
             </Fold>
             <DemandLine demand={demand} />
           </div>
-        </div>
-        <div className="mt-12 text-[0.9375rem] leading-[1.55]">
-          <PilotOffer contact={contact} terms={terms} />
+
+          {/* The pilot, last in reading order; from 1024px under the voices, level with what is not known. */}
+          <div data-why-col="pilot" className="min-w-0 lg:col-span-7 lg:col-start-6 lg:row-span-2 lg:row-start-2 lg:mt-10">
+            <PilotOffer contact={contact} terms={terms} />
+          </div>
         </div>
       </div>
     </section>

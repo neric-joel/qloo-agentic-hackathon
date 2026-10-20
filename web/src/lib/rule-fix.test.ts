@@ -277,11 +277,11 @@ describe("fixStep", () => {
 describe("keeping a change", () => {
   it("announces a change as meant to keep the pair apart, before the plan's receipt says whether it does", () => {
     const rule = parseRuleFixes(rawRule())!;
-    const text = "Kept a change meant to keep Ann Arbor and Bo Diddly Squat apart. Pricing your plan.";
+    const text = "Kept a change meant to keep Ann Arbor and Bo Diddly Squat apart. Scoring your plan.";
     expect(keepAnnouncement(rule)).toBe(text);
     expect(keptChangeAnnouncement("Ann Arbor", "Bo Diddly Squat")).toBe(text);
     expect(replacedChangeAnnouncement("Ann Arbor", "Bo Diddly Squat")).toBe(
-      "Replaced the earlier change for Ann Arbor and Bo Diddly Squat. Pricing your plan.",
+      "Replaced the earlier change for Ann Arbor and Bo Diddly Squat. Scoring your plan.",
     );
     expect(ALREADY_KEPT).toBe("Already in your plan.");
   });
@@ -306,10 +306,10 @@ describe("keeping a change", () => {
     expect(plannedNote(rule, fix, new Set())).toBeNull();
     expect(plannedNote(rule, fix, new Set(["zed"]))).toBeNull();
     expect(plannedNote(rule, fix, new Set(["ann"]))).toBe(
-      "Found on the published day; your plan already moves Ann Arbor, so the receipt after pricing is what counts.",
+      "Found on the published day; your plan already moves Ann Arbor, so the index with your plan applied is what counts.",
     );
     expect(plannedNote(rule, fix, new Set(["bo", "ann"]))).toBe(
-      "Found on the published day; your plan already moves Ann Arbor and Bo Diddly Squat, so the receipt after pricing is what counts.",
+      "Found on the published day; your plan already moves Ann Arbor and Bo Diddly Squat, so the index with your plan applied is what counts.",
     );
   });
 

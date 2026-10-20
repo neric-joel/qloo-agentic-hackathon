@@ -286,7 +286,7 @@ describe("the invented day: the pieces that used to credit Qloo", () => {
     const method = text(renderToStaticMarkup(wrap(true, createElement(MethodPage))));
     expect(method).toContain("a number it calculates from taste-overlap and draw figures");
     expect(method).not.toContain("a number it derives from Qloo data");
-    const opening = method.slice(method.indexOf("Clash Control prices set-time clashes"), method.indexOf("This page says what that number is"));
+    const opening = method.slice(method.indexOf("Clash Control scores set-time clashes"), method.indexOf("This page says what that number is"));
     expect(qlooCredits(opening)).toEqual([]);
     expect(method).toContain(formulaNote(true));
     expect(method).not.toContain(formulaNote(false));

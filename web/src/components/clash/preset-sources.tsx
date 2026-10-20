@@ -22,7 +22,14 @@ function shortPath(url: string): string {
   }
 }
 
-/** Where the timetable and the numbers come from, and what the tool is not. */
+/**
+ * Where the timetable and the numbers come from, and what the tool is not: one compact block, on the home page
+ * only, set directly above the site footer. It has no padding of its own below (the footer's 64px top space parts
+ * them) and 16px above, so the section before it sets the gap above and the block reads with the footer. An 18px
+ * semibold heading rather than a section title, the festival's credit and the Recorded badge with the build date
+ * on the left; the day's draw spread, the link to the definitions and the timetable sources on the right, from the
+ * heading's line. The footer already says, on every page, that the timetables are scored by this app.
+ */
 export function PresetSources({ preset }: { preset: Preset }) {
   const spread = popularitySpread(preset.festival.acts);
   const synthetic = preset.synthetic === true;
@@ -30,47 +37,41 @@ export function PresetSources({ preset }: { preset: Preset }) {
   const notes = preset.overlap_notes.filter((note) => !note.startsWith(NO_SIGNAL_NOTE));
   return (
     <section aria-labelledby="sources-heading">
-      <div className="container-page grid gap-x-12 py-16 lg:grid-cols-12 lg:items-start lg:py-20">
+      <div className="container-page grid gap-x-12 pt-4 lg:grid-cols-12 lg:items-start">
         <div className="lg:col-span-5">
-          <h2 id="sources-heading" className="type-title">
+          <h2 id="sources-heading" className="text-lg leading-snug font-semibold">
             Where the numbers come from
           </h2>
           {synthetic ? (
-            <p className="mt-3 max-w-prose text-[0.9375rem] leading-relaxed">
+            <p className="mt-2 max-w-prose text-[0.9375rem] leading-relaxed">
               <strong className="font-semibold">{SYNTHETIC_NOTICE}.</strong> The server has no built festival day, so it
               shows one made up for this page: the acts, set times, popularity and audience affinities are all invented,
               and no request was sent to Qloo. Nothing here says anything about a real festival.
             </p>
           ) : (
-            <p className="mt-3 max-w-prose text-[0.9375rem] leading-relaxed">
+            <p className="mt-2 max-w-prose text-[0.9375rem] leading-relaxed">
               <strong className="font-semibold">{festivalName(preset.festival)} does not use Clash Control.</strong>{" "}
-              This page scores the festival&rsquo;s published timetable from public sources. Nothing here is the
-              festival&rsquo;s own data or view.
+              Nothing here is the festival&rsquo;s own data or view.
             </p>
           )}
-          {preset.built_at && !synthetic ? <RecordedBadge builtAt={preset.built_at} className="mt-4" /> : null}
+          {preset.built_at && !synthetic ? <RecordedBadge builtAt={preset.built_at} className="mt-3" /> : null}
         </div>
 
         <div className="lg:col-span-7">
-          <div className="mt-4 max-w-prose space-y-2 lg:mt-0 text-[0.9375rem] leading-relaxed">
-            {/* /method defines every figure but not this day's spread of draw, so that one line stays. */}
-            <p>
-              <strong className="font-semibold">
-                {synthetic ? "Draw (invented popularity):" : "Draw (Qloo popularity):"}
-              </strong>{" "}
-              {spread.atLeast} of {spread.total} acts on this day score 90 or more out of 100.
-            </p>
-            <p>
-              Draw, taste overlap, clash price and the Clash Budget Index are defined on{" "}
-              <Link href="/method" className="font-semibold underline underline-offset-4 hover:text-primary">
-                How we know
-              </Link>
-              .
-            </p>
-          </div>
+          {/* /method defines every figure but not this day's spread of draw, so that one sentence stays, in the
+              paragraph that points to the definitions. */}
+          <p className="mt-4 max-w-prose text-[0.9375rem] leading-relaxed lg:mt-0">
+            <strong className="font-semibold">{synthetic ? "Draw (invented popularity):" : "Draw (Qloo popularity):"}</strong>{" "}
+            {spread.atLeast} of {spread.total} acts on this day score 90 or more out of 100. Draw, taste overlap and the
+            index are defined on{" "}
+            <Link href="/method" className="font-semibold underline underline-offset-4 hover:text-primary">
+              How we know
+            </Link>
+            .
+          </p>
 
           {preset.sources.length > 0 || notes.length > 0 ? (
-            <div className="mt-5 space-y-3">
+            <div className="mt-3 space-y-3">
               {preset.sources.length > 0 ? (
                 <MoreDetails summary={`Timetable sources (${preset.sources.length})`}>
                   <ul className="mt-2 mb-3 divide-y divide-border text-sm">

@@ -11,7 +11,9 @@ acts ``a`` and ``b`` with audience overlap ``o`` taken from the overlap matrix:
                     top draw tier (a clash that cleanly divides a big crowd)
 
 A timetable's regret and split quality are the sums over its concurrent pairs. Acts with no overlap signal
-are left out of every sum; their clashes are never scored as zero overlap.
+are left out of every sum; their clashes are never scored as zero overlap. A pair of scored acts whose overlap
+is unknown (no score in either direction, passed as ``unknown_pairs``) is left out the same way: out of the
+hidden and false thresholds, the random-timetable baseline, the ranked lists and the labels.
 
     Clash Budget Index = 100 * regret / mean regret of N random valid timetables of the same lineup
 
@@ -22,7 +24,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from statistics import fmean, pstdev
 
@@ -142,9 +144,38 @@ class Scorer:
     hidden_threshold: float | None
     false_threshold: float | None
     draw_cutoff: float | None
+    # True for a pair of scored sets whose overlap is unknown: it is left out, never priced as 0 overlap
+    unknown: list[list[bool]]
+
+    def known(self, i: int, k: int) -> bool:
+        """Both sets are scored and their pair's overlap is known."""
+        return self.scored[i] and self.scored[k] and not self.unknown[i][k]
 
 
-def build_scorer(festival: Festival, matrix: OverlapMatrix, config: ScoringConfig, layout: Layout) -> Scorer:
+def unknown_matrix(
+    act_ids: Sequence[str], scored: Sequence[bool], unknown_pairs: Collection[tuple[str, str]]
+) -> list[list[bool]]:
+    """Per set pair, True when both sets are scored and their acts' pair is listed as unknown."""
+    n = len(act_ids)
+    out = [[False] * n for _ in range(n)]
+    pairs = {frozenset(pair) for pair in unknown_pairs if len(set(pair)) == 2}
+    if not pairs:
+        return out
+    for i in range(n):
+        for k in range(i + 1, n):
+            if scored[i] and scored[k] and frozenset((act_ids[i], act_ids[k])) in pairs:
+                out[i][k] = out[k][i] = True
+    return out
+
+
+def build_scorer(
+    festival: Festival,
+    matrix: OverlapMatrix,
+    config: ScoringConfig,
+    layout: Layout,
+    unknown_pairs: Collection[tuple[str, str]] = (),
+) -> Scorer:
+    """Scoring inputs for a layout. ``unknown_pairs`` lists act-id pairs with no overlap score either way."""
     acts = festival.act_by_id()
     rules = layout.rules
     n = rules.n_sets
@@ -160,10 +191,11 @@ def build_scorer(festival: Festival, matrix: OverlapMatrix, config: ScoringConfi
     draw = [draw_of(act) for act in ordered]
     rarity = [act.rarity for act in ordered]
     top_tier, draw_cutoff = top_draw_tier(draw, scored, config.top_draw_share)
+    unknown = unknown_matrix(rules.act_ids, scored, unknown_pairs)
     overlap = [[0.0] * n for _ in range(n)]
     for i in range(n):
         for k in range(i + 1, n):
-            if scored[i] and scored[k]:
+            if scored[i] and scored[k] and not unknown[i][k]:
                 overlap[i][k] = overlap[k][i] = matrix.values[matrix_index[ordered[i].id]][
                     matrix_index[ordered[k].id]
                 ]
@@ -171,7 +203,7 @@ def build_scorer(festival: Festival, matrix: OverlapMatrix, config: ScoringConfi
     split_w = [[0.0] * n for _ in range(n)]
     for i in range(n):
         for k in range(i + 1, n):
-            if not (scored[i] and scored[k]):
+            if not (scored[i] and scored[k]) or unknown[i][k]:
                 continue
             regret_w[i][k] = regret_w[k][i] = regret_weight(
                 overlap[i][k], draw[i], draw[k], rarity[i], rarity[k]
@@ -179,7 +211,10 @@ def build_scorer(festival: Festival, matrix: OverlapMatrix, config: ScoringConfi
             if top_tier[i] and top_tier[k]:
                 split_w[i][k] = split_w[k][i] = split_weight(overlap[i][k], draw[i], draw[k])
     pair_overlaps = sorted(
-        overlap[i][k] for i in range(n) for k in range(i + 1, n) if scored[i] and scored[k]
+        overlap[i][k]
+        for i in range(n)
+        for k in range(i + 1, n)
+        if scored[i] and scored[k] and not unknown[i][k]
     )
     return Scorer(
         config=config,
@@ -198,6 +233,7 @@ def build_scorer(festival: Festival, matrix: OverlapMatrix, config: ScoringConfi
         hidden_threshold=quantile(pair_overlaps, config.hidden_quantile),
         false_threshold=quantile(pair_overlaps, config.false_quantile),
         draw_cutoff=draw_cutoff,
+        unknown=unknown,
     )
 
 
@@ -225,7 +261,7 @@ def clash_label(scorer: Scorer, i: int, k: int) -> ClashLabel | None:
     "false": the genres match but the audiences barely meet (bottom quartile).
     """
     genre_i, genre_k = scorer.genre[i], scorer.genre[k]
-    if genre_i is None or genre_k is None:
+    if genre_i is None or genre_k is None or scorer.unknown[i][k]:
         return None
     overlap = scorer.overlap[i][k]
     hidden, false = scorer.hidden_threshold, scorer.false_threshold
@@ -275,7 +311,7 @@ def resolve_baseline(layout: Layout, scorer: Scorer, config: ScoringConfig) -> B
 def measure(scorer: Scorer, layout: Layout, baseline: BaselineStats | None) -> ScheduleMetrics:
     regret, split = layout.pair_sums([scorer.regret_w, scorer.split_w])
     pairs = layout.concurrent_pairs()
-    scored_pairs = sum(1 for i, k, _ in pairs if scorer.scored[i] and scorer.scored[k])
+    scored_pairs = sum(1 for i, k, _ in pairs if scorer.known(i, k))
     normaliser = split_normaliser(scorer, baseline)
     return ScheduleMetrics(
         regret=round(regret, 6),
@@ -296,7 +332,7 @@ def _pair_details(scorer: Scorer, layout: Layout, festival: Festival) -> list[Pa
     acts = festival.act_by_id()
     details = []
     for i, k, shared in layout.concurrent_pairs():
-        if not (scorer.scored[i] and scorer.scored[k]):
+        if not scorer.known(i, k):
             continue
         conc = shared / min(rules.dur[i], rules.dur[k])
         both_top = scorer.top_tier[i] and scorer.top_tier[k]
@@ -518,10 +554,17 @@ def _rounded_regret(clashes: list[PairClash]) -> list[PairClash]:
 
 
 def score_festival(
-    festival: Festival, matrix: OverlapMatrix, config: ScoringConfig | None = None
+    festival: Festival,
+    matrix: OverlapMatrix,
+    config: ScoringConfig | None = None,
+    *,
+    unknown_pairs: Collection[tuple[str, str]] = (),
 ) -> ScoreReport:
-    """Score a timetable: metrics, Clash Budget Index, ranked clashes, labels and stage-fit flags."""
+    """Score a timetable: metrics, Clash Budget Index, ranked clashes, labels and stage-fit flags.
+
+    ``unknown_pairs``: act-id pairs whose overlap is unknown; they are left out, not scored as zero.
+    """
     config = config or ScoringConfig()
     layout = Layout.from_festival(festival)
-    scorer = build_scorer(festival, matrix, config, layout)
+    scorer = build_scorer(festival, matrix, config, layout, unknown_pairs)
     return build_report(festival, layout, scorer, resolve_baseline(layout, scorer, config))

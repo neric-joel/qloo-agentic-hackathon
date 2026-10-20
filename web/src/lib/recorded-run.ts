@@ -216,3 +216,33 @@ export function toReplayBeats(run: RecordedRun): ReplayBeat[] {
 export function replayFinalState(run: RecordedRun): RunState {
   return reduceEvents(toReplayBeats(run).map((beat) => beat.event));
 }
+
+/**
+ * Where a run's own tool results leave it, read from its saved `result` event (never the model's words):
+ * `keep` when the engine found a legal place (an allowed try_move, or a find_moves list with places), so the run
+ * ends with a place to keep; `refused` when every move it tested was refused by the rules; `other` otherwise.
+ */
+export function runEnding(run: RecordedRun): "keep" | "refused" | "other" {
+  const result = run.events.find(({ event }) => event.type === "result" && event.kind === "clash")?.event;
+  const data = result && result.type === "result" && isRecord(result.data) ? result.data : null;
+  const tools = data && isRecord(data.tool_data) ? Object.values(data.tool_data).filter(isRecord) : [];
+  const keeps = tools.some(
+    (item) =>
+      (item.kind === "what_if" && item.allowed === true) ||
+      (item.kind === "move_options" && item.movable !== false && Array.isArray(item.options) && item.options.length > 0),
+  );
+  if (keeps) return "keep";
+  return tools.some((item) => item.kind === "what_if" && item.allowed === false) ? "refused" : "other";
+}
+
+/**
+ * The runs in the order the panel lists them, and the first one its default: a run that ends with a place to
+ * keep first, a run the rules refuse last, the rest between, each group in the server's order.
+ */
+export function orderRecordings(runs: readonly RecordedRun[]): RecordedRun[] {
+  const rank = { keep: 0, other: 1, refused: 2 } as const;
+  return runs
+    .map((run, i) => ({ run, i, rank: rank[runEnding(run)] }))
+    .sort((a, b) => a.rank - b.rank || a.i - b.i)
+    .map((item) => item.run);
+}

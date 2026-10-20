@@ -2,14 +2,11 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { ArrowRight, ChevronDown } from "lucide-react";
-import Link from "next/link";
+import { ChevronDown } from "lucide-react";
 
 import { AbstainState, ErrorState, TraceDrawer } from "@/components/kernel";
-import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import type { AgentStatus } from "@/lib/agent-status";
-import { CHECK_LIVE } from "@/lib/check-flag";
 import { describeReach, samplingReach } from "@/lib/clash-budget";
 import { boardTraceDescription, popularityName, usedTitle } from "@/lib/credit";
 import {
@@ -24,14 +21,15 @@ import {
   traceToolCalls,
   type HeroClash,
 } from "@/lib/clashes";
-import { buildDecisionCopy, type Decision } from "@/lib/decision";
+import { buildDayGraph, type DayGraphModel, type GraphView } from "@/lib/day-graph";
+import { buildDecisionCopy, decisionDay, requestDecision, type Decision } from "@/lib/decision";
 import { pluralize } from "@/lib/format";
 import { drawerRank, drawerRankOf } from "@/lib/lenses";
 import { MOCK_STREAM_ENABLED } from "@/lib/mock-stream";
 import { parsePreset, type Evidence, type PairClash, type Preset, type PresetSummary } from "@/lib/preset";
 import type { RulePreview } from "@/lib/rule-fix";
 import type { ServerSummary } from "@/lib/server-summary";
-import { isRuleStackStep, sameStep, seedOutcome, type PlanPreview, type StackStep } from "@/lib/stack";
+import { isRuleStackStep, sameStep, seedOutcome, type PlanChoice, type PlanPreview, type StackStep } from "@/lib/stack";
 import { cn } from "@/lib/utils";
 
 import { AgentPanel } from "./agent-panel";
@@ -39,7 +37,9 @@ import { BudgetDial, Scorecard } from "./budget-dial";
 import { ClashDrawer } from "./clash-drawer";
 import { ClashList, liveClashRow } from "./clash-list";
 import { CoverageMeter } from "./coverage-meter";
-import { DecisionCard, DecisionCardSkeleton } from "./decision-card";
+import { DayGraph, DayGraphKey } from "./day-graph";
+import { builtDate, DecisionDetails } from "./decision-card";
+import { HeroDecision, HeroDecisionSkeleton } from "./hero-decision";
 import { HiddenWall, type HiddenDay } from "./hidden-wall";
 import { MoreDetails } from "./more-details";
 import { PresetSources } from "./preset-sources";
@@ -49,7 +49,7 @@ import { TimetableGrid } from "./timetable-grid";
 import { TimetableLegend, legendSymbolCount } from "./timetable-legend";
 import { TimetableList } from "./timetable-list";
 import { TRY_A_MOVE_ID, TryAMove, type SeedStep } from "./try-a-move";
-import { TasteSection, WHAT_QLOO_ID, WhatQlooPointer, concurrentPairs, whatChangesTitle } from "./why-qloo";
+import { TasteSection, WHAT_QLOO_ID, concurrentPairs, whatChangesTitle } from "./why-qloo";
 import { WHY_THIS_MATTERS_ID, WhyThisMatters } from "./why-this-matters";
 import { useAgentStatus } from "./use-agent-status";
 import { useDecision } from "./use-decision";
@@ -72,8 +72,7 @@ const HERO_BUTTON: Record<HeroClash["kind"], string> = {
   costliest: "Open the costliest clash",
 };
 
-const PROOF_LINE =
-  "Run on the public timetables of Glastonbury 2025 and Riot Fest 2026. Neither festival uses Clash Control.";
+const PROOF_LINE = "Neither festival uses Clash Control.";
 export const SYNTHETIC_PROOF_LINE =
   "Shown here on an invented day: the server has no built festival day, so the acts, times and readings are made up and no Qloo request was made.";
 
@@ -86,88 +85,120 @@ function replacedNote(plan: readonly StackStep[], seed: StackStep): string | nul
   return outcome.kind === "replace" ? `It replaced your earlier ${pluralize(outcome.dropped, "kept step")}.` : null;
 }
 
-/** Beside the paste action: what it costs the visitor, and what leaves the browser. */
-export const HERO_MICROCOPY = "About a minute. Nothing leaves your browser unless you ask to compare audiences.";
+/** A festival day's label in the picker: its festival, the text before the first ", " of its title. */
+export function festivalLabel(title: string): string {
+  const comma = title.indexOf(", ");
+  return comma >= 0 ? title.slice(0, comma) : title;
+}
 
 /**
- * One muted 14 px note at the foot of the pitch column: the paste's cost (when /check is live) and the
- * proof line, verbatim, joined as one paragraph of at most two lines at 1440 px. On a phone it comes last,
- * after the card and the stat sentence.
+ * The line under the festival picker: the day, the kind of timetable and when its saved reading was built,
+ * then the proof line ("Sunday. Published timetable; saved Qloo reading built 3 Oct 2026. Neither festival uses
+ * Clash Control."). The invented day says so and that no Qloo request was made. Without a drawn day (no
+ * server summary yet) the proof line stands alone.
  */
-function HeroNote({ className, synthetic = false }: { className?: string; synthetic?: boolean }) {
+function HeroDateline({ model, synthetic = false }: { model: DayGraphModel | null; synthetic?: boolean }) {
+  const date = model?.builtAt ? builtDate(model.builtAt) : null;
+  const lead = !model
+    ? null
+    : synthetic
+      ? "Invented timetable."
+      : `${model.dayName ? `${model.dayName}. ` : ""}Published timetable${date ? `; saved Qloo reading built ${date}` : ""}.`;
   return (
-    <p className={cn("max-w-[32rem] text-sm leading-relaxed text-muted-foreground lg:max-w-none", className)}>
-      {/* On a phone the paste's cost sits under the action it describes (HeroActions), so here it is
-          shown from lg only. */}
-      {CHECK_LIVE ? <span className="hidden lg:inline">{HERO_MICROCOPY} </span> : null}
+    <p
+      data-dateline=""
+      className="mt-1 max-w-[44rem] text-[0.8125rem] leading-[1.125rem] text-muted-foreground lg:mt-2 lg:text-sm lg:leading-5"
+    >
+      {lead ? `${lead} ` : null}
       {synthetic ? SYNTHETIC_PROOF_LINE : PROOF_LINE}
     </p>
   );
 }
 
+/** The drawing toggle's group name. */
+const VIEW_TOGGLE_LABEL = "Drawing shows";
+
 /**
- * The hero's action: "Paste your own draft grid" opens /check while that page is live, as the outline
- * button (44 px, the default size, a 1.5 px ink edge with the 12 px control corner and a trailing arrow that moves 2 px), so
- * the card's "Open this move" stays the one filled ink button on the first screen in both themes.
+ * What the day drawing shows: the day as published, or with the decision's move. The invented timetable was
+ * never published, so on that day the first option reads "Invented timetable". It fills the row below
+ * 1024 px. Nothing when there is no move.
  */
-function HeroActions() {
-  if (!CHECK_LIVE) return null;
+function ViewToggle({
+  model,
+  view,
+  onChange,
+}: {
+  model: DayGraphModel;
+  view: GraphView;
+  /** Absent before the interactive view mounts: the toggle is drawn on the moved view, not yet pressable. */
+  onChange?: (view: GraphView) => void;
+}) {
+  if (!model.move) return null;
+  const options: { value: GraphView; label: string }[] = [
+    { value: "published", label: model.synthetic ? "Invented timetable" : "As published" },
+    { value: "moved", label: model.move.label },
+  ];
   return (
-    <div className="lg:mt-8">
-      <Button asChild variant="outline" size="default">
-        <Link href="/check">Paste your own draft grid<ArrowRight aria-hidden="true" /></Link>
-      </Button>
-      <p className="mt-2 max-w-[32rem] text-sm leading-relaxed text-muted-foreground lg:hidden">{HERO_MICROCOPY}</p>
-    </div>
+    <SegmentedControl
+      label={VIEW_TOGGLE_LABEL}
+      size="sm"
+      value={view}
+      onValueChange={onChange ?? (() => {})}
+      pending={!onChange}
+      fill
+      className="lg:inline-grid lg:w-auto"
+      options={options}
+    />
   );
 }
 
 /**
- * The hero: the static pitch and its action on the left, the decision card on the right. From `lg` the
- * card spans the column's rows and the pitch column reads from the top with no hole: pitch, the action
- * 32 px under it, the stat sentence 40 px under that and the note 16 px under the sentence, with no rule
- * between them; whatever height the card has spare falls below the note. Below `lg` the page reads in
- * source order: pitch, decision card, action, stat sentence, then the note, so a phone's first screen
- * shows the clash itself before the paste. The action is rendered twice for that, in the same grid area:
- * once before the card, shown from `lg`, and once after it, shown below `lg`. The other copy is
- * display:none at every width, so exactly one is seen, read and focused, and the tab order is the order
- * seen. The day's score sits with the timetable it reads.
+ * The hero, "the day is the graph", in one DOM order at every width: the pitch, the festival day (its picker
+ * and dateline), the drawing's toggle, the drawing, the decision group, the drawing's key. Below 1024 px it
+ * reads in that order. From 1024 px a grid puts the pitch, the day and the toggle in the left column, the
+ * decision group in a right column 26rem wide (28rem from 1280 px) beside all three, and the drawing and its
+ * key across both: the toggle sits at the foot of its row, directly over the drawing, which starts 24 px
+ * under the taller column. Every track is minmax(0, ...) and every item min-w-0, so nothing pushes past the
+ * page gutter on a phone. `busy` while another festival day is on its way to replace the one drawn.
  */
 function HeroLayout({
   intro,
-  stats,
-  actions,
-  aside,
-  synthetic = false,
+  day,
+  toggle,
+  graph,
+  group,
+  graphKey,
+  busy = false,
 }: {
   intro: ReactNode;
-  /** The complaint figures under the pitch; the page renders them, so every path shows the same line. */
-  stats?: ReactNode;
-  actions?: ReactNode;
-  aside: ReactNode;
-  synthetic?: boolean;
+  day?: ReactNode;
+  toggle?: ReactNode;
+  graph?: ReactNode;
+  group?: ReactNode;
+  graphKey?: ReactNode;
+  busy?: boolean;
 }) {
   return (
-    <section aria-labelledby="pitch-heading">
-      <div className="container-page pt-6 pb-10 sm:pt-8 lg:pt-10">
-        {/* Two equal columns from 1280 px. Between 1024 and 1279 the card column is held at 35.75rem, so the
-            card's running-order drawing reaches its full 24rem inside the card's padding. The pitch and the
-            card's top edge start on the same line; the pitch column is top-aligned, and the last, flexible row
-            under the note takes the height the card has spare. The section's 40 px foot, at every width, is the gap to the jump nav (no rule). Below 1024 px one column in source
-            order, the card before the action. Every track is minmax(0, ...) and every item min-w-0, so nothing pushes the card past the
-            page gutter on a phone. */}
-        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] items-start gap-y-6 [grid-template-areas:'pitch'_'card'_'actions'_'stats'_'note'] sm:gap-y-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,35.75rem)] lg:grid-rows-[auto_auto_auto_auto_1fr] lg:gap-x-8 lg:gap-y-0 lg:[grid-template-areas:'pitch_card'_'actions_card'_'stats_card'_'note_card'_'._card'] xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <div className="min-w-0 [grid-area:pitch]">{intro}</div>
-          {actions ? <div className="min-w-0 [grid-area:actions] max-lg:hidden">{actions}</div> : null}
-          <div className="min-w-0 self-start [grid-area:card]">{aside}</div>
-          {actions ? <div className="min-w-0 [grid-area:actions] lg:hidden">{actions}</div> : null}
-          {stats ? <div className="min-w-0 [grid-area:stats] lg:mt-10">{stats}</div> : null}
-          <HeroNote className="[grid-area:note] lg:mt-4" synthetic={synthetic} />
+    <section aria-labelledby="pitch-heading" aria-busy={busy || undefined}>
+      <div className="container-page pt-4 pb-8 sm:pt-6 lg:pt-8 lg:pb-6">
+        <div
+          data-hero=""
+          className="grid min-w-0 grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_26rem] lg:grid-rows-[auto_auto_1fr_auto_auto] lg:gap-x-12 lg:[grid-template-areas:'pitch_group'_'day_group'_'toggle_group'_'graph_graph'_'key_key'] xl:grid-cols-[minmax(0,1fr)_28rem]"
+        >
+          <div className="min-w-0 lg:[grid-area:pitch]">{intro}</div>
+          {day ? <div className="mt-2 min-w-0 lg:mt-6 lg:[grid-area:day]">{day}</div> : null}
+          {toggle ? <div className="mt-2 min-w-0 lg:mt-6 lg:self-end lg:[grid-area:toggle]">{toggle}</div> : null}
+          {graph ? <div className="mt-1 min-w-0 lg:mt-6 lg:[grid-area:graph]">{graph}</div> : null}
+          {group ? <div className="mt-2 min-w-0 lg:mt-0 lg:self-start lg:[grid-area:group]">{group}</div> : null}
+          {graphKey ? <div className="mt-4 min-w-0 lg:mt-3 lg:[grid-area:key]">{graphKey}</div> : null}
         </div>
       </div>
     </section>
   );
 }
+
+/** The key under the drawing, as the hero sets it: 13 px muted, one line at 1440 px. */
+const KEY_CLASS = "max-w-[75rem] text-[0.8125rem] leading-5 text-muted-foreground";
 
 /**
  * The timetable section's frame: the page container's edges, like every other section. Five stage columns
@@ -219,7 +250,7 @@ export function HomeSections(sections: Record<HomeSection, ReactNode>) {
  * scrolls sideways.
  */
 /**
- * The section nav's entries, in page order: What Qloo changes (when the card has its readings), Hidden
+ * The section nav's entries, in page order: What Qloo changes (when the page passes it), Hidden
  * clashes (when the day has examples), Why this matters, Timetable, Try a move, the agent's runs, Sources.
  */
 export function jumpLinks({ agent, wall, qloo = null }: { agent: JumpLink; wall: boolean; qloo?: JumpLink | null }): JumpLink[] {
@@ -291,8 +322,9 @@ function JumpNav({ agent, wall, qloo = null }: { agent: JumpLink; wall: boolean;
   }, [hrefs]);
 
   // One marker under the current item, on the bar's hairline: it slides to the new item over 180 ms
-  // (ease-out) and jumps at once under reduced motion. Drawn from the measured label, so it spans the
-  // word at any font size; hidden when no section is current.
+  // (ease-out, transform only; its width takes the new label's at once) and jumps at once under reduced
+  // motion. Drawn from the measured label, so it spans the word at any font size; hidden when no section is
+  // current.
   const listRef = useRef<HTMLUListElement | null>(null);
   const markerRef = useRef<HTMLLIElement | null>(null);
   useEffect(() => {
@@ -330,16 +362,15 @@ function JumpNav({ agent, wall, qloo = null }: { agent: JumpLink; wall: boolean;
       aria-label="On this page"
       className="z-30 h-11 bg-background max-md:[html:has(&)]:scroll-pt-[3.9375rem] md:sticky md:top-16 md:[html:has(&)]:scroll-pt-[5.125rem]"
     >
-      {/* Inside the content column: plain 14 px links, each led by its step number, 44 px tall
-          with 12 px sides (the first pulled back so its numeral starts on the content edge); the numerals are
-          the /method rail's, 15 px in the condensed numeral face. The current
-          item's 3 px ink capsule marker sits at the bar's foot. The current item is ink and semibold with an
-          ink numeral (wayfinding is ink, never vermilion); no ground, no corner. */}
+      {/* Inside the content column: plain 14 px links, labels only, 44 px tall with 12 px sides (the first
+          pulled back so its label starts on the content edge). The current item's 3 px ink marker, its ends
+          round, sits at the bar's foot. The current item is ink and semibold (wayfinding is ink, never
+          raspberry); no ground. */}
       <ul
         ref={listRef}
         className="container-page relative flex h-full items-center gap-x-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&>li:first-child]:-ml-3"
       >
-        {links.map((link, index) => {
+        {links.map((link) => {
           const on = current === link.href;
           return (
             <li key={link.href}>
@@ -347,19 +378,11 @@ function JumpNav({ agent, wall, qloo = null }: { agent: JumpLink; wall: boolean;
                 href={link.href}
                 aria-current={on ? "location" : undefined}
                 className={cn(
-                  "inline-flex h-11 items-center px-3 text-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring motion-safe:transition-colors motion-safe:duration-150 motion-safe:ease-out",
+                  "inline-flex h-11 items-center rounded-md px-3 text-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
                   on ? "font-semibold text-foreground" : "font-medium text-muted-foreground hover:text-foreground",
                 )}
               >
-                <span data-nav-label="" className="inline-flex items-baseline gap-1.5">
-                  <span
-                    aria-hidden="true"
-                    className={cn("type-numeral text-[0.9375rem] leading-none", on ? "text-foreground" : "text-muted-foreground")}
-                  >
-                    {index + 1}
-                  </span>
-                  {link.label}
-                </span>
+                <span data-nav-label="">{link.label}</span>
               </a>
             </li>
           );
@@ -368,7 +391,7 @@ function JumpNav({ agent, wall, qloo = null }: { agent: JumpLink; wall: boolean;
           ref={markerRef}
           aria-hidden="true"
           style={{ visibility: "hidden" }}
-          className="pointer-events-none absolute bottom-0 left-0 h-[3px] list-none rounded-bar bg-foreground motion-safe:transition-[transform,width] motion-safe:duration-[180ms] motion-safe:ease-out print:hidden"
+          className="pointer-events-none absolute bottom-0 left-0 h-[3px] list-none rounded-bar bg-foreground motion-safe:transition-[transform] motion-safe:duration-(--dur-state) motion-safe:ease-(--ease-out) print:hidden"
         />
       </ul>
     </nav>
@@ -376,38 +399,50 @@ function JumpNav({ agent, wall, qloo = null }: { agent: JumpLink; wall: boolean;
 }
 
 /**
- * The first screen before the interactive page has a festival day: the server's summary of the day
- * when there is one (the server HTML carries it), skeletons otherwise.
+ * The first screen before the interactive page has a festival day: the server's summary of the day when
+ * there is one (the server HTML carries it), skeletons otherwise. Its hero is the interactive hero's final
+ * frame, drawn from the same model: the festival picker with the same options, the toggle on the moved view,
+ * the drawing, the decision group with "Keep this move" in place, and the key, none of them pressable until
+ * the interactive view mounts, so the swap changes no box.
  */
 function LoadingView({
   intro,
-  stats,
   summary,
   picker,
   status,
 }: {
   intro: ReactNode;
-  stats?: ReactNode;
   summary: ServerSummary | null;
   picker?: ReactNode;
   status?: ReactNode;
 }) {
+  const model = summary?.dayGraph ?? null;
+  const synthetic = summary?.synthetic === true;
   return (
     <>
       <HeroLayout
         intro={intro}
-        stats={stats}
-        synthetic={summary?.synthetic === true}
-        actions={<HeroActions />}
-        aside={
-          <div className="space-y-4">
-            {summary?.decision ? <DecisionCard copy={summary.decision} /> : null}
-            {status}
-          </div>
+        day={
+          <>
+            {picker}
+            <HeroDateline model={model} synthetic={synthetic} />
+          </>
         }
+        toggle={model ? <ViewToggle model={model} view="moved" /> : null}
+        graph={model ? <DayGraph model={model} view={model.move ? "moved" : "published"} /> : null}
+        group={
+          <>
+            {model ? (
+              <HeroDecision model={model} copy={summary?.decision ?? null} view={model.move ? "moved" : "published"} pending />
+            ) : (
+              <HeroDecisionSkeleton />
+            )}
+            {status}
+          </>
+        }
+        graphKey={model ? <DayGraphKey model={model} className={KEY_CLASS} /> : null}
       />
       <BoardFrame label="Timetable">
-        {picker}
         {/* The day's score beside the clashes it adds up, where the interactive board puts its dial. */}
         <div className="grid gap-x-10 gap-y-6 xl:grid-cols-[18rem_minmax(0,1fr)]">
           <div className="min-w-0 max-w-[28rem]">{summary ? <SummaryScore summary={summary} /> : <ScoreSkeleton />}</div>
@@ -421,14 +456,18 @@ function LoadingView({
 
 export function ClashControlFallback({
   intro,
-  stats,
   summary = null,
 }: {
   intro: ReactNode;
-  stats?: ReactNode;
   summary?: ServerSummary | null;
 }) {
-  return <LoadingView intro={intro} stats={stats} summary={summary} />;
+  return (
+    <LoadingView
+      intro={intro}
+      summary={summary}
+      picker={<PresetPicker presets={summary?.presets ?? []} selectedId={summary?.id ?? null} />}
+    />
+  );
 }
 
 /** False in the server HTML and true once the page is in the browser, with no state to set in an effect. */
@@ -440,6 +479,47 @@ function useInBrowser(): boolean {
   );
 }
 
+/** A festival day the page can draw whole: its saved preset and the decision its hero reads. */
+export type DrawnDay = { preset: Preset; decision: Decision | null };
+
+/**
+ * The festival day the page draws. The chosen day once the page holds its preset and its decision (`decision`
+ * is undefined while that is not known), so a day switch redraws the hero, its drawing and the sections under
+ * it in one frame; until then the day already drawn, held whole with its picker, so no frame shows a skeleton,
+ * a half-drawn hero or one day under another's tab. The first day drawn needs only its preset: its view reads
+ * the server's decision or asks for one, as it always has. Null before any day can be drawn.
+ */
+export function dayToDraw(
+  chosen: Preset | null,
+  decision: Decision | null | undefined,
+  drawn: DrawnDay | null,
+): DrawnDay | null {
+  if (chosen === null || chosen.id === drawn?.preset.id) return drawn;
+  if (decision === undefined && drawn !== null) return drawn;
+  return { preset: chosen, decision: decision ?? null };
+}
+
+/**
+ * Another festival day's saved preset and decision, read ahead so that choosing it redraws at once: two GETs
+ * of saved files (the decision route takes no what-if slot), and no Qloo request. Null on any failure, and no
+ * decision when the route gives none; the switch then asks for what is missing.
+ */
+async function readDayAhead(id: string, signal: AbortSignal): Promise<DrawnDay | null> {
+  try {
+    const response = await fetch(`/api/presets/${encodeURIComponent(id)}`, {
+      signal,
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) return null;
+    const preset = parsePreset(await response.json());
+    const day = decisionDay(preset);
+    const decision = await requestDecision(preset.id, day, signal);
+    return { preset, decision: decision && decision.day === day ? decision : null };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The landing screen: loads the preset festival days, lets the visitor pick one, and shows its
  * Clash Budget Index and coverage, the priced timetable with the costliest clashes, "Try a move"
@@ -448,11 +528,9 @@ function useInBrowser(): boolean {
  */
 export function ClashControl({
   intro,
-  stats,
   summary = null,
 }: {
   intro: ReactNode;
-  stats?: ReactNode;
   summary?: ServerSummary | null;
 }) {
   // The loading line is for a visitor waiting in the browser. Left out of the server HTML, it cannot
@@ -466,9 +544,88 @@ export function ClashControl({
   // whether the live agent is on when the festival day first renders.
   const agentStatus = useAgentStatus();
 
+  // Other festival days read ahead (`readDayAhead`), and the decisions of days chosen before their read ahead
+  // landed, by preset id; and the day drawn now (`dayToDraw`).
+  const [ahead, setAhead] = useState<Record<string, Preset>>({});
+  const [decisions, setDecisions] = useState<Record<string, Decision | null>>({});
+  const [drawn, setDrawn] = useState<DrawnDay | null>(null);
+  const chosenId = list.status === "ready" ? selectedId : null;
+  const chosen =
+    chosenId === null
+      ? null
+      : drawn !== null && drawn.preset.id === chosenId
+        ? drawn.preset
+        : (ahead[chosenId] ?? (preset.status === "ready" ? preset.value : null));
+  // What the page knows of the chosen day's decision: the server's (in its HTML), one read ahead or fetched, or
+  // null in mock mode, which has no route; undefined while it is not known.
+  const chosenDecision =
+    chosen === null
+      ? undefined
+      : MOCK_STREAM_ENABLED
+        ? null
+        : summary !== null && summary.id === chosen.id && summary.decisionData !== null
+          ? summary.decisionData
+          : Object.hasOwn(decisions, chosen.id)
+            ? decisions[chosen.id]
+            : undefined;
+  const shown = dayToDraw(chosen, chosenDecision, drawn);
+  if (shown !== drawn) setDrawn(shown);
+  // Another day is chosen and on its way: the day drawn stays whole, its picker included, until it is replaced.
+  const holding = shown !== null && chosenId !== null && chosenId !== shown.preset.id;
+
+  // A day chosen before its read ahead landed: its decision, so it can be drawn whole.
+  const waitingId = holding && chosen !== null && chosenDecision === undefined ? chosen.id : null;
+  const waitingDay = chosen !== null ? decisionDay(chosen) : 0;
+  useEffect(() => {
+    if (waitingId === null) return;
+    const controller = new AbortController();
+    void requestDecision(waitingId, waitingDay, controller.signal).then((decision) => {
+      if (controller.signal.aborted) return;
+      setDecisions((previous) => ({ ...previous, [waitingId]: decision && decision.day === waitingDay ? decision : null }));
+    });
+    return () => controller.abort();
+  }, [waitingId, waitingDay]);
+
+  // Once a day is drawn and the browser is idle, every other day of the list is read ahead, each once per page
+  // (a day already drawn never is). Not in mock mode, which serves one day with no network.
+  const listIds = list.status === "ready" ? list.value.map((item) => item.id).join("|") : "";
+  const drawnId = shown?.preset.id ?? null;
+  const begun = useRef(new Set<string>());
+  useEffect(() => {
+    if (drawnId === null || listIds === "" || MOCK_STREAM_ENABLED) return;
+    const started = begun.current;
+    started.add(drawnId);
+    const wanted = listIds.split("|").filter((id) => !started.has(id));
+    if (wanted.length === 0) return;
+    for (const id of wanted) started.add(id);
+    const open = new Set(wanted);
+    const controller = new AbortController();
+    const start = () => {
+      for (const id of wanted) {
+        void readDayAhead(id, controller.signal).then((day) => {
+          if (controller.signal.aborted) return;
+          open.delete(id);
+          if (!day) return;
+          setAhead((previous) => ({ ...previous, [id]: day.preset }));
+          const decision = day.decision;
+          if (decision) setDecisions((previous) => (Object.hasOwn(previous, id) ? previous : { ...previous, [id]: decision }));
+        });
+      }
+    };
+    const idle = typeof window.requestIdleCallback === "function" ? window.requestIdleCallback(start, { timeout: 4000 }) : null;
+    const timer = idle === null ? window.setTimeout(start, 1000) : null;
+    return () => {
+      if (idle !== null) window.cancelIdleCallback(idle);
+      if (timer !== null) window.clearTimeout(timer);
+      controller.abort();
+      // A day not read yet is read by the next run.
+      for (const id of open) started.delete(id);
+    };
+  }, [drawnId, listIds]);
+
   // A new festival day remounts the whole view, its day tabs included, so a tab chosen with the arrow keys
   // (or a press) would leave focus on the page. The chosen tab takes focus back in each new tree (the
-  // loading view's, then the day's), until the day itself is on screen.
+  // loading view's or the held day's, then the new day's), until the day itself is on screen.
   const pickerFocus = useRef<string | null>(null);
   useEffect(() => {
     const id = pickerFocus.current;
@@ -477,7 +634,7 @@ export function ClashControl({
       (input) => input.value === id,
     );
     if (tab && document.activeElement !== tab) tab.focus({ preventScroll: true });
-    if (tab && preset.status === "ready" && preset.value.id === id) pickerFocus.current = null;
+    if (tab && shown !== null && shown.preset.id === id) pickerFocus.current = null;
   });
 
   // The native history API keeps `useSearchParams` in sync without a server round trip, so
@@ -490,18 +647,18 @@ export function ClashControl({
     window.history.replaceState(null, "", `${pathname}?${params.toString()}`);
   }
 
-  if (list.status === "error" || preset.status === "error") {
-    const error = list.status === "error" ? list.error : preset.status === "error" ? preset.error : null;
+  // A failed list, or a failed day with no copy of it read ahead.
+  const error = list.status === "error" ? list.error : preset.status === "error" && chosen === null ? preset.error : null;
+  if (error) {
     return (
       <HeroLayout
         intro={intro}
-        stats={stats}
-        aside={
+        group={
           <ErrorState
             title="Could not load the timetable"
             titleAs="h2"
-            message={error?.message ?? "Something went wrong."}
-            retryable={error?.retryable ?? true}
+            message={error.message}
+            retryable={error.retryable}
             onRetry={() => {
               retry();
               // The retry button goes away while the data reloads; keep focus on the page.
@@ -517,8 +674,7 @@ export function ClashControl({
     return (
       <HeroLayout
         intro={intro}
-        stats={stats}
-        aside={
+        group={
           <AbstainState
             title="No festival days to show yet"
             reason="This server has no scored festival days. A day appears here once its published timetable has been priced against Qloo audience data."
@@ -528,13 +684,12 @@ export function ClashControl({
     );
   }
 
-  if (preset.status !== "ready" || list.status !== "ready") {
+  if (shown === null || list.status !== "ready") {
     // The server's summary is shown only while the day it describes is the one being loaded.
     const loadingId = selectedId ?? requestedId ?? summary?.id ?? null;
     return (
       <LoadingView
         intro={intro}
-        stats={stats}
         summary={summary && summary.id === loadingId ? summary : null}
         status={
           inBrowser ? (
@@ -545,8 +700,11 @@ export function ClashControl({
         }
         picker={
           list.status === "ready" ? (
-            <PresetPicker presets={list.value} selectedId={selectedId} onChange={choosePreset} className="mb-6" />
-          ) : null
+            <PresetPicker presets={list.value} selectedId={selectedId} onChange={choosePreset} />
+          ) : (
+            // Until the list is in, the server's own list, drawn in place and not yet pressable.
+            <PresetPicker presets={summary?.presets ?? []} selectedId={summary?.id ?? null} />
+          )
         }
       />
     );
@@ -554,14 +712,15 @@ export function ClashControl({
 
   return (
     <PresetView
-      key={preset.value.id}
+      key={shown.preset.id}
       intro={intro}
-      stats={stats}
-      preset={preset.value}
+      preset={shown.preset}
       agentStatus={agentStatus}
-      serverDecision={summary && summary.id === preset.value.id ? summary.decisionData : null}
+      serverDecision={shown.decision}
       presets={list.value}
-      picker={<PresetPicker presets={list.value} selectedId={selectedId} onChange={choosePreset} />}
+      loading={holding}
+      // The picker names the day drawn: while another is on its way it stays on this one.
+      picker={<PresetPicker presets={list.value} selectedId={shown.preset.id} onChange={choosePreset} />}
     />
   );
 }
@@ -569,6 +728,11 @@ export function ClashControl({
 /** The festival-day tabs' group name, which also finds them again after a day change remounts the view. */
 const PRESET_PICKER_LABEL = "Festival day";
 
+/**
+ * The festival days, as the hero's picker: one option per day, named by its festival (`festivalLabel`); the
+ * dateline under it names the day. Without `onChange` (before the interactive view mounts) it is drawn in
+ * place but not yet pressable. Nothing with fewer than two days.
+ */
 function PresetPicker({
   presets,
   selectedId,
@@ -577,7 +741,7 @@ function PresetPicker({
 }: {
   presets: readonly PresetSummary[];
   selectedId: string | null;
-  onChange: (id: string) => void;
+  onChange?: (id: string) => void;
   className?: string;
 }) {
   if (presets.length < 2) return null;
@@ -585,12 +749,12 @@ function PresetPicker({
     <SegmentedControl
       label={PRESET_PICKER_LABEL}
       size="sm"
-      variant="tabs"
       value={selectedId}
-      onValueChange={onChange}
+      onValueChange={onChange ?? (() => {})}
+      pending={!onChange}
       options={presets.map((item) => ({
         value: item.id,
-        label: item.title,
+        label: festivalLabel(item.title),
         description: item.city ?? undefined,
       }))}
       className={className}
@@ -659,22 +823,23 @@ type DrawerState = { clash: PairClash | null; open: boolean; trigger: HTMLElemen
 
 function PresetView({
   intro,
-  stats,
   preset,
   agentStatus,
   serverDecision,
   presets,
   picker,
+  loading = false,
 }: {
   intro: ReactNode;
-  stats?: ReactNode;
   preset: Preset;
   agentStatus: AgentStatus;
-  /** The decision the server already holds for this preset's first day, so the card needs no request. */
+  /** The decision the page already holds for this preset's first day, so the card needs no request. */
   serverDecision: Decision | null;
   /** Every festival day the server has, so a day with no hidden-clash examples can show another's. */
   presets: readonly PresetSummary[];
   picker: ReactNode;
+  /** Another festival day is chosen and on its way to replace this one. */
+  loading?: boolean;
 }) {
   const days = useMemo(() => daysWithSets(preset), [preset]);
   const [day, setDay] = useState(days[0] ?? 0);
@@ -692,6 +857,9 @@ function PresetView({
   // The steps the plan holds now (priced by the engine), reported by "Try a move", so the decision card and the
   // agent panel say "Kept" only for what the plan really holds.
   const [keptSteps, setKeptSteps] = useState<readonly StackStep[]>([]);
+  // What the hero's drawing shows: the moved view first, on every day and every festival day (a new festival
+  // day remounts this view; a new day resets it).
+  const [view, setView] = useState<GraphView>("moved");
 
   const { festival, report } = preset;
   const synthetic = preset.synthetic === true;
@@ -738,6 +906,11 @@ function PresetView({
     () => (decisionState.status === "ready" ? buildDecisionCopy(preset, decisionState.decision) : null),
     [preset, decisionState],
   );
+  // The hero's drawing of the day, from the same decision the hero group reads, built as the server summary
+  // builds its final frame (`buildDayGraph`). Without a move it can only show the day as published.
+  const decision = decisionState.status === "ready" ? decisionState.decision : null;
+  const model = useMemo(() => buildDayGraph(preset, decision, day), [preset, decision, day]);
+  const shownView: GraphView = model?.move ? view : "published";
   // What the plan already holds of the card: its move and line 3's change, so the buttons can say so.
   const seedMove = decisionCopy?.seedMove ?? null;
   const seedChange = decisionCopy?.seedChange ?? null;
@@ -771,11 +944,14 @@ function PresetView({
   const lensRank = useMemo(() => drawerRank(lenses), [lenses]);
   const actName = (id: string) => festival.acts.find((act) => act.id === id)?.name ?? id;
   // Both land on the agent section's heading: the recorded runs sit level with it from 1024 px, and the list
-  // itself has no top padding, so a jump to it would land its label under the sticky bar.
-  const agentJump: JumpLink =
-    agentStatus === "off" && recordings.runs.length > 0
-      ? { href: "#agent", label: "Recorded runs" }
-      : { href: "#agent", label: "Agent" };
+  // itself has no top padding, so a jump to it would land its label under the sticky bar. "Recorded runs" once
+  // the live agent is known to be off and the day has runs; while either answer is still coming it holds the
+  // label it will most likely settle on (the agent off, the runs on their way), so the nav does not reflow.
+  const agentSettled = agentStatus !== "checking" && recordings.status !== "loading";
+  const recordedRuns = agentSettled
+    ? agentStatus === "off" && recordings.runs.length > 0
+    : agentStatus !== "on" && (recordings.status === "loading" || recordings.runs.length > 0);
+  const agentJump: JumpLink = recordedRuns ? { href: "#agent", label: "Recorded runs" } : { href: "#agent", label: "Agent" };
 
   const { activeSetIds, activeClashKeys } = useMemo(() => {
     const setIds = new Set<string>();
@@ -816,89 +992,85 @@ function PresetView({
     ? [decisionClash.aId, decisionClash.bId].map((id) => festival.acts.find((act) => act.id === id)?.genre ?? null)
     : null;
 
+  // The decision's buttons, in the hero and in the index card under it: each hands "Try a move" a seed, so
+  // Keep, Add and Replace write the real plan.
+  const openMove = decisionCopy?.seedMove
+    ? (choice?: PlanChoice) => {
+        const move = decisionCopy.seedMove;
+        if (!move) return null;
+        const note = choice?.mode === "add" ? null : replacedNote(keptSteps, move);
+        setSeedStep((previous) => ({
+          nonce: (previous?.nonce ?? 0) + 1,
+          step: move,
+          from: "card",
+          ...(choice ?? {}),
+        }));
+        return note;
+      }
+    : undefined;
+  const tryRule = decisionCopy?.seedRule
+    ? () => {
+        const rule = decisionCopy.seedRule;
+        if (rule) setSeedRule((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, ...rule }));
+      }
+    : undefined;
+  const keepChange = decisionCopy?.seedChange
+    ? () => {
+        const change = decisionCopy.seedChange;
+        if (!change) return null;
+        const note = replacedNote(keptSteps, change);
+        setSeedStep((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, step: change, from: "card" }));
+        return note;
+      }
+    : undefined;
+  const loadingDecision = decisionState.status === "loading";
+  const heroGroup = loadingDecision ? (
+    <HeroDecisionSkeleton />
+  ) : model ? (
+    <HeroDecision model={model} copy={decisionCopy} view={shownView} onOpenMove={openMove} plan={keptSteps} kept={cardKept} />
+  ) : null;
+
   return (
     <>
       <HeroLayout
         intro={intro}
-        stats={stats}
-        synthetic={preset.synthetic === true}
-        actions={<HeroActions />}
-        aside={
-          <div className="space-y-4">
-            {decisionCopy ? (
-              <DecisionCard
-                copy={decisionCopy}
-                kept={cardKept}
-                plan={keptSteps}
-                onOpenMove={
-                  decisionCopy.seedMove
-                    ? (choice) => {
-                        const move = decisionCopy.seedMove;
-                        if (!move) return null;
-                        const note = choice?.mode === "add" ? null : replacedNote(keptSteps, move);
-                        setSeedStep((previous) => ({
-                          nonce: (previous?.nonce ?? 0) + 1,
-                          step: move,
-                          from: "card",
-                          ...(choice ?? {}),
-                        }));
-                        return note;
-                      }
-                    : undefined
-                }
-                onTryRule={
-                  decisionCopy.seedRule
-                    ? () => {
-                        const rule = decisionCopy.seedRule;
-                        if (rule) setSeedRule((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, ...rule }));
-                      }
-                    : undefined
-                }
-                onKeepChange={
-                  decisionCopy.seedChange
-                    ? () => {
-                        const change = decisionCopy.seedChange;
-                        if (!change) return null;
-                        const note = replacedNote(keptSteps, change);
-                        setSeedStep((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, step: change, from: "card" }));
-                        return note;
-                      }
-                    : undefined
-                }
-                onOpenHidden={hero ? (trigger) => openClash(hero.clash, trigger) : undefined}
-                hiddenLabel={hero ? HERO_BUTTON[hero.kind] : undefined}
-                readings={
-                  decisionClash && lenses ? (
-                    <WhatQlooPointer
-                      lenses={lenses}
-                      pairs={sharedPairs}
-                      aId={decisionClash.aId}
-                      bId={decisionClash.bId}
-                      synthetic={synthetic}
-                    />
-                  ) : undefined
-                }
-                saved={
-                  preset.synthetic || preset.built_at === null
-                    ? null
-                    : { builtAt: preset.built_at, requests: preset.requests.length }
-                }
-                onOpenPair={decisionPair ? (trigger) => openClash(decisionPair, trigger) : undefined}
-                hiddenCount={cardHiddenCount}
-                rankedCount={decisionClash ? ranked.length : undefined}
-                genres={cardGenres}
-              />
-            ) : decisionState.status === "loading" ? (
-              <DecisionCardSkeleton />
-            ) : null}
-          </div>
+        day={
+          <>
+            {picker}
+            <HeroDateline model={model} synthetic={synthetic} />
+          </>
         }
+        toggle={
+          model?.move ? (
+            <ViewToggle model={model} view={view} onChange={setView} />
+          ) : loadingDecision ? (
+            // The toggle's room while the day's decision loads, so the drawing does not jump when it comes.
+            <div aria-hidden="true" className="h-11" />
+          ) : null
+        }
+        graph={model ? <DayGraph model={model} view={shownView} /> : null}
+        group={
+          heroGroup || loading ? (
+            <>
+              {heroGroup}
+              {loading ? (
+                <p role="status" className="sr-only">
+                  Loading the festival day.
+                </p>
+              ) : null}
+            </>
+          ) : null
+        }
+        graphKey={model ? <DayGraphKey model={model} className={KEY_CLASS} /> : null}
+        busy={loading}
       />
 
       <JumpNav
         agent={agentJump}
         wall={hasWall}
-        qloo={decisionClash && lenses ? { href: `#${WHAT_QLOO_ID}`, label: whatChangesTitle(synthetic) } : null}
+        // The section is always on the page (its failed test needs no lens data), so its entry is there from the
+        // first frame: an entry that waited for the readings would push the others along when they came.
+        qloo={{ href: `#${WHAT_QLOO_ID}`, label: whatChangesTitle(synthetic) }}
       />
 
       {/* Under the nav, in HOME_ORDER: what Qloo changes for the card's clash, the hidden-clash examples, why
@@ -925,6 +1097,29 @@ function PresetView({
             ranked={ranked}
             onOpen={openClash}
             synthetic={synthetic}
+            aside={
+              // The index card: the Clash Budget Index with its scale and attribution, the hidden-clash line,
+              // the working and the secondary actions, under the claim and its limits.
+              decisionCopy ? (
+                <DecisionDetails
+                  copy={decisionCopy}
+                  kept={cardKept}
+                  onTryRule={tryRule}
+                  onKeepChange={keepChange}
+                  onOpenHidden={hero ? (trigger) => openClash(hero.clash, trigger) : undefined}
+                  hiddenLabel={hero ? HERO_BUTTON[hero.kind] : undefined}
+                  saved={
+                    preset.synthetic || preset.built_at === null
+                      ? null
+                      : { builtAt: preset.built_at, requests: preset.requests.length }
+                  }
+                  onOpenPair={decisionPair ? (trigger) => openClash(decisionPair, trigger) : undefined}
+                  hiddenCount={cardHiddenCount}
+                  rankedCount={decisionClash ? ranked.length : undefined}
+                  genres={cardGenres}
+                />
+              ) : null
+            }
           />
         }
         wall={
@@ -941,9 +1136,9 @@ function PresetView({
         }
         board={
           <BoardFrame labelledBy="board-heading">
-            {/* One header block: the dateline and heading on the left; on the right the festival tabs with
-                "How Qloo was used" right under them (8 px), right-aligned from 1024 px and at the left on a
-                phone. 32 px of paper under it (no rule), then the board's 24 px. */}
+            {/* One header block: the dateline and heading on the left; on the right "How Qloo was used",
+                right-aligned from 1024 px and at the left on a phone (the festival picker is the hero's). 32 px
+                of paper under it (no rule), then the board's 24 px. */}
             <div className="mb-8 flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
               <div className="min-w-0">
                 <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
@@ -955,7 +1150,6 @@ function PresetView({
                 </h2>
               </div>
               <div className="flex min-w-0 flex-col items-start gap-2 lg:items-end">
-                {picker}
                 <TraceDrawer
                   toolCalls={allCalls}
                   mode="recorded"
@@ -980,6 +1174,7 @@ function PresetView({
                 onValueChange={(value) => {
                   setDay(Number(value));
                   setHighlight(null);
+                  setView("moved");
                 }}
                 options={days.map((index) => ({ value: String(index), label: festival.days[index] ?? `Day ${index + 1}` }))}
                 className="mt-4"
@@ -1034,8 +1229,8 @@ function PresetView({
                       className="max-md:hidden"
                       note={
                         <>
-                          Lines join the {links.length} costliest clashes; draw on each set is its {popularityName(synthetic)}.
-                          Open any clash for its figures.
+                          Lines join the {links.length} costliest clashes. Open any set or clash for its figures,
+                          including its draw ({popularityName(synthetic)}).
                         </>
                       }
                     />
@@ -1082,7 +1277,7 @@ function PresetView({
                     Show the start-order list ({pluralize(views.length, "set")})
                     <ChevronDown
                       aria-hidden="true"
-                      className="size-4 shrink-0 group-open:rotate-180 motion-safe:transition-transform motion-safe:duration-150"
+                      className="size-4 shrink-0 group-open:rotate-180 motion-safe:transition-transform motion-safe:duration-[160ms] motion-safe:ease-(--ease-out)"
                     />
                   </summary>
                   <TimetableList className="mt-4" views={views} dayLabel={dayLabel} onOpen={openClash} synthetic={synthetic} />

@@ -9,7 +9,7 @@ import { BudgetDial, readingNudge, Scorecard } from "./budget-dial";
 // Every figure below is invented for the test.
 const BASELINE = { samples: 300, mean_regret: 1, p10_index: 92.1568, p90_index: 108.5582, degenerate: false };
 
-describe("the dial's settle", () => {
+describe("the dial's reading", () => {
   it("is drawn at its reading in the server HTML: dot, span, figure and title", () => {
     const html = renderToStaticMarkup(createElement(BudgetDial, { index: 116.71, baseline: BASELINE }));
     expect(html).not.toContain("data-reveal");
@@ -25,8 +25,9 @@ describe("the dial's settle", () => {
     expect(html).toMatch(/<circle data-dot="" cx="70.9%" cy="26"/);
     expect(html).toContain('<rect data-band="" x="40.2%"');
     expect(html).toContain('width="20.5%"');
-    expect(html).toContain('class="cc-dial-gap" style="--draw-from:1"');
-    expect(html).toMatch(/<line data-span="" x1="50%" x2="70.9%"[^>]*pathLength="1"/);
+    // The span is drawn whole at its reading: nothing draws it out when the scale scrolls into view.
+    expect(html).not.toMatch(/cc-dial-gap|cc-dial-needle|--draw-from/);
+    expect(html).toMatch(/<line data-span="" x1="50%" x2="70.9%"(?![^>]*pathLength)[^>]*><\/line>/);
     // The 100 tick keeps its meaning, the ends are labelled, and nothing on the scale is set under 13px.
     expect(html).toContain(">100 = average</text>");
     expect(html).toMatch(/>60<\/text>/);
@@ -71,11 +72,13 @@ describe("the dial's settle", () => {
     expect(markup).toContain('<span class="sr-only">Source: </span>Derived');
   });
 
-  it("draws the gap from 100 whichever side the reading falls", () => {
+  it("draws the gap from 100 whichever side the reading falls, whole and at once", () => {
     const below = renderToStaticMarkup(createElement(BudgetDial, { index: 94, baseline: BASELINE }));
-    expect(below).toContain('style="--draw-from:-1"');
+    expect(below).not.toContain("--draw-from");
     expect(below).toMatch(/<circle data-dot="" cx="42.5%"/);
     expect(below).toMatch(/<line data-span="" x1="42.5%" x2="50%"/);
+    // No count from 100: the figure is the reading itself, printed once.
+    expect(below).toMatch(/<p class="type-numeral[^"]*">94.0<\/p>/);
   });
 });
 
@@ -83,14 +86,14 @@ describe("the dial's shading", () => {
   const html = renderToStaticMarkup(createElement(BudgetDial, { index: 116.71, baseline: BASELINE, compact: true }));
   const svg = /<svg[\s\S]*<\/svg>/.exec(html)?.[0] ?? "";
 
-  it("uses named tokens only: a border-strong axis, a muted band, an ink 100 tick and dot, vermilion for the excess", () => {
+  it("uses named tokens only: a border-strong axis, a muted band, an ink 100 tick and dot, raspberry for the excess", () => {
     expect(html).not.toContain("color-mix");
     expect(svg).not.toMatch(/opacity/);
-    // The span from 100 to the reading: 3px of vermilion above 100, the excess cost.
+    // The span from 100 to the reading: 3px of raspberry above 100, the excess cost.
     expect(svg).toMatch(/<line data-span="" x1="50%" x2="70.9%" y1="26" y2="26" stroke="var\(--primary\)" stroke-width="3"/);
     // The 100 tick: 2px of ink, 18px tall, centred on the axis (y 17 to 35).
     expect(svg).toMatch(/<line data-ref="" x1="50%" x2="50%" y1="17" y2="35" stroke="var\(--foreground\)" stroke-width="2"/);
-    // At or under 100 the span is a grey graphic, not a cost; vermilion marks only the reading's label there.
+    // At or under 100 the span is a grey graphic, not a cost; raspberry marks only the reading's label there.
     for (const index of [94, 100]) {
       const below = renderToStaticMarkup(createElement(BudgetDial, { index, baseline: BASELINE, compact: true }));
       const belowSvg = /<svg[\s\S]*<\/svg>/.exec(below)?.[0] ?? "";
@@ -103,14 +106,17 @@ describe("the dial's shading", () => {
     expect(svg).toMatch(/<line data-axis="" x1="0" x2="100%" y1="26" y2="26" stroke="var\(--border-strong\)" stroke-width="1"/);
     expect(svg).toMatch(/<line data-tick="min" x1="0" x2="0" y1="23" y2="29" stroke="var\(--border-strong\)" stroke-width="1"/);
     expect(svg).toMatch(/<line data-tick="max" x1="100%" x2="100%" y1="23" y2="29" stroke="var\(--border-strong\)" stroke-width="1"/);
-    // No capsule track, no clip and no needle: the figure is an axis, not a gauge.
-    expect(svg).not.toMatch(/<clipPath|rx="4"|data-needle|data-underlay="needle"/);
+    // No capsule track, no clip and no needle: the figure is an axis, not a gauge. The one rounded mark is
+    // the band (its 4px corner is half its height).
+    expect(svg).not.toMatch(/<clipPath|data-needle|data-underlay="needle"/);
+    expect(svg.match(/rx="4"/g)).toHaveLength(1);
+    expect(svg).toMatch(/<rect data-band=""[^>]*rx="4"/);
     expect(svg).not.toMatch(/<rect(?![^>]*data-band)/);
   });
 
-  it("shows the middle 80% as an 8px muted band whose extent two 12px, 1px border-strong ticks carry", () => {
-    // 92.2 to 108.6 on a scale of 60 to 140: 40.2% to 60.7%.
-    expect(svg).toMatch(/<rect data-band="" x="40.2%" y="22" width="20.5%" height="8" fill="var\(--muted\)"/);
+  it("shows the middle 80% as an 8px muted band with round ends, whose extent two 12px, 1px border-strong ticks carry", () => {
+    // 92.2 to 108.6 on a scale of 60 to 140: 40.2% to 60.7%; the mark's corner, clamped to half its 8px height.
+    expect(svg).toMatch(/<rect data-band="" x="40.2%" y="22" width="20.5%" height="8" rx="4" fill="var\(--muted\)"/);
     expect(svg).toMatch(/<line data-tick="p10" x1="40.2%" x2="40.2%" y1="20" y2="32" stroke="var\(--border-strong\)" stroke-width="1"/);
     expect(svg).toMatch(/<line data-tick="p90" x1="60.7%" x2="60.7%" y1="20" y2="32" stroke="var\(--border-strong\)" stroke-width="1"/);
     // With no baseline there is no band and no band ticks; the axis and its ends stay.
@@ -119,7 +125,7 @@ describe("the dial's shading", () => {
     expect(bare).toContain('data-axis=""');
   });
 
-  it("parts every ink mark from the vermilion span with 2px of paper: the 100 tick's underlay and the dot's halo", () => {
+  it("parts every ink mark from the raspberry span with 2px of paper: the 100 tick's underlay and the dot's halo", () => {
     // The figure sits open on the page's paper at every width, so its halos are the paper (the sheet's
     // white in print), never the card.
     expect(svg).not.toContain("var(--card)");
@@ -180,7 +186,7 @@ describe("the dial's shading", () => {
     expect(readingNudge(0.05)).toBe(0);
   });
 
-  it("sets the reading in 13px semibold mono vermilion, 4px clear above the 100 tick and the dot, off the axis", () => {
+  it("sets the reading in 13px semibold mono raspberry, 4px clear above the 100 tick and the dot, off the axis", () => {
     // The label's baseline is at y 13; the 100 tick starts at y 17 and the dot's halo at y 19.
     expect(html).toMatch(/<text x="70.9%" y="13"[^>]*class="fill-primary font-mono text-\[13px\] font-semibold"/);
   });

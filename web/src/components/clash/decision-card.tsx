@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useId, useState, type RefObject } from "react";
 import { ArrowRight, Check, ChevronRight, LoaderCircle } from "lucide-react";
 
 import { ProvenanceChip } from "@/components/kernel";
@@ -9,157 +9,19 @@ import { ATTRIBUTION, type DecisionCopy, type SharedTimeline, type TimelineBar }
 import { pluralize } from "@/lib/format";
 import { rangeLead } from "@/lib/plan-copy";
 import { ALREADY_KEPT } from "@/lib/rule-fix";
-import {
-  checkAdd,
-  encodeMoves,
-  isRuleStackStep,
-  keptWord,
-  readStoredMoves,
-  sameStep,
-  type PlanAnswer,
-  type PlanChoice,
-  type ScaleRange,
-  type StackStep,
-} from "@/lib/stack";
-import { useInView, useIntroDone } from "@/lib/use-in-view";
-import { formatRange } from "@/lib/timetable";
+import { isRuleStackStep, keptWord, sameStep, type ScaleRange, type StackStep } from "@/lib/stack";
 import { cn } from "@/lib/utils";
 
-import { PairStrip, type StripLane } from "./pair-strip";
 import { TradeoffTable } from "./tradeoff-table";
 import { usePairCheckEnabled } from "./use-agent-status";
 import { useAnnouncement } from "./use-announcement";
-import { checkPlan } from "./use-moves";
 
-/** The anchor of the card, for the hero button and the jump links. */
+/** The anchor of the hero's decision group, for the hero button and the jump links. */
 export const DECISION_ID = "one-decision";
 export const DECISION_HEADING_ID = "decision-heading";
 
-/** No kept steps: shared so its identity never changes. */
-const NO_STEPS: readonly StackStep[] = [];
-
-/** Counted from the first card shown on the page, so the reveal runs once per page load. */
-let revealed = false;
-
-/** The hero receipt (M1) plays once per page load, on the first interactive card that comes into view. */
-let receiptPlayed = false;
-
 function reducedMotion(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
-/**
- * The index after the move, shown as it counts from the reading before to the reading after (420 to
- * 900 ms into "Keep this move"). The final value is what the page holds before and after, and what
- * screen readers get; with reduced motion the final value shows at once.
- */
-function useCount(from: number | null, to: number | null, playKey: number): string | null {
-  const final = to === null ? null : to.toFixed(1);
-  const [shown, setShown] = useState<{ key: number; value: string | null }>({ key: 0, value: final });
-
-  useEffect(() => {
-    if (playKey === 0 || from === null || to === null) return;
-    let frame = 0;
-    // Under reduced motion the final reading shows at once, with no number in between.
-    if (reducedMotion()) {
-      const timer = window.setTimeout(() => setShown({ key: playKey, value: to.toFixed(1) }), 0);
-      return () => window.clearTimeout(timer);
-    }
-    const length = 480;
-    let begin = 0;
-    const tick = (now: number) => {
-      if (begin === 0) begin = now;
-      const t = Math.min(1, (now - begin) / length);
-      const eased = 1 - Math.pow(1 - t, 3);
-      setShown({ key: playKey, value: (from + (to - from) * eased).toFixed(1) });
-      if (t < 1) frame = requestAnimationFrame(tick);
-    };
-    const timer = window.setTimeout(() => {
-      frame = requestAnimationFrame(tick);
-    }, 420);
-    return () => {
-      window.clearTimeout(timer);
-      cancelAnimationFrame(frame);
-    };
-  }, [from, to, playKey]);
-
-  // Until the count starts, the figure holds the reading before the move.
-  if (playKey === 0 || from === null) return final;
-  return shown.key === playKey ? shown.value : from.toFixed(1);
-}
-
-/** The stages and times the card's own lines state, read back so the drawing can name them; null parts are left off. */
-type TimelineFacts = {
-  stayingStage: string | null;
-  movingStage: string | null;
-  window: string | null;
-  /** The stage the tested move puts the moving set on (it can differ from where it plays now). */
-  afterStage: string | null;
-  afterPlace: string | null;
-  /** "60 minutes later" or "to Radical 19:45": the headline's own words for the move. */
-  shift: string | null;
-};
-
-/**
- * Reads the stage names, the shared window and the new place out of `clashLine`, `moveLine` and
- * `receiptLead`, which `buildDecisionCopy` wrote from the same figures. Nothing is invented: a line that
- * does not match leaves its part null and the drawing simply omits it.
- */
-export function readTimelineFacts(copy: DecisionCopy, line: SharedTimeline): TimelineFacts {
-  const facts: TimelineFacts = {
-    stayingStage: null,
-    movingStage: null,
-    window: null,
-    afterStage: null,
-    afterPlace: null,
-    shift: null,
-  };
-  const pair = /: (.+?) \(([^()]+)\) and (.+?) \(([^()]+)\) share /.exec(copy.clashLine);
-  if (pair) {
-    if (pair[1] === line.stayingName && pair[3] === line.movingName) {
-      facts.stayingStage = pair[2];
-      facts.movingStage = pair[4];
-    } else if (pair[3] === line.stayingName && pair[1] === line.movingName) {
-      facts.stayingStage = pair[4];
-      facts.movingStage = pair[2];
-    }
-  }
-  facts.window = /share [^,.]*?minutes?, (\d{2}:\d{2}–\d{2}:\d{2})\./.exec(copy.clashLine)?.[1] ?? null;
-  const place = /lowest index is (.+?) (\d{2}:\d{2}–\d{2}:\d{2}) \(/.exec(copy.moveLine);
-  facts.afterStage = place ? place[1] : null;
-  facts.afterPlace = place ? place[2] : null;
-  const lead = copy.receiptLead;
-  facts.shift = lead && lead.startsWith(`${line.movingName} `) ? lead.slice(line.movingName.length + 1) : null;
-  return facts;
-}
-
-/**
- * A plain sentence for how to read the drawing: who clashes, where and when, and what the move does, with
- * each lane's stage and time range as its label shows them (the ranges from `spans`, the drawing's own
- * times; left off when it is null). Null without the stages.
- */
-export function timelineSentence(
-  copy: DecisionCopy,
-  line: SharedTimeline,
-  facts: TimelineFacts,
-  spans: ReturnType<typeof timelineSpans> = null,
-): string | null {
-  if (copy.minutesBefore === null || copy.minutesAfter === null || !facts.stayingStage || !facts.movingStage) return null;
-  const when = facts.window ? ` ${facts.window}` : "";
-  const minutes = (n: number) => `${n} ${n === 1 ? "minute" : "minutes"}`;
-  const range = (span: { start: number; end: number } | undefined) => (span ? formatRange(span) : null);
-  // "(Main, 20:00–21:30)": the parts the lane's label shows, in its order; nothing when it shows neither.
-  const at = (...parts: (string | null)[]) => {
-    const said = parts.filter(Boolean);
-    return said.length > 0 ? ` (${said.join(", ")})` : "";
-  };
-  const first =
-    facts.stayingStage === facts.movingStage
-      ? `${line.stayingName}${at(range(spans?.staying))} and ${line.movingName}${at(range(spans?.now))} on ${facts.stayingStage}`
-      : `${line.stayingName}${at(facts.stayingStage, range(spans?.staying))} and ${line.movingName}${at(facts.movingStage, range(spans?.now))}`;
-  const left = copy.minutesAfter === 0 ? "no time shared" : `${minutes(copy.minutesAfter)} shared`;
-  const tested = at(facts.afterStage ?? facts.movingStage, range(spans?.tested));
-  return `Now: ${first} share${when}, ${minutes(copy.minutesBefore)}. Tested: ${line.movingName}${facts.shift ? ` ${facts.shift}` : ""}${tested} leaves ${left}.`;
 }
 
 /**
@@ -185,132 +47,17 @@ export function timelineSpans(line: SharedTimeline): {
   return { staying: span(line.staying), now: span(line.movingNow), tested: span(line.movingAfter) };
 }
 
-/**
- * The hero's three lanes on one `PairStrip`, each label the same three lines: the act, then its role and
- * stage, then its time range. The staying set: its stage. The moving set Now: "Now · {stage}", where it
- * plays on the published timetable. Tested (the move, dashed): "Tested · {stage}", the stage the move puts
- * it on, or the same stage when the move keeps it. Every range is the drawing's own times
- * (`timelineSpans`), with an en dash, which the strip sets in mono. The minutes under each bracket are the
- * card's own.
- */
-function heroLanes(
-  line: SharedTimeline,
-  facts: TimelineFacts,
-  minutesBefore: number | null,
-  minutesAfter: number | null,
-): StripLane[] | null {
-  const spans = timelineSpans(line);
-  if (!spans) return null;
-  const testedStage = facts.afterStage ?? facts.movingStage;
-  return [
-    {
-      key: "staying",
-      kind: "staying",
-      name: line.stayingName,
-      meta: facts.stayingStage,
-      range: formatRange(spans.staying),
-      ...spans.staying,
-    },
-    {
-      key: "now",
-      kind: "now",
-      name: line.movingName,
-      meta: facts.movingStage ? `Now · ${facts.movingStage}` : "Now",
-      range: formatRange(spans.now),
-      minutes: minutesBefore,
-      ...spans.now,
-    },
-    {
-      key: "tested",
-      kind: "tested",
-      name: line.movingName,
-      meta: testedStage ? `Tested · ${testedStage}` : "Tested",
-      range: formatRange(spans.tested),
-      minutes: minutesAfter,
-      ...spans.tested,
-    },
-  ];
-}
-
 function LineLabel({ n, className }: { n: number; className?: string }) {
   return (
-    <span className={cn("pt-0.5 font-mono text-xs text-muted-foreground tabular-nums", className)}>
+    <span className={cn("pt-0.5 text-xs text-muted-foreground tabular-nums", className)}>
       <span className="sr-only">Line </span>
       {n}
     </span>
   );
 }
 
-/**
- * Holds the receipt's footprint while the day's decision loads: no heading, nothing to read. The same open
- * frame as the receipt (one 1px rule along the top, nothing else) and the same rows at the heights the
- * receipt's own rows take on the published day the page opens on (the dateline with its saved reading,
- * the heading, the two "why this clash" lines, the index block, below 1024 px the 44 px button under it,
- * the strip of three lanes and the line under it, the action row, in that order, as the receipt puts them), so the
- * swap moves nothing below it.
- */
-export function DecisionCardSkeleton() {
-  const bar = "rounded-sm bg-muted";
-  return (
-    <div aria-hidden="true" className="border-t border-border pt-5 sm:pt-6">
-      <div>
-        {/* The dateline and its saved reading: two lines at 390 px, one from 640 px. */}
-        <div className="flex h-10 items-center sm:h-5">
-          <div className={cn(bar, "h-3 w-3/5")} />
-        </div>
-        <div className="mt-1 flex h-13 items-center sm:h-7.5">
-          <div className={cn(bar, "h-6 w-4/5")} />
-        </div>
-        {/* The two "why this clash" lines: 81 px at every width on the opening day (measured). */}
-        <div className="mt-3 flex h-20.25 flex-col justify-center gap-2.5">
-          <div className={cn(bar, "h-3 w-11/12")} />
-          <div className={cn(bar, "h-3 w-3/5")} />
-          <div className={cn(bar, "h-3 w-4/5")} />
-        </div>
-        {/* The index block with its paragraph: 110 px at 390 px, 93 px from 640 px (measured). */}
-        <div className="mt-4 flex h-27.5 flex-col justify-center gap-2.5 sm:h-23.25">
-          <div className={cn(bar, "h-3 w-1/4")} />
-          <div className={cn(bar, "h-6 w-1/2")} />
-          <div className={cn(bar, "h-3 w-4/5")} />
-        </div>
-        {/* Below 1024 px: "Keep this move", 44 px, under the index block. */}
-        <div className="mt-4 flex h-11 items-center lg:hidden max-sm:mt-3">
-          <div className={cn(bar, "h-11 w-37")} />
-        </div>
-        {/* The strip of three lanes with the line under it: 246 px from 640 px, 228 px below (measured). */}
-        <div className="mt-3 flex h-61.5 flex-col justify-around max-lg:mt-4 max-sm:mt-3 max-sm:h-57">
-          {[0, 1, 2].map((lane) => (
-            <div key={lane} className="flex items-center gap-3">
-              <div className={cn(bar, "h-3 w-24 shrink-0")} />
-              <div className={cn(bar, "h-3 flex-1")} />
-            </div>
-          ))}
-        </div>
-        <div className="mt-5 flex h-11 items-center">
-          <div className={cn(bar, "h-3 w-28")} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-type DecisionCardProps = {
+type DecisionDetailsProps = {
   copy: DecisionCopy;
-  /**
-   * Keeps the one move. Absent in the server HTML, where the page cannot act yet. With no `choice`, or
-   * `{ mode: "replace" }`, the move becomes the whole plan; with `{ mode: "add", base }` it goes after the kept
-   * steps, only while the plan still holds exactly `base` (the seed path of "Try a move"). It may return what
-   * the status line should say about steps it replaced.
-   */
-  onOpenMove?: (choice?: PlanChoice) => string | null | void;
-  /**
-   * The steps the plan holds now (scored). With it, a press of "Keep this move" on a plan that holds other
-   * steps offers "Add to your plan" or "Replace your plan" instead of replacing it; without it (the server
-   * HTML, or a page that does not pass it) the press keeps the move as before.
-   */
-  plan?: readonly StackStep[];
-  /** Scores a whole plan before Add keeps anything; the page's own /whatif for this card's day by default. */
-  check?: (steps: readonly StackStep[]) => Promise<PlanAnswer>;
   /** Opens the rule search for the pair. Absent when there is no rule line to try. */
   onTryRule?: () => void;
   /**
@@ -319,14 +66,12 @@ type DecisionCardProps = {
    * change, or the change takes the place of earlier steps), so nothing is dropped silently.
    */
   onKeepChange?: () => string | null | void;
-  /** What the plan already holds of this card: the move, and line 3's change. */
+  /** What the plan already holds of this decision: the move, and line 3's change. */
   kept?: { move: boolean; change: boolean };
   /** Opens the day's hero clash (a hidden clash when it has one), with the button as the place to return to. */
   onOpenHidden?: (trigger: HTMLElement) => void;
   /** What that link says; "Open a hidden clash" unless the day has none. */
   hiddenLabel?: string;
-  /** "Same clash, three readings", under the heading; absent in the server HTML, which has no lens data. */
-  readings?: ReactNode;
   /**
    * How many of the day's ranked clashes carry the Hidden label (the board's own labels). With it the
    * hidden-clash line says "1 of N on this day"; without it, or below 1, that part is left out.
@@ -385,28 +130,28 @@ export const SHOW_WORKING = "Show the working";
 /** The subhead over rows 1 to 3, inside that disclosure. */
 export const HOW_CHOSEN = "How this was chosen";
 
-/** The card's one filled action: it keeps the move as the plan. */
+/** The hero's one filled action: it keeps the move as the plan. */
 export const KEEP_MOVE = "Keep this move";
 
-/** What the card says, in place, once the plan holds its move, and the link to that plan. */
+/** What the hero says, in place, once the plan holds its move, and the link to that plan. */
 export const KEPT_IN_PLAN = "Kept in your plan.";
 /** Said with it: a kept move is a plan, not a change to the published timetable. */
 export const KEPT_AGREE = "Nothing moves until the acts’ teams agree.";
 export const SEE_YOUR_PLAN = "See your plan";
 /** The plan card's heading (Try a move), which the link scrolls to and focuses. */
 export const PLAN_ANCHOR = "your-plan";
+/**
+ * Said with it while the drawing shows the day without the move, so a kept move is never read off a drawing
+ * that does not show it. The invented timetable was never published, so it says "without the move".
+ */
+export const DRAWN_AS_PUBLISHED = "Drawn here as published.";
+export const DRAWN_WITHOUT_MOVE = "Drawn here without the move.";
 
 /**
  * The index's scale, in the index block on every day: the same definition the dial uses, and the
  * pinned "Lower is better". The scale is this app's, not a Qloo figure, so the invented day says the same.
  */
 export const INDEX_SCALE = "A score, not money: 100 = the average random valid timetable of this lineup. Lower is better.";
-
-/**
- * How to read the strip's marks. It is not printed (the line under the strip says what else the move changes,
- * and each bracket's minutes say the shared time in words); it is the end of the strip's accessible name.
- */
-export const STRIP_LEGEND = "Solid: where the sets play now. Dashed: tested. Hatched: time shared.";
 
 /**
  * A Clash Budget Index change as one line, the hero's own treatment: the two readings in the index type
@@ -447,7 +192,7 @@ export function IndexChange({
         <span className="text-[0.8125rem] leading-snug text-muted-foreground">
           {delta ? (
             <>
-              <span className="font-mono tabular-nums">{delta.slice(0, delta.indexOf(" "))}</span>
+              <span className="tabular-nums">{delta.slice(0, delta.indexOf(" "))}</span>
               {delta.slice(delta.indexOf(" "))}
               {" · "}
             </>
@@ -483,7 +228,7 @@ export function keepPressKind(
 /**
  * The steps a press of "Keep this move" is about: the scored plan the page passed or, while the page has no
  * answer for it yet (after a reload with a kept plan, the page reports the plan once the engine has scored it),
- * the plan this tab stored, so a press never replaces a plan the card cannot see yet. None when the page passed
+ * the plan this tab stored, so a press never replaces a plan the hero cannot see yet. None when the page passed
  * no plan (the server HTML).
  */
 export function planAtPress(
@@ -494,7 +239,7 @@ export function planAtPress(
   return plan.length > 0 ? plan : stored();
 }
 
-/** What the card offers when "Keep this move" is pressed on a plan that already holds other steps. */
+/** What the hero offers when "Keep this move" is pressed on a plan that already holds other steps. */
 export const ADD_TO_PLAN = "Add to your plan";
 export const REPLACE_PLAN = "Replace your plan";
 
@@ -506,16 +251,21 @@ export type KeepOffer =
   | { state: "sent" };
 
 /**
- * The offer itself, under the pressed button: how many steps the plan holds, then "Add to your plan" (first, the
- * outline button) and "Replace your plan" (ghost), then what an Add is doing or why it was refused. An Add the
- * engine refused for good leaves only Replace. Existing Button variants, 44 px each; no id, so the card can draw
- * one copy per width.
+ * The offer itself, drawn in the places of the hero's actions so that nothing moves when it opens: "Add to your
+ * plan" (the outline button, Keep's 48 px) in Keep's place with "Replace your plan" (ghost) beside it, then how
+ * many steps the plan holds (with what an Add is doing) or why an Add was refused, in the confirmation's room at
+ * its held height. Below 380 px the two do not fit one row, so Replace takes the paste's place under that room;
+ * from 1024 px the paste's place is beside Keep anyway. An Add the engine refused for good leaves only Replace, in
+ * Keep's place with Add's outline, and its reason may run on into the room the paste left. The group draws no box
+ * of its own (`display: contents`), so its parts take the actions grid's areas; Escape puts it away (`onDismiss`)
+ * unless an Add is on its way. Existing Button variants, each with the 10px control corner; no id.
  */
 export function KeepMoveOffer({
   offer,
   held,
   onAdd,
   onReplace,
+  onDismiss,
   addRef,
   replaceRef,
   className,
@@ -525,31 +275,75 @@ export function KeepMoveOffer({
   held: readonly StackStep[];
   onAdd: () => void;
   onReplace: () => void;
+  onDismiss?: () => void;
   addRef?: RefObject<HTMLButtonElement | null>;
   replaceRef?: RefObject<HTMLButtonElement | null>;
   className?: string;
 }) {
   const checking = offer.state === "checking" || offer.state === "sent";
   const rejected = offer.state === "rejected" ? offer : null;
+  const addShown = !(rejected && !rejected.retry);
   return (
-    <div role="group" aria-label={`${KEEP_MOVE}: add it to your plan, or replace your plan`} data-keep-offer="" className={className}>
-      <p className="text-sm leading-snug text-foreground">Your plan already holds {pluralize(held.length, keptWord(held))}.</p>
-      <div className="mt-2 flex flex-wrap gap-2">
-        {rejected && !rejected.retry ? null : (
-          <Button ref={addRef} type="button" variant="outline" aria-disabled={checking || undefined} onClick={onAdd}>
-            {offer.state === "checking" ? <LoaderCircle aria-hidden="true" className="motion-safe:animate-spin" /> : null}
+    <div
+      role="group"
+      aria-label={`${KEEP_MOVE}: add it to your plan, or replace your plan`}
+      data-keep-offer=""
+      className={cn("contents", className)}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || checking || !onDismiss) return;
+        event.preventDefault();
+        onDismiss();
+      }}
+    >
+      {/* One row in Keep's place from 380 to 1023 px; elsewhere each button is a grid item of its own. */}
+      <div className="contents min-[380px]:flex min-[380px]:gap-3 min-[380px]:[grid-area:keep] lg:contents">
+        {addShown ? (
+          <Button
+            ref={addRef}
+            type="button"
+            variant="outline"
+            size="lg"
+            aria-disabled={checking || undefined}
+            onClick={onAdd}
+            className="[grid-area:keep]"
+          >
             {ADD_TO_PLAN}
           </Button>
-        )}
-        <Button ref={replaceRef} type="button" variant="ghost" onClick={onReplace}>
+        ) : null}
+        {/* Alone, Replace is a new button in Keep's place (not the old one carried across), drawn with Add's
+            outline, since it is the one way left and a ghost would sit indented from the reason under it. */}
+        <Button
+          key={addShown ? "beside-add" : "alone"}
+          ref={replaceRef}
+          type="button"
+          variant={addShown ? "ghost" : "outline"}
+          onClick={onReplace}
+          className={addShown ? "[grid-area:paste] max-[379px]:mt-2 min-[380px]:h-12" : "h-12 [grid-area:keep]"}
+        >
           {REPLACE_PLAN}
         </Button>
       </div>
-      {offer.state === "checking" ? (
-        <p className="mt-1 text-sm leading-snug text-muted-foreground">Scoring your plan with this move added.</p>
-      ) : rejected ? (
-        <p className="mt-1 text-sm leading-snug text-foreground">{rejected.reason}</p>
-      ) : null}
+      {/* The confirmation's room, at its held height: a longer reason runs on below it and moves nothing. */}
+      <p
+        data-keep-offer-status=""
+        className="mt-1 h-[3.375rem] w-full text-[0.8125rem] leading-[1.125rem] text-foreground [grid-area:notice] sm:h-9 lg:h-10 lg:text-sm lg:leading-5"
+      >
+        {rejected ? (
+          rejected.reason
+        ) : (
+          <>
+            Your plan already holds {pluralize(held.length, keptWord(held))}.
+            {/* The spinner sits here, not in Add, so Add keeps its width and Replace beside it never moves. */}
+            {offer.state === "checking" ? (
+              <span className="text-muted-foreground">
+                {" "}
+                <LoaderCircle aria-hidden="true" className="inline-block size-4 align-[-0.1875rem] motion-safe:animate-spin" /> Scoring
+                your plan with this move added.
+              </span>
+            ) : null}
+          </>
+        )}
+      </p>
     </div>
   );
 }
@@ -568,7 +362,8 @@ export function tasteOverlapOf(copy: Pick<DecisionCopy, "clashLine">): string | 
  * clashes ("1 of 5 among the day's 15 ranked clashes"), the two main genres (left out unless both are saved)
  * and the taste overlap line 1 prints. It keeps the board's definition
  * (`LABEL_META.hidden.explain`: the main genre tags differ, and the taste overlap is among the day's
- * highest). Names no source; on the invented day it says the day and the overlap are invented.
+ * highest): with the rank printed, the rank says it; without one, the definition's words do. Names no
+ * source; on the invented day it says the day and the overlap are invented.
  */
 export function hiddenClashLine({
   count,
@@ -595,7 +390,7 @@ export function hiddenClashLine({
   const named = (genres ?? []).map((genre) => genre?.trim() ?? "").filter(Boolean);
   const which = genres && genres.length === 2 && named.length === 2 ? ` (${named[0]}, ${named[1]})` : "";
   const overlap = invented ? "invented taste overlap" : "taste overlap";
-  const rank = taste ? `ranks ${taste} of 100 on this bill, among the day’s highest` : "is among the day’s highest";
+  const rank = taste ? `ranks ${taste} of 100 on this bill` : "is among the day’s highest";
   return `A hidden clash${share}: main genres differ${which}, yet their ${overlap} ${rank}.`;
 }
 
@@ -677,7 +472,7 @@ export function seeYourPlan(
 }
 
 /**
- * Focuses the first of the links that is displayed (the card draws one copy per width, the other
+ * Focuses the first of the links that is displayed (a view may draw one copy per width, the other
  * display:none), without scrolling the page. Returns the one it focused.
  */
 export function focusShown(links: readonly (HTMLElement | null)[]): HTMLElement | null {
@@ -688,32 +483,40 @@ export function focusShown(links: readonly (HTMLElement | null)[]): HTMLElement 
 
 /**
  * The confirmation in place, under the button that was pressed: a polite live region that, once the
- * plan holds the card's move, reads "Kept in your plan. Nothing moves until the acts' teams agree." in
- * ink with the "See your plan" link. Empty otherwise, so it takes no room.
+ * plan holds the move, reads "Kept in your plan. Nothing moves until the acts' teams agree." in ink with
+ * the "See your plan" link (and, while the drawing shows the day without the move, says so between them).
+ * Empty otherwise; the caller sizes it, so an empty notice can hold its room. The link reads as text in its
+ * line and takes its 44px target from a hit area that adds no height, so the line never grows.
  */
-function KeptNotice({
+export function KeptNotice({
   shown,
   linkRef,
+  boxRef,
+  drawn = null,
   className,
 }: {
   shown: boolean;
   linkRef: RefObject<HTMLAnchorElement | null>;
+  boxRef?: RefObject<HTMLDivElement | null>;
+  /** The drawing shows the day without the move: as published, or (the invented day) without the move. */
+  drawn?: "published" | "invented" | null;
   className?: string;
 }) {
   return (
-    <div role="status" aria-live="polite" data-kept-notice="" className={className}>
+    <div ref={boxRef} role="status" aria-live="polite" data-kept-notice="" className={className}>
       {shown ? (
-        <p className="flex flex-wrap items-center gap-x-3 text-sm leading-snug text-foreground">
-          <span className="inline-flex items-center gap-1.5 font-semibold">
-            <Check aria-hidden="true" className="size-4 shrink-0" />
+        <p className="text-foreground">
+          <span className="font-semibold">
+            <Check aria-hidden="true" className="mr-1 inline-block size-4 shrink-0 align-[-0.1875rem]" />
             {KEPT_IN_PLAN}
-          </span>
-          <span>{KEPT_AGREE}</span>
+          </span>{" "}
+          {drawn === "published" ? `${DRAWN_AS_PUBLISHED} ` : drawn === "invented" ? `${DRAWN_WITHOUT_MOVE} ` : null}
+          {KEPT_AGREE}{" "}
           <a
             ref={linkRef}
             href={`#${PLAN_ANCHOR}`}
             onClick={(event) => seeYourPlan(event)}
-            className="inline-flex min-h-11 items-center font-semibold text-foreground underline decoration-border-strong decoration-1 underline-offset-4 hover:decoration-foreground"
+            className="relative rounded-sm font-semibold whitespace-nowrap text-foreground underline decoration-border-strong decoration-1 underline-offset-4 after:absolute after:-inset-x-1 after:-inset-y-4 after:content-[''] hover:decoration-foreground"
           >
             {SEE_YOUR_PLAN}
           </a>
@@ -723,13 +526,19 @@ function KeptNotice({
   );
 }
 
+/**
+ * The 10px control corner every button takes, given to the ruled text buttons too: the variant's own class
+ * gives them the 6px label corner, which their focus ring would show.
+ */
+const RULED_CORNER = "rounded-md";
+
 /** The re-check action itself, with no hook: it only opens the pair's drawer and sends nothing. */
 export function PairRecheck({ onOpenPair }: { onOpenPair: (trigger: HTMLElement) => void }) {
   return (
     <Button
       type="button"
       variant="ruled"
-      className="py-2 text-left whitespace-normal"
+      className={cn("py-2 text-left whitespace-normal", RULED_CORNER)}
       onClick={(event) => onOpenPair(event.currentTarget)}
     >
       {RECHECK_PAIR}
@@ -745,43 +554,31 @@ function PairRecheckWhenOn({ onOpenPair }: { onOpenPair: (trigger: HTMLElement) 
 }
 
 /**
- * One worked decision on the published day: the festival and day as a dateline (with the saved reading's
- * date on a published day), then the action and its result as the heading ("Sprints 15 minutes later: 45
- * → 30 minutes shared"), then why this clash (the hidden-clash line when it carries that label, and the
- * pointer to the three readings), then the labelled index with one paragraph under it (its scale, who
- * selected and scored it, and that it is a reading, not a verdict), the drawn timeline across the card,
- * then one row: the one solid button,
- * "Keep this move", and directly after it the "Show the working" toggle. Below 1024 px that button sits
- * instead directly under the index block, before the drawing, and the row holds the toggle alone; one
- * copy is displayed at each width. The working opens directly under that row: the hidden-clash link
- * first, then the two changes side by side under the table's own heading, with
- * the secondary actions (the rule search, the keep button and what it keeps) under the table, then "How
- * this was chosen", rows 1 to 3: the clash, the lowest-index move and the rule search for the pair, with
- * the rule-check sentence beside row 3. A card without that comparison shows the secondary actions under
- * the button as before. The rows are in the server HTML, in a region marked `hidden` until it is opened.
- * Every string comes from `buildDecisionCopy`, so the server HTML and this client card are the same
- * card. It never changes the dial, which stays the reading of the published timetable.
+ * The index card under the hero, in the section on what taste changes: one card (the card fill, a hairline
+ * surface edge, the 14px panel corner) holding the Clash Budget Index block (its label and Derived stamp,
+ * "116.7 → 114.3" with the change in words, and one paragraph: the scale, who selected and scored it, and
+ * that it is a reading, not a verdict), the hidden-clash line when the pair carries that label, the "Show
+ * the working" disclosure (the two changes side by side when there are two, then "How this was chosen",
+ * rows 1 to 3 with the rule check beside row 3, the saved reading and the re-check), and under it the
+ * secondary actions: the rule search, the keep button with what it keeps, and the day's hidden clash.
+ * The move itself, its readout and "Keep this move" are the hero's (`HeroDecision`). Every string comes
+ * from `buildDecisionCopy`, so the server HTML and the interactive page print the same card. It never
+ * changes the dial, which stays the reading of the published timetable.
  */
-export function DecisionCard({
+export function DecisionDetails({
   copy,
-  onOpenMove,
-  plan,
-  check,
   onTryRule,
   onKeepChange,
   kept,
   onOpenHidden,
   hiddenLabel,
-  readings,
   hiddenCount,
   rankedCount,
   genres,
   saved,
   onOpenPair,
   className,
-}: DecisionCardProps) {
-  const rootRef = useRef<HTMLElement | null>(null);
-  const [playKey, setPlayKey] = useState(0);
+}: DecisionDetailsProps) {
   const [status, say] = useAnnouncement();
   const ruleLineId = useId();
   const changeSummaryId = useId();
@@ -789,163 +586,7 @@ export function DecisionCard({
   const [workingOpen, setWorkingOpen] = useState(false);
   const workingId = useId();
   const workingToggleId = useId();
-  const counted = useCount(copy.indexFrom, copy.indexTo, playKey);
-  const headingRef = useRef<HTMLHeadingElement | null>(null);
   const invented = isInventedDecision(copy);
-
-  // "Keep this move" confirms in place: once the plan holds the card's move (or, for a card told
-  // nothing about the plan, once pressed) the notice under the button reads "Kept in your plan." with
-  // its link. A press moves focus to that link, never to the page, and never scrolls it.
-  const [pressed, setPressed] = useState(false);
-  const keptShown = kept ? kept.move : pressed;
-  const [focusAsk, setFocusAsk] = useState<{ key: number; at: number }>({ key: 0, at: 0 });
-  const focusedAsk = useRef(0);
-  const earlyLinkRef = useRef<HTMLAnchorElement | null>(null);
-  const rowLinkRef = useRef<HTMLAnchorElement | null>(null);
-  useEffect(() => {
-    if (focusAsk.key === 0 || !keptShown || focusedAsk.current === focusAsk.key) return;
-    focusedAsk.current = focusAsk.key;
-    // A plan that took longer than two seconds to hold the move is no answer to this press.
-    if (Date.now() - focusAsk.at > 2000) return;
-    focusShown([earlyLinkRef.current, rowLinkRef.current]);
-  }, [focusAsk, keptShown]);
-
-  // A press on a plan that already holds other steps never replaces it silently: it offers Add (scored whole
-  // first, exactly as Keep this place does) or Replace, for the plan it was pressed on (`steps`; `stored` when that
-  // was the tab's stored plan, before the page had the plan's first answer). A changed plan, or the move kept,
-  // puts the offer away.
-  const [offer, setOffer] = useState<{
-    base: string;
-    steps: readonly StackStep[];
-    stored: boolean;
-    key: number;
-    at: KeepOffer;
-  } | null>(null);
-  const held = plan ?? NO_STEPS;
-  const heldKey = encodeMoves(held);
-  const offerShown =
-    offer !== null && !keptShown && (offer.base === heldKey || (offer.stored && held.length === 0)) ? offer.at : null;
-  const earlyAddRef = useRef<HTMLButtonElement | null>(null);
-  const rowAddRef = useRef<HTMLButtonElement | null>(null);
-  const earlyReplaceRef = useRef<HTMLButtonElement | null>(null);
-  const rowReplaceRef = useRef<HTMLButtonElement | null>(null);
-  const alive = useRef(true);
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
-  // A choice the plan did not take within a few seconds (it changed under it) is offered again, never left dead.
-  const sentKey = offerShown?.state === "sent" ? offer?.key : null;
-  useEffect(() => {
-    if (sentKey === null || sentKey === undefined) return;
-    const timer = window.setTimeout(() => {
-      setOffer((previous) => (previous && previous.key === sentKey && previous.at.state === "sent" ? { ...previous, at: { state: "open" } } : previous));
-    }, 3000);
-    return () => window.clearTimeout(timer);
-  }, [sentKey]);
-  // Focus follows the offer: to Add when it opens, to Replace when an Add is refused (the way still open).
-  const offerFocus = offerShown && (offerShown.state === "open" || offerShown.state === "rejected") ? `${offer?.key}:${offerShown.state}` : null;
-  useEffect(() => {
-    if (!offerFocus) return;
-    const refused = offerFocus.endsWith(":rejected");
-    const shown = refused
-      ? focusShown([earlyReplaceRef.current, rowReplaceRef.current])
-      : focusShown([earlyAddRef.current, rowAddRef.current]);
-    if (!shown && !refused) focusShown([earlyReplaceRef.current, rowReplaceRef.current]);
-  }, [offerFocus]);
-
-  // M1, the hero receipt: once the interactive card is in view (or 1.2 s after it mounts), the shared
-  // time hatches in, the tested slot flies, the bracket under what is left shrinks and the index counts
-  // down. The server HTML is the final frame; under reduced motion and in print nothing plays. While
-  // the opening reveal covers the page it waits, so it plays on the card the visitor can see.
-  const [heroPlay, setHeroPlay] = useState<number | null>(null);
-  const introDone = useIntroDone();
-  const receiptReady = Boolean(onOpenMove) && copy.timeline !== null && copy.indexFrom !== null && !receiptPlayed;
-  const receiptInView = useInView(rootRef, { threshold: 0.6, fallbackMs: 1200, enabled: receiptReady && introDone });
-  useEffect(() => {
-    if (!receiptInView || receiptPlayed) return;
-    // Set inside the timer, so an effect run that is cleaned up at once (React's development check)
-    // does not use up the page's one play.
-    const timer = window.setTimeout(() => {
-      receiptPlayed = true;
-      // A press of "Keep this move" got there first: that was the play.
-      if (playKey > 0) return;
-      setHeroPlay(1);
-      setPlayKey(1);
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [receiptInView, playKey]);
-
-  // The reveal runs once per page load, after the card is in the page: the server HTML is already
-  // readable, so nothing waits on it.
-  useEffect(() => {
-    if (revealed) return;
-    revealed = true;
-    if (!reducedMotion()) rootRef.current?.classList.add("cc-card-enter");
-  }, []);
-
-  /** Hands the move to the plan (`choice`: replace, the default, or add after the steps it was scored with). */
-  function keepMove(choice?: PlanChoice, added?: string) {
-    if (!onOpenMove) return;
-    setPressed(true);
-    setFocusAsk((previous) => ({ key: previous.key + 1, at: Date.now() }));
-    setHeroPlay(null);
-    setPlayKey((key) => key + 1);
-    const extra = choice ? onOpenMove(choice) : onOpenMove();
-    say([copy.testing, added ?? null, typeof extra === "string" ? extra : null].filter(Boolean).join(" "));
-  }
-
-  function openMove() {
-    if (!onOpenMove) return;
-    const steps = planAtPress(plan, () => readStoredMoves(copy.presetId));
-    const kind = keepPressKind(steps, copy.seedMove, Boolean(kept?.move));
-    // Pressing it again for a move the plan already holds changes nothing and says so.
-    if (kind === "already") {
-      setPressed(true);
-      setFocusAsk((previous) => ({ key: previous.key + 1, at: Date.now() }));
-      say(ALREADY_KEPT);
-      onOpenMove();
-      return;
-    }
-    // The plan holds other steps: ask first, Add or Replace; nothing changes yet.
-    if (kind === "offer") {
-      const stored = held.length === 0;
-      setOffer((previous) => ({ base: encodeMoves(steps), steps, stored, key: (previous?.key ?? 0) + 1, at: { state: "open" } }));
-      say(`Your plan already holds ${pluralize(steps.length, keptWord(steps))}. Add this move to it, or replace your plan.`);
-      return;
-    }
-    keepMove();
-  }
-
-  async function addMove() {
-    const move = copy.seedMove;
-    if (!move || !offer || !offerShown || offerShown.state === "checking" || offerShown.state === "sent") return;
-    const { base: key, steps: base, stored, key: number } = offer;
-    setOffer({ base: key, steps: base, stored, key: number, at: { state: "checking" } });
-    say("Scoring your plan with this move added.");
-    const outcome = await checkAdd(
-      base,
-      { act: copy.moveAct ?? copy.timeline?.movingName ?? "this set", move },
-      check ?? ((steps) => checkPlan(copy.presetId, steps)),
-      "move",
-    );
-    if (!alive.current) return;
-    if (outcome.kind === "rejected") {
-      setOffer({ base: key, steps: base, stored, key: number + 1, at: { state: "rejected", reason: outcome.reason, retry: outcome.retry } });
-      say(outcome.reason);
-      return;
-    }
-    setOffer({ base: key, steps: base, stored, key: number, at: { state: "sent" } });
-    keepMove(outcome.choice, `Added: ${pluralize(outcome.count, keptWord([...base, move]))}.`);
-  }
-
-  function replaceMove() {
-    if (!offerShown || offerShown.state === "sent") return;
-    setOffer((previous) => (previous ? { ...previous, at: { state: "sent" } } : previous));
-    keepMove({ mode: "replace" });
-  }
 
   function tryRule() {
     if (!onTryRule) return;
@@ -964,25 +605,24 @@ export function DecisionCard({
     say([copy.testingChange, typeof extra === "string" ? extra : null].filter(Boolean).join(" "));
   }
 
-  const receiptShown =
-    copy.receipt !== null && copy.receiptLead !== null && copy.minutesBefore !== null && copy.minutesAfter !== null;
-
   const deltaText = indexDelta(copy.indexBefore, copy.indexAfter);
   const delta = deltaText
     ? { figure: deltaText.slice(0, deltaText.indexOf(" ")), words: deltaText.slice(deltaText.indexOf(" ") + 1) }
     : null;
   const hasIndex = copy.indexBefore !== null && copy.indexAfter !== null;
   const figure = hasIndex ? (
-      // The score as one block: the label, the figure with its change on the same baseline, then one
-      // paragraph: the scale ("Lower is better", said once in the card), who selected and scored it, and
-      // what kind of claim it is. It is outside the working in every state of the card, so the paragraph
-      // is read with no click.
-      <div data-index-block="" className="mt-4">
-        <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Clash Budget Index</p>
+      // The score as one block: the label with its Derived stamp, the figure with its change on the same
+      // baseline, then one paragraph: the scale ("Lower is better", said once), who selected and scored it,
+      // and what kind of claim it is. It is outside the working, so the paragraph is read with no click.
+      <div data-index-block="">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Clash Budget Index</p>
+          <ProvenanceChip provenance="derived" synthetic={invented} className="rounded-sm" />
+        </div>
         <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
           <p className="type-numeral text-[1.75rem] leading-none tabular-nums">
             <span aria-hidden="true">
-              {copy.indexBefore} → {counted ?? copy.indexAfter}
+              {copy.indexBefore} → {copy.indexAfter}
             </span>
             <span className="sr-only">
               {copy.indexBefore} to {copy.indexAfter}.
@@ -990,27 +630,26 @@ export function DecisionCard({
           </p>
           {delta ? (
             <p className="text-[0.8125rem] leading-snug text-muted-foreground">
-              {/* Mono for the figure only; its words in the sans. */}
-              <span className="font-mono tabular-nums">{delta.figure}</span> {delta.words}
+              <span className="tabular-nums">{delta.figure}</span> {delta.words}
             </p>
           ) : null}
         </div>
         {/* The scale, where the index first appears, then the attribution, which ends the block. */}
-        <p data-index-scale="" className="mt-1 text-[0.8125rem] leading-snug text-muted-foreground">
+        <p data-index-scale="" className="mt-1 max-w-prose text-[0.8125rem] leading-snug text-muted-foreground">
           {INDEX_SCALE} {ATTRIBUTION}. A reading, not a verdict.
         </p>
       </div>
     ) : (
       // With no move there is no figure, and the same paragraph still limits the card with no click.
-      <p data-index-scale="" className="mt-4 text-[0.8125rem] leading-snug text-muted-foreground">
+      <p data-index-scale="" className="max-w-prose text-[0.8125rem] leading-snug text-muted-foreground">
         {INDEX_SCALE} {ATTRIBUTION}. A reading, not a verdict.
       </p>
     );
 
-  // The first "why this clash" line, when the card's own clash carries the Hidden label: in ink, as a
-  // fact of the board, never the teal of a Qloo figure.
+  // The decision's own clash, when it carries the Hidden label: in ink, as a fact of the board, never the
+  // teal of a Qloo figure.
   const hiddenLine = isHiddenDecision(copy) ? (
-    <p data-hidden-line="" className="text-sm leading-snug">
+    <p data-hidden-line="" className="mt-4 max-w-prose text-sm leading-snug">
       {hiddenClashLine({ count: hiddenCount, ranked: rankedCount, genres, taste: tasteOverlapOf(copy), invented })}
     </p>
   ) : null;
@@ -1019,80 +658,15 @@ export function DecisionCard({
   const savedLine = !invented && saved ? savedReadingLine(saved) : null;
   const recheck = !invented && onOpenPair ? <PairRecheckWhenOn onOpenPair={onOpenPair} /> : null;
 
-  const timelineFacts = copy.timeline ? readTimelineFacts(copy, copy.timeline) : null;
-  const timelineText =
-    copy.timeline && timelineFacts
-      ? timelineSentence(copy, copy.timeline, timelineFacts, timelineSpans(copy.timeline))
-      : null;
-  const lanes =
-    copy.timeline && timelineFacts ? heroLanes(copy.timeline, timelineFacts, copy.minutesBefore, copy.minutesAfter) : null;
-  // The first play of the page is the hero receipt (the shared time hatches in, the slot flies, the
-  // bracket shrinks); a press of "Keep this move" after it replays the bracket alone.
-  const motion =
-    playKey === 0
-      ? null
-      : { mode: heroPlay !== null && heroPlay === playKey ? ("hero" as const) : ("replay" as const), key: playKey };
-  // Wrapped labels instead of a label running past the card; the button keeps a 44 px height at least.
-  const wrap = "h-auto min-h-11 py-2 text-left whitespace-normal";
-  const showMove = Boolean(onOpenMove && copy.seedMove);
-  // Below 1024 px "Keep this move" sits directly under the reading, after the index block (never inside
-  // it, so "A reading, not a verdict." stays the block's last line) and before the drawing, so a phone's
-  // first screen holds the result, its one filled action and the clash. From 1024 px this copy is
-  // display:none and the action row's copy shows instead: one copy displayed at every width, neither
-  // with an id. Both call the same `openMove`, so the M1 play and its replay start from either.
-  // The Add or Replace offer sits under whichever copy of the button is displayed (one copy per width).
-  const earlyMove =
-    showMove && hasIndex ? (
-      <div className="mt-4 lg:hidden max-sm:mt-3">
-        <Button type="button" variant="default" className={wrap} onClick={openMove}>
-          {KEEP_MOVE}
-        </Button>
-        {offerShown ? (
-          <KeepMoveOffer
-            offer={offerShown}
-            held={offer?.steps ?? held}
-            onAdd={addMove}
-            onReplace={replaceMove}
-            addRef={earlyAddRef}
-            replaceRef={earlyReplaceRef}
-            className="mt-2"
-          />
-        ) : null}
-        <KeptNotice shown={keptShown} linkRef={earlyLinkRef} className={keptShown ? "mt-1" : undefined} />
-      </div>
-    ) : null;
-  const timeline = lanes ? (
-    // One pair strip across the card: the staying set once, then the moving set Now and Tested. Its words
-    // are HTML at fixed sizes, so nothing grows with the width. At every width it and its key sit directly
-    // under the index (below 1024 px under the index and its "Keep this move") and before the action row,
-    // so a phone's first screen shows the clash itself. It holds nothing focusable.
-    <figure
-      data-shared-time=""
-      className={cn("mt-3 w-full min-w-0 max-sm:mt-4", earlyMove && "max-lg:mt-4 max-sm:mt-3")}
-    >
-      {/* How to read the marks ends the strip's accessible name; the line under it says what else the move changes. */}
-      <PairStrip
-        lanes={lanes}
-        description={timelineText ? `${timelineText} ${STRIP_LEGEND}` : STRIP_LEGEND}
-        motion={motion}
-        evenPitch
-      />
-      {copy.sideEffects ? (
-        <figcaption data-side-effects="" className="mt-2 text-[0.8125rem] leading-snug text-muted-foreground">
-          {copy.sideEffects}
-        </figcaption>
-      ) : null}
-    </figure>
-  ) : null;
-
-  // The secondary actions are ruled text (the button's "ruled" variant), like a note in a running
-  // order's margin: no fill, no box. Only "Keep this move" is a solid button.
-  const ruled = "py-2 text-left whitespace-normal";
+  // The secondary actions are ruled text (the button's "ruled" variant), like a note in a running order's
+  // margin: no fill, no box. The one filled action, "Keep this move", is the hero's. Like every button they
+  // take the 10px control corner (`RULED_CORNER`), which only their focus ring shows.
+  const ruled = cn("py-2 text-left whitespace-normal", RULED_CORNER);
   const showRule = Boolean(onTryRule && copy.seedRule);
   const showKeep = Boolean(onKeepChange && copy.seedChange);
-  const secondary =
-    showRule || showKeep ? (
-      <div className="flex flex-wrap gap-x-6">
+  const actions =
+    showRule || showKeep || onOpenHidden ? (
+      <div className="flex flex-wrap gap-x-5">
         {showRule ? (
           <Button type="button" variant="ruled" className={ruled} onClick={tryRule}>
             Try this rule yourself
@@ -1121,36 +695,25 @@ export function DecisionCard({
             )}
           </Button>
         ) : null}
+        {onOpenHidden ? (
+          // The day's hero clash, as a ruled text link with its arrow, 44 px tall.
+          <Button type="button" variant="ruled" className={ruled} onClick={(event) => onOpenHidden(event.currentTarget)}>
+            {hiddenLabel ?? "Open a hidden clash"}
+            <ArrowRight aria-hidden="true" />
+          </Button>
+        ) : null}
       </div>
     ) : null;
   // What the keep button keeps, under the buttons, across the card's width.
   const changeSummary =
-    onKeepChange && copy.seedChange && copy.changeSummary ? (
+    showKeep && copy.changeSummary ? (
       <p id={changeSummaryId} className="mt-2 max-w-prose text-[0.8125rem] leading-snug text-muted-foreground">
         {copy.changeSummary}
       </p>
     ) : null;
-  // With a comparison on the card, "Keep this move" is the one action in view; the rule search and the
-  // keep button with its summary sit under the comparison, in "Show the working".
-  const tucked = copy.tradeoff !== null;
-  // The day's hero clash, as a ruled text link with its arrow: the first line of the working, one click
-  // away. The same ruled line of type as the card's other text actions, 44 px tall.
-  const hiddenLink = onOpenHidden ? (
-    <Button
-      type="button"
-      variant="ruled"
-      className={cn(ruled, "text-[0.9375rem]")}
-      onClick={(event) => onOpenHidden(event.currentTarget)}
-    >
-      {hiddenLabel ?? "Open a hidden clash"}
-      <ArrowRight aria-hidden="true" />
-    </Button>
-  ) : null;
-  // "Show the working": the disclosure toggle directly after "Keep this move" from 1024 px, and the action
-  // row's only control below it, where that button sits under the reading. A native button, so click,
-  // Enter and Space all work; the region it controls
-  // carries `hidden` while closed, so nothing in it is in the tab order. Its 12 px corner and 8 px sides
-  // (pulled back by the same 8 px) give the global focus ring a rounded box around the chevron and its label.
+  // "Show the working": a native button, so click, Enter and Space all work; the region it controls
+  // carries `hidden` while closed, so nothing in it is in the tab order. Its 10px control corner and 8px
+  // sides (pulled back by the same 8px) give the focus ring a rounded box around the chevron and its label.
   const workingToggle = (
     <button
       type="button"
@@ -1163,142 +726,41 @@ export function DecisionCard({
       <ChevronRight
         aria-hidden="true"
         className={cn(
-          "size-4 shrink-0 motion-safe:transition-transform motion-safe:duration-150 motion-safe:ease-out",
+          "size-4 shrink-0 motion-safe:transition-transform motion-safe:duration-[160ms] motion-safe:ease-(--ease-out)",
           workingOpen && "rotate-90",
         )}
       />
       <span>{SHOW_WORKING}</span>
     </button>
   );
-  const actions = (
-    <div className="mt-5 min-w-0">
-      <div className="flex w-full flex-wrap items-center justify-start gap-x-6 gap-y-2">
-        {showMove ? (
-          // From 1024 px only; below it the copy under the reading is the one shown (`earlyMove`). Without
-          // that copy (no index block) this one shows at every width, as before.
-          <Button
-            type="button"
-            variant="default"
-            className={cn(wrap, "max-[390px]:w-full", earlyMove && "max-lg:hidden")}
-            onClick={openMove}
-          >
-            {KEEP_MOVE}
-          </Button>
-        ) : null}
-        {workingToggle}
-      </div>
-      {/* The row's own offer and confirmation, shown with the row's button (from 1024 px when the card has the early copy). */}
-      {showMove && offerShown ? (
-        <KeepMoveOffer
-          offer={offerShown}
-          held={offer?.steps ?? held}
-          onAdd={addMove}
-          onReplace={replaceMove}
-          addRef={rowAddRef}
-          replaceRef={rowReplaceRef}
-          className={cn("mt-2", earlyMove && "max-lg:hidden")}
-        />
-      ) : null}
-      {showMove ? (
-        <KeptNotice
-          shown={keptShown}
-          linkRef={rowLinkRef}
-          className={cn(keptShown && "mt-1", earlyMove && "max-lg:hidden")}
-        />
-      ) : null}
-      {tucked ? null : secondary}
-      {tucked ? null : changeSummary}
-    </div>
-  );
 
   return (
-    <section
-      id={DECISION_ID}
-      aria-labelledby={DECISION_HEADING_ID}
-      ref={rootRef}
-      className={cn(
-        // An open composition on the page's paper, not a box: one 1px decorative rule along the top and
-        // nothing else (no corner, no side or foot edge, no fill, no shadow), its text and its strip starting
-        // at the column's own left edge: a read-only receipt drawn with the timetable's own marks. It reads
-        // in source order at every width: the dateline, the heading, the "why this clash" lines, the index
-        // with its paragraph, (below 1024 px) "Keep this move", the drawing and its key, the action row and
-        // the working.
-        "@container min-w-0 border-t border-border pt-5 sm:pt-6",
-        className,
-      )}
+    <div
+      data-decision-details=""
+      className={cn("min-w-0 rounded-xl border border-surface-edge bg-card p-5 lg:p-6", className)}
     >
-      {/* The festival and day are the dateline, with the saved reading's date on a published day; the
-          heading is the action and its result, or the dateline alone, as a title, when no move lowers the index. */}
-      {receiptShown ? (
-        <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
-          {datelineWithReading(copy.title, saved, invented)}
-        </p>
-      ) : null}
-      <h2
-        id={DECISION_HEADING_ID}
-        ref={headingRef}
-        tabIndex={-1}
-        className={cn(
-          "break-words outline-none",
-          // Under 640 px the two-line heading gets a little more air between its lines.
-          receiptShown ? "type-title mt-1 max-sm:leading-[1.15]" : "type-title max-sm:leading-[1.15]",
-        )}
-      >
-        {receiptShown ? (
-          <>
-            {copy.receiptLead}:{" "}
-            <span className="type-numeral">
-              {copy.minutesBefore}
-              <span aria-hidden="true"> → </span>
-              <span className="sr-only"> to </span>
-              {copy.minutesAfter}
-            </span>{" "}
-            {copy.minutesAfter === 1 ? "minute" : "minutes"} shared
-          </>
-        ) : (
-          copy.title
-        )}
-      </h2>
-
-      {/* Why this clash, before the score: the hidden-clash line, then the three readings' line. */}
-      {hiddenLine || readings ? (
-        <div data-why-lines="" className="mt-3 space-y-1">
-          {hiddenLine}
-          {readings}
-        </div>
-      ) : null}
       {figure}
-      {/* Below 1024 px the one filled action, directly under the reading; from 1024 px it is in the action row. */}
-      {earlyMove}
-      {/* The drawing spans the card; the action row sits under it. */}
-      {timeline}
-      {actions}
+      {hiddenLine}
+      <div className="mt-3">{workingToggle}</div>
 
-      {/* The working, directly under the button's row: the hidden-clash link first, then the two changes
-          side by side (when the card has a comparison, with the secondary actions under it) and rows 1 to 3. */}
+      {/* The working, directly under its toggle: the two changes side by side (when the decision has a
+          comparison) and rows 1 to 3. */}
       <div
         id={workingId}
         role="region"
         aria-labelledby={workingToggleId}
         data-working=""
         hidden={!workingOpen}
-        className="mt-4"
+        className="mt-3"
       >
-        {hiddenLink ? <div className="mb-4">{hiddenLink}</div> : null}
         {copy.tradeoff ? (
           <div className="mb-5 border-b border-border pb-5">
-            {/* The table's own heading is the subhead: a small kicker over its column note and rows. */}
+            {/* The table's own heading is the subhead: a small label over its column note and rows. */}
             <TradeoffTable tradeoff={copy.tradeoff} held={kept} compact />
-            {secondary || changeSummary ? (
-              <div className="mt-4 border-t border-border pt-3">
-                {secondary}
-                {changeSummary}
-              </div>
-            ) : null}
           </div>
         ) : null}
         <h3 className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">{HOW_CHOSEN}</h3>
-        <div className="cc-card-body mt-3 mb-1 space-y-4 text-sm leading-[1.5]">
+        <div className="mt-3 mb-1 space-y-4 text-sm leading-[1.5]">
           <div className="grid grid-cols-[1rem_minmax(0,1fr)] gap-x-3">
             <LineLabel n={1} />
             <p>{copy.clashLine}</p>
@@ -1342,9 +804,17 @@ export function DecisionCard({
         )}
       </div>
 
+      {/* Under the working, the secondary actions and what the keep button keeps. */}
+      {actions || changeSummary ? (
+        <div data-decision-actions="" className="mt-1">
+          {actions}
+          {changeSummary}
+        </div>
+      ) : null}
+
       <p role="status" aria-live="polite" className="sr-only">
         {status}
       </p>
-    </section>
+    </div>
   );
 }

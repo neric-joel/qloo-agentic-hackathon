@@ -1,8 +1,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RevealPhase } from "./use-in-view";
@@ -204,14 +202,12 @@ describe("the motion classes in globals.css", () => {
     for (let at = css.indexOf(start); at !== -1; at = css.indexOf(start, at + start.length)) found.push(block(start, at));
     return found.join(" ");
   };
+  /** The declarations of the `*, *::before, *::after` rules inside a block. */
+  const universal = (body: string) =>
+    [...body.matchAll(/\*,\s*\*::before,\s*\*::after\s*\{([^}]*)\}/g)].map((m) => m[1]).join(" ");
+  // The pieces still drawn by components; each is drawn at its final state and no rule animates it now.
   const pieces = [
-    "cc-hero-slot",
-    "cc-hero-band",
-    "cc-hero-mark",
     "cc-dial-needle",
-    "cc-dial-gap",
-    "cc-link-draw",
-    "cc-link-wipe",
     "cc-link-badge",
     "cc-meter-fill",
     "cc-lens-row",
@@ -222,38 +218,65 @@ describe("the motion classes in globals.css", () => {
     "cc-rail[data-done]",
   ];
 
-  it("shows every piece's final frame under reduced motion and in print", () => {
+  it("shows every piece's final frame under reduced motion and in print: every animation and transition is none", () => {
     const reduced = allBlocks("@media (prefers-reduced-motion: reduce)");
     const print = allBlocks("@media print");
+    for (const body of [reduced, print]) {
+      expect(universal(body)).toMatch(/animation: none !important;/);
+      expect(universal(body)).toMatch(/transition: none !important;/);
+      // The two pieces that hold a transform while waiting are set straight.
+      expect(body).toMatch(/\.cc-meter-fill,\s*\.cc-rail\[data-done\]\s*\{\s*transform: none !important;/);
+    }
+    // No rule gives a piece an animation of its own outside those blocks.
+    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)];
     for (const piece of pieces) {
-      expect(reduced, piece).toContain(`.${piece}`);
-      expect(print, piece).toContain(`.${piece}`);
+      for (const [, selector, body] of rules) {
+        if (selector.includes(`.${piece}`)) expect(body, piece).not.toMatch(/animation:\s*(?!none)/);
+      }
     }
   });
 
-  it("animates transform, opacity, dash offset and the highlight sweep only", () => {
-    const frames = [
-      ...css.matchAll(/@keyframes (cc-(?:hero|draw|wipe|dial|badge|meter|rise|edge|perf|gem|note|stamp|underline|node)[\w-]*)/g),
-    ].map((m) => m[1]);
-    // 11 since cc-perf-wipe (the hidden-clash ticket perforation) was deleted in round 22.
-    expect(frames.length).toBeGreaterThanOrEqual(11);
-    const allowed = /^(opacity|transform|stroke-dasharray|stroke-dashoffset|clip-path|background-size|animation-timing-function)$/;
+  it("keeps no opening, scroll-in or theme motion, and animates transform and opacity only", () => {
+    const frames = [...css.matchAll(/@keyframes ([\w-]+)/g)].map((m) => m[1]);
+    expect(frames).toEqual([
+      "caret-blink",
+      "cc-slot-flight",
+      "cc-band-shrink",
+      "cc-band-away",
+      "cc-result-in",
+      "cc-lift",
+      "cc-zero-in",
+      "cc-edge-grow",
+      "cc-ring-out-a",
+      "cc-ring-out-b",
+      "cc-ring-fade",
+    ]);
+    expect(css).not.toMatch(/\[data-reveal|cc-hero-|cc-card-enter|cc-theme-pop|cc-draw|cc-wipe/);
+    // The retired curtain's names, spelled in pieces so a source scan for them finds none.
+    for (const name of ["cc-", "data-"].map((head) => `${head}intro`)) expect(css).not.toContain(name);
     for (const name of frames) {
       const body = block(`@keyframes ${name}`);
       const properties = [...body.matchAll(/([\w-]+)\s*:/g)].map((m) => m[1]);
+      // The zero chip's ground and ink change with its opacity: the raspberry bar turning into a zero.
+      const allowed = name === "cc-zero-in" ? /^(opacity|transform|background-color|color)$/ : /^(opacity|transform)$/;
       for (const property of properties) expect(property, `${name}: ${property}`).toMatch(allowed);
     }
+    // The tested slot flies straight in: two frames, no scale and no overshoot.
+    const flight = block("@keyframes cc-slot-flight");
+    expect(flight).not.toMatch(/scale|%/);
+    expect(flight).toMatch(/opacity: 0\.72;\s*transform: translate\(var\(--dx\), var\(--dy\)\);/);
   });
-});
 
-describe("useIntroDone", () => {
-  afterEach(() => vi.unstubAllGlobals());
-
-  it("is true in the server HTML, so nothing there waits on the intro", async () => {
-    const { useIntroDone } = await load();
-    function Probe() {
-      return createElement("p", null, String(useIntroDone()));
-    }
-    expect(renderToStaticMarkup(createElement(Probe))).toBe("<p>true</p>");
+  it("times every remaining animation and transition with the two house curves", () => {
+    expect(css.match(/cubic-bezier\(/g)).toHaveLength(2);
+    expect(css).toMatch(/--ease-out: cubic-bezier\(0\.23, 1, 0\.32, 1\);/);
+    expect(css).toMatch(/--ease-move: cubic-bezier\(0\.65, 0, 0\.35, 1\);/);
+    const timed = [...css.matchAll(/(?:animation|transition):\s*([^;]+);/g)]
+      .map((m) => m[1])
+      .filter((value) => !/^none\b/.test(value) && !value.startsWith("caret-blink"));
+    expect(timed.length).toBeGreaterThanOrEqual(10);
+    for (const value of timed) expect(value).toMatch(/var\(--ease-(out|move)\)/);
+    expect(css).toMatch(/\.cc-slot-flight \{\s*animation: cc-slot-flight 400ms var\(--ease-move\) both;/);
+    expect(css).toMatch(/\.cc-overlap-band \{[^}]*animation: cc-band-shrink 300ms var\(--ease-out\) both;/);
   });
 });

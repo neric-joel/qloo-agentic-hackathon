@@ -9,7 +9,6 @@ import { clashKey, formatDraw, formatShare, LABEL_META, partnerOf, type SetView 
 import type { PairClash, Stage } from "@/lib/preset";
 import type { RulePreview } from "@/lib/rule-fix";
 import type { GhostSlot, PlanPreview } from "@/lib/stack";
-import { useReveal } from "@/lib/use-in-view";
 import {
   columnFrames,
   columnGap,
@@ -34,10 +33,9 @@ const AXIS_WIDTH = 52;
  * A tile's rows, in px. A name of up to 22 characters is 14px semibold on a 17.5px line (leading-tight);
  * a longer one is 13px semibold on a 16.25px line. A name the measured board wraps to two lines or more
  * is set on a 1.2 line instead (16.8px, or 15.6px for a long name), so its lines read as one name. The
- * time is 12px mono on a 16px line, each line of the genre 12px on a 15px line, and the no-signal label
- * 12px on a 16px line; the draw is 13px mono on that 16px line in a roomy tile and 12px otherwise. A
- * roomy tile has 8px of padding top and bottom (4px in a short one), plus 2px for its 1px edge, and 4px
- * over its bottom row.
+ * time is 12px mono on a 16px line, each line of the genre 12px on a 15px line, and the signal label at
+ * the foot (no signal, or a weak one) 12px on a 16px line. A roomy tile has 8px of padding top and bottom
+ * (4px in a short one), plus 2px for its 1px edge, and 4px over its foot.
  */
 const NAME_LINE = 17.5;
 const LONG_NAME_LINE = 16.25;
@@ -47,12 +45,11 @@ const WRAPPED_LONG_NAME_LINE = 15.6;
 const LONG_NAME = 22;
 const TIME_LINE = 16;
 const GENRE_LINE = 15;
-const DRAW_LINE = 16;
-/** The weak-signal line over the draw ("Weak Qloo signal"): 12px on a 16px line, like the no-signal label. */
-const WEAK_LINE = 16;
+/** The foot line ("No Qloo signal", or a weak signal's words or cue): 12px on a 16px line. */
+const FOOT_LINE = 16;
 const FULL_CHROME = 16 + 2;
 const SHORT_CHROME = 8 + 2;
-const DRAW_GAP = 4;
+const FOOT_GAP = 4;
 const CARD_PAD_X = 10;
 /**
  * The space between a tile and the tiles above and below it on its stage: a tile starts half of it
@@ -69,32 +66,25 @@ const NAME_CHAR_PX = 8;
 const LONG_NAME_CHAR_PX = 7.4;
 /** About how wide a character of the 12px genre runs: generous, so a genre is never counted short. */
 const GENRE_CHAR_PX = 7;
-/** About how wide a character of the 12px mono draw line runs (7.2px measured), generous; and set tighter (-0.05em). */
-const MONO_CHAR_PX = 7.3;
-const MONO_TIGHT_CHAR_PX = 6.7;
+/** About how wide a character of the 12px medium foot label runs (5.8px measured), generous. */
+const LABEL_CHAR_PX = 6.4;
 
 /**
- * The word a short weak-signal tile prints beside its draw. The board key draws the same word in its
- * cue specimen, so the two cannot drift.
+ * The word a weak-signal tile too narrow for "Weak Qloo signal" prints at its foot. The board key draws
+ * the same word in its cue specimen, so the two cannot drift.
  */
 export const WEAK_CUE_WORD = "weak";
 
 /**
- * The cue a weak-signal tile too short for its "Weak Qloo signal" line adds to its draw line, by the
- * room the tile has across (`room` px; 0 or less while the board is unmeasured): " · weak" ("Draw 21 ·
- * weak"); where that does not fit, "·weak" (the mono dot keeps its own side space), then the same set
- * 0.05em tighter (`tight`, on a phone board's narrow tiles); "weak" alone with no figure. Null where
- * none fits: the tile then hides its draw, as a short tile does, so no figure shows without its
- * qualifier (both stay in the title and are read out).
+ * What a weak-signal tile prints at its foot, by the room the tile has across (`room` px; 0 or less
+ * while the board is unmeasured): its words ("Weak Qloo signal") where they fit; else the cue word
+ * "weak" (`cue`), which the board key explains; null where neither fits, and the qualifier is then
+ * left to the title and the tile's screen-reader text, as a row a short tile hides is.
  */
-export function weakCue(figure: string, room: number): { cue: string; tight: boolean } | null {
-  if (!figure) return { cue: WEAK_CUE_WORD, tight: false };
-  const spaced = ` · ${WEAK_CUE_WORD}`;
-  const close = `·${WEAK_CUE_WORD}`;
-  const fits = (cue: string, px: number) => room <= 0 || (figure.length + cue.length) * px <= room;
-  if (fits(spaced, MONO_CHAR_PX)) return { cue: spaced, tight: false };
-  if (fits(close, MONO_CHAR_PX)) return { cue: close, tight: false };
-  if (fits(close, MONO_TIGHT_CHAR_PX)) return { cue: close, tight: true };
+export function weakCue(words: string, room: number): { text: string; cue: boolean } | null {
+  const fits = (text: string) => room <= 0 || text.length * LABEL_CHAR_PX <= room;
+  if (fits(words)) return { text: words, cue: false };
+  if (fits(WEAK_CUE_WORD)) return { text: WEAK_CUE_WORD, cue: true };
   return null;
 }
 
@@ -105,24 +95,23 @@ export function isLongName(name: string): boolean {
 
 /**
  * What a set tile prints, by its height. The name comes first and gets every line it needs (up to
- * three); then the time, then the draw, and the genre last (on every line it wraps to), each only where
- * it still fits, so a short tile hides its genre first and then its draw before it gives the name fewer
- * lines. A tile with no signal keeps its label ("No Qloo signal") before anything but the first line of
- * its name. A weak-signal tile that shows its draw says so next to it: on its own line over the draw
- * where the tile has room for it (`weakLine`, before the genre, since it qualifies the figure), else as
- * "· weak" on the draw line itself. A row a tile leaves out is still read out and kept in its title.
- * `clamped` says the slot has room for fewer lines than the name needs: the name is never clamped or
- * ellipsised, and the full name also prints in a tooltip.
+ * three); then the time, and the genre last (on every line it wraps to), each only where it still
+ * fits, so a short tile hides its genre first and never gives the name fewer lines for another row. A
+ * tile with no signal keeps its label ("No Qloo signal") before anything but the first line of its
+ * name. A weak-signal tile says so at its foot where it has room after its time (`weakLine`, before the
+ * genre). The draw is never printed on a tile, where a figure near-constant across the day is noise: it
+ * is read out, and kept in the title, the clash drawer and the clash list. A row a tile leaves out is
+ * still read out and kept in its title. `clamped` says the slot has room for fewer lines than the name
+ * needs: the name is never clamped or ellipsised, and the full name also prints in a tooltip.
  */
 export type CardRows = {
   roomy: boolean;
   nameLines: number;
   clamped: boolean;
   time: boolean;
-  draw: boolean;
   genre: boolean;
   label: boolean;
-  /** A weak-signal tile with room for "Weak Qloo signal" on its own line over the draw. */
+  /** A weak-signal tile with room for its qualifier on the foot line. */
   weakLine: boolean;
 };
 
@@ -141,20 +130,20 @@ export function cardRows(
   // `wraps`: the measured board wraps the name to more than one line, so it is set on the 1.2 line.
   const line = wraps ? (long ? WRAPPED_LONG_NAME_LINE : WRAPPED_NAME_LINE) : long ? LONG_NAME_LINE : NAME_LINE;
   const lines = Math.max(1, Math.min(MAX_NAME_LINES, needed));
-  const roomy = box >= FULL_CHROME + lines * line + TIME_LINE + DRAW_GAP + DRAW_LINE;
-  const bottomRow = DRAW_LINE + (roomy ? DRAW_GAP : 0);
+  // Roomy: the name, the time and a foot line fit with the full padding.
+  const roomy = box >= FULL_CHROME + lines * line + TIME_LINE + FOOT_GAP + FOOT_LINE;
+  const footRow = FOOT_LINE + (roomy ? FOOT_GAP : 0);
   let left = box - (roomy ? FULL_CHROME : SHORT_CHROME);
-  if (label) left -= bottomRow;
+  if (label) left -= footRow;
   const nameLines = Math.max(1, Math.min(lines, Math.floor(left / line)));
   left -= nameLines * line;
   const time = left >= TIME_LINE;
   if (time) left -= TIME_LINE;
-  const draw = !label && time && left >= bottomRow;
-  if (draw) left -= bottomRow;
-  const weakLine = weak && draw && left >= WEAK_LINE;
-  if (weakLine) left -= WEAK_LINE;
-  const genre = hasGenre && (draw || label) && time && left >= Math.max(1, genreLines) * GENRE_LINE;
-  return { roomy, nameLines, clamped: nameLines < lines, time, draw, genre, label, weakLine };
+  const weakLine = weak && !label && time && left >= footRow;
+  if (weakLine) left -= footRow;
+  // The weak qualifier outranks the genre: a weak tile with no room for it shows no genre either.
+  const genre = hasGenre && time && (!weak || weakLine) && left >= Math.max(1, genreLines) * GENRE_LINE;
+  return { roomy, nameLines, clamped: nameLines < lines, time, genre, label, weakLine };
 }
 
 /** Tall enough that a 45-minute set prints its whole name on two lines, its time and its draw. */
@@ -165,14 +154,6 @@ const BADGE = 26;
  * crosses, so this keeps clear paper between the badge and the set cards on either side.
  */
 const MIN_GUTTER = BADGE + 8;
-
-/** The clash links draw in once per page load, the first time a board scrolls into view. */
-let linksDrawn = false;
-
-/** Link k (by rank) starts (k - 1) x this, draws over `LINK_DRAW_MS`, then its badge pops. */
-const LINK_STAGGER_MS = 70;
-const LINK_DRAW_MS = 420;
-const BADGE_POP_MS = 160;
 
 type TimetableGridProps = {
   views: readonly SetView[];
@@ -273,11 +254,11 @@ function wrapLines(text: string, width: number, char: number): number {
 
 /**
  * How one set tile is laid out on a board drawn on `y`, in a column `columnWidth` px wide (0 while the
- * board is unmeasured): its box, its rows, its draw figure and its weak cue. `cue` is undefined where
- * the tile prints no short cue (not weak, no draw, or the "Weak Qloo signal" line instead), and null
- * where none fits, so the tile hides its draw.
+ * board is unmeasured): its box, its rows and a weak tile's foot. `foot` is undefined where the tile
+ * prints no weak qualifier (not weak, or no room for the line), and null where neither the words nor
+ * the cue word fit across.
  */
-export function tileLayout(view: SetView, y: (minute: number) => number, columnWidth: number) {
+export function tileLayout(view: SetView, y: (minute: number) => number, columnWidth: number, synthetic = false) {
   const top = y(view.slot.start);
   const height = y(view.slot.end) - top;
   const box = Math.max(height - TILE_GAP, 18);
@@ -291,24 +272,26 @@ export function tileLayout(view: SetView, y: (minute: number) => number, columnW
   const genreLines = view.act.genre ? estimateGenreLines(view.act.genre, columnWidth - 2 * CARD_PAD_X) : 1;
   // Only a measured board knows a name wraps; before that every name keeps its leading-tight line.
   const wraps = columnWidth > 0 && needed > 1;
-  // The name is never cut: a short tile drops its genre, then its draw, then its time (each still read
-  // out and kept in the title) before it gives the name fewer lines than it needs, and then the full
-  // name also prints in a tooltip.
+  // The name is never cut: a short tile drops its genre, then its time (each still read out and kept
+  // in the title) before it gives the name fewer lines than it needs, and then the full name also
+  // prints in a tooltip.
   const rows = cardRows(box, needed, Boolean(view.act.genre), { long, label: none, genreLines, weak, wraps });
-  const drawFigure = view.act.popularity !== null ? `Draw ${formatDraw(view.act.popularity)}` : "";
-  // A weak tile with no room for the line over its draw says "· weak" on the draw line.
-  const cue = weak && rows.draw && !rows.weakLine ? weakCue(drawFigure, columnWidth - 2 * CARD_PAD_X - 2) : undefined;
-  return { top, box, long, none, weak, wraps, rows, drawFigure, cue };
+  // A weak tile too narrow for "Weak Qloo signal" says "weak" at its foot, and the key explains it.
+  const foot = rows.weakLine
+    ? weakCue(weakSignalLabel(synthetic).replace(/\.$/, ""), columnWidth - 2 * CARD_PAD_X - 2)
+    : undefined;
+  return { top, box, long, none, weak, wraps, rows, foot };
 }
 
 /**
- * How many tiles of a board print the short weak cue (" · weak", "·weak" or "weak"), with its columns
- * `columnWidths` px wide (none while unmeasured). The board publishes this to its key, which draws the
- * cue only while it is over 0: a roomy weak tile says "Weak Qloo signal" in words and needs no key.
+ * How many tiles of a board print the weak cue word ("weak"), with its columns `columnWidths` px wide
+ * (none while unmeasured, when every weak tile with room prints its words). The board publishes this
+ * to its key, which draws the cue only while it is over 0: a weak tile wide enough says "Weak Qloo
+ * signal" in words and needs no key.
  */
-export function shortCueCount(views: readonly SetView[], columnWidths: readonly number[] = []): number {
+export function shortCueCount(views: readonly SetView[], columnWidths: readonly number[] = [], synthetic = false): number {
   const scale = timeScale(timeDomain(views.map((view) => view.slot)), PX_PER_MINUTE);
-  return views.filter((view) => tileLayout(view, scale.y, columnWidths[view.col] ?? 0).cue).length;
+  return views.filter((view) => tileLayout(view, scale.y, columnWidths[view.col] ?? 0, synthetic).foot?.cue).length;
 }
 
 /** What a set block adds for screen readers after its visible text. */
@@ -386,8 +369,11 @@ export function TimetableGrid({
   const scale = useMemo(() => timeScale(domain, PX_PER_MINUTE), [domain]);
   const hours = useMemo(() => timeTicks(domain, 60), [domain]);
   const frames = useMemo(() => columnFrames(width, stages.length, gap), [width, stages.length, gap]);
-  // The key draws the short tiles' "· weak" cue while some tile on this board prints it.
-  const cueTiles = useMemo(() => shortCueCount(views, frames.map((frame) => frame.width)), [views, frames]);
+  // The key draws the narrow tiles' "weak" cue while some tile on this board prints it.
+  const cueTiles = useMemo(
+    () => shortCueCount(views, frames.map((frame) => frame.width), synthetic),
+    [views, frames, synthetic],
+  );
   usePublishCueTiles(cueTiles);
   const byId = useMemo(() => new Map(views.map((view) => [view.id, view])), [views]);
   // A tile in one of the costed clashes drawn on the board (it carries a link and a disc).
@@ -512,33 +498,8 @@ export function TimetableGrid({
   );
   const tabStop = rovingId && byId.has(rovingId) ? rovingId : (views[0]?.id ?? null);
 
-  // The links draw in by rank the first time the board scrolls into view (M3). A highlight before
-  // the draw starts cancels it, so a hovered set always shows its links; one during the draw dims
-  // them as usual. The links are drawn in full otherwise (reduced motion, print, a board already on
-  // screen at load, or a start frame held for 1.5 s without the board showing). Sets never move, and
-  // the badges are buttons, focusable and labelled, from the start.
-  const [fresh] = useState(() => !linksDrawn);
-  const reveal = useReveal(rootRef, { threshold: 0.35, enabled: fresh });
-  const [drawing, setDrawing] = useState<"waiting" | "drawing" | "drawn">("waiting");
-  if (drawing === "waiting" && reveal !== "still") {
-    if (dimmed) setDrawing("drawn");
-    else if (reveal === "play") setDrawing("drawing");
-  }
-  const drawOrder = useMemo(
-    () => new Map([...links].sort((a, b) => a.rank - b.rank).map((clash, order) => [clashKey(clash), order])),
-    [links],
-  );
-  useEffect(() => {
-    if (drawing !== "drawing") return;
-    linksDrawn = true;
-    const total = (Math.max(drawOrder.size, 1) - 1) * LINK_STAGGER_MS + LINK_DRAW_MS + BADGE_POP_MS + 100;
-    const timer = window.setTimeout(() => setDrawing("drawn"), total);
-    return () => window.clearTimeout(timer);
-  }, [drawing, drawOrder]);
-  const linkPhase = drawing === "drawing" ? "play" : drawing === "waiting" && reveal === "wait" ? "wait" : undefined;
-  const linkDelay = (key: string) =>
-    ({ "--reveal-delay": `${(drawOrder.get(key) ?? 0) * LINK_STAGGER_MS}ms` }) as CSSProperties;
-
+  // The links and their badges are drawn in full from the first paint: nothing on the board plays
+  // because it scrolled into view. The badges are buttons, focusable and labelled, from the start.
   const maxShare = Math.max(...links.map((clash) => clash.regret_share), 0.0001);
   const layouts = useMemo(() => {
     if (width === 0) return [];
@@ -576,7 +537,7 @@ export function TimetableGrid({
   const columnsTemplate = `${AXIS_WIDTH}px repeat(${stages.length}, minmax(0, 1fr))`;
 
   return (
-    <div ref={rootRef} className={cn("relative", className)} data-reveal={linkPhase}>
+    <div ref={rootRef} className={cn("relative", className)}>
       {/* Stage names stay in view while the day scrolls past, under the site header and the
           page's jump nav. In the phone scroller they scroll with the board instead. */}
       <div
@@ -660,19 +621,11 @@ export function TimetableGrid({
               if (!clash) return null;
               const active = activeClashKeys.has(layout.id);
               const opacity = dimmed ? (active ? 1 : 0.12) : layout.opacity;
-              // Every link is one 1px solid vermilion line with round caps, 2px for the active pair; the
+              // Every link is one 1px solid raspberry line with round caps, 2px for the active pair; the
               // disc says whether the clash is hidden.
               return (
-                <g key={layout.id} style={{ opacity, ...linkDelay(layout.id) }} className="transition-opacity duration-150 ease-out">
-                  <path
-                    d={layout.path}
-                    fill="none"
-                    stroke="var(--primary)"
-                    strokeWidth={active ? 2 : 1}
-                    strokeLinecap="round"
-                    pathLength={1}
-                    className="cc-link-draw"
-                  />
+                <g key={layout.id} style={{ opacity }} className="transition-opacity duration-150 ease-out">
+                  <path d={layout.path} fill="none" stroke="var(--primary)" strokeWidth={active ? 2 : 1} strokeLinecap="round" />
                 </g>
               );
             })}
@@ -690,10 +643,11 @@ export function TimetableGrid({
                 {views
                   .filter((view) => view.stage.id === stage.id)
                   .map((view) => {
-                    const { top, box, long, none, weak, wraps, rows, drawFigure, cue } = tileLayout(
+                    const { top, box, long, none, weak, wraps, rows, foot } = tileLayout(
                       view,
                       scale.y,
                       frames[view.col]?.width ?? 0,
+                      synthetic,
                     );
                     const related = activeSetIds.has(view.id);
                     const isFocus = focusSetId === view.id;
@@ -706,7 +660,6 @@ export function TimetableGrid({
                       : view.act.popularity !== null
                         ? `Draw ${formatDraw(view.act.popularity)}`
                         : "";
-                    const showDraw = rows.draw && cue !== null;
                     // The tile's tooltip names everything it holds, shown or not.
                     const title = [view.act.name, formatRange(view.slot), view.act.genre, drawText, weak ? weakSignalLabel(synthetic) : ""]
                       .filter(Boolean)
@@ -736,7 +689,8 @@ export function TimetableGrid({
                           data-overprinted={overprinted ? "true" : undefined}
                           onAnimationEnd={moved ? () => markPlayed(`lift:${view.id}`) : undefined}
                           className={cn(
-                            "group/set absolute inset-x-0 flex min-w-0 flex-col overflow-hidden rounded-sm border text-left transition-[opacity,background-color,outline-color] duration-150 ease-out",
+                            // A tile's corner is the control and tile radius; its focus ring follows it.
+                            "group/set absolute inset-x-0 flex min-w-0 flex-col overflow-hidden rounded-md border text-left transition-opacity duration-150 ease-out",
                             "focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
                             rows.roomy ? "px-2.5 py-2" : "px-2.5 py-1",
                             // Moved in the tested plan: the slot it left, paper with muted text and no
@@ -777,7 +731,7 @@ export function TimetableGrid({
                             {view.slot.locked ? <Lock aria-hidden="true" className="mt-0.5 size-3 shrink-0" /> : null}
                           </span>
                           {rows.time ? (
-                            // The act and its time are the tile's two ink lines; genre, draw and signal stay muted.
+                            // The act and its time are the tile's two ink lines; genre and signal stay muted.
                             // The slot a tested move left keeps its muted text throughout.
                             <span
                               className={cn(
@@ -806,48 +760,25 @@ export function TimetableGrid({
                               {noSignalLabel(synthetic)}
                               <span className="sr-only">, not priced. </span>
                             </span>
-                          ) : showDraw ? (
+                          ) : (
                             <>
-                              {rows.weakLine ? (
-                                // A weak signal, said in words on its own line over the figure it qualifies, in the
-                                // no-signal label's style. Read out once, in the tile's tail.
+                              {/* The draw is read out, never printed on the tile: it stays in the title, the
+                                  clash drawer and the clash list. */}
+                              {view.act.popularity !== null ? (
+                                <span className="sr-only">{`Draw ${formatDraw(view.act.popularity)}. `}</span>
+                              ) : null}
+                              {foot ? (
+                                // A weak signal, said at the foot in the no-signal label's style: in words, or as the
+                                // key's cue word on a tile too narrow for them. Read out once, in the tile's tail.
                                 <span
                                   aria-hidden="true"
-                                  data-weak="line"
+                                  data-weak={foot.cue ? "cue" : "line"}
                                   className={cn("mt-auto block text-xs leading-4 font-medium whitespace-nowrap text-muted-foreground", rows.roomy && "pt-1")}
                                 >
-                                  {weakSignalLabel(synthetic).replace(/\.$/, "")}
+                                  {foot.text}
                                 </span>
                               ) : null}
-                              {/* Draw: a mono figure at the bottom right, 13px in a roomy tile and 12px otherwise; on
-                                  a weak tile too short for the line above, "· weak" in the 12px style, explained in
-                                  the key (that line keeps 12px, so the cue is never resized). */}
-                              <span
-                                data-weak={cue ? "cue" : undefined}
-                                className={cn(
-                                  "flex min-w-0 items-baseline justify-end gap-x-1.5",
-                                  // The size before the line height: a later size class would drop leading-4 in cn.
-                                  rows.roomy && cue === undefined ? "text-[0.8125rem]" : "text-xs",
-                                  "leading-4 whitespace-nowrap text-muted-foreground",
-                                  !rows.weakLine && "mt-auto",
-                                  rows.roomy && !rows.weakLine && "pt-1",
-                                )}
-                              >
-                                {drawFigure || cue ? (
-                                  <>
-                                    <span className={cn("shrink-0 font-mono tabular-nums", cue?.tight && "tracking-tighter")}>
-                                      {drawFigure}
-                                      {cue ? <span aria-hidden="true">{cue.cue}</span> : null}
-                                    </span>
-                                    <span className="sr-only">. </span>
-                                  </>
-                                ) : null}
-                              </span>
                             </>
-                          ) : (
-                            <span className="sr-only">
-                              {view.act.popularity !== null ? `Draw ${formatDraw(view.act.popularity)}. ` : ""}
-                            </span>
                           )}
                           <span className="sr-only">{describeSetTail(view, moved, synthetic)}</span>
                         </button>
@@ -903,8 +834,9 @@ export function TimetableGrid({
                     data-ghost={ghost.kind}
                     onAnimationEnd={flies ? () => markPlayed(name) : undefined}
                     className={cn(
-                      // A tested place, kept or being tried: dashed ink on the sheet, never vermilion.
-                      "absolute flex flex-col overflow-hidden rounded-sm border-2 border-dashed border-foreground bg-card bg-clip-padding px-2.5 py-1 text-left text-foreground",
+                      // A tested place, kept or being tried: dashed ink on the sheet, never raspberry, on the
+                      // tile's own corner (the dashes follow the curve).
+                      "absolute flex flex-col overflow-hidden rounded-md border-2 border-dashed border-foreground bg-card bg-clip-padding px-2.5 py-1 text-left text-foreground",
                       flies && "cc-slot-flight",
                     )}
                     style={{
@@ -915,7 +847,7 @@ export function TimetableGrid({
                       ...flight,
                     }}
                   >
-                    <span className="text-[0.75rem] leading-tight font-bold break-words [font-variation-settings:'wdth'_85]">
+                    <span className="text-[0.75rem] leading-tight font-bold break-words">
                       {ghost.name} · tested
                     </span>
                     {height >= 36 ? (
@@ -989,12 +921,11 @@ export function TimetableGrid({
                       top: layout.badge.y - BADGE / 2,
                       width: BADGE,
                       height: BADGE,
-                      ...linkDelay(layout.id),
                     }}
                   >
                     {/* Every clash is a 22px numbered disc, centred in the first gutter the line crosses,
-                        clear of the sets: a seen clash is filled vermilion with a paper numeral, a hidden
-                        one is outlined in vermilion on the card with a vermilion numeral. */}
+                        clear of the sets: a seen clash is filled raspberry with a paper numeral, a hidden
+                        one is outlined in raspberry on the card with a raspberry numeral. */}
                     <ClashDisc hidden={hidden} className="absolute top-0.5 left-0.5" />
                     <span aria-hidden="true" className={cn("relative", hidden ? "text-primary" : "text-primary-foreground")}>
                       {clash.rank}

@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { parseDecision } from "./decision";
+import { buildDayGraph, sideEffectText } from "./day-graph";
+import { NO_OTHER_LONGER, parseDecision } from "./decision";
 import { rawTinyPreset } from "./fixtures/tiny-preset";
-import { parsePreset } from "./preset";
+import { parsePreset, parsePresetList } from "./preset";
 import {
   choosePresetId,
   figureLine,
@@ -188,6 +189,60 @@ describe("the decision card in the summary", () => {
       expect(summary?.index).toBe(104);
       expect(summary?.decision).toBeNull();
     }
+  });
+});
+
+describe("the day drawing in the summary", () => {
+  it("is the same drawing the page builds, with the decision's move", () => {
+    const preset = parsePreset(rawTinyPreset());
+    const decision = parseDecision(RAW_DECISION);
+    const summary = summarize(preset, decision);
+    expect(summary.dayGraph).toEqual(buildDayGraph(preset, decision, 0));
+    expect(summary.dayGraph?.sets).toHaveLength(3);
+    expect(summary.dayGraph?.stages.map((stage) => stage.name)).toEqual(["Main", "Side"]);
+    expect(summary.dayGraph?.move?.label).toBe("Bo Diddly Squat 60 min later");
+    expect(summary.dayGraph?.move?.minutesBefore).toBe(60);
+    expect(summary.dayGraph?.move?.minutesAfter).toBe(0);
+    expect(sideEffectText(summary.dayGraph!.move!)).toBe(NO_OTHER_LONGER);
+    expect(summary.dayGraph?.litRank).toBe(1);
+  });
+
+  it("draws the day the page opens on, with no move, before the route answers", () => {
+    const summary = summarize(parsePreset(rawTinyPreset()));
+    expect(summary.dayGraph?.day).toBe(0);
+    expect(summary.dayGraph?.move).toBeNull();
+    expect(summary.dayGraph?.threads.some((thread) => thread.lit)).toBe(false);
+  });
+
+  it("is null when the day has no sets to draw", () => {
+    const raw = rawTinyPreset() as Raw;
+    raw.festival.timetable = [];
+    expect(summarize(parsePreset(raw)).dayGraph).toBeNull();
+  });
+});
+
+describe("the preset list in the summary", () => {
+  const list = [
+    { id: "tiny-fest-sat", title: "Tiny Fest, Saturday", city: null, sets: 3, stages: 2, scored_share: 0.67 },
+    { id: "other-fest-sun", title: "Other Fest, Sunday", city: "Elsewhere", sets: 3, stages: 2, scored_share: 0.67 },
+  ];
+
+  it("is empty unless the caller passes it, and kept in its order when it does", () => {
+    expect(summarize(parsePreset(rawTinyPreset())).presets).toEqual([]);
+    const presets = parsePresetList(list);
+    expect(summarize(parsePreset(rawTinyPreset()), null, presets).presets).toEqual(presets);
+  });
+
+  it("carries the list the server read, for the fallback's day picker", async () => {
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === "http://api.test/api/presets") return new Response(JSON.stringify(list), { status: 200 });
+      if (url.endsWith("/decision")) return new Response(JSON.stringify(RAW_DECISION), { status: 200 });
+      return new Response(JSON.stringify(rawTinyPreset()), { status: 200 });
+    });
+    const summary = await loadServerSummary("other-fest-sun", { backend: "http://api.test", fetcher });
+    expect(summary?.presets.map((item) => item.id)).toEqual(["tiny-fest-sat", "other-fest-sun"]);
+    expect(summary?.presets[1]).toEqual({ ...list[1], synthetic: false });
+    expect(summary?.dayGraph?.move?.label).toBe("Bo Diddly Squat 60 min later");
   });
 });
 

@@ -64,7 +64,7 @@ export function PresetSources({ preset }: { preset: Preset }) {
             <strong className="font-semibold">{synthetic ? "Draw (invented popularity):" : "Draw (Qloo popularity):"}</strong>{" "}
             {spread.atLeast} of {spread.total} acts on this day score 90 or more out of 100. Draw, taste overlap and the
             index are defined on{" "}
-            <Link href="/method" className="font-semibold underline underline-offset-4 hover:text-primary">
+            <Link href="/method" className="font-semibold underline decoration-border-strong underline-offset-4 hover:decoration-foreground">
               How we know
             </Link>
             .

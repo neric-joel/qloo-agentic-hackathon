@@ -49,17 +49,6 @@ const popularity = methodRow("popularity");
 const [tasteLow, tasteHigh] = taste.auc95 ?? [taste.auc, taste.auc];
 
 /**
- * The short version's line on what the same test did show, directly after the failed test: every figure read from
- * METHOD_FIGURES, the interval's floor against chance, the overlap with genre tags' interval, popularity's lead, and
- * the exploratory follow-up named as exploratory.
- */
-const HELD_LINE =
-  `In the same test, taste overlap ranked complained-about clashes above random (AUC ${formatAuc(taste.auc)}, ` +
-  `${scale.intervalPct}% interval ${formatInterval([tasteLow, tasteHigh])}, which stays above ${scale.auc.chance}) ` +
-  `and above genre tags (${formatAuc(genre.auc)}), though the two intervals overlap widely. ` +
-  `Taste overlap is nearly unrelated to popularity (correlation ${backtest.popularityCorrelation}).`;
-
-/**
  * Printed, /method leaves out the site header and footer (the brief and /check do the same); the light print
  * palette for every page is in globals.css.
  */
@@ -210,12 +199,12 @@ const SHORT_ROW = "pt-3";
 
 /**
  * A miss, drawn at the rail figure's width, at most 20rem, on a 0 to `domain` scale mapped through the chart's own
- * `along`, so a domain of FIGURE_DOMAIN is exactly the chart's scale: the reached `value` as an 8px ink capsule ending
- * exactly at it, the `bar` set before building as the chart's own 1.5px solid ink rule, rising 6px above and below
- * the capsule, and a 1px border-strong tick at 0, 8px tall, so the scale's start reads. The capsule starts 2px clear
- * of the tick (its round start would otherwise cover it); only its end carries the value. The paper between the
- * capsule's end and the rule is the miss: no fill, colour or bracket in it, and no vermilion (the miss is not shared
- * time). No labels: the lines around it carry the numbers. `space` is its top margin in the rail's rhythm.
+ * `along`, so a domain of FIGURE_DOMAIN is exactly the chart's scale: the reached `value` as an 8px ink bar ending
+ * exactly at it (the 6px bar corner, clamped to half its height, rounds both ends), the `bar` set before building as
+ * the chart's own 1.5px solid ink rule, rising 6px above and below the bar, and a 1px border-strong tick at 0, 8px
+ * tall, so the scale's start reads. The bar starts 2px clear of the tick (its round start would otherwise cover it);
+ * only its end carries the value. The paper between the bar's end and the rule is the miss: no fill, colour or
+ * bracket in it, and no raspberry (the miss is not shared time). No labels: the lines around it carry the numbers. `space` is its top margin in the rail's rhythm.
  */
 function VerdictMeter({ value, bar, domain, space }: { value: number; bar: number; domain: number; space: string }) {
   const at = (point: number) => along((point / domain) * FIGURE_DOMAIN);
@@ -252,7 +241,7 @@ const RAIL_SCALE = FIGURE_DOMAIN / backtest.bar.topQuarterPct;
  * and its bar, and a meter on its own scale whose bar rule sits at the first one's x; then one muted line saying
  * so. All in ink but that line, every number from the figures module. It repeats lines that stay visible beside it
  * (the caption, the chart, the failed test, the paragraph on popularity and the moves), so it is for the eye only:
- * aria-hidden, never printed, static (it scrolls with the page), and no box or vermilion.
+ * aria-hidden, never printed, static (it scrolls with the page), and no box or raspberry.
  */
 function ShortVerdict() {
   return (
@@ -330,7 +319,7 @@ function ShortVersion() {
             </a>
             .
           </li>
-          <li className={SHORT_ROW}>{HELD_LINE}</li>
+          {/* What the same test did show is said once, in its own section ("What it does show"), with its figures. */}
           <li className={SHORT_ROW}>
             It ranks a day&rsquo;s clashes and tests moves against timetable rules. Taste overlap is a
             rank, not attendance.
@@ -484,7 +473,7 @@ const FLOW: readonly { token: string; name: string; path?: string; qloo?: boolea
 
 /**
  * The arrow's stroke: a 1.5px ink line with round caps and joins, so the four tokens read as one pipeline (ink on
- * paper 16.09 / 16.75). Never vermilion: the flow is not shared time.
+ * paper 16.09 / 16.75). Never raspberry: the flow is not shared time.
  */
 const ARROW = { stroke: "var(--foreground)", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round", fill: "none" } as const;
 
@@ -528,7 +517,7 @@ function FlowArrowDown({ stacked = false }: { stacked?: boolean }) {
 
 /**
  * Request to result, before the endpoint details: the four tokens in 14px mono joined by arrows, across from 768px
- * and down on a phone. No dots, nodes, boxes or vermilion. Under each token its label in 13px ink and its endpoint,
+ * and down on a phone. No dots, nodes, boxes or raspberry. Under each token its label in 13px ink and its endpoint,
  * where it has one, in 13px muted mono. `stacked` keeps the phone's downward form at every width, with no outer
  * margin of its own: the form that hangs under "How the rest works" from 1280px.
  */
@@ -964,20 +953,19 @@ export default function MethodPage() {
               />
             </picture>
           ) : null}
-          {/* The sub-page step: /check sets its title at the same size, so the home poster is the one big step. */}
-          <h1 className="type-poster xl:col-span-12" style={{ fontSize: "clamp(2.25rem, 1.5rem + 2.5vw, 3rem)" }}>
+          {/* The one display step every page title takes (the home page's and /check's too), with no size of its own. */}
+          <h1 className="type-poster xl:col-span-12">
             How we know
           </h1>
           <p className="mt-4 max-w-2xl text-lg leading-snug font-medium sm:text-xl xl:col-span-12">
             <BySyntheticDay
               real="Clash Control scores set-time clashes with a number it derives from Qloo data."
               invented="Clash Control scores set-time clashes with a number it calculates from taste-overlap and draw figures. The day this server is showing is an invented example, so its figures are invented and no Qloo request was made for it."
-            />{" "}
-            This page says what that number is, what we checked it against, and where the check fell short.
+            />
           </p>
           <ShortVersion />
           {/* The page's running order, once at every width: after the short version, so the failed test is stated
-              before any section title, as one compact numbered sequence that wraps; from 1280px in the body column,
+              before any section title, as one compact sequence of titles that wraps; from 1280px in the body column,
               under the short version's last paragraph. Not printed: the reading column carries all of it. */}
           <div className={BODY_CELL}>
             <div className="mt-8 print:hidden">

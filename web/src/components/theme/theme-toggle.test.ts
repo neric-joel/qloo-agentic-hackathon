@@ -1,9 +1,27 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { revealRadius, shouldAnimateReveal, ThemeProvider } from "./theme-provider";
-import { ThemeToggle } from "./theme-toggle";
+import { switchWithoutTransitions, THEME_SWITCHING_ATTRIBUTE, ThemeToggle } from "./theme-toggle";
+
+/** A stand-in <html> and frame queue: the test runs each queued frame by hand. */
+function fakeRoot() {
+  const attributes = new Set<string>();
+  const frames: (() => void)[] = [];
+  return {
+    attributes,
+    root: {
+      setAttribute: (name: string) => void attributes.add(name),
+      removeAttribute: (name: string) => void attributes.delete(name),
+    },
+    frame: (callback: () => void) => frames.push(callback),
+    nextFrame: () => frames.splice(0).forEach((callback) => callback()),
+  };
+}
 
 const base = {
   supportsViewTransitions: true,
@@ -89,5 +107,45 @@ describe("ThemeToggle markup", () => {
     expect(button).not.toMatch(/bg-foreground\//);
     // The menu rows use the wash too, never the meter-track grey.
     expect(html).not.toMatch(/(hover|peer-checked):bg-muted/);
+  });
+});
+
+describe("the theme switch", () => {
+  it("sets the switching attribute just before the switch and clears it two frames later", () => {
+    const page = fakeRoot();
+    let onDuringSwitch = false;
+    switchWithoutTransitions(() => (onDuringSwitch = page.attributes.has(THEME_SWITCHING_ATTRIBUTE)), page.root, page.frame);
+    expect(THEME_SWITCHING_ATTRIBUTE).toBe("data-theme-switching");
+    expect(onDuringSwitch).toBe(true);
+    page.nextFrame();
+    expect(page.attributes.has(THEME_SWITCHING_ATTRIBUTE)).toBe(true);
+    page.nextFrame();
+    expect(page.attributes.has(THEME_SWITCHING_ATTRIBUTE)).toBe(false);
+  });
+
+  it("keeps the attribute on through a second switch's own two frames", () => {
+    const page = fakeRoot();
+    switchWithoutTransitions(() => {}, page.root, page.frame);
+    page.nextFrame();
+    switchWithoutTransitions(() => {}, page.root, page.frame);
+    page.nextFrame();
+    expect(page.attributes.has(THEME_SWITCHING_ATTRIBUTE)).toBe(true);
+    page.nextFrame();
+    expect(page.attributes.has(THEME_SWITCHING_ATTRIBUTE)).toBe(false);
+  });
+
+  it("passes no origin, so the provider's circular reveal never runs", () => {
+    const source = readFileSync(fileURLToPath(new URL("./theme-toggle.tsx", import.meta.url)), "utf8");
+    expect(source).toContain("switchWithoutTransitions(() => setTheme(next))");
+    expect(source.match(/setTheme\(/g)).toHaveLength(1);
+    expect(source).not.toMatch(/RevealOrigin|centreOf|getBoundingClientRect|cc-theme-glyph/);
+  });
+
+  it("holds every transition off in globals.css while the attribute is on", () => {
+    const css = readFileSync(fileURLToPath(new URL("../../app/globals.css", import.meta.url)), "utf8");
+    expect(css).toMatch(
+      /html\[data-theme-switching\] \*,\s*html\[data-theme-switching\] \*::before,\s*html\[data-theme-switching\] \*::after \{\s*transition: none !important;\s*\}/,
+    );
+    expect(css).not.toMatch(/cc-theme-pop|cc-theme-glyph|cc-theme-bite/);
   });
 });

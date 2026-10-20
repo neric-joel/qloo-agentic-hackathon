@@ -5,10 +5,10 @@ import { describe, expect, it, vi } from "vitest";
 import MethodPage from "@/app/method/page";
 import { SyntheticContext } from "@/components/site/synthetic-context";
 import { qlooCredits } from "@/lib/credit";
-import { PAYER_GUESS, PILOT, PILOT_TERMS, type Demand } from "@/lib/demand";
+import * as demandModule from "@/lib/demand";
+import { PILOT, PILOT_TERMS, type Demand } from "@/lib/demand";
 import { METHOD_FIGURES } from "@/lib/method-figures";
 import { PUBLIC_SOURCES } from "@/lib/public-sources";
-import { PUBLIC_VOICES } from "@/lib/public-voices";
 
 import { TasteSection } from "./why-qloo";
 import {
@@ -18,19 +18,26 @@ import {
   FIGURE_DOMAIN,
   FIGURE_TICKS,
   FailedTestNote,
-  OUR_SUMMARY,
-  VOICES_LIMIT,
   WHY_THIS_MATTERS_ID,
   PRESS_OUTLETS,
   WhyThisMatters,
   along,
-  complaintCaption,
   isForumThread,
-  moreVoicesSummary,
 } from "./why-this-matters";
 
 // Every name and figure below is invented for the test, except the published figures the blocks read
-// from METHOD_FIGURES, PILOT and PUBLIC_VOICES.
+// from METHOD_FIGURES and PILOT.
+
+/** Words from the public statements block that round 34 (audit Y7) took off the page, with its limit sentence. */
+const VOICE_WORDS = [
+  "What programmers have said in public",
+  "(our summary)",
+  "The team looks at stage times to cut clashes",
+  "The team had expected different audiences",
+  "A clash between two acts turned out worse",
+  "Builds the Portola lineup in a spreadsheet",
+  "These sources show that clashes are a known complaint.",
+];
 
 function text(html: string): string {
   return html
@@ -114,10 +121,15 @@ describe("WhyThisMatters", () => {
     expect(html).toContain(`id="${WHY_THIS_MATTERS_ID}"`);
     expect(plain).toContain("Who has complained, and what nobody has tested");
     expect(plain).toContain("45 clashes that fans or the press complained about at 5 festivals");
-    expect(plain).toContain("86 pairs, median 50 minutes, and how the lists lean");
+    // Round 34 (audit Y6): the fold is named for what it holds, with the pair count; the median left home with the
+    // range chart (audit Y5) and is stated on /method.
+    expect(plain).toContain("How the lists lean (86 verified pairs)");
+    expect(plain).not.toContain("86 pairs, median 50 minutes, and how the lists lean");
+    expect(plain).not.toMatch(/median/i);
     expect(plain).toContain("Press lists lean toward headliners, which flatters any taste-based method.");
     expect(plain).not.toMatch(/\bAUC\b/);
-    expect(plain).toContain("Whether programmers would use or pay for this has not been tested.");
+    // Round 34 (audit Y7): the statements and the sentence that limited them are gone; what is not known stays.
+    expect(plain).not.toContain("Whether programmers would use or pay for this has not been tested.");
     expect(plain).not.toContain("They do not show that anyone would use or pay for this.");
     expect(plain).toContain("Who would pay is not known.");
     // Pending: no counts, no quote.
@@ -137,111 +149,33 @@ describe("WhyThisMatters", () => {
     expect(visible).toContain("Walk through the Glastonbury 2025 Sunday brief with me");
     expect(visible.indexOf("Walk through")).toBeGreaterThan(visible.indexOf("Pilot offer"));
     expect(visible).toContain("Contact is on the Devpost page.");
-    // Round 33 (H3): one statement prints in the open; the other three and the sentence that limits them all wait
-    // in one disclosure.
-    expect(visible).toContain(PUBLIC_VOICES[0].said);
-    for (const voice of PUBLIC_VOICES.slice(1)) expect(visible).not.toContain(voice.said);
-    expect(visible).not.toContain(VOICES_LIMIT);
-    expect(visible).not.toContain("Builds the Portola lineup in a spreadsheet that holds mock set times.");
+    expect(visible).toContain("One answer is not a market.");
+    expect(visible).toContain(COMPLAINTS_ELSEWHERE);
     // The rest of each finding is in its own disclosure, still in the server HTML.
     const plain = text(renderToStaticMarkup(createElement(WhyThisMatters)));
     expect(plain).toContain(
-      "86 pairs, median 50 minutes, and how the lists lean Press lists lean toward headliners, which flatters any taste-based method.",
+      "How the lists lean (86 verified pairs) Press lists lean toward headliners, which flatters any taste-based method.",
     );
     expect(plain).toContain(
       "Festival Pro and Lineup Ninja Both check double bookings and changeovers. We found none that reads audience overlap (our search, October 2026).",
     );
   });
 
-  it("links four public voices to their pages and names no one without a source", () => {
-    const html = renderToStaticMarkup(createElement(WhyThisMatters));
-    expect((html.match(/rel="noopener noreferrer"/g) ?? []).length).toBe(5);
-    for (const host of ["bbc.co.uk", "nme.com", "alpsinc.kr", "abc.net.au", "www.billboard.com"]) expect(html).toContain(host);
-    expect(html).not.toContain("hadnews");
-    expect(html).not.toContain("&quot;");
-    expect(text(html)).toContain("The team had expected different audiences, and the clash drew criticism.");
-  });
-
-  it("prints the first statement open with no bar and no quotation marks, its name then dated source links under it, and keeps the other three in one closed disclosure", () => {
-    const html = renderToStaticMarkup(createElement(WhyThisMatters));
-    expect(PUBLIC_VOICES.length).toBe(4);
-    expect(text(html)).toContain("What programmers have said in public");
-    // No left bar of any width on a quote, and no top rule on the section's blocks.
-    expect(html).not.toContain("border-l-2");
-    expect(html).not.toContain("border-t-2");
-    // Round 33 (H3): one statement in the open, at quote size; the rest wait in the one disclosure.
-    const quotes = html.match(/<li data-voice="true"[^>]*>[\s\S]*?<\/li>/g) ?? [];
-    expect(quotes).toHaveLength(1);
-    const first = quotes[0] ?? "";
-    const voice = PUBLIC_VOICES[0];
-    expect(first).not.toContain("border-l");
-    // The paraphrase is 18px at 1.55, 500 weight, in ink, at most 62ch, with no stripe, italic or indent; the
-    // attribution on its own line, 13px muted: the name, "(our summary)", then the links.
-    expect(first).toMatch(/^<li data-voice="true" class="py-4">/);
-    expect(first).toMatch(/<p class="max-w-\[62ch\] text-\[1\.125rem\] leading-\[1\.55\] font-medium text-foreground">/);
-    expect(first).not.toMatch(/\bitalic\b|\bindent-|\bpl-\d|\bml-\d/);
-    expect(first).toMatch(/<p class="[^"]*text-\[0\.8125rem\][^"]*text-muted-foreground[^"]*">/);
-    expect(text(first)).toContain(voice.said);
-    expect(text(first)).toContain(voice.who);
-    expect(text(first).indexOf(voice.who)).toBeLessThan(text(first).indexOf(voice.links[0].label));
-    for (const link of voice.links) expect(first).toContain(link.href.replace(/&/g, "&amp;"));
-    // One list item, so no rule divides it; the fold sits at the list's foot.
-    expect(html).toMatch(/<ul class="mt-1"><li data-voice="true"/);
-    expect(html).not.toMatch(/divide-y/);
-    const summary = moreVoicesSummary(3);
-    expect(summary).toBe("Three more statements, and what they show");
-    const words = summary.split(" ");
-    const opener = html.match(
-      new RegExp(
-        `<details(?![^>]*open)[^>]*><summary[^>]*>(?:<span[^>]*>)*${words.slice(0, -1).join(" ")} </span><span class="whitespace-nowrap"><span[^>]*>${words[words.length - 1]}`,
-      ),
-    );
-    expect(opener).not.toBeNull();
-    expect(opener?.index ?? -1).toBeGreaterThan(html.lastIndexOf('data-voice="true"'));
-    const at = opener?.index ?? -1;
-    const inside = html.slice(at, html.indexOf("</details>", at));
-    for (const other of PUBLIC_VOICES.slice(1)) {
-      expect(text(inside)).toContain(other.said);
-      expect(text(inside)).toContain(other.who);
-      for (const link of other.links) expect(inside).toContain(link.href.replace(/&/g, "&amp;"));
-    }
-    expect(inside).toContain("Builds the Portola lineup in a spreadsheet that holds mock set times.");
-    expect(inside).toContain("www.billboard.com");
-    // Paraphrases: never set in quotation marks, so no quote glyph hangs in the margin either.
-    expect(html).not.toContain("&quot;");
-    expect(html).not.toMatch(/[\u201c\u201d]/);
-  });
-
-  it("says (our summary) in every statement's attribution line, after the name and before the source links", () => {
-    // Round 33 (H3, Seligman D9): the statements are paraphrases shown at quote size, so each says it is ours.
-    expect(OUR_SUMMARY).toBe("(our summary)");
+  it("prints no public statements, paraphrases or their fold (round 34, audit Y7), and no quotation marks", () => {
     const html = renderToStaticMarkup(createElement(WhyThisMatters));
     const plain = text(html);
-    expect(plain.split(OUR_SUMMARY).length - 1).toBe(PUBLIC_VOICES.length);
-    for (const voice of PUBLIC_VOICES) {
-      // The statement, then its attribution line: the name, "(our summary)", then the first source.
-      const said = plain.indexOf(voice.said);
-      const who = plain.indexOf(`${voice.who} ${OUR_SUMMARY} \u00b7 ${voice.links[0].label}`, said);
-      expect(said, voice.who).toBeGreaterThan(-1);
-      expect(who, voice.who).toBeGreaterThan(said);
-    }
-    // The statements' words and their links are unchanged.
-    for (const voice of PUBLIC_VOICES) expect(plain).toContain(voice.said);
-  });
-
-  it("prints the sentence that limits the voices once, rewritten, inside the statements disclosure after the last statement", () => {
-    const html = renderToStaticMarkup(createElement(WhyThisMatters));
-    const sentence = "These sources show that clashes are a known complaint. Whether programmers would use or pay for this has not been tested.";
-    expect(VOICES_LIMIT).toBe(sentence);
-    expect(text(html).split(sentence).length - 1).toBe(1);
-    expect(html).not.toContain("These show that clashes are a known problem. They do not show that anyone would use or pay for this.");
-    // Its place: the last line of the closed statements disclosure, under the last statement.
-    const fold = html.match(/<details[^>]*><summary[^>]*>(?:<span[^>]*>)*Three more statements, and what they <\/span><span class="whitespace-nowrap"><span[^>]*>show[\s\S]*?<\/details>/)?.[0] ?? "";
-    expect(fold).not.toBe("");
-    const limit = fold.match(/<p data-voices-limit="true"[^>]*>([\s\S]*?)<\/p>/);
-    expect(limit?.[1]).toBe(sentence);
-    expect(fold.indexOf("data-voices-limit")).toBeGreaterThan(fold.indexOf("Builds the Portola lineup"));
-    expect(text(withoutDisclosures(html))).not.toContain(sentence);
+    for (const words of VOICE_WORDS) expect(plain, words).not.toContain(words);
+    expect(html).not.toContain("data-voice");
+    expect(html).not.toContain("data-voices-limit");
+    // No statement's source page is linked any more, and the section opens no page in a new tab.
+    expect(html).not.toContain('rel="noopener noreferrer"');
+    for (const host of ["bbc.co.uk", "nme.com", "alpsinc.kr", "abc.net.au", "billboard.com"]) expect(html).not.toContain(host);
+    expect(html).not.toMatch(/<summary[^>]*>(?:<span[^>]*>)*\w+ more statements?/);
+    // No quote glyph anywhere in the section, and no left bar.
+    expect(html).not.toContain("&quot;");
+    expect(html).not.toMatch(/[\u201c\u201d]/);
+    expect(html).not.toContain("border-l-2");
+    expect(html).not.toContain("border-t-2");
   });
 
   it("closes the last column with the pilot offer, no request arithmetic on the page, and no contact until the owner adds one", () => {
@@ -284,7 +218,7 @@ describe("WhyThisMatters", () => {
     expect(html).not.toContain("data-test-line");
     expect(text(html)).not.toMatch(/57\.8%|46\.8%/);
     expect(text(renderToStaticMarkup(createElement(FailedTestNote)))).toContain("It reached 57.8%.");
-    expect(html).toMatch(/<summary[^>]*>(?:<span[^>]*>)*86 pairs, median 50 minutes, and how the lists <\/span><span class="whitespace-nowrap"><span[^>]*>lean</);
+    expect(html).toMatch(/<summary[^>]*>(?:<span[^>]*>)*How the lists lean \(86 verified <\/span><span class="whitespace-nowrap"><span[^>]*>pairs\)</);
   });
 
   it("sets no all-caps kicker anywhere in the section: the problem opens on its finding, the other findings on an 18px semibold conclusion, the pilot's head 16px", () => {
@@ -296,26 +230,21 @@ describe("WhyThisMatters", () => {
       '<h3 data-why-finding="true" class="text-xl leading-snug font-medium text-foreground">45 clashes that fans or the press complained about at 5 festivals had a verified overlap in time.</h3>',
     );
     expect(text(html)).not.toContain("The problem is public");
-    for (const head of ["What programmers have said in public", "No scheduler we found reads audience overlap"]) {
-      expect(html).toContain(`<h3 class="text-lg leading-snug font-semibold">${head}</h3>`);
-    }
+    expect(html).toContain(`<h3 class="text-lg leading-snug font-semibold">No scheduler we found reads audience overlap</h3>`);
+    expect(html).not.toContain("What programmers have said in public");
     // Every disclosure is named for what it holds, as a text action, not an accordion row: no rule above it and no
     // leading mark, the summary's words in 15px medium ink (the site's 15px, never a 13px override) with the page's
     // text-link underline (1px border-strong, 4px off the text, ink on hover), then a trailing 14px ink chevron after
     // the words that turns 180 degrees on open, the turn animated only under motion-safe. The 44px row stays.
     const summaries = [...html.matchAll(/<summary[^>]*>([\s\S]*?)<\/summary>/g)].map((m) => text(m[1]));
-    expect(summaries).toEqual([
-      "86 pairs, median 50 minutes, and how the lists lean",
-      "Three more statements, and what they show",
-      "Festival Pro and Lineup Ninja",
-    ]);
+    expect(summaries).toEqual(["How the lists lean (86 verified pairs)", "Festival Pro and Lineup Ninja"]);
     for (const generic of ["One more source", "Pilot limits", "More details"]) expect(html).not.toContain(`>${generic}<`);
     expect(html).not.toContain("data-fold-mark");
     expect(html).not.toContain("lucide-chevron-right");
     expect(html).not.toContain("cc-disclosure-mark");
     expect(html).not.toContain("group-hover/fold:bg-accent");
     const folds = [...html.matchAll(/<details class="([^"]*)"><summary class="([^"]*)">([\s\S]*?)<\/summary>/g)];
-    expect(folds).toHaveLength(3);
+    expect(folds).toHaveLength(2);
     for (const [, detailsCls, summaryCls, inner] of folds) {
       expect(detailsCls).toMatch(/^group cc-disclosure border-t-0!/);
       expect(detailsCls).not.toMatch(/\bopen\b/);
@@ -337,7 +266,7 @@ describe("WhyThisMatters", () => {
     expect(html).toContain('<h3 class="text-base leading-snug font-semibold">Pilot offer</h3>');
   });
 
-  it("draws the /method bars square at 0 and round at the value end on a 0 to 75 axis, the two Qloo measures in solid ink and the two baselines thin and muted, values clear of the rule", () => {
+  it("draws the /method bars with the same 6px corner at both ends on a 0 to 75 axis, the two Qloo measures in solid ink and the two baselines thin and muted, values clear of the rule", () => {
     const figure = renderToStaticMarkup(createElement(BacktestBars, { threshold: 60 }));
     expect(figure.match(/<span data-bar-value="true" data-label-place="[^"]*" class="[^"]*font-mono text-xs[^"]*text-foreground[^"]*">\d+\.\d%<\/span>/g)).toHaveLength(4);
     // The axis ends on a round tick: 0, 25, 50, 75.
@@ -345,11 +274,13 @@ describe("WhyThisMatters", () => {
     expect(FIGURE_TICKS).toEqual([0, 25, 50, 75]);
     expect(FIGURE_TICKS[FIGURE_TICKS.length - 1]).toBe(FIGURE_DOMAIN);
     expect(text(figure)).toMatch(/Random 26\.3% 0 25 50 75$/);
-    // Taste overlap 46.8 of 75: square at the 0 axis, a capsule end at its value (radius = half the bar's height).
+    // Taste overlap 46.8 of 75. Round 34 (corners): every bar is a mark with the 6px mark corner at both ends
+    // (rounded-bar), so no bar has one square end; the 6px baselines are clamped to a round end.
     expect(along(46.8)).toBe("62.4%");
     expect(figure).toContain(`style="width:${along(46.8)}"`);
     expect(figure).not.toContain("border-radius");
-    expect(figure.match(/class="block shrink-0 rounded-r-bar (h-4|h-1\.5) /g)).toHaveLength(4);
+    expect(figure.match(/class="block shrink-0 rounded-bar (h-4|h-1\.5) /g)).toHaveLength(4);
+    expect(figure).not.toMatch(/rounded-(r|l|s|e)-bar/);
     expect(figure).not.toContain("rounded-xs");
     // The target is a 1.5px SOLID ink line (dashed means tested), fixed at 60 of 75, from its label down through the bars.
     expect(figure).toMatch(/<span data-target-line="true" class="[^"]*border-l-\[1\.5px\] border-solid border-foreground" style="left:80%">/);
@@ -369,7 +300,7 @@ describe("WhyThisMatters", () => {
     // longer bar alone shows it did better; genre tags and random are 6px muted-ink baselines on the same row line.
     // No bar is vermilion, teal, an open card capsule or the old ink-3 grey, and each keeps its label and printed
     // value, so 57.8% against 46.8% reads without colour.
-    const bar = (label: string) => figure.match(new RegExp(`>${label}</span><span [^>]*><span [^>]*class="block shrink-0 rounded-r-bar ([^"]*)"`))![1];
+    const bar = (label: string) => figure.match(new RegExp(`>${label}</span><span [^>]*><span [^>]*class="block shrink-0 rounded-bar ([^"]*)"`))![1];
     expect(bar("Taste overlap")).toBe("h-4 bg-foreground");
     expect(bar("Popularity")).toBe("h-4 bg-foreground");
     // Round 27 (R25 held): the two Qloo measures share one fill and one thickness, so the losing measure is never
@@ -380,7 +311,7 @@ describe("WhyThisMatters", () => {
     expect(pop).toMatch(/\btext-foreground\b/);
     expect(pop).not.toMatch(/\bfont-(semibold|bold|medium)\b|text-muted-foreground/);
     for (const label of ["Genre tags", "Random"]) expect(bar(label)).toBe("h-1.5 bg-muted-foreground");
-    const bars = figure.match(/class="block shrink-0 rounded-r-bar [^"]*"/g) ?? [];
+    const bars = figure.match(/class="block shrink-0 rounded-bar [^"]*"/g) ?? [];
     expect(bars).toHaveLength(4);
     for (const one of bars) expect(one).not.toMatch(/bg-card|border-foreground|ink-3|prov-qloo|primary/);
     // Every bar row centres its bar on one line (the 28px bar lane is a centred flex row).
@@ -424,11 +355,11 @@ describe("WhyThisMatters", () => {
     // text, left-aligned and at most 68ch wide. No card, surface edge, radius or padding box.
     expect(pilot).toMatch(/^<div data-pilot="true" class="border-t border-border pt-6"><div data-pilot-offer="true" class="max-w-\[68ch\]">/);
     expect(pilot).not.toMatch(/rounded-lg|border-surface-edge|\bbg-card\b|\bp-6\b|border-l/);
-    // Round 33: from 1024px it sits in the findings' right columns (the voices' x), under the voices and level with
-    // what is not known, so the offer reads beside "Who would pay is not known."; in reading order it comes last.
-    expect(html).toMatch(/<div data-why-col="pilot" class="min-w-0 lg:col-span-7 lg:col-start-6 lg:row-span-2 lg:row-start-2 lg:mt-10"><div data-pilot="true"/);
+    // Round 34: from 1024px it sits in the findings' right columns, right under what is not known, so the offer reads
+    // after "Who would pay is not known."; in reading order it comes last.
+    expect(html).toMatch(/<div data-why-col="pilot" class="min-w-0 lg:col-span-7 lg:col-start-6 lg:row-start-2"><div data-pilot="true"/);
     expect(html.indexOf("<div data-pilot")).toBeGreaterThan(html.indexOf('data-why-col="unknown"'));
-    expect(html).toMatch(/<div data-why-col="voices" class="min-w-0 lg:col-span-7 lg:col-start-6 /);
+    expect(html).toMatch(/<div data-why-col="unknown" class="min-w-0 lg:col-span-7 lg:col-start-6 /);
     // The section has no named surface at all.
     expect(html.match(/border-surface-edge/g) ?? []).toHaveLength(0);
     // No shadow, no tint and no fill inside it (a link's decoration-border-strong underline is not an edge).
@@ -442,7 +373,7 @@ describe("WhyThisMatters", () => {
     expect(offer).not.toContain("Contact");
     expect(offer).not.toMatch(/text-(lg|xl|2xl)|font-(medium|semibold|bold)[^"]*">Walk/);
     expect(html).toContain(
-      `<p class="mt-2">Our search, October 2026: absence of evidence only. Who would pay is not known. <span data-payer-guess="true">`,
+      `<p class="mt-2">Our search, October 2026: absence of evidence only. Who would pay is not known.</p>`,
     );
     // While /check is live the action leads: the link on its own 44px line, then the contact in muted at body size;
     // from 640px the two share a line, a middot between them; on a phone the contact takes its own line. Nothing
@@ -498,31 +429,31 @@ describe("WhyThisMatters", () => {
     }
   });
 
-  it("composes the findings on a 12-column grid from 1024px: problem then what is not known on the left (5), the voices then the pilot on the right (7), one column below 1024px", () => {
+  it("composes the findings on a 12-column grid from 1024px: the problem on the left (5), what is not known then the pilot on the right (7), one column below 1024px", () => {
     const html = renderToStaticMarkup(createElement(WhyThisMatters));
-    // Round 33: three rows from 1024px, so each column stacks on its own and neither leaves a hole: the problem (rows
-    // 1 and 2) then what is not known (row 3) on the left; the voices (row 1) then the pilot (rows 2 and 3) on the
-    // right, 40px under the block above. 40px between blocks below 1024px.
+    // Round 34: with the statements gone, two rows from 1024px: the problem spans both on the left; what is not known
+    // (row 1) then the pilot (row 2) on the right, 40px under it. 40px between blocks below 1024px.
     expect(html).toMatch(
-      /class="mt-8 grid items-start gap-y-10 text-\[0\.9375rem\] leading-\[1\.55\] lg:grid-cols-12 lg:grid-rows-\[auto_auto_auto\] lg:gap-x-12 lg:gap-y-0"/,
+      /class="mt-8 grid items-start gap-y-10 text-\[0\.9375rem\] leading-\[1\.55\] lg:grid-cols-12 lg:gap-x-12 lg:gap-y-6"/,
     );
     // One column below 1024px, md included: no md placement.
     expect(html).not.toMatch(/\bmd:(grid-cols|col-span|row-start)/);
     expect(html).toMatch(/<div data-why-col="problem" class="min-w-0 lg:col-span-5 lg:row-span-2 lg:row-start-1">/);
-    expect(html).toMatch(/<div data-why-col="voices" class="min-w-0 lg:col-span-7 lg:col-start-6 lg:row-start-1">/);
-    expect(html).toMatch(/<div data-why-col="unknown" class="min-w-0 lg:col-span-5 lg:col-start-1 lg:row-start-3 lg:mt-10">/);
-    expect(html).toMatch(/<div data-why-col="pilot" class="min-w-0 lg:col-span-7 lg:col-start-6 lg:row-span-2 lg:row-start-2 lg:mt-10">/);
+    expect(html).not.toContain('data-why-col="voices"');
+    expect(html).toMatch(/<div data-why-col="unknown" class="min-w-0 lg:col-span-7 lg:col-start-6 lg:row-start-1">/);
+    expect(html).toMatch(/<div data-why-col="pilot" class="min-w-0 lg:col-span-7 lg:col-start-6 lg:row-start-2">/);
     // The problem's finding set large and leading its column as its heading: 20px, 500 weight, ink, leading-snug.
     expect(html).toMatch(
       /<h3 data-why-finding="true" class="text-xl leading-snug font-medium text-foreground">45 clashes that fans or the press complained about at 5 festivals had a verified overlap in time\.<\/h3>/,
     );
     // The scheduler limitation stays the first paragraph under its heading, at body size, in ink (no size or tone
-    // class of its own), with the untested guess after it in the same paragraph.
+    // class of its own), and ends on "Who would pay is not known." (round 34, audit Y8: no guess after it).
     expect(html).toContain(
-      "<h3 class=\"text-lg leading-snug font-semibold\">No scheduler we found reads audience overlap</h3><p class=\"mt-2\">Our search, October 2026: absence of evidence only. Who would pay is not known. <span data-payer-guess=\"true\">",
+      "<h3 class=\"text-lg leading-snug font-semibold\">No scheduler we found reads audience overlap</h3><p class=\"mt-2\">Our search, October 2026: absence of evidence only. Who would pay is not known.</p>",
     );
-    // No filled band and no hairline above: the section sits open on the page's one background, spaced 64 then 80px.
-    expect(html).toMatch(/^<section aria-labelledby="why-this-matters-heading" id="why-this-matters"><div class="container-page py-16 lg:py-20">/);
+    // No filled band and no hairline above: the section sits open on the page's one background, 64px above and below,
+    // 80px above from 1024px.
+    expect(html).toMatch(/^<section aria-labelledby="why-this-matters-heading" id="why-this-matters"><div class="container-page py-16 lg:pt-20">/);
     expect(html).not.toMatch(/\bbg-(muted|secondary)/);
     // No card around the findings and no rule in them; the pilot's top rule is the one line in the section, and
     // nothing is a left stripe.
@@ -536,11 +467,13 @@ describe("WhyThisMatters", () => {
     expect(text(html)).not.toContain("smaller than a sale");
   });
 
-  it("orders the blocks problem, voices, then what is not known, with the pilot last (the one-column order below 1024px)", () => {
+  it("orders the blocks problem, then what is not known, with the pilot last (the one-column order below 1024px)", () => {
     const plain = text(renderToStaticMarkup(createElement(WhyThisMatters)));
-    const voices = plain.indexOf("What programmers have said in public");
-    expect(voices).toBeGreaterThan(plain.indexOf("See the full test"));
-    expect(voices).toBeLessThan(plain.indexOf("Who would pay is not known."));
+    const problem = plain.indexOf("45 clashes that fans or the press complained about");
+    const unknown = plain.indexOf("No scheduler we found reads audience overlap");
+    expect(problem).toBeGreaterThan(-1);
+    expect(unknown).toBeGreaterThan(problem);
+    expect(plain.indexOf("Who would pay is not known.")).toBeGreaterThan(unknown);
     expect(plain.indexOf("Pilot offer")).toBeGreaterThan(plain.indexOf("Who would pay is not known."));
   });
 
@@ -561,43 +494,26 @@ describe("WhyThisMatters", () => {
   });
 });
 
-describe("the complaint overlap figure", () => {
-  const figureOf = (html: string) => html.match(/<div data-complaint-figure="true"[\s\S]*?<p data-complaint-caption="true"[^>]*>[^<]*<\/p><\/div>/)?.[0] ?? "";
-
-  it("draws only METHOD_FIGURES.complaints, under the conclusion and before its fold, as an image with a caption and a name built from the fields", () => {
+describe("the complaint figures on home (round 34, audit Y5)", () => {
+  it("draws no range chart: the finding, who the complaints come from and the fold stay, the median and the range go to /method", () => {
     const html = renderToStaticMarkup(createElement(WhyThisMatters));
-    const { pairsVerified, medianMinutes, rangeMinutes } = METHOD_FIGURES.complaints;
-    const figure = figureOf(html);
-    expect(figure).not.toBe("");
-    // Placement: after the conclusion and who the complaints come from, before the fold "86 pairs, median 50
-    // minutes, and how the lists lean".
-    const at = html.indexOf("<div data-complaint-figure");
-    expect(html.indexOf("had a verified overlap in time.</h3>")).toBeGreaterThan(-1);
-    expect(at).toBeGreaterThan(html.indexOf("had a verified overlap in time.</h3>"));
+    const { rangeMinutes } = METHOD_FIGURES.complaints;
+    for (const hook of ["data-complaint-figure", "data-capsule-outline", "data-median-mark", "data-range-end", "data-complaint-caption"]) {
+      expect(html, hook).not.toContain(hook);
+    }
+    expect(html).not.toContain("<svg width");
+    expect(html).not.toContain("var(--primary)");
+    const plain = text(html);
+    expect(plain).not.toContain("Overlap range and median across");
+    expect(plain).not.toContain(`${rangeMinutes[0]} min`);
+    expect(plain).not.toContain(`${rangeMinutes[1]} min`);
+    // The fold follows the who-said-it paragraph directly, still in the problem's column.
+    const at = html.indexOf("How the lists lean (");
     expect(at).toBeGreaterThan(html.indexOf("<p data-why-sources"));
-    expect(at).toBeLessThan(html.indexOf("86 pairs, median 50 minutes, and how the lists"));
-    expect(at).toBeLessThan(html.indexOf('data-why-col="voices"'));
-    // The caption, exactly, and the accessible name from the same caption plus the range and the median.
-    const caption = `Overlap range and median across ${pairsVerified} verified pairs.`;
-    expect(complaintCaption(pairsVerified)).toBe(caption);
-    expect(caption).toBe("Overlap range and median across 86 verified pairs.");
-    expect(figure).toContain(`<p data-complaint-caption="true" class="mt-1 text-[0.8125rem] leading-5 text-muted-foreground">${caption}</p>`);
-    // The scale is not drawn, so the name states it: 0 to 120 minutes.
-    expect(figure).toMatch(
-      new RegExp(
-        `^<div data-complaint-figure="true" role="img" aria-label="${caption.replace(/\./g, "\\.")} Range ${rangeMinutes[0]} to ${rangeMinutes[1]} minutes; median ${medianMinutes} minutes, on a 0 to 120 minute scale\\."`,
-      ),
-    );
-    // Every number it prints: the median, the range ends and the pair count, each read from the figures. One scale:
-    // no axis numbers, so no tick value (0, 30, 60, 120) is printed beside the range ends.
-    expect(text(figure)).toBe(`median ${medianMinutes} min ${rangeMinutes[0]} min ${rangeMinutes[1]} min ${caption}`);
-    expect(text(figure).match(/\d+/g)).toEqual([medianMinutes, rangeMinutes[0], rangeMinutes[1], pairsVerified].map(String));
-    // Visible with no click, and no new claim beside it.
-    expect(withoutDisclosures(html)).toContain("data-complaint-figure");
-    expect(text(figure)).not.toMatch(/\b(shows?|proves?|finds?|best)\b/i);
+    expect(at).toBeLessThan(html.indexOf('data-why-col="unknown"'));
   });
 
-  it("re-draws from a changed copy of the figures, so no value is typed in by hand", async () => {
+  it("reads the finding and the fold's pair count from a changed copy of the figures, so no value is typed in by hand", async () => {
     vi.resetModules();
     vi.doMock("@/lib/method-figures", async (importOriginal) => {
       const real = await importOriginal<typeof import("@/lib/method-figures")>();
@@ -605,64 +521,19 @@ describe("the complaint overlap figure", () => {
         ...real,
         METHOD_FIGURES: {
           ...real.METHOD_FIGURES,
-          complaints: { ...real.METHOD_FIGURES.complaints, pairsVerified: 71, medianMinutes: 35, rangeMinutes: [15, 105] },
+          complaints: { ...real.METHOD_FIGURES.complaints, clustersVerified: 31, festivals: 4, pairsVerified: 71 },
         },
       };
     });
     try {
       const mod = await import("./why-this-matters");
-      const figure = figureOf(renderToStaticMarkup(createElement(mod.WhyThisMatters)));
-      expect(text(figure)).toBe("median 35 min 15 min 105 min Overlap range and median across 71 verified pairs.");
-      expect(figure).toContain(
-        'aria-label="Overlap range and median across 71 verified pairs. Range 15 to 105 minutes; median 35 minutes, on a 0 to 120 minute scale."',
-      );
-      // Geometry follows the copy too: the capsule from 15 to 105 of 120, the median at 35 of 120.
-      expect(figure).toContain('data-capsule-outline="true" x="12.5%" y="6.5" width="75%"');
-      expect(figure).toMatch(/<span data-range-end="true" class="[^"]*" style="left:12\.5%">15 min<\/span>/);
-      expect(figure).toMatch(/<span data-range-end="true" class="[^"]*" style="left:87\.5%">105 min<\/span>/);
-      expect(figure).toContain('data-median-mark="true" x="29.167%"');
+      const plain = text(renderToStaticMarkup(createElement(mod.WhyThisMatters)));
+      expect(plain).toContain("31 clashes that fans or the press complained about at 4 festivals had a verified overlap in time.");
+      expect(plain).toContain("How the lists lean (71 verified pairs)");
     } finally {
       vi.doUnmock("@/lib/method-figures");
       vi.resetModules();
     }
-  });
-
-  it("draws the range as the shared-time capsule, ink outline on top, and the median as a 2px ink mark on a 6px card underlay, with no motion and no new colour", () => {
-    const figure = figureOf(renderToStaticMarkup(createElement(WhyThisMatters)));
-    // The capsule: 16px tall, rx 8, from 10 to 90 of 120, through OverlapWindow (card fill, the hatch, the 2px card
-    // halo inside the edge), then a 1px ink outline drawn after it.
-    expect(figure).toMatch(/<clipPath id="([^"]+)-clip"><rect x="8\.333%" y="6\.5" width="66\.667%" height="16" rx="8"><\/rect><\/clipPath>/);
-    expect(figure).toMatch(/<rect x="8\.333%" y="6\.5" width="66\.667%" height="16" fill="var\(--card\)"><\/rect><rect [^>]*fill="url\(#cc-overlap-[^)]+\)"><\/rect><rect [^>]*rx="8" fill="none" stroke="var\(--card\)" stroke-width="4"><\/rect><\/g>/);
-    const outline = figure.indexOf("data-capsule-outline");
-    expect(outline).toBeGreaterThan(figure.indexOf('stroke="var(--card)" stroke-width="4"'));
-    expect(figure).toContain('data-capsule-outline="true" x="8.333%" y="6.5" width="66.667%" height="16" rx="8" fill="none" stroke="var(--foreground)" stroke-width="1"');
-    // The median: a 6px card underlay, then the 2px ink mark, both 29px tall (6px past the capsule's 17px outline
-    // box, 6 to 23, above and below), centred on 50 of 120 and drawn after the outline so a 2px card gap separates
-    // the mark from every hatch line. The svg is the mark's height.
-    expect(figure).toContain('<svg width="100%" height="29" aria-hidden="true"');
-    expect(figure).toContain('<rect data-median-underlay="true" x="41.667%" y="0" width="6" height="29" transform="translate(-3 0)" fill="var(--card)"');
-    expect(figure).toContain('<rect data-median-mark="true" x="41.667%" y="0" width="2" height="29" transform="translate(-1 0)" fill="var(--foreground)"');
-    expect(figure.indexOf("data-median-underlay")).toBeLessThan(outline);
-    expect(figure.indexOf("data-median-mark")).toBeGreaterThan(outline);
-    // The median's 13px label sits above the mark, centred on it.
-    expect(figure).toMatch(/<span data-median-label="true" class="[^"]*text-\[0\.8125rem\][^"]*text-foreground" style="left:41\.667%">median <span class="font-mono tabular-nums">50<\/span> min<\/span>/);
-    // One scale: no axis line, no tick, no axis number. 4px under the capsule, the range ends in 12px ink mono, each
-    // centred under its own end of the capsule; then the caption.
-    expect(figure).not.toMatch(/data-tick|data-axis|w-px|h-px/);
-    // The only lines drawn are the hatch's own, inside its pattern definition.
-    expect(figure.slice(figure.indexOf("</defs>"))).not.toContain("<line");
-    expect(figure).not.toMatch(/(?<![\w-])bg-border(?![\w-])/);
-    const [low, high] = METHOD_FIGURES.complaints.rangeMinutes;
-    const end = (minutes: number) =>
-      `<span data-range-end="true" class="absolute top-0 -translate-x-1/2" style="left:${Math.round((minutes / 120) * 100000) / 1000}%">${minutes} min</span>`;
-    expect(figure).toContain(
-      `</svg><div class="relative mt-1 h-4 font-mono text-xs leading-4 whitespace-nowrap text-foreground tabular-nums">${end(low)}${end(high)}</div><p data-complaint-caption="true"`,
-    );
-    expect(figure.match(/<span data-range-end="true"[^>]*>\d+ min<\/span>/g)).toHaveLength(2);
-    // Vermilion only as the hatch (shared time), never as text or a fill; no animation, opacity or new colour.
-    expect(figure).not.toMatch(/text-primary|bg-primary|fill="var\(--primary\)"|animate|transition|motion-|opacity|color-mix/);
-    expect(figure.match(/var\(--primary\)/g)).toHaveLength(1);
-    expect(figure).not.toMatch(/rounded-full|shadow|text-(2xl|3xl|4xl)/);
   });
 });
 
@@ -712,16 +583,17 @@ describe("the failed test and why this matters, as the home page composes them",
 });
 
 describe("forward-looking lines with no claim (round 31)", () => {
-  it("follows Who would pay is not known. with our untested guess, in the open, before the pilot", () => {
-    expect(PAYER_GUESS).toBe(
-      "Our guess, not yet tested: the festival’s head of programming, once per edition, before set times go out.",
-    );
+  it("ends the paragraph on Who would pay is not known., in the open, before the pilot, with no guess after it (round 34, audit Y8)", () => {
+    // The untested guess at who would pay left the page and the demand module with it.
+    expect("PAYER_GUESS" in demandModule).toBe(false);
     const html = renderToStaticMarkup(createElement(WhyThisMatters));
     const visible = text(withoutDisclosures(html));
-    expect(visible).toContain(`Who would pay is not known. ${PAYER_GUESS}`);
-    expect(visible.indexOf(PAYER_GUESS)).toBeLessThan(visible.indexOf("Pilot offer"));
-    // Round 33: in the same paragraph as the line it follows, in ink at body size.
-    expect(html).toContain(`Who would pay is not known. <span data-payer-guess="true">${PAYER_GUESS}</span></p>`);
+    expect(visible).toContain("Who would pay is not known.");
+    expect(visible.indexOf("Who would pay is not known.")).toBeLessThan(visible.indexOf("Pilot offer"));
+    expect(visible).not.toMatch(/Our guess|not yet tested|once per edition/);
+    expect(html).not.toContain("data-payer-guess");
+    // In ink at body size, the last sentence of its paragraph.
+    expect(html).toContain("Who would pay is not known.</p>");
   });
 
   it("prints the pilot terms under the offer only once the owner has set them, and nothing while they are null", () => {

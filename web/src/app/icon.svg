@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <style>.ink{fill:#16110E}@media (prefers-color-scheme:dark){.ink{fill:#F2EEE6}}</style>
-  <path class="ink" d="M9 3h11v7h-10v19h-1a6 6 0 0 1-6-6v-14a6 6 0 0 1 6-6z"/>
-  <path fill="#F0703C" d="M23 29h-11v-7h10v-19h1a6 6 0 0 1 6 6v14a6 6 0 0 1-6 6z"/>
+  <style>.ink{fill:#141821}.line{fill:none;stroke:#141821}@media (prefers-color-scheme:dark){.ink{fill:#eceff2}.line{stroke:#eceff2}}</style>
+  <path class="ink" d="M9 3h9.5a1.5 1.5 0 0 1 1.5 1.5v4a1.5 1.5 0 0 1-1.5 1.5h-7a1.5 1.5 0 0 0-1.5 1.5v16.5a1 1 0 0 1-1 1a6 6 0 0 1-6-6v-14a6 6 0 0 1 6-6z"/>
+  <path class="line" stroke-width="2" stroke-linejoin="round" d="M23 28h-9.5a.5.5 0 0 1-.5-.5v-4a.5.5 0 0 1 .5-.5h7a2.5 2.5 0 0 0 2.5-2.5v-16.5a5 5 0 0 1 5 5v14a5 5 0 0 1-5 5z"/>
 </svg>

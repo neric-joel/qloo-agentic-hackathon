@@ -69,8 +69,8 @@ export const PAPER: CSSProperties = {
   ["--muted-foreground" as string]: "#525864",
   ["--border" as string]: "#d6d9de",
   ["--border-strong" as string]: "#7b818a",
-  ["--primary" as string]: "#ca2a02",
-  ["--destructive" as string]: "#ca2a02",
+  ["--primary" as string]: "#b61b75",
+  ["--destructive" as string]: "#141821",
   ["--highlight" as string]: "#c7dcfc",
   ["--highlight-foreground" as string]: "#141821",
   colorScheme: "light",
@@ -98,7 +98,8 @@ function Capped({ items }: { items: readonly string[] }) {
 /**
  * The draft brief "Print draft brief" prints (one page or more for a long grid): the checked snapshot,
  * counts, settings, applied changes, rule breaks, decisions and the compared overlaps when there are
- * any. Print only; with `preview` the same sheet is drawn on screen as a small paper thumbnail.
+ * any. Print only; with `preview` the same sheet is drawn on screen as a small paper thumbnail, a sheet
+ * with the 14px panel corner. In print it is the page itself, with no corner of its own.
  */
 export function CheckBrief({
   report,
@@ -138,7 +139,7 @@ export function CheckBrief({
   const missedLine = price ? notComparedLine(missed, price) : null;
   return (
     <div
-      className={cn(preview ? "p-[22pt]" : "hidden print:block", "text-[9pt] leading-snug")}
+      className={cn(preview ? "rounded-lg p-[22pt]" : "hidden print:block", "text-[9pt] leading-snug")}
       style={preview ? PAPER : undefined}
     >
       <p className={cn("type-title text-[16pt]", !preview && "hidden print:block")}>{CHECK_COPY.printTitle}</p>

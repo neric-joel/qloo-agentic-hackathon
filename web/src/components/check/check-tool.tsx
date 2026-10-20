@@ -130,7 +130,7 @@ type Run = {
   input: CheckInput;
   sample: boolean;
   checkedAt: number | null;
-  /** The invented sample the page opens with: drawn, but it takes no focus and scrolls nothing. */
+  /** The invented sample the page opens with: drawn in place, but it takes no focus, scrolls nothing and plays no reveal. */
   arrival?: boolean;
   /** The sample's pair rules dropped since the last check because the new grid has none of their acts. */
   removed?: string[];
@@ -956,8 +956,9 @@ export function CheckTool({
   const removedSince = useRef<string[]>([]);
   // Whether this server prices live; unknown counts as off, so the page never offers what it would refuse.
   const [live, setLive] = useState(false);
-  // The published day "Check a published day" offers (none until this app's API names one), and the one loaded.
-  const [publishedDay, setPublishedDay] = useState<PublishedDay | null>(null);
+  // The published day "Check a published day" offers (none until this app's API names one; undefined until it
+  // answers), and the one loaded.
+  const [publishedDay, setPublishedDay] = useState<PublishedDay | null | undefined>(undefined);
   const publishedRef = useRef<PublishedInput | null>(null);
   const [published, setPublished] = useState<PublishedInput | null>(null);
   const [publishedNote, setPublishedNote] = useState("");
@@ -1621,6 +1622,12 @@ export function CheckTool({
                   >
                     Check a published day: {publishedDay.title}
                   </Button>
+                ) : publishedDay === undefined ? (
+                  // Until the API answers, a phone keeps the action's line empty (its height, nothing to read or
+                  // press), so the sheet under it does not move when the action appears.
+                  <span aria-hidden="true" className="block min-h-11 w-full border border-transparent py-2.5 text-[0.9375rem] sm:hidden">
+                    {"\u00a0"}
+                  </span>
                 ) : null}
               </div>
             </div>
@@ -1636,8 +1643,9 @@ export function CheckTool({
             </p>
           </div>
           <div className="min-w-0 lg:col-start-1 lg:row-start-2">
-            {/* The editor surface: a field in the site's ruled style, marked by its card fill and a 1px
-                border-strong rule above and below it (no side edges, no radius), clipped. Its header bar does
+            {/* The editor surface: a panel, marked by its card fill, a 1px border-strong edge and the 14px
+                panel corner, clipped, so the gutter and the field end inside that corner and its focus outline
+                follows it. The switch in the header sits 4px in and keeps its own 10px track. Its header bar does
                 one job, show the grid and check it: the Table / CSV switch at the left (its text in line with
                 the table's first column) and "Check the grid" at the right, the bar's one filled control (it
                 submits this form), both 44px tall, over a hairline inset 16px, one row from sm. On a phone
@@ -1646,7 +1654,7 @@ export function CheckTool({
                 run along the top like the timetable's stage headers, and a line-number gutter (decorative,
                 kept in step with the scroll) sits left. As a table: the same text read by the check's parser,
                 its flagged rows numbered. */}
-            <div className="overflow-hidden border-y border-border-strong bg-card has-[textarea:focus-visible]:outline-2 has-[textarea:focus-visible]:outline-offset-2 has-[textarea:focus-visible]:outline-ring">
+            <div className="overflow-hidden rounded-lg border border-border-strong bg-card has-[textarea:focus-visible]:outline-2 has-[textarea:focus-visible]:outline-offset-2 has-[textarea:focus-visible]:outline-ring">
               <div className="relative flex flex-wrap items-center justify-between gap-3 py-2 pr-4 pl-1 lg:gap-2 after:pointer-events-none after:absolute after:inset-x-4 after:bottom-0 after:h-px after:bg-border after:content-['']">
                 <SegmentedControl
                   label="Show the draft grid as"
@@ -1952,6 +1960,8 @@ export function CheckTool({
                 showAll={showAll}
                 onShowAll={setShowAll}
                 nonce={run.nonce * 1000 + (working?.applied.length ?? 0)}
+                // The sample the page opens with is drawn in place, as it takes no focus: no press caused it.
+                still={run.arrival === true && !working}
                 headingRef={headingRef}
                 trial={trialUi}
                 trialHeadingRef={trialHeadingRef}

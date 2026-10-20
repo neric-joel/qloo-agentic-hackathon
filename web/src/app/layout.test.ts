@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FOOTER_SYNTHETIC } from "@/components/site/site-footer";
+import { THEME_INIT_SCRIPT } from "@/components/theme/theme-config";
 import { SYNTHETIC_NOTICE } from "@/lib/synthetic-notice";
 
 // The layout draws the synthetic notice from the server's own flag, so it is in the server HTML of every
@@ -10,7 +11,6 @@ import { SYNTHETIC_NOTICE } from "@/lib/synthetic-notice";
 
 vi.mock("next/font/google", () => ({
   Archivo: () => ({ variable: "font-archivo" }),
-  JetBrains_Mono: () => ({ variable: "font-mono" }),
 }));
 
 afterEach(() => {
@@ -63,6 +63,17 @@ describe("the root layout", () => {
     expect(markup).toContain(SYNTHETIC_NOTICE);
     expect(markup).toContain(FOOTER_SYNTHETIC);
     expect(markup).not.toContain("saved Qloo responses");
+  });
+
+  it("loads one family and paints the page itself first: the theme script leads the head, with no opening reveal", async () => {
+    serve([entry]);
+    const markup = await html();
+    expect(markup).toMatch(/^<html lang="en" class="font-archivo">/);
+    const head = markup.slice(markup.indexOf("<head>") + "<head>".length, markup.indexOf("</head>"));
+    expect(head).toBe(`<script>${THEME_INIT_SCRIPT}</script>`);
+    // The retired curtain's names, spelled in pieces so a source scan for them finds none.
+    for (const name of ["data-", "cc.", "cc:", "cc-"].map((head) => `${head}intro`)) expect(markup).not.toContain(name);
+    expect(markup).not.toContain("font-mono");
   });
 
   it("prints neither for a real day, and does not fail when the list cannot be read", async () => {

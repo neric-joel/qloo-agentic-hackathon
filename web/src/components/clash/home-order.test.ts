@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import { topClashes } from "@/lib/clashes";
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
+import type { Decision } from "@/lib/decision";
 import { parsePreset, type Evidence, type Preset, type PresetSummary } from "@/lib/preset";
 
 import {
@@ -16,6 +17,7 @@ import {
   SOURCES_ID,
   borrowsWall,
   currentJump,
+  dayToDraw,
   jumpLinks,
   wallLenders,
 } from "./clash-control";
@@ -60,7 +62,7 @@ describe("the home page's order", () => {
     expect(ids).toEqual(HOME_ORDER.map((key) => ANCHORS[key]));
   });
 
-  it("lists the section nav in the same order, with the same numbering logic", () => {
+  it("lists the section nav in the same order, labels only", () => {
     const links = jumpLinks({ agent, wall: true, qloo });
     expect(links.map((link) => link.label)).toEqual([
       "What Qloo changes",
@@ -80,6 +82,18 @@ describe("the home page's order", () => {
       "Recorded runs",
       "Sources",
     ]);
+  });
+
+  it("draws the section nav with no numerals: each link is its label, with the one ink marker under the current one", () => {
+    const source = readFileSync(join(__dirname, "clash-control.tsx"), "utf8");
+    const nav = source.slice(source.indexOf("function JumpNav("), source.indexOf("function LoadingView("));
+    expect(nav).not.toBe("");
+    // The label is the link's only content; no step number before it, in any face.
+    expect(nav).toContain('<span data-nav-label="">{link.label}</span>');
+    expect(nav).not.toMatch(/index \+ 1|type-numeral/);
+    // The same links and the same marker (its round ends: a 3 px bar, clamped by the mark corner).
+    expect(nav).toContain("rounded-bar bg-foreground");
+    expect(nav).toContain('aria-current={on ? "location" : undefined}');
   });
 
   it("passes every section through HomeSections in the page itself", () => {
@@ -179,5 +193,56 @@ describe("the section nav's current entry", () => {
     expect(currentJump(tops([-3000, -800, 500]), { ...end, scrollY: 9097 })).toBe("#s1");
     // A missing last section does not take the mark.
     expect(currentJump(tops([-3000, -800, null]), end)).toBe("#s1");
+  });
+});
+
+describe("switching festival day", () => {
+  const glasto = { ...parsePreset(rawTinyPreset()), id: "glasto" } as Preset;
+  const riot = { ...parsePreset(rawTinyPreset()), id: "riot" } as Preset;
+  // Only the decision's identity matters here: the page passes it on to the day's view untouched.
+  const glastoDecision = { day: 0 } as unknown as Decision;
+  const riotDecision = { day: 0 } as unknown as Decision;
+
+  it("draws the first day as soon as its preset is in, with the decision the page holds or none", () => {
+    expect(dayToDraw(null, undefined, null)).toBeNull();
+    expect(dayToDraw(glasto, glastoDecision, null)).toEqual({ preset: glasto, decision: glastoDecision });
+    // No decision in the server HTML: the day's own view asks for it, as it always has.
+    expect(dayToDraw(glasto, undefined, null)).toEqual({ preset: glasto, decision: null });
+  });
+
+  it("holds the day drawn, the same object, while the chosen day's preset or decision is on its way", () => {
+    const drawn = { preset: glasto, decision: glastoDecision };
+    // The chosen day's preset has not come.
+    expect(dayToDraw(null, undefined, drawn)).toBe(drawn);
+    // Its preset is in, its decision is not.
+    expect(dayToDraw(riot, undefined, drawn)).toBe(drawn);
+    // The day drawn chosen again (another copy of its preset) changes nothing.
+    expect(dayToDraw({ ...glasto } as Preset, glastoDecision, drawn)).toBe(drawn);
+  });
+
+  it("replaces the day drawn in one step once the chosen day's preset and decision are both in", () => {
+    const drawn = { preset: glasto, decision: glastoDecision };
+    expect(dayToDraw(riot, riotDecision, drawn)).toEqual({ preset: riot, decision: riotDecision });
+    // A day whose route gave no decision is drawn with none, not held.
+    expect(dayToDraw(riot, null, drawn)).toEqual({ preset: riot, decision: null });
+    // Back to the first day: its decision is still known, so it is drawn at once.
+    const back = { preset: riot, decision: riotDecision };
+    expect(dayToDraw(glasto, glastoDecision, back)).toEqual(drawn);
+  });
+
+  it("never draws a loading view on a switch, and its picker names the day drawn", () => {
+    const source = readFileSync(join(__dirname, "clash-control.tsx"), "utf8");
+    const control = source.slice(source.indexOf("export function ClashControl("), source.indexOf("/** The festival-day tabs' group name"));
+    expect(control).not.toBe("");
+    // The loading view only before any day is drawn; after that the day drawn is held whole.
+    expect(control).toContain("const shown = dayToDraw(chosen, chosenDecision, drawn);");
+    expect(control).toContain("if (shown === null || list.status !== \"ready\") {");
+    expect(control).toContain("key={shown.preset.id}");
+    expect(control).toContain("selectedId={shown.preset.id}");
+    // The other days are read ahead once a day is drawn, with GETs of saved files only.
+    const ahead = source.slice(source.indexOf("async function readDayAhead("), source.indexOf("export function ClashControl("));
+    expect(ahead).toContain("fetch(`/api/presets/${encodeURIComponent(id)}`");
+    expect(ahead).toContain("requestDecision(preset.id, day, signal)");
+    expect(ahead).not.toMatch(/method:|whatif|price-grid|\/pair|\/runs/);
   });
 });

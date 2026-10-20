@@ -8,6 +8,7 @@ import { formatClock, runCheck, type CheckReport, type RuleBreak, type RuleId } 
 
 import * as local from "./check-break-strip";
 import { BreakStrip, breakGeometry, rowsInOrder, type BreakGeometry } from "./check-break-strip";
+import { BreakDisc } from "./check-results";
 
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 
@@ -70,7 +71,7 @@ describe("breakGeometry: each rule from the check's own sets and settings", () =
     expectPrinted(item, geometry.labels);
   });
 
-  it("rule 3, a gap over 0: the gap bracketed in vermilion and the changeover from the first set's end, no hatch", () => {
+  it("rule 3, a gap over 0: the gap bracketed and the changeover from the first set's end, no hatch", () => {
     const { item, geometry } = only(RULE_3, 3);
     expect(item.text).toContain("10 minutes apart");
     expect(item.text).toContain("under the 15-minute changeover");
@@ -196,7 +197,7 @@ describe("BreakStrip markup", () => {
     }
   });
 
-  it("draws the capsules as the hero's now lane: 12px, card fill, 1.5px ink outline", () => {
+  it("draws the bars as the hero's now lane: 12px, the 6px mark corner, card fill, 1.5px ink outline", () => {
     const { item } = only(RULE_1, 1);
     const html = draw(item, RULE_1);
     expect(html.match(/<rect [^>]*height="12" rx="6" fill="var\(--card\)"/g)).toHaveLength(2);
@@ -206,18 +207,64 @@ describe("BreakStrip markup", () => {
     expect(html).toContain("<pattern ");
   });
 
-  it("keeps the brackets and minutes in vermilion, the changeover in muted and the curfew in border-strong and muted text", () => {
+  it("draws no square rect: every rect has its 6px corner or sits inside a bar's rounded clip (round 34)", () => {
+    for (const [rule, report] of cases) {
+      const html = draw(only(report, rule).item, report);
+      // The rects a rounded clip contains: the shared span's fill and hatch, inside each bar's clip group.
+      const clipped = [...html.matchAll(/<g clip-path="url\(#[^)]*\)"[^>]*>([\s\S]*?)<\/g>/g)].flatMap((m) => m[1].match(/<rect [^>]*>/g) ?? []);
+      // Every clip path is itself a rounded bar.
+      for (const clip of html.match(/<clipPath [^>]*>[\s\S]*?<\/clipPath>/g) ?? []) expect(clip).toMatch(/<rect [^>]*rx="6"/);
+      for (const rect of html.match(/<rect [^>]*>/g) ?? []) {
+        const rx = Number(rect.match(/\brx="([\d.]+)"/)?.[1] ?? 0);
+        expect(rx > 0 || clipped.includes(rect), `${rule}: ${rect}`).toBe(true);
+      }
+    }
+  });
+
+  it("brackets shared minutes in raspberry and a gap or a curfew in ink, the changeover in muted and the curfew rule in border-strong (round 34)", () => {
+    const cost = (html: string) => html.match(/<g data-strip-cost="">[\s\S]*?<\/g>/)?.[0] ?? "";
+    // Rules 1, 2 and 5 are shared minutes: the bracket and its minutes in raspberry, nothing in ink.
+    for (const [rule, report] of [
+      [1, RULE_1],
+      [2, RULE_2],
+      [5, RULE_5],
+    ] as const) {
+      const html = draw(only(report, rule).item, report);
+      expect(cost(html), String(rule)).toMatch(/^<g data-strip-cost="">(<line [^>]*stroke="var\(--primary\)"[^>]*><\/line>){3}<\/g>$/);
+      expect(html).toMatch(/data-strip-label="cost" class="[^"]*\btext-primary\b[^"]*"/);
+      expect(html).not.toMatch(/data-strip-label="cost" class="[^"]*\btext-foreground\b/);
+    }
     const three = draw(only(RULE_3, 3).item, RULE_3);
     // The changeover reads as the rule, not scaffolding: its bracket and its label in muted-foreground, no border-strong.
     expect(three).toMatch(/<g data-strip-minimum="">(<line [^>]*stroke="var\(--muted-foreground\)"[^>]*><\/line>){3}<\/g>/);
     expect(`${three.match(/<g data-strip-minimum="">[\s\S]*?<\/g>/)?.[0]} ${three.match(/<span data-strip-label="minimum"[^>]*>/)?.[0]}`).not.toMatch(/border-strong|undefined/);
-    expect(three).toMatch(/<g data-strip-cost="">(<line [^>]*stroke="var\(--primary\)"[^>]*><\/line>){3}<\/g>/);
+    // A gap too short is a rule break, not shared time: its bracket and its minutes in ink.
+    expect(cost(three)).toMatch(/^<g data-strip-cost="">(<line [^>]*stroke="var\(--foreground\)"[^>]*><\/line>){3}<\/g>$/);
     expect(three).toMatch(/data-strip-label="minimum" class="[^"]*text-muted-foreground[^"]*"/);
-    expect(three).toMatch(/data-strip-label="cost" class="[^"]*text-primary[^"]*"/);
+    expect(three).toMatch(/data-strip-label="cost" class="[^"]*\btext-foreground\b[^"]*"/);
+    // Nothing drawn in raspberry (the hatch pattern is defined in every strip, and used only where time is shared).
+    const drawn = (html: string) => html.replace(/<defs>[\s\S]*?<\/defs>/, "");
+    expect(drawn(three)).not.toMatch(/var\(--primary\)|text-primary|url\(#/);
+    // Sets that meet: the one tick is ink too.
+    expect(cost(draw(only(RULE_3_MEET, 3).item, RULE_3_MEET))).toMatch(/^<g data-strip-cost=""><line [^>]*stroke="var\(--foreground\)"[^>]*><\/line><\/g>$/);
     const four = draw(only(RULE_4, 4).item, RULE_4);
     expect(four).toMatch(/<line data-strip-curfew=""[^>]*stroke="var\(--border-strong\)"/);
     expect(four).toMatch(/data-strip-label="curfew" class="[^"]*text-muted-foreground[^"]*"/);
+    // Past the curfew: an unlabelled ink bracket, no raspberry anywhere.
+    expect(cost(four)).toMatch(/^<g data-strip-cost="">(<line [^>]*stroke="var\(--foreground\)"[^>]*><\/line>){3}<\/g>$/);
     expect(four).not.toContain('data-strip-label="cost"');
+    expect(drawn(four)).not.toMatch(/var\(--primary\)|text-primary|url\(#/);
+  });
+});
+
+describe("a rule break's numbered disc (round 34)", () => {
+  it("is ink with its number in paper, never the raspberry of shared time, at both sizes", () => {
+    for (const size of [20, 16] as const) {
+      const html = renderToStaticMarkup(createElement(BreakDisc, { n: 3, size }));
+      expect(html).toMatch(new RegExp(`<circle cx="${size / 2}" cy="${size / 2}" r="${size / 2}" fill="var\\(--foreground\\)"></circle>`));
+      expect(html).toMatch(/<text [^>]*fill="var\(--background\)"[^>]*>3<\/text>/);
+      expect(html).not.toMatch(/--primary/);
+    }
   });
 });
 

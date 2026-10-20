@@ -21,12 +21,16 @@ type SegmentedControlProps<T extends string> = {
   options: readonly SegmentedOption<T>[];
   size?: "sm" | "md";
   disabled?: boolean;
+  /**
+   * Drawn before the page can act on it (the server HTML, until the interactive view mounts): the inputs are
+   * disabled but nothing is dimmed, so the swap to the live control changes nothing on screen.
+   */
+  pending?: boolean;
+  /** Stretches the track to the row; each option stays an equal column. */
+  fill?: boolean;
   /** Below the `sm` breakpoint, show only the icons (labels stay available to screen readers). */
   compactOnMobile?: boolean;
-  /**
-   * Kept for the callers that name it. Both variants now render the same row of tabs: text only,
-   * the selected option in full ink with a 3px ink marker under it, like the tabs of a printed index.
-   */
+  /** Kept for the callers that name it. Both variants render the same soft track with its thumb. */
   variant?: "default" | "tabs";
   className?: string;
 };
@@ -53,16 +57,21 @@ export function stepIndex(
   return -1;
 }
 
-/** Where the marker sits, in the row's own pixels: under the selected tab's content, at its foot. */
-type MarkerBox = { x: number; y: number; width: number };
+/** Where the thumb sits, in the track's own pixels: its column, less the 4px inset on each side. */
+type ThumbBox = { x: number; width: number };
+
+/** The thumb's inset from the track and from its column's sides; 10px track corner less 4px gives its 6px. */
+const INSET = 4;
 
 /**
- * A single-choice control built on native radio inputs, drawn as a row of 44px tabs: 14px semibold
- * text, muted until chosen, then full ink. One 3px ink capsule at the foot of the selected tab's
- * label slides between options (transform and width, 180ms ease-out; it jumps under reduced
- * motion). No track, thumb, border, fill or hairline. Arrow keys move the selection, the group is
- * announced as a radio group, and the selected state is never colour alone (ink text plus the
- * marker, and an underline in forced-colors modes).
+ * A single-choice control built on native radio inputs, drawn as a soft track: a 44px muted fill with a
+ * 10px corner, split into equal columns (each as wide as the longest label), and one thumb, a card-white
+ * plate with a hairline edge and a 6px corner, inset 4px so its corner is concentric with the track's.
+ * The columns are equal, so the thumb moves by translateX alone and never scales (180ms ease-out; at
+ * once under reduced motion); the label colour changes at once. Before the thumb is measured (server
+ * HTML, before hydration) the chosen option draws the same plate itself, so the first paint already
+ * shows it in place. Arrow keys move the selection, the group is announced as a radio group, and the
+ * selected state is never colour alone (the plate, and an underline in forced-colors modes).
  */
 export function SegmentedControl<T extends string>({
   label,
@@ -71,39 +80,35 @@ export function SegmentedControl<T extends string>({
   options,
   size = "md",
   disabled = false,
+  pending = false,
+  fill = false,
   compactOnMobile = false,
   className,
 }: SegmentedControlProps<T>) {
   const id = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const selected = options.findIndex((option) => option.value === value);
-  const [marker, setMarker] = useState<MarkerBox | null>(null);
+  const [thumb, setThumb] = useState<ThumbBox | null>(null);
 
   const measure = useCallback(() => {
     const root = rootRef.current;
-    const content = root?.querySelectorAll<HTMLElement>("[data-segment-content]")[selected];
-    const tab = content?.parentElement;
-    if (!root || !content || !tab) return setMarker(null);
-    setMarker({
-      x: tab.offsetLeft + content.offsetLeft,
-      y: tab.offsetTop + tab.offsetHeight - 3,
-      width: content.offsetWidth,
-    });
+    const option = root?.querySelectorAll<HTMLElement>("[data-segment]")[selected];
+    if (!root || !option) return setThumb(null);
+    setThumb({ x: option.offsetLeft + INSET, width: option.offsetWidth - 2 * INSET });
   }, [selected]);
 
   useLayoutEffect(() => {
     measure();
     const root = rootRef.current;
     if (!root || typeof ResizeObserver === "undefined") return;
-    // Fonts loading, a wrap or the compact breakpoint all change a tab's width.
+    // Fonts loading, a wrap or a width change all move the columns.
     const observer = new ResizeObserver(() => measure());
     observer.observe(root);
-    root.querySelectorAll("[data-segment-content]").forEach((node) => observer.observe(node));
     return () => observer.disconnect();
   }, [measure, options, compactOnMobile]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>, from: number) => {
-    const next = stepIndex(options, from, event.key, disabled);
+    const next = stepIndex(options, from, event.key, disabled || pending);
     if (next < 0) return;
     event.preventDefault();
     rootRef.current?.querySelectorAll<HTMLInputElement>('input[type="radio"]')[next]?.focus();
@@ -115,16 +120,21 @@ export function SegmentedControl<T extends string>({
       ref={rootRef}
       role="radiogroup"
       aria-label={label}
-      data-measured={marker ? "" : undefined}
-      className={cn("group/seg relative flex max-w-full flex-wrap", className)}
+      data-measured={thumb ? "" : undefined}
+      className={cn(
+        "group/seg relative isolate min-h-11 max-w-full auto-cols-fr grid-flow-col rounded-md bg-muted",
+        fill ? "grid w-full" : "inline-grid",
+        className,
+      )}
     >
       {options.map((option, index) => {
-        const isDisabled = disabled || option.disabled;
+        const isDisabled = disabled || pending || option.disabled;
         return (
           <label
             key={option.value}
+            data-segment=""
             title={option.description}
-            className={cn("relative inline-flex", isDisabled ? "cursor-not-allowed" : "cursor-pointer")}
+            className={cn("relative z-10 flex min-w-0", pending ? "cursor-default" : isDisabled ? "cursor-not-allowed" : "cursor-pointer")}
           >
             <input
               type="radio"
@@ -138,20 +148,21 @@ export function SegmentedControl<T extends string>({
             />
             <span
               className={cn(
-                "relative inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-sm font-semibold text-muted-foreground select-none",
-                // Until the sliding marker is measured (server HTML, before hydration), the selected
-                // tab draws its own marker in the same place.
-                "after:pointer-events-none after:absolute after:bottom-0 after:hidden after:h-[3px] after:rounded-bar after:bg-foreground after:content-['']",
-                "peer-checked:after:block group-data-measured/seg:peer-checked:after:hidden forced-colors:after:hidden",
-                "transition-colors duration-150 ease-out motion-reduce:transition-none",
+                "relative flex h-11 w-full min-w-11 items-center justify-center rounded-md text-center text-sm leading-[1.15] font-semibold text-muted-foreground select-none",
+                // Until the thumb is measured (server HTML, before hydration), the chosen option draws the
+                // same plate itself, in the same place.
+                "before:pointer-events-none before:absolute before:inset-1 before:hidden before:rounded-xs before:border before:border-border-strong before:bg-card before:content-['']",
+                "peer-checked:before:block group-data-measured/seg:peer-checked:before:hidden forced-colors:before:hidden",
                 "hover:text-foreground peer-checked:text-foreground",
-                // Forced-colors modes drop the marker's fill, so underline the selected option instead.
+                // Forced-colors modes drop the plate's fill, so underline the selected option instead.
                 "peer-checked:forced-colors:underline peer-checked:forced-colors:decoration-2 peer-checked:forced-colors:underline-offset-4",
-                "peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ring peer-disabled:opacity-50 peer-disabled:hover:text-muted-foreground",
-                size === "md" ? "px-4 after:inset-x-4" : "px-3 after:inset-x-3",
+                // The ring traces the thumb: 4px inside the option's 10px corner is the plate's 6px.
+                "peer-focus-visible:outline-2 peer-focus-visible:-outline-offset-4 peer-focus-visible:outline-ring",
+                pending ? null : "peer-disabled:opacity-50 peer-disabled:hover:text-muted-foreground",
+                size === "md" ? "px-4" : "px-3",
               )}
             >
-              <span data-segment-content="" className="inline-flex items-center gap-1.5 [&_svg]:size-4 [&_svg]:shrink-0">
+              <span data-segment-content="" className="relative inline-flex items-center gap-1.5 [&_svg]:size-4 [&_svg]:shrink-0">
                 {option.icon}
                 <span className={compactOnMobile ? "max-sm:sr-only" : undefined}>{option.label}</span>
               </span>
@@ -163,11 +174,11 @@ export function SegmentedControl<T extends string>({
         aria-hidden="true"
         data-slot="segmented-marker"
         className={cn(
-          "pointer-events-none absolute top-0 left-0 h-[3px] rounded-bar bg-foreground forced-colors:hidden",
-          "motion-safe:transition-[transform,width] motion-safe:duration-[180ms] motion-safe:ease-out",
-          (selected < 0 || !marker) && "hidden",
+          "pointer-events-none absolute top-1 bottom-1 left-0 z-0 rounded-xs border border-border-strong bg-card forced-colors:hidden",
+          "motion-safe:transition-[transform] motion-safe:duration-(--dur-state) motion-safe:ease-(--ease-out)",
+          (selected < 0 || !thumb) && "hidden",
         )}
-        style={marker ? { width: marker.width, transform: `translate(${marker.x}px, ${marker.y}px)` } : undefined}
+        style={thumb ? { width: thumb.width, transform: `translateX(${thumb.x}px)` } : undefined}
       />
     </div>
   );

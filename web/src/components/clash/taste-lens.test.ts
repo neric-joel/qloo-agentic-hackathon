@@ -167,19 +167,49 @@ describe("TasteLens", () => {
       "Taste overlap only costs something when two sets share time, so these pairs price at zero. How the price works",
     );
   });
+
+  it("sets the pairs that price at zero as one 10px inset block with a quiet edge on all sides, embedded or not (round 34, corners)", () => {
+    const value = lenses({ apart: [{ a: "Act Nine", b: "Act Ten", a_id: "nine", b_id: "ten" }] });
+    for (const embedded of [false, true]) {
+      const html = renderToStaticMarkup(createElement(TasteLens, { lenses: value, ranked: [], onOpen: () => {}, embedded }));
+      const cls = /<div data-lens-apart="" class="([^"]*)"/.exec(html)?.[1] ?? "";
+      expect(cls.split(" "), String(embedded)).toEqual(expect.arrayContaining(["rounded-md", "border", "border-border", "p-4"]));
+      // A note, not a card: no fill, no shadow, no capsule, and never a lone top rule.
+      expect(cls).not.toMatch(/\bbg-|shadow|rounded-(full|lg|xl)|border-t\b/);
+    }
+  });
+
+  it("sets the two lists side by side by the width of their slot when embedded, and by the page's width on its own", () => {
+    const value = lenses();
+    const embedded = renderToStaticMarkup(createElement(TasteLens, { lenses: value, ranked: [], onOpen: () => {}, embedded: true }));
+    // Embedded, the block is a size container: the lists pair up once it is 36rem wide, and stack in a narrower slot.
+    expect(embedded).toMatch(/^<div id="taste-lens" aria-labelledby="taste-lens-heading" role="group" class="@container">/);
+    expect(embedded).toContain('<div class="mt-6 grid gap-8 @xl:grid-cols-2 @xl:gap-x-10 @xl:gap-y-0">');
+    expect(embedded.match(/<div class="min-w-0 @xl:row-span-2 @xl:grid @xl:grid-rows-subgrid">/g)).toHaveLength(2);
+    expect(embedded).not.toContain("lg:grid-cols-2");
+    // On its own, the section keeps the page breakpoint.
+    const own = renderToStaticMarkup(createElement(TasteLens, { lenses: value, ranked: [], onOpen: () => {} }));
+    expect(own).toContain('<div class="mt-8 grid gap-10 lg:grid-cols-2 lg:gap-x-12 lg:gap-y-0">');
+    expect(own.match(/<div class="min-w-0 lg:row-span-2 lg:grid lg:grid-rows-subgrid">/g)).toHaveLength(2);
+    expect(own).not.toContain("@container");
+  });
+
+  it("gives each lens row that opens a drawer the 10px row corner, so its hover and focus wash is never a sharp box", () => {
+    const clash = { a: { act_id: "seven" }, b: { act_id: "eight" } } as never;
+    const html = renderToStaticMarkup(createElement(TasteLens, { lenses: lenses(), ranked: [clash], onOpen: () => {} }));
+    const button = /<button type="button" class="([^"]*)"/.exec(html)?.[1] ?? "";
+    expect(button.split(" ")).toEqual(expect.arrayContaining(["rounded-md", "hover:bg-accent", "focus-visible:bg-accent"]));
+  });
 });
 
-describe("TasteLens motion (M6)", () => {
-  it("is drawn final in the server HTML: rows visible, nothing waiting, the pairs taste pushes out with no edge of their own", () => {
+describe("TasteLens motion (round 34: no scroll-in motion)", () => {
+  it("is drawn final in the server HTML with nothing to play: no reveal phase, stagger or rising rows", () => {
     const html = renderToStaticMarkup(createElement(TasteLens, { lenses: lenses(), ranked: [], onOpen: () => {} }));
     expect(html).not.toContain("data-reveal");
-    // Draw-and-time rows start first; the taste rows follow 160 ms later, 40 ms apart.
-    const rows = [...html.matchAll(/<li class="([^"]*)" style="--reveal-delay:(\d+)ms">/g)].map((m) => [m[1], Number(m[2])]);
-    expect(rows).toEqual([
-      ["cc-lens-row", 160],
-      ["cc-lens-row", 200],
-      ["cc-lens-row", 0],
-    ]);
+    expect(html).not.toContain("--reveal-delay");
+    expect(html).not.toContain("cc-lens-row");
+    // Every listed pair is a plain row, drawn where it rests.
+    expect(html.match(/<li>/g)).toHaveLength(3);
   });
 });
 
@@ -210,10 +240,12 @@ describe("otherHalfPair", () => {
 describe("otherHalfLine", () => {
   it("says where the pair ranks, with its taste overlap only when given, and names no source on the invented day", () => {
     const pair = { a: "Act Seven", b: "Act Eight", from: 1, to: 17 };
+    // Round 34 (row 26): the hedge is cut, and the reading stays attributed to this index.
     expect(otherHalfLine(pair, null)).toBe(
-      "Taste also lowers some clashes: Act Seven × Act Eight ranks #1 on time and draw but #17 with taste. Lower priority by this index; a candidate to keep.",
+      "Taste also lowers some clashes: Act Seven × Act Eight ranks #1 on time and draw but #17 with taste: by this index, a candidate to keep.",
     );
-    expect(otherHalfLine(pair, "8")).toContain("#17 with taste (taste overlap 8 of 100 on this bill).");
+    expect(otherHalfLine(pair, null)).not.toContain("Lower priority");
+    expect(otherHalfLine(pair, "8")).toContain("#17 with taste (taste overlap 8 of 100 on this bill): by this index, a candidate to keep.");
     const invented = otherHalfLine(pair, "8", true);
     expect(invented).toMatch(/^On this invented day, taste also lowers some clashes:/);
     expect(invented).toContain("(invented taste overlap 8 of 100 on this bill)");

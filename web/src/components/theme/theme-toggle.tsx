@@ -5,7 +5,7 @@ import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 
 import { cn } from "@/lib/utils";
 
 import type { Theme } from "./theme-config";
-import { useTheme, type RevealOrigin } from "./theme-provider";
+import { useTheme } from "./theme-provider";
 
 /** Shared drawing for the three glyphs: an 18 px grid at 1:1, a 1.5 px line with round ends, the text colour. */
 const GLYPH = {
@@ -19,13 +19,12 @@ const GLYPH = {
 } as const;
 
 /**
- * The sun: a 7 px ring with eight 2 px rays. Inside the menu the rays retract when the option is not
- * selected and turn out when it is (the motion lives in the "Theme switch reveal" block of globals.css).
- * On the menu button the rays are drawn fully out and still.
+ * The sun: a 7 px ring with eight 2 px rays. Inside the menu the rays are drawn retracted when the
+ * option is not selected and out when it is (globals.css); on the menu button they are drawn fully out.
  */
 function SunGlyph({ still = false }: { still?: boolean }) {
   return (
-    <svg {...GLYPH} className={still ? undefined : "cc-theme-glyph"}>
+    <svg {...GLYPH}>
       <circle cx="9" cy="9" r="3.5" />
       <g className={still ? undefined : "cc-theme-rays"}>
         <path d="M14.5 9L16.5 9M12.89 12.89L14.3 14.3M9 14.5L9 16.5M5.11 12.89L3.7 14.3M3.5 9L1.5 9M5.11 5.11L3.7 3.7M9 3.5L9 1.5M12.89 5.11L14.3 3.7" />
@@ -38,9 +37,9 @@ function SunGlyph({ still = false }: { still?: boolean }) {
  * The moon: one closed crescent outline (an outer arc and an inner arc), stroked and never filled, so
  * it reads as a crescent in every theme and never as a disc, with no mask involved.
  */
-function MoonGlyph({ still = false }: { still?: boolean }) {
+function MoonGlyph() {
   return (
-    <svg {...GLYPH} className={still ? undefined : "cc-theme-glyph"}>
+    <svg {...GLYPH}>
       <path d="M15.4 10.6A6.5 6.5 0 1 1 7.4 2.6a6 6 0 0 0 8 8Z" />
     </svg>
   );
@@ -65,7 +64,7 @@ type ThemeOption = {
 
 const OPTIONS: readonly ThemeOption[] = [
   { value: "light", label: "Light", icon: (still) => <SunGlyph still={still} />, description: "Light theme" },
-  { value: "dark", label: "Dark", icon: (still) => <MoonGlyph still={still} />, description: "Dark theme" },
+  { value: "dark", label: "Dark", icon: () => <MoonGlyph />, description: "Dark theme" },
   {
     value: "system",
     label: "System",
@@ -74,18 +73,36 @@ const OPTIONS: readonly ThemeOption[] = [
   },
 ];
 
-/** The centre of an element, in viewport pixels. */
-function centreOf(element: Element | null): RevealOrigin | null {
-  if (!element) return null;
-  const rect = element.getBoundingClientRect();
-  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+/** The attribute on <html> that holds every colour transition off while a theme switch applies (globals.css). */
+export const THEME_SWITCHING_ATTRIBUTE = "data-theme-switching";
+
+let switchGeneration = 0;
+
+/**
+ * Applies a theme switch with no colour transition: the attribute goes on just before the switch and
+ * comes off two animation frames later, once the new theme's styles have landed. A second switch
+ * inside that window keeps it on for its own two frames.
+ */
+export function switchWithoutTransitions(
+  apply: () => void,
+  root: Pick<Element, "setAttribute" | "removeAttribute"> = document.documentElement,
+  frame: (callback: () => void) => unknown = (callback) => window.requestAnimationFrame(callback),
+): void {
+  const generation = ++switchGeneration;
+  root.setAttribute(THEME_SWITCHING_ATTRIBUTE, "");
+  apply();
+  frame(() =>
+    frame(() => {
+      if (generation === switchGeneration) root.removeAttribute(THEME_SWITCHING_ATTRIBUTE);
+    }),
+  );
 }
 
 /**
  * One 44 px borderless button with the control corner, showing the current choice, which opens a small ruled panel holding the native
  * radio group (Light, Dark, System). The arrow keys move the choice inside the group; choosing one
  * applies it and closes the panel. Escape or a click outside closes it and returns focus to the
- * button, and the new theme grows out of the button.
+ * button. The colours change at once, with no reveal and no transition.
  */
 export function ThemeToggle({ className }: { className?: string }) {
   const { theme, ready, setTheme } = useTheme();
@@ -110,7 +127,7 @@ export function ThemeToggle({ className }: { className?: string }) {
 
   const change = useCallback(
     (next: Theme) => {
-      setTheme(next, centreOf(button.current) ?? undefined);
+      switchWithoutTransitions(() => setTheme(next));
       if (!viaArrow.current) close(true);
       viaArrow.current = false;
     },
@@ -167,7 +184,7 @@ export function ThemeToggle({ className }: { className?: string }) {
         aria-controls={open ? panelId : undefined}
         onClick={() => setOpen((value) => !value)}
         className={cn(
-          // The same 44 x 44 frame as the phone Menu button: the 12 px control corner and no border. Hover
+          // The same 44 x 44 frame as the phone Menu button: the 10 px control corner and no border. Hover
           // and the open menu lay the wash (bg-accent) under it; the glyph is its only identity.
           "inline-flex size-11 items-center justify-center rounded-md bg-transparent text-foreground transition-colors",
           "hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",

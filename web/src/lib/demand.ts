@@ -31,10 +31,6 @@ export const PILOT_CONTACT = null as string | null;
  */
 export const PILOT_TERMS: string | null = null;
 
-/** Who we guess would pay, said as a guess right after "Who would pay is not known." */
-export const PAYER_GUESS =
-  "Our guess, not yet tested: the festival’s head of programming, once per edition, before set times go out.";
-
 /** What the readings must never be used for, on /method's limits and on the brief (screen and print). */
 export const DO_NOT_USE =
   "Do not use this to set fees, billing order or an artist’s worth, or for crowd capacity, safety or attendance.";

@@ -32,8 +32,8 @@ const PRINT_CSS = `
     --muted-foreground: #525864;
     --border: #d6d9de;
     --border-strong: #7b818a;
-    --primary: #ca2a02;
-    --destructive: #ca2a02;
+    --primary: #b61b75;
+    --destructive: #141821;
     --highlight: #c7dcfc;
     --highlight-foreground: #141821;
   }
@@ -83,9 +83,9 @@ export default function CheckPage() {
           }
         >
           <div className="max-w-5xl">
-            {/* The title says what the page is; no kicker repeats it. The sub-page step of the poster face
-                (the same size as /method's title), capped at 3rem so the tool, not the title, leads the page. */}
-            <h1 className="type-poster break-words" style={{ fontSize: "clamp(2.25rem, 1.5rem + 2.5vw, 3rem)" }}>
+            {/* The title says what the page is; no kicker repeats it. The one display step every page title
+                takes (the home page's and /method's too), with no size of its own. */}
+            <h1 className="type-poster break-words">
               {CHECK_COPY.title}
             </h1>
             <p className="mt-3 max-w-2xl text-base leading-relaxed sm:text-lg sm:leading-normal lg:max-w-none">{CHECK_COPY.lede}</p>

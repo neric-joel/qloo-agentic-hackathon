@@ -36,7 +36,7 @@ export function useOverlapPatternId(): string {
   return `cc-overlap-${useId().replace(/[^A-Za-z0-9_-]/g, "")}`;
 }
 
-/** marks' `OVERLAP`: one 1.5px vermilion line every 16px, a 2px card gap inside the bar's edge. */
+/** marks' `OVERLAP`: one 1.5px raspberry line every 16px, a 2px card gap inside the bar's edge. */
 const OVERLAP = { period: 16, stroke: 1.5, gap: 2 } as const;
 
 type Len = number | string;
@@ -155,9 +155,9 @@ export type BreakGeometry = {
   /** The time the two sets share, hatched on both lanes (rules 1, 2 and 5). */
   shared: BreakSpan | null;
   /**
-   * The vermilion bracket under the lanes: the shared time (rules 1, 2, 5), the gap between the sets
-   * (rule 3; start equals end when they meet), or the part of the set past the curfew (rule 4, unlabelled:
-   * the finding prints no overrun in minutes).
+   * The bracket under the lanes: the shared time (rules 1, 2, 5) in raspberry, or in ink the gap between
+   * the sets (rule 3; start equals end when they meet) or the part of the set past the curfew (rule 4,
+   * unlabelled: the finding prints no overrun in minutes).
    */
   cost: BreakSpan & { label: string | null };
   /** Rule 3: the changeover the gap falls under, from the first set's end, as a muted bracket over the lanes. */
@@ -284,9 +284,9 @@ export function breakGeometry(
   }
 }
 
-/** The hero's capsule: 12px tall, fully rounded. */
+/** The hero's bar: 12px tall, with the 6px mark corner, so each end is a half circle. */
 const BAR = 12;
-const RX = BAR / 2;
+const RX = 6;
 /** Bar top to bar top. */
 const PITCH = 18;
 /** The room a 13px label takes over the bars (rule 4): a 14px line and 2px clear of the first outline. */
@@ -322,7 +322,10 @@ function centredOn(x: number, words: string, top: number): CSSProperties {
   };
 }
 
-const VERMILION = { stroke: "var(--primary)", strokeWidth: 1, strokeLinecap: "round" } as const;
+/** The bracket under shared minutes: raspberry, the colour of shared time and only that. */
+const SHARED_LINE = { stroke: "var(--primary)", strokeWidth: 1, strokeLinecap: "round" } as const;
+/** The bracket under a gap that is too short or a set past the curfew: ink, as every other rule break. */
+const INK_LINE = { stroke: "var(--foreground)", strokeWidth: 1, strokeLinecap: "round" } as const;
 const RULE_LINE = { stroke: "var(--border-strong)", strokeWidth: 1, strokeLinecap: "round" } as const;
 /** The changeover the gap falls under: the rule, in the muted text colour, so it reads as a value, not scaffolding. */
 const MINIMUM_LINE = { stroke: "var(--muted-foreground)", strokeWidth: 1, strokeLinecap: "round" } as const;
@@ -330,14 +333,16 @@ const LABEL = "absolute font-mono text-[0.8125rem] whitespace-nowrap tabular-num
 
 /**
  * One rule break drawn in the hero's figure language, under the finding's row references: a lane per
- * cited row, each the hero's "now" capsule (12px, card fill, 1.5px ink outline) on one time axis, with
- * no clock ticks. Rules 1, 2 and 5 hatch the shared time on both lanes (`OverlapWindow`, as the hero)
- * and bracket it under the lower lane with "{N} min shared". Rule 3 brackets the gap in vermilion
- * ("{gap} min apart") under the lanes and the changeover it falls under in muted ("{changeover} min
- * changeover") over them, each label centred on its own bracket on its own line. Rule 4 draws the curfew as a border-strong rule with its clock above and an unlabelled
- * vermilion bracket under the part of the bar past it. Vermilion never touches ink: the brackets hang 4px
- * under the capsules and the hatch stays inside the window's card halo. The drawing repeats the finding
- * above it, so it is hidden from screen readers and from print, and holds no control.
+ * cited row, each the hero's "now" bar (12px, 6px corners, card fill, 1.5px ink outline) on one time
+ * axis, with no clock ticks. Rules 1, 2 and 5 hatch the shared time on both lanes (`OverlapWindow`, as
+ * the hero) and bracket it under the lower lane in raspberry with "{N} min shared": those breaks are
+ * shared minutes. Rule 3 brackets the gap in ink ("{gap} min apart") under the lanes and the changeover
+ * it falls under in muted ("{changeover} min changeover") over them, each label centred on its own
+ * bracket on its own line. Rule 4 draws the curfew as a border-strong rule with its clock above and an
+ * unlabelled ink bracket under the part of the bar past it. Raspberry never touches ink: the brackets
+ * hang 4px under the bars and the hatch stays inside the window's card halo. Every rect is a bar with
+ * its 6px corner or sits inside a bar's rounded clip. The drawing repeats the finding above it, so it is
+ * hidden from screen readers and from print, and holds no control.
  */
 export function BreakStrip({
   item,
@@ -366,6 +371,8 @@ export function BreakStrip({
 
   const left = x(cost.start);
   const right = x(cost.end);
+  // Raspberry only where the break is shared minutes (rules 1, 2 and 5); a gap or a curfew is ink.
+  const costLine = shared ? SHARED_LINE : INK_LINE;
 
   return (
     <div
@@ -434,13 +441,13 @@ export function BreakStrip({
           <g data-strip-cost="">
             {cost.end > cost.start ? (
               <>
-                <line x1={pct(left)} x2={pct(left)} y1={bracketTop + 0.5} y2={bracketTop + 5.5} {...VERMILION} />
-                <line x1={pct(left)} x2={pct(right)} y1={bracketTop + 5.5} y2={bracketTop + 5.5} {...VERMILION} />
-                <line x1={pct(right)} x2={pct(right)} y1={bracketTop + 0.5} y2={bracketTop + 5.5} {...VERMILION} />
+                <line x1={pct(left)} x2={pct(left)} y1={bracketTop + 0.5} y2={bracketTop + 5.5} {...costLine} />
+                <line x1={pct(left)} x2={pct(right)} y1={bracketTop + 5.5} y2={bracketTop + 5.5} {...costLine} />
+                <line x1={pct(right)} x2={pct(right)} y1={bracketTop + 0.5} y2={bracketTop + 5.5} {...costLine} />
               </>
             ) : (
               // The two sets meet: the gap is one 4px tick at the boundary.
-              <line x1={pct(left)} x2={pct(left)} y1={bracketTop + 1} y2={bracketTop + 5} {...VERMILION} />
+              <line x1={pct(left)} x2={pct(left)} y1={bracketTop + 1} y2={bracketTop + 5} {...costLine} />
             )}
           </g>
         </svg>
@@ -466,7 +473,7 @@ export function BreakStrip({
         {cost.label ? (
           <span
             data-strip-label="cost"
-            className={cn(LABEL, "leading-4 text-center text-primary")}
+            className={cn(LABEL, "leading-4 text-center", shared ? "text-primary" : "text-foreground")}
             style={centredOn((left + right) / 2, cost.label, bracketTop + 6)}
           >
             {cost.label}

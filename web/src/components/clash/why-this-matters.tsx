@@ -5,19 +5,17 @@ import type { CSSProperties, ReactNode } from "react";
 import { BySyntheticDay } from "@/components/site/synthetic-context";
 import { CHECK_LIVE } from "@/lib/check-flag";
 
-import { DEMAND, PAYER_GUESS, PILOT_CONTACT, PILOT_TERMS, type Demand } from "@/lib/demand";
+import { DEMAND, PILOT_CONTACT, PILOT_TERMS, type Demand } from "@/lib/demand";
 import { METHOD_FIGURES, formatPct, methodRow, numberWord, type MethodId } from "@/lib/method-figures";
 import { PUBLIC_SOURCES } from "@/lib/public-sources";
-import { PUBLIC_VOICES, type PublicVoice } from "@/lib/public-voices";
 import { cn } from "@/lib/utils";
 
-import { OverlapPattern, OverlapWindow, useOverlapPatternId } from "./marks";
 import { DISCLOSURE_ROW_CLASS, DISCLOSURE_SUMMARY_CLASS } from "./more-details";
 
 /** The anchor of the section, for links that point at it. */
 export const WHY_THIS_MATTERS_ID = "why-this-matters";
 
-/** A link in text: ink, with a 1px border-strong underline at offset 4px that turns ink on hover. Never vermilion. */
+/** A link in text: ink, with a 1px border-strong underline at offset 4px that turns ink on hover. Never raspberry. */
 const LINK =
   "font-semibold text-foreground underline decoration-border-strong decoration-1 underline-offset-4 hover:decoration-foreground";
 
@@ -110,8 +108,8 @@ function contactHref(contact: string): string {
 /**
  * The pilot offer as one unboxed editorial block: a 1px border-border rule across its top (a top rule, never a
  * left stripe), 24px of paper, then left-aligned text at most 68ch wide. From 1024px it sits in the findings' right
- * columns, under the voices and level with what is not known, so the offer is read beside "Who would pay is not
- * known." In order: the 16px label, the offer at body size (its success line closes on "One answer is not a
+ * columns, right under what is not known, so the offer is read after "Who would pay is not known." In order: the
+ * 16px label, the offer at body size (its success line closes on "One answer is not a
  * market."), then the way to /check first as a 44px text link with an arrow (never a button, so the viewport keeps
  * one primary action) and the contact in muted at body size, sharing a line from 640px with a middot between. With
  * no /check the contact leads, in ink. The offer is never set larger or heavier than "Who would pay is not known.".
@@ -171,16 +169,6 @@ function PilotOffer({ contact, terms }: { contact: string | null; terms: string 
 }
 
 /**
- * The complaint figure's scale: 0 to 120 minutes across its full width. It is not drawn (no axis line, ticks or
- * numbers), so the figure carries one scale, its own printed values; the accessible name states it.
- */
-const COMPLAINT_AXIS = 120;
-/** Where a number of minutes sits along the complaint figure, as a percentage of its width. */
-function minutesAt(minutes: number): string {
-  return `${Math.round((minutes / COMPLAINT_AXIS) * 100000) / 1000}%`;
-}
-
-/**
  * Said under the complaint finding, so no reader takes the complaints for a verdict on the day above: most are about
  * other festivals and days (a few name sets on the two published days, so "none" would not be true).
  */
@@ -207,100 +195,6 @@ export const COMPLAINT_SOURCES = (() => {
   return `They come from ${numberWord(threads)} Reddit threads and ${numberWord(articles)} press articles (${PRESS_OUTLETS.join(", ")}).`;
 })();
 
-/** The complaint figure's caption, built from the pair count. */
-export function complaintCaption(pairsVerified: number): string {
-  return `Overlap range and median across ${pairsVerified} verified pairs.`;
-}
-
-/**
- * The verified complaints' overlap as one figure, drawn from `METHOD_FIGURES.complaints` only, with one scale: its
- * own three printed values. Top to bottom: the median's label over its mark; one 16px capsule from the shortest to
- * the longest overlap, placed on an undrawn 0 to 120 minute scale (the accessible name states it), in the
- * shared-time notation (card fill, the vermilion hatch inside OverlapWindow's 2px card halo, then a 1px ink outline
- * on top, so no hatch pixel meets the ink); the median as a 2px ink mark 6px past the capsule above and below, on a
- * 6px card underlay of the same height, so a 2px card gap separates it from every hatch line; 4px under the capsule
- * the range ends, each under its own end; then the caption. No axis line, tick or axis number: a second scale under
- * the printed minutes read as two. Drawn final, with no motion.
- */
-function ComplaintFigure() {
-  const { pairsVerified, medianMinutes, rangeMinutes } = METHOD_FIGURES.complaints;
-  const [low, high] = rangeMinutes;
-  const patternId = useOverlapPatternId();
-  const clipId = `${patternId}-clip`;
-  const caption = complaintCaption(pairsVerified);
-  // The capsule's edge sits on a half pixel, so its 1px outline covers whole pixels: its outline box runs 6 to 23.
-  const bar = { x: minutesAt(low), y: 6.5, width: minutesAt(high - low), height: 16 };
-  // The median mark and its underlay run 6px past the outline box above and below.
-  const markHeight = bar.y - 0.5 + bar.height + 1 + 6;
-  const median = minutesAt(medianMinutes);
-  return (
-    <div
-      data-complaint-figure
-      role="img"
-      aria-label={`${caption} Range ${low} to ${high} minutes; median ${medianMinutes} minutes, on a 0 to ${COMPLAINT_AXIS} minute scale.`}
-      className="mt-5 w-full min-w-[18rem]"
-    >
-      <div className="relative mb-1 h-5">
-        <span
-          data-median-label
-          className="absolute bottom-0 -translate-x-1/2 text-[0.8125rem] leading-5 font-medium whitespace-nowrap text-foreground"
-          style={{ left: median }}
-        >
-          median <span className="font-mono tabular-nums">{medianMinutes}</span> min
-        </span>
-      </div>
-      <svg width="100%" height={markHeight} aria-hidden="true" focusable="false" className="block overflow-visible">
-        <defs>
-          <OverlapPattern id={patternId} />
-        </defs>
-        <OverlapWindow patternId={patternId} clipId={clipId} bar={bar} span={{ x: bar.x, width: bar.width }} />
-        <rect
-          data-median-underlay
-          x={median}
-          y={0}
-          width={6}
-          height={markHeight}
-          transform="translate(-3 0)"
-          fill="var(--card)"
-          shapeRendering="crispEdges"
-        />
-        <rect
-          data-capsule-outline
-          x={bar.x}
-          y={bar.y}
-          width={bar.width}
-          height={bar.height}
-          rx={bar.height / 2}
-          fill="none"
-          stroke="var(--foreground)"
-          strokeWidth={1}
-        />
-        <rect
-          data-median-mark
-          x={median}
-          y={0}
-          width={2}
-          height={markHeight}
-          transform="translate(-1 0)"
-          fill="var(--foreground)"
-          shapeRendering="crispEdges"
-        />
-      </svg>
-      <div className="relative mt-1 h-4 font-mono text-xs leading-4 whitespace-nowrap text-foreground tabular-nums">
-        <span data-range-end className="absolute top-0 -translate-x-1/2" style={{ left: minutesAt(low) }}>
-          {low} min
-        </span>
-        <span data-range-end className="absolute top-0 -translate-x-1/2" style={{ left: minutesAt(high) }}>
-          {high} min
-        </span>
-      </div>
-      <p data-complaint-caption className="mt-1 text-[0.8125rem] leading-5 text-muted-foreground">
-        {caption}
-      </p>
-    </div>
-  );
-}
-
 /** Short row labels for the figure; the full method names are on /method. */
 const FIGURE_LABELS: Record<MethodId, string> = {
   taste: "Taste overlap",
@@ -315,8 +209,8 @@ const FIGURE_ORDER: readonly MethodId[] = ["taste", "popularity", "genre", "rand
  * changing: popularity's longer bar is what shows it did better. Taste overlap is marked as the page's subject by its
  * semibold ink row label and its semibold ink value at the bar's end ("46.8%"), not by its fill. Genre tags and random are the comparator baselines, 6px bars in
  * muted ink centred on the same row line, so they read as reference marks rather than contenders. Every bar keeps
- * the one 0 to FIGURE_DOMAIN scale, so all four lengths stay comparable. No bar is vermilion or teal: vermilion
- * means shared time and its cost, and a red or teal taste bar read as the winner on a chart where popularity did
+ * the one 0 to FIGURE_DOMAIN scale, so all four lengths stay comparable. No bar is raspberry or teal: raspberry
+ * means shared time and its cost, and a coloured taste bar read as the winner on a chart where popularity did
  * better. The value beside each bar and its row label carry the figure, so no mark carries it alone.
  */
 const FIGURE_FILL: Record<MethodId, string> = {
@@ -402,8 +296,9 @@ function placeLabel(reached: number, threshold: number | undefined): LabelPlace 
  * border-strong; the optional `threshold` is a 1.5px SOLID ink line that spans the bars (solid, because dashed
  * means tested), with its label ("Bar we set: 60%") in 12px ink on a 24px row of its own above the plot,
  * right-aligned to the top of the line and set 10px above the row's foot (the line's top), so its foot clears the
- * taste overlap bar's top by 16px (10px plus the bar's 6px inset in its 28px lane) and no value label can meet it. Each bar is square at the 0 axis and round at its value
- * end (radius = half its height).
+ * taste overlap bar's top by 16px (10px plus the bar's 6px inset in its 28px lane) and no value label can meet it.
+ * Each bar is a mark with the same 6px corner at both ends (`rounded-bar`), so no bar has one square end; the 6px
+ * baselines are clamped to a round end.
  * Drawn on /method only; the home page states the two figures in one sentence instead.
  */
 export function BacktestBars({
@@ -471,7 +366,7 @@ export function BacktestBars({
                   role={name ? "img" : undefined}
                   aria-label={name}
                   aria-hidden={name ? undefined : true}
-                  className={cn("block shrink-0 rounded-r-bar", FIGURE_FILL[id])}
+                  className={cn("block shrink-0 rounded-bar", FIGURE_FILL[id])}
                   style={{ width: along(reached) }}
                 />
                 <span
@@ -501,96 +396,6 @@ export function BacktestBars({
           </span>
         ))}
       </div>
-    </div>
-  );
-}
-
-/** A voice's source links, printed as the attribution's own links after the name. */
-function VoiceLinks({ voice }: { voice: PublicVoice }) {
-  return (
-    <>
-      {voice.links.map((link, i) => (
-        <span key={link.href}>
-          {i > 0 ? "; " : ""}
-          <a href={link.href} target="_blank" rel="noopener noreferrer" className={LINK}>
-            {link.label}
-          </a>
-        </span>
-      ))}
-    </>
-  );
-}
-
-/** How many voices print in the open; the rest wait in one disclosure. */
-const VOICES_SHOWN = 1;
-
-/** What the public voices show and what they leave untested, word for word wherever it is printed. */
-export const VOICES_LIMIT =
-  "These sources show that clashes are a known complaint. Whether programmers would use or pay for this has not been tested.";
-
-/** Said in each voice's attribution line: the statement above it is our paraphrase, not their words. */
-export const OUR_SUMMARY = "(our summary)";
-
-/**
- * The one disclosure's summary, on one line at 390 px: how many more statements it holds (the section's heading
- * already says whose), and the sentence that limits what they all show.
- */
-export function moreVoicesSummary(count: number): string {
-  if (count === 0) return "What these sources show";
-  const word = numberWord(count);
-  const noun = count === 1 ? "statement" : "statements";
-  return `${word.charAt(0).toUpperCase()}${word.slice(1)} more ${noun}, and what they show`;
-}
-
-/** A voice's attribution line: the name, "(our summary)", then the dated source links, 13px muted. */
-function VoiceAttribution({ voice, className }: { voice: PublicVoice; className?: string }) {
-  return (
-    <p className={cn("text-[0.8125rem] leading-snug text-muted-foreground", className)}>
-      <span className="font-semibold text-foreground">{voice.who}</span> {OUR_SUMMARY}
-      {" · "}
-      <VoiceLinks voice={voice} />
-    </p>
-  );
-}
-
-/**
- * What programmers have said in public: the first statement open, 18px at 1.55, 500 weight, in ink, at most 62ch,
- * with no stripe, mark, italic, indent or quotation marks (they are paraphrases, not words said verbatim, and each
- * attribution says "(our summary)"). The name and the dated source links sit on their own line under it in 13px
- * muted. One closed disclosure, named for what it holds, carries the other statements (each with its attribution
- * and links) and the sentence that limits what they all show.
- */
-function PublicVoices() {
-  const shown = PUBLIC_VOICES.slice(0, VOICES_SHOWN);
-  const rest = PUBLIC_VOICES.slice(VOICES_SHOWN);
-  return (
-    <div>
-      <h3 className={CONCLUSION}>What programmers have said in public</h3>
-      <ul className="mt-1">
-        {shown.map((voice) => (
-          <li key={voice.who} data-voice className="py-4">
-            <p className="max-w-[62ch] text-[1.125rem] leading-[1.55] font-medium text-foreground">{voice.said}</p>
-            <VoiceAttribution voice={voice} className="mt-2" />
-          </li>
-        ))}
-      </ul>
-      <Fold className="max-w-[62ch]" summary={moreVoicesSummary(rest.length)}>
-        <div className="pb-3">
-          {rest.length > 0 ? (
-            <ul className="space-y-3">
-              {rest.map((voice) => (
-                <li key={voice.who} data-voice-more className="max-w-prose">
-                  <p>{voice.said}</p>
-                  <VoiceAttribution voice={voice} className="mt-1" />
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          <p data-voices-limit className={cn("text-[0.8125rem] text-muted-foreground", rest.length > 0 && "mt-3")}>
-            {VOICES_LIMIT}
-          </p>
-        </div>
-      </Fold>
     </div>
   );
 }
@@ -646,18 +451,16 @@ export function FailedTestNote({
 /**
  * What is public about the problem and what is not known, right after the taste section and before the board,
  * open on the paper with no rule above it and no card around it. From 1024px it is a 12-column composition: on
- * the left (5 columns) the problem, its finding set large at 20px as the column's heading with the overlap figure
- * under it, then 40px lower what is not known; on the right (7 columns) the first public statement with the others
- * in one fold, then 40px lower the pilot offer, an unboxed block under a top rule, level with what is not known.
- * Each column stacks on its own, so neither leaves a hole; the section has no named surface. Below 1024px it is one
- * column with 40px between blocks: problem, voices, what is not known, pilot. The other findings open with their
- * conclusion (an existing heading, 18px semibold); the rest sits in its text toggle. The caveats,
- * the competitor search's "absence of evidence only" (the first line under its heading, at body size, in ink),
- * what is not known, the pilot offer and every source link stay in the open. The complaint counts are read from
- * `METHOD_FIGURES`; the failed test they were scored in is `FailedTestNote`, in the taste section, and the chart
- * is on /method. The voices are linked
- * paraphrases and problem evidence only, printed with the sentence that says so. Server-rendered; nothing here
- * needs JavaScript.
+ * the left (5 columns) the problem, its finding set large at 20px as the column's heading; on the right (7
+ * columns) what is not known, then the pilot offer, an unboxed block under a top rule set 24px below it (24px of
+ * paper on each side of the rule), so the offer is read right after "Who would pay is not known.". Below 1024px it
+ * is one column with 40px between blocks:
+ * problem, what is not known, pilot. The other finding opens with its conclusion (an existing heading, 18px
+ * semibold); the rest sits in its text toggle. The caveats, the competitor search's "absence of evidence only"
+ * (the first line under its heading, at body size, in ink), what is not known, the pilot offer and every source
+ * link stay in the open. The complaint counts are read from `METHOD_FIGURES`; the failed test they were scored in
+ * is `FailedTestNote`, in the taste section, and the overlap figures and the chart are on /method. Server-rendered;
+ * nothing here needs JavaScript.
  */
 export function WhyThisMatters({
   demand = DEMAND,
@@ -673,11 +476,12 @@ export function WhyThisMatters({
   const { complaints } = METHOD_FIGURES;
   return (
     <section aria-labelledby="why-this-matters-heading" id={WHY_THIS_MATTERS_ID}>
-      <div className="container-page py-16 lg:py-20">
+      {/* 64px under the last block from 1024px too (the next section's own top padding keeps the gap). */}
+      <div className="container-page py-16 lg:pt-20">
         <h2 id="why-this-matters-heading" className="type-title">
           Who has complained, and what nobody has tested
         </h2>
-        <div className="mt-8 grid items-start gap-y-10 text-[0.9375rem] leading-[1.55] lg:grid-cols-12 lg:grid-rows-[auto_auto_auto] lg:gap-x-12 lg:gap-y-0">
+        <div className="mt-8 grid items-start gap-y-10 text-[0.9375rem] leading-[1.55] lg:grid-cols-12 lg:gap-x-12 lg:gap-y-6">
           <div data-why-col="problem" className="min-w-0 lg:col-span-5 lg:row-span-2 lg:row-start-1">
             {/* The finding is the column's heading: the conclusion itself, set at 20px, 500 weight, in ink. */}
             <h3 data-why-finding className="text-xl leading-snug font-medium text-foreground">
@@ -688,25 +492,14 @@ export function WhyThisMatters({
             <p data-why-sources className="mt-2">
               {COMPLAINT_SOURCES} <span data-why-elsewhere className="text-muted-foreground">{COMPLAINTS_ELSEWHERE}</span>
             </p>
-            <ComplaintFigure />
-            <Fold
-              className="mt-2"
-              summary={`${complaints.pairsVerified} pairs, median ${complaints.medianMinutes} minutes, and how the lists lean`}
-            >
+            <Fold className="mt-2" summary={`How the lists lean (${complaints.pairsVerified} verified pairs)`}>
               <p className="pb-3">Press lists lean toward headliners, which flatters any taste-based method.</p>
             </Fold>
           </div>
 
-          <div data-why-col="voices" className="min-w-0 lg:col-span-7 lg:col-start-6 lg:row-start-1">
-            <PublicVoices />
-          </div>
-
-          <div data-why-col="unknown" className="min-w-0 lg:col-span-5 lg:col-start-1 lg:row-start-3 lg:mt-10">
+          <div data-why-col="unknown" className="min-w-0 lg:col-span-7 lg:col-start-6 lg:row-start-1">
             <h3 className={CONCLUSION}>No scheduler we found reads audience overlap</h3>
-            <p className="mt-2">
-              Our search, October 2026: absence of evidence only. Who would pay is not known.{" "}
-              <span data-payer-guess>{PAYER_GUESS}</span>
-            </p>
+            <p className="mt-2">Our search, October 2026: absence of evidence only. Who would pay is not known.</p>
             <Fold className="mt-2" summary="Festival Pro and Lineup Ninja">
               <p className="pb-3">
                 Both check double bookings and changeovers. We found none that reads audience overlap (our search,
@@ -716,8 +509,8 @@ export function WhyThisMatters({
             <DemandLine demand={demand} />
           </div>
 
-          {/* The pilot, last in reading order; from 1024px under the voices, level with what is not known. */}
-          <div data-why-col="pilot" className="min-w-0 lg:col-span-7 lg:col-start-6 lg:row-span-2 lg:row-start-2 lg:mt-10">
+          {/* The pilot, last in reading order; from 1024px under what is not known, beside the problem. */}
+          <div data-why-col="pilot" className="min-w-0 lg:col-span-7 lg:col-start-6 lg:row-start-2">
             <PilotOffer contact={contact} terms={terms} />
           </div>
         </div>

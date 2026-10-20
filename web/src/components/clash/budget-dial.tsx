@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 import { ProvenanceChip } from "@/components/kernel";
@@ -13,7 +13,6 @@ import {
   rangePosition,
 } from "@/lib/clash-budget";
 import type { BaselineStats } from "@/lib/preset";
-import { useReveal, type RevealPhase } from "@/lib/use-in-view";
 
 /**
  * The figure's rows, in px; x runs in percent of the column's width. It speaks the home page's axis
@@ -27,7 +26,10 @@ const AXIS_Y = 26;
 const RULER_H = 56;
 /** The axis's end ticks, 6px tall, centred on it. */
 const END_TICK = 6;
-/** The band: 8px of muted fill (information only), and 12px border-strong ticks at its two ends. */
+/**
+ * The band: 8px of muted fill (information only), its corners a mark's, clamped to half its height so
+ * its ends are round, and 12px border-strong ticks at its two ends.
+ */
 const BAND_H = 8;
 const BAND_TICK = 12;
 /** The span from 100 to the reading: a 3px line on the axis. */
@@ -80,52 +82,21 @@ type BudgetDialProps = {
 
 const ANY_REACH = describeReach({ windowMinutes: null, neighbourStages: false, locked: 0 });
 
-/** The settle plays once per page load, the first time a scale scrolls into view. */
-let settled = false;
-
-/** How long the big figure takes to count from 100 to the reading. */
-const SETTLE_MS = 720;
-
 /** The index as the hero's decision card prints it: one decimal. Display precision only. */
 function oneDecimal(value: number): number {
   return Number(value.toFixed(1));
 }
 
 /**
- * The big figure while the scale settles: 100 on the start frame, then counting to the reading
- * (eased out). Before and after, and in the server HTML, it is the reading itself.
- */
-function useSettleCount(target: number, phase: RevealPhase): number {
-  const [count, setCount] = useState({ value: 100, running: true });
-  useEffect(() => {
-    if (phase !== "play") return;
-    let frame = 0;
-    let begin = 0;
-    const tick = (now: number) => {
-      if (begin === 0) begin = now;
-      const t = Math.min(1, (now - begin) / SETTLE_MS);
-      const eased = 1 - Math.pow(1 - t, 3);
-      setCount({ value: oneDecimal(100 + (target - 100) * eased), running: t < 1 });
-      if (t < 1) frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [phase, target]);
-  return phase === "wait" || (phase === "play" && count.running) ? count.value : target;
-}
-
-/**
  * The Clash Budget Index on a horizontal reference scale, like the rule along the foot of a printed
  * running order, drawn in the home page's axis language: the middle 80% of random valid timetables of
  * this lineup as a band on the axis between two end ticks, their average at the tall ink 100 tick, and an
- * ink dot at this timetable. Above 100 the span from 100 to the reading is vermilion, because it is the
+ * ink dot at this timetable. Above 100 the span from 100 to the reading is raspberry, because it is the
  * excess cost; below 100 it is a grey graphic. Every reading is also printed, so nothing depends on the
  * colours.
  *
- * The first time the scale scrolls into view the span draws out from 100 and the figure counts up
- * (M2); the dot is drawn at its reading and never moves. Everything is at its reading in the
- * server HTML, under reduced motion, in print and when it is already on screen at load; the title
- * never changes.
+ * Everything is drawn at its reading from the first paint: nothing moves or counts when the scale
+ * scrolls into view, and the title never changes.
  */
 export function BudgetDial({
   index,
@@ -137,13 +108,6 @@ export function BudgetDial({
 }: BudgetDialProps) {
   const titleId = useId();
   const descId = useId();
-  const figureRef = useRef<HTMLElement | null>(null);
-  const [fresh] = useState(() => !settled);
-  const phase = useReveal(figureRef, { threshold: 0.6, enabled: fresh && index !== null });
-  useEffect(() => {
-    if (phase === "play") settled = true;
-  }, [phase]);
-  const shown = useSettleCount(index === null ? 100 : oneDecimal(index), phase);
 
   if (index === null) {
     return (
@@ -169,9 +133,6 @@ export function BudgetDial({
   const reading = oneDecimal(index);
   const printed = reading.toFixed(1);
   const position = rangePosition(index, p10, p90);
-  const moving = phase !== "still";
-  // The gap line runs from its lower end, so a reading under 100 draws from the line's end.
-  const gapFrom = { "--draw-from": index >= 100 ? 1 : -1 } as CSSProperties;
   // Read from the printed positions, so the gap holds for the x the SVG is given.
   const nudge = readingNudge((pct(index) - pct(100)) / 100);
   // Rounded away from 100, never toward it, so the 2px gap is never shaved.
@@ -200,8 +161,8 @@ export function BudgetDial({
       </desc>
 
       {/* The band first, so the axis runs through it: the middle 80% of random timetables as an 8px muted
-          fill (information only, 1.11 / 1.32 on paper), its extent carried by the two 12px border-strong
-          ticks drawn with the axis. */}
+          fill (information only, 1.11 / 1.32 on paper) with round ends, its extent carried by the two 12px
+          border-strong ticks drawn with the axis. */}
       {band ? (
         <rect
           data-band=""
@@ -209,6 +170,7 @@ export function BudgetDial({
           y={AXIS_Y - BAND_H / 2}
           width={`${Math.round(Math.abs(at(band.high) - at(band.low)) * 1000) / 10}%`}
           height={BAND_H}
+          rx={BAND_H / 2}
           fill="var(--muted)"
         />
       ) : null}
@@ -251,7 +213,7 @@ export function BudgetDial({
             />
           ))
         : null}
-      {/* The span from 100 to the reading: vermilion only above 100 (the excess), ink-3 at or under it. */}
+      {/* The span from 100 to the reading: raspberry only above 100 (the excess), ink-3 at or under it. */}
       <line
         data-span=""
         x1={x(Math.min(index, 100))}
@@ -260,12 +222,9 @@ export function BudgetDial({
         y2={AXIS_Y}
         stroke={index > 100 ? "var(--primary)" : "var(--ink-3)"}
         strokeWidth={SPAN_W}
-        pathLength={1}
-        className="cc-dial-gap"
-        style={gapFrom}
       />
       {/* The 100 tick, 2px of ink, on a 6px paper underlay of its own height drawn after the band and the
-          span, so a 2px paper gap always separates the ink from the vermilion span and from the band. */}
+          span, so a 2px paper gap always separates the ink from the raspberry span and from the band. */}
       <line
         data-underlay="ref"
         x1={x(100)}
@@ -318,7 +277,7 @@ export function BudgetDial({
   );
 
   return (
-    <figure ref={figureRef} className={className} data-reveal={moving ? phase : undefined}>
+    <figure className={className}>
       {/* The source rides on the label line after a middle dot as a plain muted word, not a boxed stamp. */}
       <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
         Clash Budget Index{" "}
@@ -330,16 +289,7 @@ export function BudgetDial({
 
       <div className="mt-3 flex items-end gap-x-4 sm:gap-x-5">
         {/* The figure at h2 scale in the condensed title face (2.25rem/1, tabular), not a display numeral. */}
-        <p className="type-numeral shrink-0 text-[2.25rem] leading-none">
-          {moving && shown !== reading ? (
-            <>
-              <span aria-hidden="true">{shown.toFixed(1)}</span>
-              <span className="sr-only">{printed}</span>
-            </>
-          ) : (
-            printed
-          )}
-        </p>
+        <p className="type-numeral shrink-0 text-[2.25rem] leading-none">{printed}</p>
         {compact ? null : (
           <div className="min-w-0 pb-1">
             <p className="text-sm leading-snug font-semibold">{describeVsRandom(index, synthetic)}.</p>

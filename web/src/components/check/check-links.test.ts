@@ -57,6 +57,9 @@ describe("the check links follow the flag", () => {
     expect(checkLabels).toEqual(["Check a draft grid", "Check a draft grid"]);
     expect(header).not.toMatch(/>Check<|>Method</);
     expect(label(hero)).toBe("Paste your own draft grid");
+    // One copy in the hero at every width: it sits in the decision group, after Keep's confirmation room.
+    expect(hero.match(/href="\/check"/g)).toHaveLength(1);
+    expect(hero.indexOf('href="/check"')).toBeGreaterThan(hero.indexOf("data-hero-group"));
     expect(label(footer)).toBe("Check a draft grid");
     for (const html of [header, hero, footer]) {
       expect(html).not.toContain("Check a grid");

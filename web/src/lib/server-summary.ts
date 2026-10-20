@@ -15,9 +15,10 @@ import {
   formatShare,
   topClashes,
 } from "./clashes";
-import { buildDecisionCopy, decisionPath, parseDecision, type Decision, type DecisionCopy } from "./decision";
+import { buildDayGraph, type DayGraphModel } from "./day-graph";
+import { buildDecisionCopy, decisionDay, decisionPath, parseDecision, type Decision, type DecisionCopy } from "./decision";
 import { pluralize } from "./format";
-import { parsePreset, parsePresetList, type Preset } from "./preset";
+import { parsePreset, parsePresetList, type Preset, type PresetSummary } from "./preset";
 
 /** How many of the day's costliest clashes the first page lists. */
 export const SUMMARY_CLASHES = 5;
@@ -65,6 +66,13 @@ export type ServerSummary = {
   decision: DecisionCopy | null;
   /** The route's answer behind it, so the interactive page can show the same card without asking again. */
   decisionData: Decision | null;
+  /**
+   * The hero's drawing of the decision's day (`buildDayGraph`), built as the interactive page builds it, so
+   * the server HTML is its final frame; null when the day has no sets.
+   */
+  dayGraph: DayGraphModel | null;
+  /** The preset list the server read, in its order, so the fallback draws the same Festival day picker. */
+  presets: readonly PresetSummary[];
 };
 
 /**
@@ -114,7 +122,11 @@ function describeDay(preset: Preset, day: number, index: number | null, clashes:
 }
 
 /** The first page's figures for a preset, on the first day that has sets (the day the page opens on). */
-export function summarize(preset: Preset, decision: Decision | null = null): ServerSummary {
+export function summarize(
+  preset: Preset,
+  decision: Decision | null = null,
+  presets: readonly PresetSummary[] = [],
+): ServerSummary {
   const day = daysWithSets(preset)[0] ?? 0;
   const raw = preset.report.metrics.clash_budget_index;
   const index = raw === null || !Number.isFinite(raw) ? null : Math.round(raw);
@@ -138,6 +150,8 @@ export function summarize(preset: Preset, decision: Decision | null = null): Ser
     description: describeDay(preset, day, index, clashes),
     decision: buildDecisionCopy(preset, decision),
     decisionData: decision,
+    dayGraph: buildDayGraph(preset, decision, decision?.day ?? decisionDay(preset)),
+    presets,
   };
 }
 
@@ -250,7 +264,7 @@ export async function loadServerSummary(
       getJson(fetcher, `${backend}/api/presets/${encodeURIComponent(id)}`, timeoutMs).then(parsePreset),
       loadDecision(fetcher, backend, id, timeoutMs),
     ]);
-    return summarize(preset, decision);
+    return summarize(preset, decision, list);
   } catch {
     return null;
   }

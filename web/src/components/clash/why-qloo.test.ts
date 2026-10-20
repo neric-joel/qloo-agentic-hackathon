@@ -14,13 +14,16 @@ import {
   drawGloss,
   figureScale,
   NOT_AVAILABLE,
+  pairLine,
   QLOO_CHANGES_LINE,
   READINGS_CAPTION,
   READINGS_CAPTION_SYNTHETIC,
   rankX,
   readingText,
+  sharedCount,
   TASTE_CHANGES_LINE_SYNTHETIC,
   TasteSection,
+  tasteHeading,
   tasteVerdict,
   threeReadings,
   WHAT_QLOO_ID,
@@ -102,8 +105,10 @@ describe("threeReadings", () => {
     const readings = threeReadings(lenses(), PAIRS, "four", "three");
     expect(readings.taste).toEqual({ rank: 2, of: 40 });
     expect(readings.draw).toEqual({ rank: 2, of: 40 });
-    // A finding, not a shrug: taste agrees with time and draw, at the shared place.
-    expect(tasteVerdict(readings)).toBe("Taste agrees with time and draw: #2 either way.");
+    // A finding, not a shrug, said of taste alone: minutes alone may rank the pair elsewhere (#2 of 4 here, and on a
+    // published day #5 against #1), so nothing says time alone agrees.
+    expect(tasteVerdict(readings)).toBe("Adding taste leaves this pair at #2.");
+    expect(tasteVerdict(readings)).not.toMatch(/agrees|either way/);
   });
 
   it("glosses draw once where the card first says it: Qloo popularity, or invented popularity on the invented day", () => {
@@ -117,8 +122,9 @@ describe("threeReadings", () => {
     expect(tasteVerdict(moved, drawGloss(true))).toBe(
       "Time alone ranks this pair #3, time and draw (invented popularity) #7, with taste #1.",
     );
-    expect(tasteVerdict(same, drawGloss(false))).toBe("Taste agrees with time and draw (Qloo popularity): #2 either way.");
-    expect(tasteVerdict(same, drawGloss(true))).toBe("Taste agrees with time and draw (invented popularity): #2 either way.");
+    // The equal branch names no reading but taste, so it carries no gloss and no source on either day.
+    expect(tasteVerdict(same, drawGloss(false))).toBe("Adding taste leaves this pair at #2.");
+    expect(tasteVerdict(same, drawGloss(true))).toBe("Adding taste leaves this pair at #2.");
     expect(tasteVerdict(same, drawGloss(true))).not.toMatch(/Qloo/);
   });
 
@@ -155,6 +161,89 @@ describe("threeReadings", () => {
   it("prints the bare place when an older backend sends no count", () => {
     const readings = threeReadings(lenses({ priced_with_taste: undefined, priced_without_taste: undefined }), PAIRS, "one", "two");
     expect(readingText(readings.taste)).toBe("#1");
+  });
+});
+
+describe("tasteHeading", () => {
+  // Readings shaped like the two published days (Glastonbury: time alone #23 tied with 18, popularity #18, taste
+  // #1; Riot Fest: time alone #5 tied with 3, popularity #1, taste #1); the numbers are typed only for this test.
+  const MOVED = { time: { rank: 23, of: 68, tied: 18 }, draw: { rank: 18, of: 68 }, taste: { rank: 1, of: 68 } };
+  const STILL = { time: { rank: 5, of: 47, tied: 3 }, draw: { rank: 1, of: 47 }, taste: { rank: 1, of: 47 } };
+
+  it("says what adding taste did, from the popularity rung to the taste rung, never from minutes alone", () => {
+    expect(tasteHeading(MOVED)).toBe("Adding taste moves this pair from #18 to #1");
+    // Draw made the first step (time alone puts the pair 23rd, popularity 18th), so the heading never credits taste with it.
+    expect(tasteHeading(MOVED)).not.toContain("#23");
+    expect(tasteHeading(STILL)).toBe("Adding taste leaves this pair at #1");
+    expect(tasteHeading(threeReadings(lenses(), PAIRS, "one", "two"))).toBe("Adding taste moves this pair from #7 to #1");
+    expect(tasteHeading(threeReadings(lenses(), PAIRS, "three", "four"))).toBe("Adding taste leaves this pair at #2");
+    // A heading, so no full stop; the same words as the verdict's equal branch.
+    for (const heading of [tasteHeading(MOVED), tasteHeading(STILL)]) expect(heading).not.toMatch(/\.$/);
+    expect(`${tasteHeading(STILL)}.`).toBe(tasteVerdict(STILL));
+    for (const heading of [tasteHeading(MOVED), tasteHeading(STILL)]) {
+      // No sentence says time alone agrees, none credits Qloo with the app's rank, and none starts from minutes alone.
+      expect(heading).not.toMatch(/agrees|either way|With Qloo|#23/);
+    }
+  });
+
+  it("falls back to the block's name, never a guess, when a rung has no figure", () => {
+    expect(tasteHeading({ draw: undefined, taste: { rank: 1, of: 68 } })).toBe("What Qloo changes");
+    expect(tasteHeading({ draw: null, taste: { rank: 1, of: 68 } })).toBe("What Qloo changes");
+    expect(tasteHeading({ draw: undefined, taste: undefined }, true)).toBe("What taste changes");
+  });
+
+  it("keeps the limit for the move up in its own line, the same words on both kinds of day", () => {
+    expect(QLOO_CHANGES_LINE).toBe("This does not prove #1 is the right clash to move.");
+    expect(TASTE_CHANGES_LINE_SYNTHETIC).toBe(QLOO_CHANGES_LINE);
+    expect(changesLine(MOVED)).toBe(QLOO_CHANGES_LINE);
+    expect(changesLine(MOVED, true)).toBe(TASTE_CHANGES_LINE_SYNTHETIC);
+  });
+});
+
+describe("pairLine and sharedCount", () => {
+  it("prints the count only when every placed reading ranks that many clashes", () => {
+    expect(sharedCount([{ rank: 23, of: 68, tied: 18 }, { rank: 18, of: 68 }, { rank: 1, of: 68 }])).toBe(68);
+    // One rung counts differently: no count, so no sentence claims a denominator the ladder does not share.
+    expect(sharedCount([{ rank: 3, of: 4, tied: 1 }, { rank: 7, of: 40 }, { rank: 1, of: 40 }])).toBeNull();
+    // Only the readings the figure places are compared; with none placed there is no count.
+    expect(sharedCount([{ rank: 2, of: 68 }, null, undefined])).toBe(68);
+    expect(sharedCount([undefined, null, { rank: 1 }])).toBeNull();
+    expect(pairLine("Act One", "Act Two", 45, [{ rank: 23, of: 68, tied: 18 }, { rank: 18, of: 68 }, { rank: 1, of: 68 }])).toBe(
+      "Act One × Act Two, 45 min shared, ranked three ways among the day’s 68 scored clashes.",
+    );
+    expect(pairLine("Act One", "Act Two", 45, [{ rank: 3, of: 4, tied: 1 }, { rank: 7, of: 40 }, { rank: 1, of: 40 }])).toBe(
+      "Act One × Act Two, 45 min shared, ranked three ways.",
+    );
+    expect(pairLine("Act One", "Act Two", null, [undefined, undefined, undefined])).toBe("Act One × Act Two, ranked three ways.");
+  });
+
+  it("prints the count in the section only when it equals the ladder's own \"of\" on every rung", () => {
+    // Invented: the day's 4 concurrent pairs, and lens counts that agree (4) or do not (40).
+    const agree = lenses({
+      priced_with_taste: 4,
+      priced_without_taste: 4,
+      with_taste: [{ a: "Act One", b: "Act Two", a_id: "one", b_id: "two", rank: 1, rank_without_taste: 3 }],
+    });
+    const render = (value: Lenses) =>
+      text(
+        renderToStaticMarkup(
+          createElement(TasteSection, {
+            clash: { aId: "one", bId: "two", aName: "Act One", bName: "Act Two" },
+            lenses: value,
+            pairs: PAIRS,
+            twins: [],
+            acts: [],
+            ranked: [],
+            onOpen: () => {},
+          }),
+        ),
+      );
+    const agreed = render(agree);
+    expect(agreed).toContain("Act One × Act Two, 45 min shared, ranked three ways among the day’s 4 scored clashes.");
+    for (const of of ["#3 of 4", "#1 of 4"]) expect(agreed).toContain(of);
+    const differ = render(lenses());
+    expect(differ).toContain("Act One × Act Two, 45 min shared, ranked three ways.");
+    expect(differ).not.toContain("scored clashes");
   });
 });
 
@@ -195,21 +284,20 @@ describe("WhatQlooChanges", () => {
     expect(html).toContain(`id="${WHAT_QLOO_ID}"`);
     const plain = text(html);
     const order = [
-      "What Qloo changes",
-      "Same 45-minute clash. Same timetable.",
-      "Act One and Act Two",
-      "Time only Minutes shared #3 of 4 tied with 1 other",
-      "Time + draw Draw is Qloo popularity, 0 to 100 #7 of 40",
-      "Time + draw + Qloo taste Taste overlap added: the index used here #1 of 40",
+      "Adding taste moves this pair from #7 to #1",
+      "Act One × Act Two, 45 min shared, ranked three ways.",
+      "Time alone Minutes shared #3 of 4 tied with 1 other",
+      "Time + Qloo popularity Draw is Qloo popularity, 0 to 100 #7 of 40",
+      "+ taste overlap from Qloo data Taste overlap added: the index used here #1 of 40",
       QLOO_CHANGES_LINE,
     ].map((part) => plain.indexOf(part));
     order.forEach((at, i) => {
       expect(at, `part ${i}`).toBeGreaterThan(-1);
       if (i > 0) expect(at).toBeGreaterThan(order[i - 1]);
     });
-    expect(QLOO_CHANGES_LINE).toBe(
-      "Qloo changes which clash rises to the top. It does not prove #1 is the right clash to move.",
-    );
+    expect(QLOO_CHANGES_LINE).toBe("This does not prove #1 is the right clash to move.");
+    // No kicker over the heading (round 34): the jump link keeps the block's name.
+    expect(plain).not.toContain("What Qloo changes");
     // The claim carries its own limit, so the caption is not repeated; no invented-day words on a real day.
     expect(plain).not.toContain(READINGS_CAPTION);
     expect(plain).not.toMatch(/invented/i);
@@ -258,7 +346,7 @@ describe("WhatQlooChanges", () => {
     expect(row("draw")).toContain(">#7</span>");
     expect(row("taste")).toMatch(/>#1<\/span> <span[^>]*>of 40<\/span>/);
     // The tie stays, under its rank.
-    expect(text(row("time"))).toBe("Time only Minutes shared #3 of 4 tied with 1 other");
+    expect(text(row("time"))).toBe("Time alone Minutes shared #3 of 4 tied with 1 other");
   });
 
   it("keeps each row's own count beside its rank, and ends a shorter reading with a tick at its own last place", () => {
@@ -311,11 +399,36 @@ describe("WhatQlooChanges", () => {
     const late = lenses({
       with_taste: [{ a: "Act One", b: "Act Two", a_id: "one", b_id: "two", rank: 35, rank_without_taste: 7 }],
     });
-    const { row } = figure(render({ aId: "one", bId: "two", lenses: late }));
+    const { row, at } = figure(render({ aId: "one", bId: "two", lenses: late }));
     expect(row("taste")).toMatch(/data-at="[^"]+" data-flip=""/);
-    expect(row("taste")).toMatch(/ml-auto items-end text-right" style="margin-right:calc\([\d.]+% \+ 14px\)/);
+    expect(at(row("taste"))).toBe(34 / 39);
+    // From 640px the flipped place ends 14px left of its (larger) marker, and keeps to the track left of it.
+    expect(row("taste")).toContain(
+      `class="flex w-max flex-col items-end text-right sm:max-w-(--room) sm:mr-(--place) sm:ml-auto" style="--place:calc(${100 - (34 / 39) * 100}% + 14px);--room:calc(${(34 / 39) * 100}% - 14px)"`,
+    );
     expect(row("draw")).not.toContain("data-flip");
-    expect(row("draw")).toMatch(/style="margin-left:calc\([\d.]+% \+ 12px\)/);
+    // The others start 12px right of their marker, with the rest of the track for room.
+    expect(row("draw")).toContain(
+      `class="flex w-max flex-col items-end text-right sm:max-w-(--room) sm:ml-(--place) sm:items-start sm:text-left" style="--place:calc(${(6 / 39) * 100}% + 12px);--room:calc(${(1 - 6 / 39) * 100}% - 12px)"`,
+    );
+  });
+
+  it("ends the label's line with the place on a phone, the axis full width under both, and from 640px sets the place over its marker", () => {
+    const { row } = figure(render({ aId: "one", bId: "two" }));
+    for (const key of ["time", "draw", "taste"]) {
+      // Phone: two columns, the label and its place, both from the row's top; the axis spans both, 8px under them,
+      // inset 8px so the end dots stay on the track. From 640px: the label (13rem) spans the place and the axis
+      // beside it, all three on the axis's bottom edge.
+      expect(row(key), key).toMatch(
+        /^<li data-reading="\w+" class="grid py-3 first:pt-0 sm:grid-cols-\[13rem_minmax\(0,1fr\)\] sm:items-end sm:gap-x-6 sm:py-4 sm:first:pt-0 grid-cols-\[minmax\(0,1fr\)_auto\] items-start gap-x-4 gap-y-2 sm:grid-rows-\[1fr_auto\]"><div class="min-w-0 sm:row-span-2">/,
+      );
+      expect(row(key), key).toMatch(/<div class="min-w-0 sm:px-2" data-at="[^"]+"( data-flip="")?><div class="flex w-max flex-col items-end text-right /);
+      expect(row(key), key).toContain('<div aria-hidden="true" data-axis="" class="relative col-span-2 mx-2 h-2 sm:col-span-1 sm:col-start-2">');
+    }
+    // A reading with no place keeps the stacked row and its text.
+    const { row: partial } = figure(render({ aId: "one", bId: "two", lenses: null }));
+    expect(partial("draw")).toMatch(/^<li data-reading="draw" class="grid py-3 first:pt-0 [^"]*gap-y-3"><div class="min-w-0">/);
+    expect(partial("draw")).not.toContain("data-axis");
   });
 
   it("draws no axis when no reading has a place, and keeps the rows as text", () => {
@@ -325,13 +438,13 @@ describe("WhatQlooChanges", () => {
     expect(fig).not.toContain("data-marker");
     expect(fig.match(/<li data-reading=/g)).toHaveLength(3);
     expect(text(fig)).toBe(
-      "Time only Minutes shared not available Time + draw Draw is Qloo popularity, 0 to 100 not available Time + draw + Qloo taste Taste overlap added: the index used here not available",
+      "Time alone Minutes shared not available Time + Qloo popularity Draw is Qloo popularity, 0 to 100 not available + taste overlap from Qloo data Taste overlap added: the index used here not available",
     );
     // A reading with no figure in a drawn figure keeps its text and has no marker.
     const partial = figure(render({ aId: "one", bId: "two", lenses: null }));
     expect(partial.row("time")).toContain("data-marker");
     expect(partial.row("draw")).not.toContain("data-marker");
-    expect(text(partial.row("draw"))).toBe("Time + draw Draw is Qloo popularity, 0 to 100 not available");
+    expect(text(partial.row("draw"))).toBe("Time + Qloo popularity Draw is Qloo popularity, 0 to 100 not available");
   });
 
   it("uses no teal in the figure on the invented day", () => {
@@ -340,20 +453,22 @@ describe("WhatQlooChanges", () => {
     expect(text(fig)).not.toMatch(/Qloo/);
   });
 
-  it("makes no claim when taste does not move the pair, and keeps the caption then", () => {
+  it("makes no claim when taste does not move the pair: the heading says so once, and the caption keeps its limit", () => {
     const plain = text(render({ aId: "three", bId: "four" }));
-    expect(plain).toContain("Same 60-minute clash.");
-    expect(plain).toContain("Taste agrees with time and draw: #2 either way.");
+    expect(plain).toContain("Act One × Act Two, 60 min shared, ranked three ways.");
+    expect(plain.split("Adding taste leaves this pair at #2").length - 1).toBe(1);
+    expect(plain).not.toMatch(/agrees|either way/);
     expect(plain).not.toContain(QLOO_CHANGES_LINE);
     expect(plain).toContain(READINGS_CAPTION);
-    expect(changesLine(threeReadings(lenses(), PAIRS, "three", "four"))).toBe("Taste agrees with time and draw: #2 either way.");
+    expect(changesLine(threeReadings(lenses(), PAIRS, "three", "four"))).toBe("Adding taste leaves this pair at #2.");
   });
 
   it("labels the invented day everywhere and never credits Qloo for it", () => {
     const plain = text(render({ aId: "one", bId: "two", synthetic: true }));
-    expect(plain).toContain("What taste changes · Invented day");
+    expect(plain).toContain("Adding taste moves this pair from #7 to #1");
+    expect(plain).toContain("Time alone Minutes shared #3 of 4");
     expect(plain).toContain("Time + draw Draw is invented popularity #7 of 40");
-    expect(plain).toContain("Time + draw + invented taste");
+    expect(plain).toContain("+ invented taste overlap Taste overlap added: the index used here #1 of 40");
     expect(plain).toContain(TASTE_CHANGES_LINE_SYNTHETIC);
     expect(plain).toContain(READINGS_CAPTION_SYNTHETIC);
     expect(plain).not.toMatch(/Qloo/);
@@ -361,10 +476,12 @@ describe("WhatQlooChanges", () => {
 
   it("prints not available, never a guess, when the lens data is missing", () => {
     const plain = text(render({ aId: "one", bId: "two", lenses: null }));
-    expect(plain).toContain("Time + draw Draw is Qloo popularity, 0 to 100 not available");
-    expect(plain).toContain("Time + draw + Qloo taste Taste overlap added: the index used here not available");
+    expect(plain).toContain("What Qloo changes");
+    expect(plain).toContain("Time + Qloo popularity Draw is Qloo popularity, 0 to 100 not available");
+    expect(plain).toContain("+ taste overlap from Qloo data Taste overlap added: the index used here not available");
     expect(plain).toContain("What taste changes for this pair: not available.");
     expect(plain).not.toContain(QLOO_CHANGES_LINE);
+    expect(plain).not.toContain("Adding taste");
   });
 });
 
@@ -386,7 +503,7 @@ describe("WhatQlooPointer", () => {
     const same = renderToStaticMarkup(
       createElement(WhatQlooPointer, { lenses: lenses(), pairs: PAIRS, aId: "three", bId: "four" }),
     );
-    expect(text(same)).toBe("Taste agrees with time and draw (Qloo popularity): #2 either way. See what Qloo changes");
+    expect(text(same)).toBe("Adding taste leaves this pair at #2. See what Qloo changes");
   });
 });
 
@@ -420,6 +537,7 @@ describe("TasteSection", () => {
       twins: Twin[];
       synthetic: boolean;
       ranked: PairClash[];
+      aside: boolean;
     }> = {},
   ): string {
     return renderToStaticMarkup(
@@ -432,9 +550,14 @@ describe("TasteSection", () => {
         ranked: props.ranked ?? [],
         onOpen: () => {},
         synthetic: props.synthetic,
+        aside: props.aside ? createElement("div", { "data-test-aside": "" }, "The index card") : undefined,
       }),
     );
   }
+
+  /** The other-half line for the fixture's falling pair, in round 34's words (row 26). */
+  const OTHER_HALF =
+    "Taste also lowers some clashes: Act Seven × Act Eight ranks #1 on time and draw but #19 with taste: by this index, a candidate to keep.";
 
   /** The markup with every `<details>` block taken out: what a reader sees with no click. */
   function withoutDisclosures(html: string): string {
@@ -446,24 +569,24 @@ describe("TasteSection", () => {
     return out;
   }
 
-  it("is one section with the block's anchor: the three readings and their limit visible, two closed disclosures, then the failed test", () => {
+  it("is one section with the block's anchor: the heading, the three readings and their limit, the failed test, then two closed disclosures", () => {
     const html = render();
     expect(html.match(/<section\b/g)?.length).toBe(1);
     expect(html.match(new RegExp(`id="${WHAT_QLOO_ID}"`, "g"))?.length).toBe(1);
     expect(html.match(/<h2\b/g)?.length).toBe(1);
     const plain = text(html);
     const order = [
-      "What Qloo changes",
-      "Same 45-minute clash. Same timetable.",
-      "Act One and Act Two, the clash in the decision above, ranked three ways.",
-      "Time only Minutes shared #3 of 4 tied with 1 other",
-      "Time + draw Draw is Qloo popularity, 0 to 100 #7 of 40",
-      "Time + draw + Qloo taste Taste overlap added: the index used here #1 of 40",
+      "Adding taste moves this pair from #7 to #1",
+      "Act One × Act Two, 45 min shared, ranked three ways.",
+      "Time alone Minutes shared #3 of 4 tied with 1 other",
+      "Time + Qloo popularity Draw is Qloo popularity, 0 to 100 #7 of 40",
+      "+ taste overlap from Qloo data Taste overlap added: the index used here #1 of 40",
       QLOO_CHANGES_LINE,
-      "Equal-popularity pairs (1)",
-      "Two rankings of this day (15 costliest clashes)",
       "What the failed test taught us.",
       FAILED,
+      OTHER_HALF,
+      "Equal-popularity pairs (1)",
+      "Two rankings of this day (15 costliest clashes)",
     ].map((part) => plain.indexOf(part));
     order.forEach((at, i) => {
       expect(at, `part ${i}`).toBeGreaterThan(-1);
@@ -492,45 +615,101 @@ describe("TasteSection", () => {
     expect(plain).toContain("This shows how taste overlap reorders this ranking");
   });
 
-  it("draws the same one figure, with its line and caption directly under it, and closes with the failed test", () => {
+  it("draws the same one figure with the readings caption directly under it when taste leaves the pair, then the failed test, the clash taste lowers and the folds", () => {
     const html = render({ clash: { ...CLASH, aId: "three", bId: "four" } });
     expect(html.match(/<div data-rank-figure="">/g)).toHaveLength(1);
     expect(html).not.toContain("border-foreground");
     expect(html).not.toMatch(/<li[^>]*class="[^"]*\brounded-md\b/);
-    // The figure's axis caption, then the changes line, then the readings caption: nothing between them.
+    // The figure's axis caption, then the readings caption, 16px under it: the heading already says taste left the
+    // pair where it was, so no line repeats it.
     const after = html.slice(html.indexOf("data-axis-caption"));
     expect(after).toMatch(
-      /^data-axis-caption=""[^>]*>[\s\S]*?<\/p><\/div><\/div><p class="mt-4 font-semibold">Taste agrees with time and draw: #2 either way\.<\/p><p class="mt-1\.5 max-w-prose text-\[0\.8125rem\] leading-snug">/,
+      /^data-axis-caption=""[^>]*>[\s\S]*?<\/p><\/div><\/div><p class="max-w-prose text-\[0\.8125rem\] leading-snug mt-4">/,
     );
-    expect(text(after)).toContain(READINGS_CAPTION);
-    // The failed test is the last block, outside every disclosure.
+    expect(text(after).startsWith(READINGS_CAPTION) || text(after).includes(` ${READINGS_CAPTION}`)).toBe(true);
+    expect(html).not.toContain("data-limit-line");
+    // Then the failed test, outside every disclosure, then the clash taste lowers, then the folds.
     const visible = withoutDisclosures(html);
-    expect(text(visible).endsWith("How we know")).toBe(true);
     expect(text(visible)).toContain(FAILED);
     expect(visible.lastIndexOf("What the failed test taught us.")).toBeGreaterThan(visible.lastIndexOf("data-rank-figure"));
+    expect(html.indexOf("data-other-half")).toBeGreaterThan(html.indexOf("What the failed test taught us."));
+    expect(html.indexOf("<details")).toBeGreaterThan(html.indexOf("data-other-half"));
+  });
+
+  it("sets the limit 16px under the figure when taste moves the pair, as wide as the figure", () => {
+    const html = render();
+    const after = html.slice(html.indexOf("data-axis-caption"));
+    expect(after).toMatch(
+      /^data-axis-caption=""[^>]*>[\s\S]*?<\/p><\/div><\/div><p data-limit-line="" class="mt-4 font-semibold">This does not prove #1 is the right clash to move\.<\/p>/,
+    );
+    // The figure and its limit share one column: nothing else sits between them.
+    expect(html.match(/data-limit-line/g)).toHaveLength(1);
   });
 
   it("keeps the caption visible when taste does not move the pair", () => {
     const visible = text(withoutDisclosures(render({ clash: { ...CLASH, aId: "three", bId: "four" } })));
-    expect(visible).toContain("Taste agrees with time and draw: #2 either way.");
+    expect(visible).toContain("Adding taste leaves this pair at #2");
     expect(visible).toContain(READINGS_CAPTION);
+  });
+
+  it("opens on the claim itself as a 40px headline, with no kicker over it, and the pair line under it", () => {
+    for (const props of [{}, { clash: { ...CLASH, aId: "three", bId: "four" } }, { synthetic: true }]) {
+      const html = render(props);
+      expect(html).toMatch(/<h2 id="what-qloo-heading" class="type-headline">Adding taste (moves|leaves) this pair /);
+      const before = html.slice(0, html.indexOf("<h2"));
+      expect(text(before)).toBe("");
+      expect(before).not.toContain("type-kicker");
+      expect(html).toMatch(/<\/h2><p data-pair-line="" class="mt-3 max-w-prose text-\[0\.9375rem\] leading-relaxed">Act One × Act Two, \d+ min shared, ranked three ways\.<\/p>/);
+    }
+    expect(text(render())).not.toMatch(/What Qloo changes|the clash in the decision above/);
+  });
+
+  it("composes one DOM order, the phone's, and from 1024px sets the heading and the failed test beside the figure, then the aside beside the folds", () => {
+    const html = render({ aside: true });
+    // Reading order: heading, figure and limit, failed test, aside, the clash taste lowers, folds.
+    const at = (needle: string) => html.indexOf(needle);
+    const order = ["what-qloo-heading", "data-rank-figure", "data-limit-line", "data-failed-test", "data-test-aside", "data-other-half", "<details"].map(at);
+    order.forEach((i, n) => {
+      expect(i, `part ${n}`).toBeGreaterThan(-1);
+      if (n > 0) expect(i).toBeGreaterThan(order[n - 1]);
+    });
+    // Twelve columns from 1024px; 24px between blocks at every width.
+    expect(html).toContain('<div class="grid gap-y-6 lg:grid-cols-12 lg:gap-x-12">');
+    // Rows 1 and 2: the heading and the failed test in five columns, beside the figure with its limit in seven.
+    expect(html).toMatch(/<div class="min-w-0 lg:col-span-5 lg:col-start-1 lg:row-start-1"><h2 id="what-qloo-heading"/);
+    expect(html).toMatch(/<div data-failed-test="true" class="text-sm leading-relaxed min-w-0 lg:col-span-5 lg:col-start-1 lg:row-start-2">/);
+    expect(html).toMatch(/<div class="min-w-0 lg:col-span-7 lg:col-start-6 lg:row-span-2 lg:row-start-1"><div data-rank-figure="">/);
+    // Row 3 mirrors them: the aside in seven columns on the left (so the reading order runs left to right), the clash
+    // taste lowers and the folds in five on the right.
+    expect(html).toMatch(/<div class="min-w-0 lg:col-span-7 lg:col-start-1 lg:row-start-3"><div data-test-aside="">The index card<\/div><\/div>/);
+    expect(html).toMatch(/<div class="min-w-0 lg:row-start-3 lg:col-span-5 lg:col-start-8"><p data-other-half=""/);
+    // In those five columns the equal-popularity cards stack, since their two-up grid is sized for the full width.
+    expect(html).toMatch(/<summary class="cc-disclosure-summary">Equal-popularity pairs \(1\)[\s\S]*?<div class="mt-4 mb-3 lg:\[&amp;_ul\]:grid-cols-1">/);
+    // With no aside, the clash taste lowers and the folds keep the figure's seven columns, and the cards pair up.
+    const wide = render();
+    expect(wide).toMatch(/<div class="min-w-0 lg:row-start-3 lg:col-span-7 lg:col-start-6"><p data-other-half=""/);
+    expect(wide).not.toContain("[&amp;_ul]:grid-cols-1");
+    expect(wide).toContain('<div class="mt-4 mb-3"><p class="max-w-prose text-sm leading-relaxed">Draw is Qloo popularity');
+    // The section ends on its own last block; the next section's top padding sets the gap.
+    expect(html).toContain('<div class="container-page pt-16 pb-8 lg:pt-20 lg:pb-12">');
+    // The aside renders with no readings too, after the failed test.
+    const bare = render({ clash: null, lenses: null, twins: [], aside: true });
+    expect(bare.indexOf("data-test-aside")).toBeGreaterThan(bare.indexOf("data-failed-test"));
   });
 
   it("says the other half of what taste does: the costliest pair on time and draw that falls furthest with taste, a candidate to keep", () => {
     // In the fixture, Act Seven and Act Eight fall furthest: #1 on time and draw, #19 with taste.
     expect(otherHalfPair(lenses())).toMatchObject({ a: "Act Seven", b: "Act Eight", from: 1, to: 19 });
-    const line =
-      "Taste also lowers some clashes: Act Seven × Act Eight ranks #1 on time and draw but #19 with taste. Lower priority by this index; a candidate to keep.";
+    const line = OTHER_HALF;
     // On both kinds of day: when taste moves the card's own pair, and when it leaves it where it was.
     for (const clash of [CLASH, { ...CLASH, aId: "three", bId: "four" }]) {
       const visible = withoutDisclosures(render({ clash }));
       expect(text(visible)).toContain(line);
       expect(visible.match(/data-other-half=""/g)).toHaveLength(1);
       expect(visible).not.toMatch(/data-other-half=""[^>]*class="[^"]*(prov-qloo|text-primary)/);
-      // Visible, under the heading (first in the readings' column when taste leaves the pair where it was, after
-      // the bold line when taste moves it) and before the disclosures and the failed test.
-      expect(text(visible).indexOf(line)).toBeGreaterThan(text(visible).indexOf("Same timetable"));
-      expect(visible.indexOf("data-other-half")).toBeLessThan(visible.indexOf("What the failed test taught us."));
+      // Visible, after the heading and the readings and after the failed test, before the disclosures.
+      expect(text(visible).indexOf(line)).toBeGreaterThan(text(visible).indexOf("ranked three ways"));
+      expect(visible.indexOf("data-other-half")).toBeGreaterThan(visible.indexOf("What the failed test taught us."));
     }
     // It replaces the old mover sentence: never both.
     expect(text(render({ clash: { ...CLASH, aId: "three", bId: "four" } }))).not.toContain("the most:");
@@ -538,22 +717,20 @@ describe("TasteSection", () => {
     expect(line).not.toMatch(/same crowd|same people|overlap little|costs little|fine to keep|fans/i);
   });
 
-  it("leads with the clash taste lowers when taste leaves the card's pair where it was (Riot Fest's #1 either way), and keeps it after the readings when taste moves the pair (Glastonbury)", () => {
-    // Round 33 (H4): the order follows the readings, never a festival name, and no sentence is added.
-    const line =
-      "Taste also lowers some clashes: Act Seven × Act Eight ranks #1 on time and draw but #19 with taste. Lower priority by this index; a candidate to keep.";
-    // Riot Fest's case, invented here: the card's pair is #2 either way, so the clash taste lowers is the finding.
+  it("keeps the clash taste lowers after the readings, their limit or caption, and the failed test, whether or not taste moves the card's pair", () => {
+    // Round 34: one order on both kinds of day. The heading carries the finding when taste leaves the pair where it
+    // was (Riot Fest's case, invented here), so the readings follow it and the clash taste lowers comes after them.
+    const line = OTHER_HALF;
     const still = text(withoutDisclosures(render({ clash: { ...CLASH, aId: "three", bId: "four" } })));
-    const either = "Taste agrees with time and draw: #2 either way.";
-    expect(still).toContain(either);
-    expect(still.indexOf(line)).toBeGreaterThan(still.indexOf("ranked three ways."));
-    expect(still.indexOf(line)).toBeLessThan(still.indexOf("Time only Minutes shared"));
-    expect(still.indexOf(line)).toBeLessThan(still.indexOf(either));
-    // Glastonbury's case, invented here: taste moves the card's pair (#7 to #1), so the readings and their claim
-    // lead and the line follows them, as before.
+    expect(still).toContain("Adding taste leaves this pair at #2");
+    expect(still.indexOf(line)).toBeGreaterThan(still.indexOf("Time alone Minutes shared"));
+    expect(still.indexOf(line)).toBeGreaterThan(still.indexOf(READINGS_CAPTION));
+    expect(still.indexOf(line)).toBeGreaterThan(still.indexOf("What the failed test taught us."));
+    // Glastonbury's case, invented here: taste moves the card's pair (#7 to #1).
     const moved = text(withoutDisclosures(render()));
-    expect(moved.indexOf(line)).toBeGreaterThan(moved.indexOf("Time + draw + Qloo taste"));
+    expect(moved.indexOf(line)).toBeGreaterThan(moved.indexOf("+ taste overlap from Qloo data"));
     expect(moved.indexOf(line)).toBeGreaterThan(moved.indexOf(QLOO_CHANGES_LINE));
+    expect(moved.indexOf(line)).toBeGreaterThan(moved.indexOf("What the failed test taught us."));
     // The same line, once, on both.
     for (const plain of [still, moved]) expect(plain.split(line).length - 1).toBe(1);
   });
@@ -581,7 +758,7 @@ describe("TasteSection", () => {
   it("adds the pair's own taste overlap only when the page holds that pair's reading", () => {
     const pair = { a: { act_id: "eight", name: "Act Eight" }, b: { act_id: "seven", name: "Act Seven" }, audience_overlap: 0.12 } as unknown as PairClash;
     expect(text(render({ ranked: [pair] }))).toContain(
-      "Taste also lowers some clashes: Act Seven × Act Eight ranks #1 on time and draw but #19 with taste (taste overlap 12 of 100 on this bill). Lower priority by this index; a candidate to keep.",
+      "Taste also lowers some clashes: Act Seven × Act Eight ranks #1 on time and draw but #19 with taste (taste overlap 12 of 100 on this bill): by this index, a candidate to keep.",
     );
     expect(text(render({ ranked: [] }))).not.toContain("(taste overlap");
   });
@@ -603,7 +780,7 @@ describe("TasteSection", () => {
   it("says it is invented on the invented day and credits no source", () => {
     const plain = text(render({ synthetic: true }));
     const line =
-      "On this invented day, taste also lowers some clashes: Act Seven × Act Eight ranks #1 on time and draw but #19 with taste. Lower priority by this index; a candidate to keep.";
+      "On this invented day, taste also lowers some clashes: Act Seven × Act Eight ranks #1 on time and draw but #19 with taste: by this index, a candidate to keep.";
     expect(plain).toContain(line);
     expect(qlooCredits(line)).toEqual([]);
     const pair = { a: { act_id: "seven", name: "Act Seven" }, b: { act_id: "eight", name: "Act Eight" }, audience_overlap: 0.3 } as unknown as PairClash;
@@ -614,7 +791,7 @@ describe("TasteSection", () => {
     for (const props of [{ clash: null }, { lenses: null }, { clash: null, lenses: null, twins: [] }]) {
       const html = render(props);
       expect(html).toContain(`id="${WHAT_QLOO_ID}"`);
-      expect(html).toMatch(/<h2 id="what-qloo-heading" class="type-title">What Qloo changes<\/h2>/);
+      expect(html).toMatch(/<h2 id="what-qloo-heading" class="type-headline">What Qloo changes<\/h2>/);
       expect(text(html)).not.toContain("ranked three ways");
       expect(text(withoutDisclosures(html))).toContain(FAILED);
       expect(withoutDisclosures(html)).toContain('href="/method#tested"');
@@ -649,7 +826,11 @@ describe("TasteSection", () => {
       expect(qlooCredits(plain.replace(FAILED, ""))).toEqual([]);
     }
     const plain = text(render({ synthetic: true }));
-    expect(plain).toContain("What taste changes · Invented day");
+    // The invented day is named by the readings' own caption and rungs (the kicker that also said it is gone).
+    expect(plain).toContain("Adding taste moves this pair from #7 to #1");
+    expect(plain).toContain("Time + draw Draw is invented popularity #7 of 40");
+    expect(plain).toContain("+ invented taste overlap");
+    expect(text(withoutDisclosures(render({ synthetic: true })))).toContain(READINGS_CAPTION_SYNTHETIC);
     expect(plain).toContain(TASTE_CHANGES_LINE_SYNTHETIC);
     expect(plain).toContain(READINGS_CAPTION_SYNTHETIC);
     expect(plain).toContain("Draw is an invented popularity figure");

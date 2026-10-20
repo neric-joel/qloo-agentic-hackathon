@@ -381,7 +381,7 @@ export function ClashDetails({
               href={receipt.press}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 font-semibold text-primary underline underline-offset-4 hover:text-primary-hover"
+              className="inline-flex items-center gap-1 font-semibold text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground"
             >
               {hostOf(receipt.press)}
               <ExternalLink aria-hidden="true" className="size-3.5" />

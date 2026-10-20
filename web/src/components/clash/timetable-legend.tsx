@@ -96,7 +96,7 @@ function legendItems({ showLinks = true, planShown = false, synthetic = false, w
     {
       key: "no-signal",
       // The no-signal tile in small: the board's paper in a dotted control-grey edge, 20 x 12, drawn at
-      // 1.5px so the dots read at this size.
+      // 1.5px so the dots read at this size, on a mark's 6px corner (clamped to half its height).
       swatch: (
         <svg aria-hidden="true" data-mark="no-signal" width="20" height="12" viewBox="0 0 20 12" className="block">
           <rect
@@ -104,7 +104,7 @@ function legendItems({ showLinks = true, planShown = false, synthetic = false, w
             y="0.75"
             width="18.5"
             height="10.5"
-            rx="3"
+            rx="6"
             fill="var(--background)"
             stroke="var(--border-strong)"
             strokeWidth={1.5}
@@ -115,15 +115,15 @@ function legendItems({ showLinks = true, planShown = false, synthetic = false, w
       name: noSignalLabel(synthetic),
       label: legendNoSignal(synthetic),
     },
-    // The board's short-tile cue ("Draw 21 · weak"), drawn as a specimen: the word the tiles print, in
-    // their 12px mono, on a 36 x 18 mini tile. Only while some tile prints it; a cue key, not counted.
+    // The board's narrow-tile cue ("weak"), drawn as a specimen: the word the tiles print, in their
+    // 12px medium, on a 36 x 18 mini tile. Only while some tile prints it; a cue key, not counted.
     ...(weak
       ? [
           {
             key: "weak",
             swatch: (
               <svg aria-hidden="true" data-mark="weak" width="36" height="18" viewBox="0 0 36 18" className="block">
-                <rect x="0.5" y="0.5" width="35" height="17" rx="3" fill="var(--card)" stroke="var(--border-strong)" strokeWidth={1} />
+                <rect x="0.5" y="0.5" width="35" height="17" rx="6" fill="var(--card)" stroke="var(--border-strong)" strokeWidth={1} />
                 <text
                   x="18"
                   y="9"
@@ -131,7 +131,7 @@ function legendItems({ showLinks = true, planShown = false, synthetic = false, w
                   dominantBaseline="central"
                   fontSize="12"
                   fill="var(--muted-foreground)"
-                  className="font-mono"
+                  className="font-medium"
                 >
                   {WEAK_CUE_WORD}
                 </text>
@@ -154,7 +154,7 @@ function legendItems({ showLinks = true, planShown = false, synthetic = false, w
           },
           {
             key: "hidden",
-            // The board's outlined disc: a vermilion ring on the card, at 10px.
+            // The board's outlined disc: a raspberry ring on the card, at 10px.
             swatch: <span data-mark="hidden" className="block size-2.5 rounded-full border-[1.5px] border-primary bg-card" />,
             name: "Hidden clash",
             label: "Hidden clash: genres differ, taste overlap is high",

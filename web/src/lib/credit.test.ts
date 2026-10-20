@@ -8,6 +8,8 @@ import { BudgetDial } from "@/components/clash/budget-dial";
 import { ClashDetails } from "@/components/clash/clash-drawer";
 import { ClashList } from "@/components/clash/clash-list";
 import { CoverageMeter } from "@/components/clash/coverage-meter";
+import { DayGraph, DayGraphKey } from "@/components/clash/day-graph";
+import { HeroDecision } from "@/components/clash/hero-decision";
 import { HiddenWall } from "@/components/clash/hidden-wall";
 import { PresetSources } from "@/components/clash/preset-sources";
 import { TasteLens } from "@/components/clash/taste-lens";
@@ -36,6 +38,8 @@ import {
   qlooCredits,
   usedTitle,
 } from "@/lib/credit";
+import { buildDayGraph, type DayGraphModel } from "@/lib/day-graph";
+import { buildDecisionCopy, parseDecision } from "@/lib/decision";
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
 import type { Lenses } from "@/lib/lenses";
 import { parsePreset, type Preset } from "@/lib/preset";
@@ -92,6 +96,33 @@ const LENSES: Lenses = {
 
 const noop = () => {};
 
+/** The tiny preset's decision (invented): Bo Diddly Squat 60 minutes later, which ends its overlap with Ann Arbor. */
+const DECISION = parseDecision({
+  kind: "decision",
+  day: 0,
+  skipped_locked: 0,
+  skipped_no_place: 0,
+  clash: { a_id: "ann", b_id: "bo", rank: 1, minutes: 60 },
+  published_budget: 104.2,
+  move: {
+    act_id: "bo",
+    act: "Bo Diddly Squat",
+    from: "Side 20:30-22:00",
+    stage_id: "side",
+    stage: "Side",
+    day: 0,
+    start: "21:30",
+    end: "23:00",
+    minutes_moved: 60,
+    legal_places: 4,
+    stage_changed: false,
+    budget_after: 98.4,
+    minutes_shared_after: 0,
+    same_index_alternative: null,
+  },
+  rule: null,
+});
+
 /** Every component that can credit Qloo, mounted on the day it is given. */
 function mount(preset: Preset): Record<string, string> {
   const synthetic = preset.synthetic === true;
@@ -100,6 +131,9 @@ function mount(preset: Preset): Record<string, string> {
   const slots = new Map(preset.festival.timetable.map((slot) => [slot.act_id, slot]));
   const stages = new Map(preset.festival.stages.map((stage) => [stage.id, stage]));
   const grid = (element: ReactElement) => element;
+  // The hero: its drawing of the day and its decision group, from the model and words the page builds.
+  const model = buildDayGraph(preset, DECISION, 0) as DayGraphModel;
+  const copy = buildDecisionCopy(preset, DECISION);
   return {
     "clash drawer (hidden clash)": everything(
       createElement(ClashDetails, {
@@ -190,6 +224,14 @@ function mount(preset: Preset): Record<string, string> {
       }),
     ),
     "agent panel": everything(createElement(AgentPanel, { preset, day: 0, agentStatus: "off" })),
+    "hero decision (moved view)": everything(createElement(HeroDecision, { model, copy, view: "moved", onOpenMove: noop })),
+    "hero decision (published view)": everything(createElement(HeroDecision, { model, copy, view: "published", onOpenMove: noop })),
+    "hero decision (kept)": everything(
+      createElement(HeroDecision, { model, copy, view: "published", onOpenMove: noop, kept: { move: true, change: false } }),
+    ),
+    "day graph (moved view)": everything(createElement(DayGraph, { model, view: "moved" })),
+    "day graph (published view)": everything(createElement(DayGraph, { model, view: "published" })),
+    "day graph key": everything(createElement(DayGraphKey, { model })),
   };
 }
 
@@ -202,6 +244,15 @@ describe("the invented day credits no Qloo anywhere on the page", () => {
       expect(rendered.length, name).toBeGreaterThan(20);
       expect(qlooCredits(rendered), name).toEqual([]);
     }
+  });
+
+  it("mounts the hero's drawing and decision group with the move, in both views and kept", () => {
+    expect(sweep["hero decision (moved view)"]).toContain("Bo Diddly Squat 60 minutes later");
+    expect(sweep["hero decision (moved view)"]).toContain("(an invented rank, not attendance)");
+    expect(sweep["hero decision (kept)"]).toContain("Drawn here without the move.");
+    expect(sweep["day graph (moved view)"]).toContain("invented timetable, drawn with Bo Diddly Squat 60 min later");
+    expect(sweep["day graph (published view)"]).toContain("invented timetable, without the move");
+    expect(sweep["day graph key"]).toContain("invented taste overlap rank");
   });
 
   it("still credits Qloo on a published day, so the sweep tests something", () => {
@@ -286,7 +337,10 @@ describe("the invented day: the pieces that used to credit Qloo", () => {
     const method = text(renderToStaticMarkup(wrap(true, createElement(MethodPage))));
     expect(method).toContain("a number it calculates from taste-overlap and draw figures");
     expect(method).not.toContain("a number it derives from Qloo data");
-    const opening = method.slice(method.indexOf("Clash Control scores set-time clashes"), method.indexOf("This page says what that number is"));
+    // The opening paragraph, to the end of its invented-day sentence (round 34 cut the sentence that followed it).
+    const end = "no Qloo request was made for it.";
+    const opening = method.slice(method.indexOf("Clash Control scores set-time clashes"), method.indexOf(end) + end.length);
+    expect(opening).toContain("a number it calculates from taste-overlap and draw figures");
     expect(qlooCredits(opening)).toEqual([]);
     expect(method).toContain(formulaNote(true));
     expect(method).not.toContain(formulaNote(false));

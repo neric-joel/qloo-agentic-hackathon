@@ -54,7 +54,7 @@ function PlanActions({
       </Button>
       <Link
         href={briefHref(preset.id, day, moves)}
-        className="inline-flex min-h-11 items-center gap-1.5 px-1 text-sm font-semibold underline underline-offset-4 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        className="inline-flex min-h-11 items-center gap-1.5 px-1 text-sm font-semibold underline decoration-border-strong underline-offset-4 hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       >
         <FileText aria-hidden="true" className="size-4 shrink-0" />
         Open as a one-page brief
@@ -71,7 +71,7 @@ function PlanActions({
             heading.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
             heading.focus({ preventScroll: true });
           }}
-          className="inline-flex min-h-11 items-center gap-1.5 px-1 text-sm font-semibold underline underline-offset-4 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          className="inline-flex min-h-11 items-center gap-1.5 px-1 text-sm font-semibold underline decoration-border-strong underline-offset-4 hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           <ArrowUp aria-hidden="true" className="size-4 shrink-0" />
           Back to the decision

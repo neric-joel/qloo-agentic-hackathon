@@ -14,7 +14,6 @@ import {
 import { tagsTitle } from "@/lib/credit";
 import { pluralize } from "@/lib/format";
 import type { Evidence, HiddenWallItem, SharedTag } from "@/lib/preset";
-import { watchReveal } from "@/lib/use-in-view";
 import { cn } from "@/lib/utils";
 
 import { DiamondGlyph } from "./marks";
@@ -55,35 +54,11 @@ function WallTags({ tags, synthetic }: { tags: readonly SharedTag[]; synthetic: 
   );
 }
 
-/** Cards that start in the same frame are staggered by this, up to the fifth. */
-const CARD_STAGGER_MS = 80;
-const CARD_STAGGER_MAX = 4;
-
-/**
- * M8, once per card the first time it scrolls into view: the corner mark pops, then "No genre tag in
- * common." firms up. It writes `data-reveal` on the card itself, so
- * nothing re-renders; a card on screen at load, in print or under reduced motion stays as drawn.
- */
-function revealCard(card: HTMLLIElement | null): (() => void) | void {
-  if (!card) return;
-  return watchReveal(card, {
-    threshold: 0.5,
-    onPhase: (phase, order) => {
-      if (phase === "still") {
-        delete card.dataset.reveal;
-        return;
-      }
-      card.style.setProperty("--reveal-delay", `${Math.min(order, CARD_STAGGER_MAX) * CARD_STAGGER_MS}ms`);
-      card.dataset.reveal = phase;
-    },
-  });
-}
-
 function WallCard({ item, synthetic }: { item: HiddenWallItem; synthetic: boolean }) {
   const [a, b] = item.acts;
   const source = isWebUrl(item.source) ? item.source : null;
   return (
-    <li ref={revealCard} className="flex flex-col rounded-lg border border-surface-edge bg-card">
+    <li className="flex flex-col rounded-lg border border-surface-edge bg-card">
       <div className="p-4">
         <div className="flex items-center justify-between gap-2">
           <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">

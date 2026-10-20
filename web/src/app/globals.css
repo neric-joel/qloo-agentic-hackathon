@@ -68,16 +68,14 @@
 }
 
 /*
- * Design tokens: a printed running order, one hot ink.
- * Each hue has one job. Ink (foreground) is the timetable and every fact on it, the one primary
- * button and wayfinding. Vermilion (primary) is shared time and what it costs, and nothing else.
- * Teal (prov-qloo) means the value came from Qloo. Cobalt (ring, highlight) is keyboard focus and
- * text selection only. Green (success) is a move that lowers the index or a finished step, always
- * with an icon or text. Every other colour is a step on one cool neutral ladder: paper, sheet, wash,
- * track, rule, surface edge, control edge, secondary text, ink.
- * Every text and graphic pair is checked in both themes by app/tokens.test.ts.
- * Aliases are written as var() once in :root; `.dark` sits on the same root element, so they
- * resolve against the dark values there too.
+ * Design tokens. Each hue has one job. Ink is the timetable, every fact on it, the one primary
+ * button and wayfinding; a rule break is ink with an icon and words. Raspberry (primary) is shared
+ * time and what it costs, and nothing else; shared-wash is only ever under raspberry hatch or a
+ * raspberry edge. Teal (prov-qloo) is Qloo taste data: Qloo text, the chosen clash's line in the day
+ * drawing; taste-quiet is the other ranked clash lines. Cobalt (ring, highlight) is keyboard focus
+ * and text selection only. Green (success) is a kept move, a finished step or a lower index, always
+ * with a tick or words. No hue sits between 15 and 75. Every pair is checked in both themes by
+ * app/tokens.test.ts.
  */
 :root {
   color-scheme: light;
@@ -88,9 +86,11 @@
   --card-foreground: var(--foreground);
   --popover: oklch(1 0 0);
   --popover-foreground: var(--foreground);
-  --primary: oklch(0.545 0.2 33);
-  --primary-hover: oklch(0.49 0.18 33);
+  --primary: oklch(0.52 0.2 352);
+  --primary-hover: oklch(0.46 0.19 352);
   --primary-foreground: oklch(1 0 0);
+  /* The ground under shared minutes, only ever under the primary's hatch or edge. */
+  --shared-wash: oklch(0.93 0.035 352);
   --cta: var(--foreground);
   --cta-hover: oklch(0.33 0.03 262);
   --cta-foreground: var(--card);
@@ -100,15 +100,15 @@
   --muted-foreground: oklch(0.46 0.02 260);
   --accent: oklch(0.945 0.007 258);
   --accent-foreground: var(--foreground);
-  /* A named exception: rule-break and failure text and edges only (a rule break is a cost). */
-  --destructive: var(--primary);
+  /* Rule breaks: ink, always with an icon and words. */
+  --destructive: var(--foreground);
   --ink-3: oklch(0.6 0.016 260);
   --border: oklch(0.885 0.008 258);
   --border-strong: oklch(0.6 0.016 260);
   --input: var(--border-strong);
   --surface-edge: oklch(0.8 0.008 258);
   --ring: oklch(0.52 0.19 260);
-  --radius: 0.75rem;
+  --radius: 0.625rem;
 
   --highlight: oklch(0.89 0.05 258);
   --highlight-foreground: var(--foreground);
@@ -126,6 +126,8 @@
   --prov-qloo: oklch(0.45 0.075 195);
   --prov-qloo-bg: var(--card);
   --prov-qloo-border: oklch(0.62 0.08 195);
+  /* The other ranked clash lines in the day drawing: graphic only, never text. */
+  --taste-quiet: oklch(0.62 0.07 195);
   --prov-derived: var(--foreground);
   --prov-derived-bg: var(--card);
   --prov-derived-border: var(--border-strong);
@@ -137,6 +139,14 @@
   --prov-recorded-border: var(--border);
 
   --ticket-bg: var(--background);
+
+  /* Motion: one curve for what appears or answers a press, one for what travels; four durations. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-move: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-feedback: 120ms;
+  --dur-state: 180ms;
+  --dur-pan: 300ms;
+  --dur-move: 450ms;
 }
 
 .dark {
@@ -147,9 +157,10 @@
   --card: oklch(0.225 0.02 260);
   /* Lifted off the card by lightness alone, with no shadow. */
   --popover: oklch(0.25 0.022 260);
-  --primary: oklch(0.67 0.2 29);
-  --primary-hover: oklch(0.7 0.19 29);
+  --primary: oklch(0.74 0.15 352);
+  --primary-hover: oklch(0.78 0.13 352);
   --primary-foreground: var(--background);
+  --shared-wash: oklch(0.33 0.07 352);
   --cta: var(--foreground);
   --cta-hover: oklch(0.84 0.01 255);
   --cta-foreground: var(--background);
@@ -168,6 +179,7 @@
 
   --prov-qloo: oklch(0.70 0.066 195);
   --prov-qloo-border: oklch(0.58 0.08 192);
+  --taste-quiet: oklch(0.52 0.055 195);
 }
 
 /*
@@ -177,15 +189,14 @@
  */
 @media print {
   :root.dark {
-    color-scheme: light;
-
     --background: oklch(0.965 0.005 255);
     --foreground: oklch(0.21 0.018 262);
     --card: oklch(1 0 0);
     --popover: oklch(1 0 0);
-    --primary: oklch(0.545 0.2 33);
-    --primary-hover: oklch(0.49 0.18 33);
+    --primary: oklch(0.52 0.2 352);
+    --primary-hover: oklch(0.46 0.19 352);
     --primary-foreground: oklch(1 0 0);
+    --shared-wash: oklch(0.93 0.035 352);
     --cta: var(--foreground);
     --cta-hover: oklch(0.33 0.03 262);
     --cta-foreground: var(--card);
@@ -204,12 +215,22 @@
 
     --prov-qloo: oklch(0.45 0.075 195);
     --prov-qloo-border: oklch(0.62 0.08 195);
+    --taste-quiet: oklch(0.62 0.07 195);
+  }
+
+  /* Paper is light in either theme. The theme script writes color-scheme inline on <html>, and only
+     an important rule outranks that, so a dark screen no longer frames the printed sheet in black. */
+  :root {
+    color-scheme: light !important;
   }
 }
 
 @theme inline {
   --font-sans: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* Monospace is retired (round 34): the old font-mono utility now sets the text face with tabular
+     lining figures. Drop the class when a file is next touched. */
+  --font-mono: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-mono--font-feature-settings: "tnum" 1, "lnum" 1;
   --font-heading: var(--font-sans);
 
   --color-background: var(--background);
@@ -221,6 +242,7 @@
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
   --color-primary-foreground: var(--primary-foreground);
+  --color-shared-wash: var(--shared-wash);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -251,6 +273,7 @@
   --color-prov-qloo: var(--prov-qloo);
   --color-prov-qloo-bg: var(--prov-qloo-bg);
   --color-prov-qloo-border: var(--prov-qloo-border);
+  --color-taste-quiet: var(--taste-quiet);
   --color-prov-derived: var(--prov-derived);
   --color-prov-derived-bg: var(--prov-derived-bg);
   --color-prov-derived-border: var(--prov-derived-border);
@@ -261,18 +284,18 @@
   --color-prov-recorded-bg: var(--prov-recorded-bg);
   --color-prov-recorded-border: var(--prov-recorded-border);
 
-  /* Corners by role. 8px (sm): labels (tags, badges, tooltips, row-reference chips). 12px (md):
-     controls and tiles (buttons, inputs, selects, set tiles, list rows, inset blocks). 20px (lg):
-     surfaces only; xl is the same 20px, kept for the hero decision card and the sheet. Capsule
-     (rounded-bar; in SVG rx = height/2): every time bar, track, swatch and marker. Full round: only
-     dots and discs. Rules, axes and print stay square. No pills, no shadows. */
-  --radius-xs: 0.5rem;
-  --radius-sm: 0.5rem;
-  --radius-md: 0.75rem;
-  --radius-lg: 1.25rem;
-  --radius-xl: 1.25rem;
-  --radius-2xl: 1.25rem;
-  --radius-bar: 9999px;
+  /* Corners: one radius system on a 4px step. 6px (xs, sm, bar): marks in a drawing and small labels;
+     a bar 12px tall or less is clamped to a round end. 10px (md): controls and tiles, inset blocks and
+     notes; every button. 14px (lg, xl): cards and panels. Full round: only dots and discs. A box nested
+     in another takes the outer radius minus the inset, down to 6px. Rules, knockout plates and fills
+     clipped inside a mark stay straight. No pills, no shadows. */
+  --radius-xs: 0.375rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: 0.875rem;
+  --radius-2xl: 0.875rem;
+  --radius-bar: 0.375rem;
 }
 
 @layer base {
@@ -291,11 +314,18 @@
   body {
     @apply bg-background text-foreground antialiased;
     text-rendering: optimizeLegibility;
+    font-variant-numeric: tabular-nums lining-nums;
   }
 
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
+  }
+
+  /* A focus ring follows its element's corner; an element with no corner of its own takes the mark
+     radius, so no ring is square. */
+  :where(a, summary, button, [role="button"], [tabindex]):focus-visible {
+    border-radius: var(--radius-xs);
   }
 
   ::selection {
@@ -315,66 +345,55 @@
 }
 
 /*
- * Type styles. The display face is Archivo's condensed width at heavy weight, set in capitals,
- * like a festival poster. Body copy uses the same family at normal width.
+ * Type styles. One family, sentence case, normal width. The width axis is not used for display.
  */
-/*
- * Hero type. Sized from the width of the nearest `@container` ancestor so the longest word
- * always fits (the widest line, "CONTROL", is about 3.4em wide at this width setting).
- */
+/* Display: the h1 on /, /method, /check and the not-found page, 52px wide and 30px on a phone. */
 @utility type-display {
-  font-weight: 800;
-  font-variation-settings: "wdth" 62;
-  text-transform: uppercase;
-  line-height: 0.86;
-  letter-spacing: -0.01em;
-  font-size: min(29cqw, 15rem);
+  font-weight: 620;
+  font-variation-settings: "wdth" 100;
+  line-height: 1.02;
+  letter-spacing: -0.034em;
+  font-size: clamp(1.875rem, 1.2rem + 2.6vw, 3.25rem);
 }
 
+/* Headline: h2s (the section under the hero, drawers, the lens), 40px wide and 26px on a phone. */
 @utility type-headline {
-  font-weight: 800;
-  font-variation-settings: "wdth" 68;
-  text-transform: uppercase;
-  line-height: 0.95;
-  letter-spacing: 0;
-  font-size: clamp(2.25rem, 1.6rem + 3.2vw, 4rem);
+  font-weight: 600;
+  font-variation-settings: "wdth" 100;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-size: clamp(1.625rem, 1.2rem + 1.3vw, 2.5rem);
 }
 
+/* Title: h3s, the board heading and the move lead. */
 @utility type-title {
-  font-weight: 800;
-  font-variation-settings: "wdth" 75;
-  line-height: 1.1;
-  letter-spacing: -0.01em;
-  font-size: clamp(1.375rem, 1.2rem + 0.8vw, 1.75rem);
+  font-weight: 620;
+  font-variation-settings: "wdth" 100;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  font-size: clamp(1.25rem, 1.15rem + 0.5vw, 1.5rem);
 }
 
 @utility type-numeral {
-  font-weight: 800;
-  font-variation-settings: "wdth" 66;
-  font-variant-numeric: lining-nums tabular-nums;
-  letter-spacing: -0.01em;
+  font-weight: 620;
+  font-variation-settings: "wdth" 100;
+  font-variant-numeric: tabular-nums lining-nums;
 }
 
 @utility type-wordmark {
-  font-weight: 800;
-  font-variation-settings: "wdth" 68;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  font-weight: 620;
+  font-variation-settings: "wdth" 100;
+  letter-spacing: -0.01em;
   line-height: 1;
 }
 
-/*
- * Section kicker: the headline face on its condensed axis, small and widely tracked, like the
- * department line above a running order. Mono stays reserved for times and numerals.
- */
+/* Kicker: a small sentence-case label in the text face (brief datelines and the labels that remain). */
 @utility type-kicker {
   font-family: var(--font-sans);
-  font-size: 0.6875rem;
-  line-height: 1rem;
-  font-weight: 700;
-  font-variation-settings: "wdth" 75;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  font-weight: 600;
+  font-variation-settings: "wdth" 100;
 }
 
 /*
@@ -451,7 +470,7 @@
 
   /* The turn animates only when motion is welcome; otherwise it snaps. */
   @media (prefers-reduced-motion: no-preference) {
-    transition: transform 160ms cubic-bezier(0.2, 0.7, 0.2, 1);
+    transition: transform 160ms var(--ease-out);
   }
 
   @media (forced-colors: active) {
@@ -487,17 +506,13 @@
   }
 }
 
-/*
- * Hero headline: the display face at a fixed, viewport-driven size, for headlines that share a row
- * with other content (type-display fills its container instead).
- */
+/* The display role under its older name, so the pages that use it need no edit. */
 @utility type-poster {
-  font-weight: 800;
-  font-variation-settings: "wdth" 62;
-  text-transform: uppercase;
-  line-height: 0.86;
-  letter-spacing: -0.01em;
-  font-size: clamp(3.25rem, 1.4rem + 4.6vw, 6.25rem);
+  font-weight: 620;
+  font-variation-settings: "wdth" 100;
+  line-height: 1.02;
+  letter-spacing: -0.034em;
+  font-size: clamp(1.875rem, 1.2rem + 2.6vw, 3.25rem);
 }
 
 /* The hero's time ruler: one hairline with hour ticks and quarter-hour ticks, like the clock axis
@@ -529,10 +544,10 @@
   }
 
   /*
-   * The house stamp for every chip on the site: a sentence-case stamp in the sans with an 8px
-   * corner (rounded-sm, never a pill) and a hairline in its own ink, used for the Hidden clash label,
-   * signal chips and "No Qloo signal". No tinted fill and no icon box. Its ink, vermilion and teal
-   * text clear AA on card and paper in both themes (app/tokens.test.ts).
+   * The house stamp for every chip on the site: a sentence-case stamp in the sans with a 6px
+   * corner (the label radius, never a pill) and a hairline in its own ink, used for the Hidden clash
+   * label, signal chips and "No Qloo signal". No tinted fill and no icon box. Its ink, raspberry and
+   * teal text clear AA on card and paper in both themes (app/tokens.test.ts).
    */
   .tag {
     display: inline-flex;
@@ -573,42 +588,18 @@
 }
 
 /*
- * Motion for the decision card, a tested move and a rule preview. Each sequence explains a change
- * the text already states, so the reduced-motion rule below shows the final state at once and
- * keeps every figure and label.
+ * Motion after an action: a tested move, a rule preview and a check's results. Each sequence explains
+ * a change the text already states, so the reduced-motion rule below shows the final state at once and
+ * keeps every figure and label. Nothing on the site animates on first paint or on scroll.
  */
-@keyframes cc-card-in {
-  from {
-    opacity: 0.98;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes cc-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
 @keyframes cc-slot-flight {
-  0% {
+  from {
     opacity: 0.72;
-    transform: translate(var(--dx), var(--dy)) scale(0.985);
+    transform: translate(var(--dx), var(--dy));
   }
-  18% {
+  to {
     opacity: 1;
-    transform: translate(calc(var(--dx) * 0.82), calc(var(--dy) * 0.82)) scale(1.025);
-  }
-  100% {
-    opacity: 1;
-    transform: translate(0, 0) scale(1);
+    transform: translate(0, 0);
   }
 }
 
@@ -656,7 +647,7 @@
   }
 }
 
-/* A vermilion bar for a moment, then a small outlined zero: nothing is shared. */
+/* A raspberry bar for a moment, then a small outlined zero: nothing is shared. */
 @keyframes cc-zero-in {
   0% {
     opacity: 0;
@@ -675,244 +666,50 @@
   }
 }
 
-.cc-card-enter {
-  animation: cc-card-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.cc-card-enter .cc-card-body {
-  animation: cc-fade-in 180ms ease-out 80ms both;
-}
-
 .cc-slot-flight {
-  animation: cc-slot-flight 500ms cubic-bezier(0.22, 1, 0.36, 1) 120ms both;
+  animation: cc-slot-flight 400ms var(--ease-move) both;
 }
 
 .cc-lift {
-  animation: cc-lift 620ms ease-out backwards;
+  animation: cc-lift 300ms var(--ease-out) backwards;
 }
 
 .cc-overlap-band {
   transform-box: fill-box;
   transform-origin: left center;
-  animation: cc-band-shrink 300ms cubic-bezier(0.22, 1, 0.36, 1) 420ms both;
+  animation: cc-band-shrink 300ms var(--ease-out) both;
 }
 
 .cc-rule-band {
   transform-box: fill-box;
   transform-origin: left center;
-  animation: cc-band-away 300ms ease-out 400ms both;
+  animation: cc-band-away 300ms var(--ease-out) 400ms both;
 }
 
 .cc-zero {
-  animation: cc-zero-in 650ms ease-out 400ms both;
+  animation: cc-zero-in 650ms var(--ease-out) 400ms both;
 }
 
 .cc-check-rules {
-  animation: cc-result-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: cc-result-in 180ms var(--ease-out) both;
 }
 
 .cc-check-shared {
-  animation: cc-result-in 180ms cubic-bezier(0.22, 1, 0.36, 1) 120ms both;
+  animation: cc-result-in 180ms var(--ease-out) 120ms both;
 }
 
-/*
- * Motion that plays once when a piece first scrolls into view (`lib/use-in-view.ts`). Each piece is
- * drawn at its final state and the classes only add the way there, so the server HTML, print and the
- * reduced-motion rule below all show the final frame. Transform, opacity and dash offset only; a
- * scroll-triggered piece holds its start frame while `data-reveal="wait"` (still out of sight) and
- * runs on `data-reveal="play"`. `--reveal-delay` staggers siblings.
- */
-
-/* Hero receipt (M1), from the moment the class is added: the tested slot flies in from its published
-   place (`--dx`, in the drawing's own units) at 300 ms, the shared-time bar shrinks from
-   `--band-from` (old / new width) over 420-720 ms, and the vermilion rule draws under the highlighted phrase over
-   900-1500 ms. The index count (420-900 ms) is the card's own. */
-@keyframes cc-hero-slot {
-  from {
-    opacity: 0.72;
-    transform: translateX(var(--dx, 0px));
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes cc-hero-band {
-  from {
-    transform: scaleX(var(--band-from, 1.5));
-  }
-  to {
-    transform: scaleX(1);
-  }
-}
-
-@keyframes cc-hero-mark {
-  from {
-    background-size: 0% 0.14em;
-  }
-  to {
-    background-size: 100% 0.14em;
-  }
-}
-
-/* The sequence reads clash first, then move: the shared time tints in (0-320 ms), the old place appears
-   and the slot flies from it (300-720 ms), the arrow shows the direction (700-1060 ms). */
-@keyframes cc-hero-clash {
-  from {
-    opacity: 0;
-    transform: scaleY(0.2);
-  }
-  to {
-    opacity: 0.16;
-    transform: scaleY(1);
-  }
-}
-
-@keyframes cc-hero-ghost {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 0.8;
-  }
-}
-
-@keyframes cc-hero-arrow {
-  from {
-    opacity: 0;
-    transform: translateX(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-.cc-hero-clash {
-  transform-box: fill-box;
-  transform-origin: center top;
-  animation: cc-hero-clash 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.cc-hero-ghost {
-  animation: cc-hero-ghost 300ms ease-out both;
-}
-
-.cc-hero-arrow {
-  animation: cc-hero-arrow 360ms cubic-bezier(0.22, 1, 0.36, 1) 700ms both;
-}
-
-.cc-hero-slot {
-  animation: cc-hero-slot 420ms cubic-bezier(0.22, 1, 0.36, 1) 300ms both;
-}
-
-.cc-hero-band {
-  transform-box: fill-box;
-  transform-origin: left center;
-  animation: cc-hero-band 300ms cubic-bezier(0.22, 1, 0.36, 1) 420ms both;
-}
-
-/* The rule is painted as a background image so it can draw in; the text never moves. */
-/* A vermilion rule drawn under the phrase, like a correction on a printed running order (no marker block). */
-.cc-hero-mark {
-  background-color: transparent;
-  background-image: linear-gradient(var(--primary), var(--primary));
-  background-repeat: no-repeat;
-  background-position: 0 100%;
-  background-size: 100% 0.14em;
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
-  animation: cc-hero-mark 600ms cubic-bezier(0.22, 1, 0.36, 1) 900ms both;
-}
-
-/* A stroke drawn along its path (`pathLength="1"`), from its start, or from its end with `--draw-from: -1`. */
-@keyframes cc-draw {
-  from {
-    stroke-dasharray: 1 1;
-    stroke-dashoffset: var(--draw-from, 1);
-  }
-  to {
-    stroke-dasharray: 1 1;
-    stroke-dashoffset: 0;
-  }
-}
-
-/* A dashed stroke uncovered left to right, so its dash pattern never slides. */
-@keyframes cc-wipe {
-  from {
-    clip-path: inset(-12px calc(100% + 12px) -12px -12px);
-  }
-  to {
-    clip-path: inset(-12px -12px -12px -12px);
-  }
-}
-
-/* Dial needle (M2): from the 100 tick (`--from` = that angle minus the needle's), 8% past, 3% short, settled. */
-@keyframes cc-dial-needle {
-  0% {
-    transform: rotate(var(--from, 0deg));
-    animation-timing-function: cubic-bezier(0.33, 0, 0.2, 1);
-  }
-  53% {
-    transform: rotate(calc(var(--from, 0deg) * -0.08));
-    animation-timing-function: ease-in-out;
-  }
-  78% {
-    transform: rotate(calc(var(--from, 0deg) * 0.03));
-    animation-timing-function: ease-out;
-  }
-  100% {
-    transform: rotate(0deg);
-  }
-}
-
+/* The budget dial's needle pivots on the dial's centre; it is drawn still. */
 .cc-dial-needle {
   transform-box: view-box;
   transform-origin: 120px 124px;
 }
 
-[data-reveal] .cc-dial-needle {
-  animation: cc-dial-needle 720ms backwards;
-}
-
-[data-reveal] .cc-dial-gap {
-  animation: cc-draw 600ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
-}
-
-/* Clash links (M3): each draws over 420 ms from its start time; the rank badge is printed in place. */
-[data-reveal] .cc-link-draw {
-  animation: cc-draw 420ms cubic-bezier(0.4, 0, 0.2, 1) var(--reveal-delay, 0ms) backwards;
-}
-
-[data-reveal] .cc-link-wipe {
-  animation: cc-wipe 420ms cubic-bezier(0.4, 0, 0.2, 1) var(--reveal-delay, 0ms) backwards;
-}
-
-[data-reveal="wait"] :is(.cc-dial-needle, .cc-dial-gap, .cc-link-draw, .cc-link-wipe) {
-  animation-play-state: paused;
-}
-
-/* The decision card's hero clash zone grows from its top edge (set inline in decision-card.tsx). */
+/* An overlap window growing from its top edge. pair-strip.tsx names it only in its retired receipt
+   mode, which no rule gives a duration, so it does not play there. */
 @keyframes cc-edge-grow {
   from {
     transform: scaleY(0);
   }
-}
-
-/* Hidden clashes (M8), per card from `--reveal-delay`: the genre line firms up. The corner diamond is printed. */
-@keyframes cc-note-in {
-  from {
-    opacity: 0.4;
-  }
-}
-
-[data-reveal] .cc-wall-note {
-  animation: cc-note-in 240ms ease-out calc(var(--reveal-delay, 0ms) + 580ms) backwards;
-}
-
-[data-reveal="wait"] .cc-wall-note {
-  animation-play-state: paused;
 }
 
 /* A tested move's verdict (M7): the After figure is underlined in the chip's colour. */
@@ -935,7 +732,7 @@
 .cc-rail {
   transform: scaleY(0);
   transform-origin: 50% 0;
-  transition: transform 240ms ease-out;
+  transition: transform 240ms var(--ease-out);
 }
 
 .cc-rail[data-done] {
@@ -946,437 +743,6 @@
   .cc-rail[data-done] {
     transform: scaleY(0);
   }
-}
-
-/*
- * The opening reveal (`components/site/intro-reveal.tsx`), only under `html[data-intro="play"]`, which the
- * head script sets on a first visit to the home page. A brand moment, so the sheet is the cool ink-blue
- * paper of the dark theme in both themes. One clock from first paint, paced so every word can be read:
- * - corner marks fade in (the name top left, how to skip bottom right) and a vermilion progress rule
- *   grows along the foot of the sheet until the lift (0-3250 ms);
- * - the vermilion dot pops (60 ms) and the words roll through one masked line like a reel, each held
- *   about half a second, the outgoing word leaving upward as the next rises in (Stages 160-640, Sets
- *   640-1120, Overlaps 1120-1600, Clashes 1600-2200), the dot beating on each change;
- * - "Clashes" lands with a mis-registered vermilion copy that slides in from the right and hits the ink
- *   copy (two sets overlapping), settling a hair off register;
- * - a vermilion line draws where the question will stand (2150-2350), splits, and the question opens out
- *   from it by clip-path (2300-2680), a vermilion rule swipes under its second line (2700-3020), and it
- *   holds still, readable, until the lift;
- * - the sheet lifts (3250-3850) while its curved, vermilion-edged lower edge flattens (3330-3850), the
- *   progress rule handing over to that edge, and it ends hidden, so it is gone even if no script runs.
- * While it shows it takes every pointer event; at its end it takes none.
- */
-@keyframes cc-intro-lift {
-  /* It takes pointer events until the very end of the lift, then none, so it never blocks the page. */
-  99% {
-    pointer-events: auto;
-  }
-  to {
-    transform: translateY(calc(-100% - 8px));
-    visibility: hidden;
-    pointer-events: none;
-  }
-}
-
-@keyframes cc-intro-flatten {
-  to {
-    transform: scaleY(0);
-  }
-}
-
-@keyframes cc-intro-drift {
-  to {
-    opacity: 0.5;
-    transform: translateY(-9vh) scale(0.97);
-  }
-}
-
-@keyframes cc-i-pop {
-  from {
-    opacity: 0;
-    transform: scale(0);
-  }
-}
-
-@keyframes cc-i-beat {
-  35% {
-    transform: scale(1.22);
-  }
-}
-
-@keyframes cc-i-out {
-  to {
-    opacity: 0;
-    transform: scale(0);
-  }
-}
-
-/* A word of the reel: in from below (0-220 ms of its 680), held still, out the top as the next comes in. */
-@keyframes cc-i-word {
-  0% {
-    opacity: 1;
-    transform: translateY(105%);
-  }
-  32%,
-  71% {
-    opacity: 1;
-    transform: none;
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(-105%);
-  }
-}
-
-/* The last word (760 ms): in, held still while it is hit, then out the top as the line draws. */
-@keyframes cc-i-word-last {
-  0% {
-    opacity: 1;
-    transform: translateY(105%);
-  }
-  29%,
-  74% {
-    opacity: 1;
-    transform: none;
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(-105%);
-  }
-}
-
-/* Its vermilion copy: in from the right, overshoots through the ink copy, settles a hair off register. */
-@keyframes cc-i-hit {
-  0% {
-    opacity: 0;
-    transform: translateX(0.3em);
-  }
-  25% {
-    opacity: 0.9;
-  }
-  60% {
-    opacity: 0.9;
-    transform: translate(-0.02em, 0);
-  }
-  100% {
-    opacity: 0.9;
-    transform: translate(0.05em, 0.03em);
-  }
-}
-
-@keyframes cc-i-draw {
-  from {
-    transform: scaleY(0);
-  }
-}
-
-@keyframes cc-i-open {
-  from {
-    clip-path: inset(0 50%);
-  }
-  to {
-    clip-path: inset(0 0);
-  }
-}
-
-@keyframes cc-i-split-l {
-  60% {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-    transform: translateX(-100%);
-  }
-}
-
-@keyframes cc-i-split-r {
-  60% {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-    transform: translateX(100%);
-  }
-}
-
-@keyframes cc-i-swipe {
-  from {
-    transform: scaleX(0);
-  }
-}
-
-@keyframes cc-i-grow {
-  from {
-    transform: scaleX(0);
-  }
-}
-
-@keyframes cc-i-fade {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-}
-
-@keyframes cc-i-handover {
-  to {
-    opacity: 0;
-  }
-}
-
-.cc-intro {
-  display: none;
-}
-
-html[data-intro="play"] .cc-intro {
-  --ci-bg: oklch(0.165 0.016 260);
-  --ci-ink: oklch(0.95 0.006 255);
-  --ci-dim: oklch(0.95 0.006 255 / 0.5);
-  --ci-accent: oklch(0.67 0.2 29);
-  --ci-gutter: clamp(16px, 3vw, 36px);
-  position: fixed;
-  inset: 0;
-  z-index: 90;
-  display: grid;
-  place-items: center;
-  /* While it shows, a press lands on the curtain, never on a control under it (the head script in
-     app/layout.tsx stops it and lifts the curtain on the click). */
-  pointer-events: auto;
-  cursor: default;
-  user-select: none;
-  -webkit-tap-highlight-color: transparent;
-  background: var(--ci-bg);
-  color: var(--ci-ink);
-  animation: cc-intro-lift 600ms cubic-bezier(0.76, 0, 0.24, 1) 3250ms both;
-}
-
-.cc-intro-stage {
-  display: grid;
-  place-items: center;
-  font-weight: 800;
-  font-variation-settings: "wdth" 62;
-  text-transform: uppercase;
-  letter-spacing: -0.01em;
-  animation: cc-intro-drift 600ms cubic-bezier(0.76, 0, 0.24, 1) 3250ms both;
-}
-
-.cc-intro-cycle,
-.cc-intro-final {
-  grid-area: 1 / 1;
-}
-
-.cc-intro-cycle {
-  display: flex;
-  align-items: center;
-  gap: 0.2em;
-  font-size: clamp(3.5rem, 1.9rem + 6.8vw, 8.75rem);
-  line-height: 1;
-}
-
-.cc-intro-dot {
-  flex: none;
-  width: 0.15em;
-  height: 0.15em;
-  border-radius: 50%;
-  background: var(--ci-accent);
-  translate: 0 0.01em;
-  animation:
-    cc-i-pop 260ms cubic-bezier(0.34, 1.56, 0.64, 1) 60ms both,
-    cc-i-beat 200ms cubic-bezier(0.22, 1, 0.36, 1) 640ms,
-    cc-i-beat 200ms cubic-bezier(0.22, 1, 0.36, 1) 1120ms,
-    cc-i-beat 200ms cubic-bezier(0.22, 1, 0.36, 1) 1600ms,
-    cc-i-out 180ms cubic-bezier(0.65, 0, 0.35, 1) 2120ms forwards;
-}
-
-/* The words share one masked cell; each shows only in its own window. */
-.cc-intro-words {
-  display: grid;
-  justify-items: start;
-  overflow: hidden;
-  padding-block: 0.06em;
-  padding-inline-end: 0.12em;
-}
-
-.cc-iw {
-  position: relative;
-  grid-area: 1 / 1;
-  opacity: 0;
-  animation: cc-i-word 680ms cubic-bezier(0.65, 0, 0.25, 1) var(--d);
-}
-
-.cc-iw-last {
-  animation-name: cc-i-word-last;
-  animation-duration: 760ms;
-}
-
-.cc-iw::after {
-  content: attr(data-w);
-}
-
-/* The vermilion copy under the last word: two sets that overlap. */
-.cc-iw-last::before {
-  content: attr(data-w);
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  color: var(--ci-accent);
-  opacity: 0;
-  animation: cc-i-hit 300ms cubic-bezier(0.2, 0.8, 0.2, 1) 1770ms both;
-}
-
-.cc-intro-final {
-  position: relative;
-  font-size: clamp(3.1rem, 1.9rem + 5.6vw, 7.25rem);
-  line-height: 0.9;
-  text-align: center;
-}
-
-.cc-if-text {
-  display: block;
-  padding: 0.08em 0.14em;
-  clip-path: inset(0 50%);
-  animation: cc-i-open 380ms cubic-bezier(0.16, 1, 0.3, 1) 2300ms both;
-}
-
-.cc-if-text::before {
-  content: attr(data-a);
-  display: block;
-}
-
-.cc-if-text::after {
-  content: attr(data-b);
-  display: block;
-}
-
-.cc-if-edges {
-  position: absolute;
-  inset: 0;
-  transform-origin: 50% 50%;
-  animation: cc-i-draw 200ms cubic-bezier(0.65, 0, 0.35, 1) 2150ms both;
-}
-
-.cc-if-l,
-.cc-if-r {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 50%;
-  border: 0 solid var(--ci-accent);
-}
-
-.cc-if-l {
-  left: 1px;
-  border-right-width: 2px;
-  animation: cc-i-split-l 380ms cubic-bezier(0.16, 1, 0.3, 1) 2300ms both;
-}
-
-.cc-if-r {
-  right: 1px;
-  border-left-width: 2px;
-  animation: cc-i-split-r 380ms cubic-bezier(0.16, 1, 0.3, 1) 2300ms both;
-}
-
-/* The rule that swipes in under the question's second line. */
-.cc-if-rule {
-  position: absolute;
-  right: 0.2em;
-  bottom: -0.06em;
-  left: 0.2em;
-  height: max(3px, 0.055em);
-  background: var(--ci-accent);
-  transform-origin: 0 50%;
-  animation: cc-i-swipe 320ms cubic-bezier(0.65, 0, 0.35, 1) 2700ms both;
-}
-
-/* Corner marks, small and quiet: the name top left, how to skip bottom right. */
-.cc-intro-mark,
-.cc-intro-skip {
-  position: absolute;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--ci-dim);
-  animation: cc-i-fade 300ms cubic-bezier(0.22, 1, 0.36, 1) 100ms both;
-}
-
-.cc-intro-mark {
-  top: var(--ci-gutter);
-  left: var(--ci-gutter);
-}
-
-.cc-intro-skip {
-  right: var(--ci-gutter);
-  bottom: calc(var(--ci-gutter) + 2px);
-}
-
-.cc-intro-mark::after {
-  content: attr(data-t);
-}
-
-.cc-intro-skip::after {
-  content: attr(data-t);
-}
-
-@media (hover: none) {
-  .cc-intro-skip::after {
-    content: attr(data-touch);
-  }
-}
-
-/* The progress rule along the foot of the sheet, until the lift hands it over to the curved edge. */
-.cc-intro-progress {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 2px;
-  background: var(--ci-accent);
-  transform-origin: 0 50%;
-  animation:
-    cc-i-grow 3250ms cubic-bezier(0.45, 0.05, 0.25, 1) both,
-    cc-i-handover 240ms linear 3250ms forwards;
-}
-
-/* The curved lower edge hangs below the sheet, off screen until the sheet lifts, and flattens as it goes. */
-.cc-intro-edge {
-  position: absolute;
-  top: calc(100% - 1px);
-  left: 0;
-  width: 100%;
-  height: clamp(64px, 15vh, 170px);
-  overflow: visible;
-}
-
-.cc-ie-bend {
-  transform-box: view-box;
-  transform-origin: 50% 0;
-  animation: cc-intro-flatten 520ms cubic-bezier(0.76, 0, 0.24, 1) 3330ms both;
-}
-
-.cc-ie-fill {
-  fill: var(--ci-bg);
-}
-
-.cc-ie-line {
-  fill: none;
-  stroke: var(--ci-accent);
-  stroke-width: 2px;
-  vector-effect: non-scaling-stroke;
-}
-
-/* The page under the sheet rises into place as it lifts: transform only, so the headline and the card
-   keep full opacity (first paint counts) and nothing shifts layout. `main` is the layout's own, so the
-   day loading in under it does not restart the rise. */
-@keyframes cc-intro-rise {
-  from {
-    transform: translateY(20px);
-  }
-}
-
-html[data-intro="play"] #main {
-  animation: cc-intro-rise 600ms cubic-bezier(0.22, 1, 0.36, 1) 3250ms backwards;
 }
 
 /* A decorative illustration sits on its own paper in both themes, so one file serves both. */
@@ -1390,69 +756,37 @@ html[data-intro="play"] #main {
 }
 
 @media print {
-  /* The printed brief stays square: paper output is a running order, not a set of objects. */
+  /* Print keeps the screen's corners (one radius system) and drops every shadow. */
   *,
   *::before,
   *::after {
-    border-radius: 0 !important;
     box-shadow: none !important;
   }
 
-  .cc-card-enter,
-  .cc-card-enter .cc-card-body,
-  .cc-slot-flight,
-  .cc-lift,
-  .cc-overlap-band,
-  .cc-rule-band,
-  .cc-zero,
-  .cc-check-rules,
-  .cc-check-shared,
-  .cc-hero-slot,
-  .cc-hero-band,
-  .cc-hero-clash,
-  .cc-hero-ghost,
-  .cc-hero-arrow,
-  .cc-hero-mark,
-  .cc-dial-needle,
-  .cc-dial-gap,
-  .cc-link-draw,
-  .cc-link-wipe,
-  .cc-link-badge,
-  .cc-meter-fill,
-  .cc-lens-row,
-  .cc-wall-gem,
-  .cc-wall-note,
-  .cc-stamp,
-  .cc-stamp-line::after {
+  /* Paper shows every piece at its final frame. */
+  *,
+  *::before,
+  *::after {
     animation: none !important;
+    transition: none !important;
   }
 
   .cc-meter-fill,
   .cc-rail[data-done] {
     transform: none !important;
   }
-
-  .cc-intro {
-    display: none !important;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* Every animation and transition is instant: each piece shows its final frame at once. */
   *,
   *::before,
   *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    animation: none !important;
+    transition: none !important;
     scroll-behavior: auto !important;
   }
 
-  .stream-caret::after {
-    animation: none;
-  }
-
-  .cc-card-enter,
-  .cc-card-enter .cc-card-body,
   .cc-slot-flight,
   .cc-lift,
   .cc-overlap-band,
@@ -1460,54 +794,29 @@ html[data-intro="play"] #main {
   .cc-zero,
   .cc-check-rules,
   .cc-check-shared {
-    animation: none !important;
     transform: none !important;
     opacity: 1 !important;
     outline: none !important;
   }
 
-  /* The scroll-triggered pieces: final frame. Opacity is left alone, so hover dimming still applies. */
-  .cc-hero-slot,
-  .cc-hero-band,
-  .cc-hero-clash,
-  .cc-hero-ghost,
-  .cc-hero-arrow,
-  .cc-hero-mark,
-  .cc-dial-needle,
-  .cc-dial-gap,
-  .cc-link-draw,
-  .cc-link-wipe,
-  .cc-link-badge,
-  .cc-meter-fill,
-  .cc-lens-row,
-  .cc-wall-gem,
-  .cc-wall-note,
-  .cc-stamp,
-  .cc-stamp-line::after {
-    animation: none !important;
-  }
-
-  .cc-hero-slot,
-  .cc-hero-band,
-  .cc-hero-clash,
-  .cc-hero-arrow,
   .cc-meter-fill,
   .cc-rail[data-done] {
     transform: none !important;
   }
-
-  .cc-rail {
-    transition: none !important;
-  }
-
-  .cc-intro {
-    display: none !important;
-  }
 }
 
-/* Theme switch reveal */
-/* The new theme is drawn on top and uncovered by a growing circle (the clip-path is animated from
-   script, centred on the toggle). The old snapshot just sits underneath, so nothing cross-fades. */
+/*
+ * Theme switch: the colours change at once. theme-toggle.tsx sets data-theme-switching on <html> just
+ * before the switch and clears it two frames later, so no colour transition fires while the new
+ * theme's styles apply. It passes no origin, so the provider's circular reveal never runs; the two
+ * view-transition rules stay with that unused path until after the freeze.
+ */
+html[data-theme-switching] *,
+html[data-theme-switching] *::before,
+html[data-theme-switching] *::after {
+  transition: none !important;
+}
+
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation: none;
@@ -1518,19 +827,12 @@ html[data-intro="play"] #main {
   z-index: 1;
 }
 
-/* The toggle icons: the sun's rays turn and retract, the moon's bite slides in. */
-.cc-theme-glyph {
-  transform-origin: center;
-}
-
+/* The theme menu's sun: its rays are retracted until the option is chosen. */
 .cc-theme-rays {
   transform-box: fill-box;
   transform-origin: center;
   transform: rotate(0deg) scale(0.7);
   opacity: 0.75;
-  transition:
-    transform 400ms cubic-bezier(0.4, 0, 0.2, 1),
-    opacity 400ms ease;
 }
 
 input:checked + span .cc-theme-rays {
@@ -1538,49 +840,7 @@ input:checked + span .cc-theme-rays {
   opacity: 1;
 }
 
-.cc-theme-bite {
-  transform: translate(6px, -6px);
-  transition: transform 400ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-input:checked + span .cc-theme-bite {
-  transform: translate(0, 0);
-}
-
-@keyframes cc-theme-pop {
-  0% {
-    transform: scale(0.78);
-  }
-  60% {
-    transform: scale(1.08);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-input:checked + span .cc-theme-glyph {
-  animation: cc-theme-pop 400ms cubic-bezier(0.34, 1.3, 0.5, 1);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  ::view-transition-group(*),
-  ::view-transition-old(*),
-  ::view-transition-new(*) {
-    animation: none !important;
-  }
-
-  .cc-theme-rays,
-  .cc-theme-bite {
-    transition: none;
-  }
-
-  input:checked + span .cc-theme-glyph {
-    animation: none;
-  }
-}
-
-@media print {
+@media (prefers-reduced-motion: reduce), print {
   ::view-transition-group(*),
   ::view-transition-old(*),
   ::view-transition-new(*) {
@@ -1608,15 +868,15 @@ input:checked + span .cc-theme-glyph {
 }
 
 .cc-ring-a {
-  animation: cc-ring-out-a 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: cc-ring-out-a 280ms var(--ease-out);
 }
 
 .cc-ring-b {
-  animation: cc-ring-out-b 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: cc-ring-out-b 280ms var(--ease-out);
 }
 
 .cc-ring-lens {
-  animation: cc-ring-fade 140ms ease-out;
+  animation: cc-ring-fade 140ms var(--ease-out);
 }
 
 @media (prefers-reduced-motion: reduce), print {

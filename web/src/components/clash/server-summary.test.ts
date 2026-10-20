@@ -74,7 +74,7 @@ describe("ClashControlFallback", () => {
     expect(html).not.toContain("Tiny Fest, Saturday");
   });
 
-  it("puts the decision card first, with its receipt and its heading, in the server HTML", () => {
+  it("draws the hero's final frame in the server HTML: the move, its readout and side effect, the taste line and Keep in place", () => {
     const decision = parseDecision({
       kind: "decision",
       day: 0,
@@ -103,18 +103,28 @@ describe("ClashControlFallback", () => {
     const summary = summarize(parsePreset(rawTinyPreset()), decision);
     const html = renderToStaticMarkup(createElement(ClashControlFallback, { intro: null, summary }));
     const plain = text(html);
-    expect(plain).toContain("Bo Diddly Squat 60 minutes later: 60 → to 0 minutes shared");
+    expect(plain).toContain("Bo Diddly Squat 60 minutes later 60 → to 0 min shared with Ann Arbor");
     expect(plain.indexOf("Bo Diddly Squat 60 minutes later")).toBeLessThan(plain.indexOf("Clash Budget Index"));
+    expect(html).toMatch(/<p data-side-effects=""[^>]*>No other overlap gets longer\.<\/p>/);
+    expect(plain).toContain("Taste overlap: 70 of 100 on this bill (a rank, not attendance) Source: Derived");
     expect(plain).toContain("Selected and scored by this app’s index");
     expect(html).toContain('id="decision-heading"');
-    // The server cannot act yet: no buttons that do nothing.
+    // Keep is drawn in place, at its size, but the server cannot act yet: it is not pressable.
+    expect(html).toMatch(/<button[^>]*data-variant="default"[^>]*disabled=""|<button[^>]*disabled=""[^>]*data-variant="default"/);
     expect(plain).not.toContain("Open this move");
+    // The drawing's frame and its key are in the server HTML too.
+    expect(html).toContain("data-day-graph");
+    expect(html).toContain("data-day-graph-key");
   });
 
-  it("has no card and no button to it without a decision", () => {
+  it("has no move, no Keep and no taste line without a decision", () => {
     const html = renderToStaticMarkup(createElement(ClashControlFallback, { intro: null, summary: otherSummary() }));
-    expect(html).not.toContain("decision-heading");
+    expect(html).not.toContain("data-readout");
+    expect(html).not.toContain("data-taste-line");
+    expect(text(html)).not.toContain("Keep this move");
     expect(text(html)).not.toContain("See one decision");
+    // The heading names the day's costliest clash instead.
+    expect(/<h2 id="decision-heading"[^>]*>([^<]*)<\/h2>/.exec(html)?.[1]).toBe("Ann Arbor × Bo Diddly Squat: 60 min shared");
   });
 
   it("falls back to skeletons without a summary", () => {

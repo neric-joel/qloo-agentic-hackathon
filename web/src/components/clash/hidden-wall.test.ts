@@ -84,8 +84,8 @@ describe("HiddenWall", () => {
   });
 });
 
-describe("HiddenWall motion (M8)", () => {
-  it("is drawn final in the server HTML, with the diamond and genre line ready to play on each printed card, and no dashed perforation", () => {
+describe("HiddenWall motion (round 34: no scroll-in motion)", () => {
+  it("is drawn final in the server HTML, with the diamond and genre line printed on each card, nothing waiting to play, and no dashed perforation", () => {
     const html = renderToStaticMarkup(createElement(HiddenWall, { evidence: evidence(2, 2) }));
     expect(html).not.toContain("data-reveal");
     expect(html).not.toContain("--reveal-delay");
@@ -95,6 +95,24 @@ describe("HiddenWall motion (M8)", () => {
     expect(html.match(/<div class="mx-4 border-t border-border" aria-hidden="true"><\/div>/g)).toHaveLength(2);
     expect(html.match(/cc-wall-gem/g)).toHaveLength(2);
     expect(html).toMatch(/class="cc-wall-note[^"]*">No genre tag in common\./);
+  });
+});
+
+describe("HiddenWall corners (round 34)", () => {
+  it("prints each card as a 14px panel with a quiet edge, its tags as 6px labels, and no capsule or shadow", () => {
+    const ev = evidence(2, 2);
+    ev.hidden_wall[0] = { ...ev.hidden_wall[0], shared_tags: [tag("indie"), tag("punk")] };
+    const html = renderToStaticMarkup(createElement(HiddenWall, { evidence: ev }));
+    const grid = html.slice(html.indexOf("print:grid"));
+    // Each printed card: the panel corner (rounded-lg, 14px), a 1px surface edge and the card fill.
+    expect(grid.match(/<li class="flex flex-col rounded-lg border border-surface-edge bg-card">/g)).toHaveLength(2);
+    // Its tags are the shared 6px label (.tag), never a capsule.
+    expect(grid.match(/<li class="tag [^"]*">/g)).toHaveLength(2);
+    const boxes = [...grid.matchAll(/<li class="([^"]*)"/g)].map((m) => m[1]);
+    for (const cls of boxes) expect(cls).not.toMatch(/rounded-(full|xl|none)|rounded-\[|shadow/);
+    // Full round only on the rank axes' dots.
+    expect(grid.match(/rounded-full/g)?.length).toBe(grid.match(/<span data-marker=""[^>]*rounded-full/g)?.length);
+    expect(grid).not.toContain("shadow");
   });
 });
 

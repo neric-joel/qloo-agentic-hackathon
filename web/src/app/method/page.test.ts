@@ -30,14 +30,14 @@ describe("the failed bar (M11)", () => {
     // spanning the bars (dashed means tested), labelled at its top.
     expect(FIGURE_DOMAIN).toBe(75);
     const at = (pct: number) => `${Math.round((pct / FIGURE_DOMAIN) * 100000) / 1000}%`;
-    // Each bar is square at the 0 axis and round at its value end. Taste overlap and popularity are the same solid
-    // ink bar, so popularity's longer bar shows it did better; genre tags and random are 6px muted baselines; no bar
-    // is vermilion.
-    expect(html).toContain(`rounded-r-bar h-4 bg-foreground" style="width:${at(reached)}"`);
-    expect(html).toContain(`rounded-r-bar h-4 bg-foreground" style="width:${at(methodRow("popularity").topQuarterPct)}"`);
-    expect(html).toContain(`rounded-r-bar h-1.5 bg-muted-foreground" style="width:${at(methodRow("genre").topQuarterPct)}"`);
-    expect(html).toContain(`rounded-r-bar h-1.5 bg-muted-foreground" style="width:${at(methodRow("random").topQuarterPct)}"`);
-    expect(html).not.toMatch(/rounded-r-bar[^"]*(bg-card|border-foreground|ink-3)/);
+    // Round 34 (one radius system): each bar has the same 6px mark corner at both ends (rounded-bar, clamped to half
+    // the height on a thin baseline). Taste overlap and popularity are the same solid ink bar, so popularity's longer
+    // bar shows it did better; genre tags and random are 6px muted baselines; no bar is raspberry.
+    expect(html).toContain(`rounded-bar h-4 bg-foreground" style="width:${at(reached)}"`);
+    expect(html).toContain(`rounded-bar h-4 bg-foreground" style="width:${at(methodRow("popularity").topQuarterPct)}"`);
+    expect(html).toContain(`rounded-bar h-1.5 bg-muted-foreground" style="width:${at(methodRow("genre").topQuarterPct)}"`);
+    expect(html).toContain(`rounded-bar h-1.5 bg-muted-foreground" style="width:${at(methodRow("random").topQuarterPct)}"`);
+    expect(html).not.toMatch(/rounded-bar[^"]*(bg-card|border-foreground|ink-3)/);
     // The chart is set at the prose's measure and in the prose's font size, so 76ch resolves in the same metrics as
     // the sentences under it.
     expect(html).toContain(
@@ -397,7 +397,9 @@ describe("the short version and the contents card (round 19)", () => {
     const list = short.slice(short.indexOf("<ul"));
     // No edge of any kind (the link's decoration-border-strong underline is not an edge).
     expect(list).not.toMatch(/(?<![w-])border(-[tblrxy])?(?![w-])|divide-/);
-    expect(list.match(/<li/g)).toHaveLength(3);
+    // Round 34 (audit M4): two rows, the failed test and what the measure is; what the same test did show is said
+    // once, in #tested.
+    expect(list.match(/<li/g)).toHaveLength(2);
   });
 
   it("draws no full-width rule between the page's sections, and frames the table once with inset row rules", () => {
@@ -406,7 +408,8 @@ describe("the short version and the contents card (round 19)", () => {
       expect(html.slice(start, html.indexOf(">", html.indexOf("<div", html.indexOf("<div", start) + 1)) + 1), id).not.toContain("border-t");
     }
     expect(html).not.toContain("max-w-[48rem] border-t");
-    // The table: one 20px frame with 16px padding, so its header rule (1px, never a 2px ink rule) and row rules are inset 16px.
+    // The table: one 14px frame (the panel corner) with 16px padding, so its header rule (1px, never a 2px ink rule)
+    // and row rules are inset 16px.
     expect(html).toMatch(/<div role="region" aria-labelledby="backtest-caption" tabindex="0" class="mt-3 overflow-x-auto rounded-lg border border-surface-edge px-4">/);
     expect(html).toContain('<tr class="border-b border-border align-bottom text-xs sm:text-sm">');
     expect(html).not.toContain("border-b-2");
@@ -417,7 +420,7 @@ describe("the short version and the contents card (round 19)", () => {
     expect(html).not.toMatch(/\b(bg|text)-primary\b/);
   });
 
-  it("sets the contents as one compact running order after the short version: numbered 1 to 4 in the display face, no label, no surface, no tick", () => {
+  it("sets the contents as one compact running order after the short version: titles only, no numeral, no label, no surface, no tick", () => {
     const at = html.indexOf('<nav aria-label="On this page">');
     expect(at).toBeGreaterThan(-1);
     const order = html.slice(at, html.indexOf("</nav>", at));
@@ -430,16 +433,15 @@ describe("the short version and the contents card (round 19)", () => {
     // One horizontal sequence that wraps, entries 24px apart, with no surface, rule, stripe, capsule or tick.
     expect(order).toContain('<ol class="flex flex-wrap gap-x-6 text-sm">');
     expect(order).not.toMatch(/\bbg-|rounded|shadow|border|divide-|sticky|h-\[3px\]/);
-    // Each entry is one link: the numeral in the condensed display face at 15px (the home section nav's numerals),
-    // never zero-padded, then the title, in the order of the four section headings.
-    const entries = [
-      ...order.matchAll(
-        /<a href="#([a-z-]+)" class="([^"]*)"><span aria-hidden="true" data-order-numeral="true" class="type-numeral text-\[0\.9375rem\]">(\d+)<\/span><span class="([^"]*)">([^<]+)<\/span><\/a>/g,
-      ),
-    ];
-    expect(entries.map((m) => m[3])).toEqual(["1", "2", "3", "4"]);
+    // Each entry is one link holding the title alone, in the order of the four section headings (round 34, audit
+    // M7: no numeral, since the sections are not steps; the list's order is the page's order).
+    const entries = [...order.matchAll(/<a href="#([a-z-]+)" class="([^"]*)"><span class="([^"]*)">([^<]+)<\/span><\/a>/g)];
+    expect(entries).toHaveLength(4);
+    expect(order.match(/<a /g)).toHaveLength(4);
+    expect(order).not.toMatch(/data-order-numeral|type-numeral|aria-hidden/);
+    expect(text(order)).not.toMatch(/\d/);
     expect(entries.map((m) => m[1])).toEqual(["price", "tested", "limits", "the-rest"]);
-    expect(entries.map((m) => m[5])).toEqual([
+    expect(entries.map((m) => m[4])).toEqual([
       "What the score is",
       "What we tested it against",
       "What taste overlap cannot tell you",
@@ -447,15 +449,15 @@ describe("the short version and the contents card (round 19)", () => {
     ]);
     // A 44px hit area: 6px above and below a 32px line. Inactive entries are muted (the server HTML marks none
     // active; the scroll observer sets aria-current="location" on the client).
-    for (const [, , cls, , titleCls] of entries) {
-      expect(cls).toBe("group inline-flex min-h-11 items-baseline gap-1.5 py-1.5 leading-8 hover:text-foreground text-muted-foreground");
+    for (const [, , cls, titleCls] of entries) {
+      expect(cls).toBe("group inline-flex min-h-11 items-baseline py-1.5 leading-8 hover:text-foreground text-muted-foreground");
       expect(titleCls).toBe("underline-offset-4 group-hover:underline");
     }
     expect(order).not.toContain("aria-current");
     expect(order).not.toMatch(/\b0[1-4]\b/);
     expect(order).not.toMatch(/(bg|text|border|decoration)-primary/);
-    // The active entry: numeral and title in ink, the title semibold with a 2px ink underline 4px off it. Wayfinding
-    // is ink, never vermilion.
+    // The active entry: the title in ink, semibold, with a 2px ink underline 4px off it. Wayfinding is ink, never
+    // raspberry.
     const source = readFileSync(join(process.cwd(), "src", "app", "method", "contents-rail.tsx"), "utf-8");
     expect(source).toContain('on ? "text-foreground" : "text-muted-foreground"');
     expect(source).toContain('on ? "font-semibold underline decoration-2 decoration-foreground" : "group-hover:underline"');
@@ -541,8 +543,15 @@ describe("hanging heads from 1280px (round 26)", () => {
     }
   });
 
-  it("sets the title on the sub-page step, the same clamp /check writes", () => {
-    expect(html).toContain('<h1 class="type-poster xl:col-span-12" style="font-size:clamp(2.25rem, 1.5rem + 2.5vw, 3rem)">How we know</h1>');
+  it("sets the title on the one display step every page title takes, with no size of its own, as /check does", () => {
+    expect(html).toContain('<h1 class="type-poster xl:col-span-12">How we know</h1>');
+    // Round 34 (one display role, 52px wide and 30px on a phone, from type-poster alone): neither sub-page writes a
+    // size of its own over it.
+    const check = readFileSync(join(process.cwd(), "src", "app", "check", "page.tsx"), "utf-8");
+    expect(check).toContain('<h1 className="type-poster break-words">');
+    for (const source of [check, readFileSync(join(process.cwd(), "src", "app", "method", "page.tsx"), "utf-8")]) {
+      expect(source).not.toMatch(/<h1[^>]*style=/);
+    }
   });
 });
 
@@ -819,25 +828,39 @@ describe("true sentences about location, the test that held, the brief and its l
   const genre = methodRow("genre");
   const popularity = methodRow("popularity");
 
-  it("says, right after the failed test in the short version, what the same test did show, every figure from METHOD_FIGURES", () => {
+  it("says what the same test did show once, in #tested ('What it does show'), every figure from METHOD_FIGURES; the short version no longer repeats it (round 34, audit M4)", () => {
     const [low, high] = taste.auc95!;
-    const held =
-      `In the same test, taste overlap ranked complained-about clashes above random (AUC ${taste.auc.toFixed(3)}, ` +
-      `${scale.intervalPct}% interval ${low.toFixed(3)} to ${high.toFixed(3)}, which stays above ${scale.auc.chance}) ` +
-      `and above genre tags (${genre.auc.toFixed(3)}), though the two intervals overlap widely. ` +
-      `Taste overlap is nearly unrelated to popularity (correlation ${backtest.popularityCorrelation}).`;
-    expect(held).toBe(
-      "In the same test, taste overlap ranked complained-about clashes above random (AUC 0.634, 95% interval 0.517 to 0.755, which stays above 0.5) and above genre tags (0.512), though the two intervals overlap widely. Taste overlap is nearly unrelated to popularity (correlation 0.08).",
+    // The same figures the short version's duplicate line carried: taste overlap's AUC against genre tags', the
+    // overlapping intervals, and the correlation with popularity, in the test's own section.
+    const shows =
+      `What it does show: in this test taste overlap ranked the complained-about clashes above genre tags did ` +
+      `(AUC ${taste.auc.toFixed(3)} against ${genre.auc.toFixed(3)}), though the two intervals overlap widely. ` +
+      `It is nearly unrelated to popularity (correlation ${backtest.popularityCorrelation}), so it is a separate signal from popularity.`;
+    expect(shows).toBe(
+      "What it does show: in this test taste overlap ranked the complained-about clashes above genre tags did (AUC 0.634 against 0.512), though the two intervals overlap widely. It is nearly unrelated to popularity (correlation 0.08), so it is a separate signal from popularity.",
     );
-    // Popularity's result is the next row, said once there (round 32).
-    expect(popularity.auc).toBe(0.722);
-    // "Stays above 0.5" is true of the figures themselves.
+    const start = html.indexOf('<section id="tested"');
+    const tested = text(html.slice(start, html.indexOf("</section>", start)));
+    expect(tested).toContain(shows);
+    expect(plain.match(/What it does show/g)).toHaveLength(1);
+    // Taste overlap's interval against chance stays on the page, in the comparison table whose caption says what 0.5
+    // means; the interval's floor is above chance in the figures themselves.
+    const table = text(html.slice(html.indexOf("<tbody"), html.indexOf("</tbody>")));
+    expect(table).toContain(`${taste.auc.toFixed(3)} (${low.toFixed(3)} to ${high.toFixed(3)})`);
+    expect(plain).toContain(`AUC (${scale.auc.chance} means no better than chance;`);
     expect(low).toBeGreaterThan(scale.auc.chance);
-    const start = html.indexOf('<section aria-labelledby="short-heading"');
-    const short = html.slice(start, html.indexOf("</section>", start));
+    // Popularity's result is said once in the short version's first row (round 32).
+    expect(popularity.auc).toBe(0.722);
+    const shortAt = html.indexOf('<section aria-labelledby="short-heading"');
+    const short = html.slice(shortAt, html.indexOf("</section>", shortAt));
     const items = [...short.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/g)].map((m) => text(m[1]));
+    expect(items).toHaveLength(2);
     expect(items[0]).toMatch(/^The test we set before building failed\./);
-    expect(items[1]).toBe(held);
+    expect(items[1]).toBe("It ranks a day's clashes and tests moves against timetable rules. Taste overlap is a rank, not attendance.");
+    // The duplicate line is gone from the page, and the short version states no AUC at all.
+    expect(plain).not.toContain("In the same test, taste overlap ranked");
+    expect(plain).not.toContain("which stays above");
+    expect(text(short)).not.toContain("AUC");
     // No heading of its own, and none of the words the decision rules out.
     expect(short).not.toMatch(/the result that held|beat genre tags/i);
     expect(plain).not.toMatch(/the result that held|beat genre tags|pre-registered/i);
@@ -868,8 +891,12 @@ describe("true sentences about location, the test that held, the brief and its l
     expect(html).toMatch(/<style>[\s\S]*@media print \{\s*body > header, body > footer \{ display: none !important; \}/);
     const css = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8");
     const print = css.slice(css.indexOf("@media print {\n  :root.dark {"));
-    expect(print).toMatch(/^@media print \{\s*:root\.dark \{\s*color-scheme: light;/);
+    expect(print).toMatch(/^@media print \{\s*:root\.dark \{/);
     expect(print.slice(0, print.indexOf("}"))).toContain("--foreground: oklch(0.21 0.018 262);");
+    // Paper is light in either theme: in the same block, an important rule outranks the theme script's inline
+    // color-scheme (round 34 moved it out of :root.dark for that reason).
+    const block = print.slice(0, print.indexOf("\n}\n"));
+    expect(block).toMatch(/:root \{\s*color-scheme: light !important;\s*\}/);
   });
 });
 
@@ -983,9 +1010,11 @@ describe("the lede and the index's words (round 33, E1)", () => {
   const plain = text(html);
 
   it("opens with 'scores', as the home page does, and leaves no money word for the index outside the defined 'full price'", () => {
-    expect(plain).toContain(
-      "Clash Control scores set-time clashes with a number it derives from Qloo data. This page says what that number is, what we checked it against, and where the check fell short.",
-    );
+    expect(plain).toContain("Clash Control scores set-time clashes with a number it derives from Qloo data.");
+    // Round 34 (audit M2): the lede is that one sentence; the self-describing second sentence is cut.
+    const lede = text(html.match(/<p class="mt-4 max-w-2xl [^"]*xl:col-span-12">([\s\S]*?)<\/p>/)?.[1] ?? "");
+    expect(lede).toBe("Clash Control scores set-time clashes with a number it derives from Qloo data.");
+    expect(plain).not.toContain("This page says what that number is");
     expect(plain).not.toMatch(/Clash Control prices/);
     // Outside the backtest's defined name "full price" (and its table column), and the anchor id kept for links,
     // the page says score or index.
@@ -998,5 +1027,30 @@ describe("the lede and the index's words (round 33, E1)", () => {
     expect(words).toEqual([]);
     expect(html).toContain('id="price"');
     expect(plain).toContain("Pair score = taste overlap × share of the shorter set played at once × combined draw × rarity factor.");
+  });
+});
+
+describe("the complaint median stays on /method (round 34, guardian S2)", () => {
+  const html = renderToStaticMarkup(createElement(MethodPage));
+  const { complaints } = METHOD_FIGURES;
+
+  it("shows the median overlap of the complained-about pairs, 50 minutes, with its count, range and sources", () => {
+    // The hero's stat line left home; its median stays here, beside the figures it summarises.
+    expect(complaints.medianMinutes).toBe(50);
+    const sentence =
+      `${complaints.clustersVerified} clashes that fans or the press complained about at five festivals had a verified ` +
+      `overlap in time: ${complaints.pairsVerified} pairs of acts, overlapping for a median of ${complaints.medianMinutes} ` +
+      `minutes (from ${complaints.rangeMinutes[0]} to ${complaints.rangeMinutes[1]}).`;
+    expect(sentence).toBe(
+      "45 clashes that fans or the press complained about at five festivals had a verified overlap in time: 86 pairs of acts, overlapping for a median of 50 minutes (from 10 to 90).",
+    );
+    expect(text(html)).toContain(sentence);
+    // In the sources fold of #tested, whose summary names the clashes with no click.
+    const sources = [...html.matchAll(/<details[\s\S]*?<\/details>/g)].map((m) => m[0]).find((d) => d.includes("Sources for the")) ?? "";
+    expect(text(sources)).toContain(sentence);
+    expect(text(sources.match(/<summary[^>]*>([\s\S]*?)<\/summary>/)?.[1] ?? "")).toBe(`Sources for the ${complaints.clustersVerified} clashes`);
+    const tested = html.indexOf('<section id="tested"');
+    expect(html.indexOf(sources)).toBeGreaterThan(tested);
+    expect(html.indexOf(sources)).toBeLessThan(html.indexOf("</section>", tested));
   });
 });

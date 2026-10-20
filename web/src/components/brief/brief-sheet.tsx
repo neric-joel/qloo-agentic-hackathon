@@ -3,9 +3,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowLeft, LoaderCircle, Lock, Printer } from "lucide-react";
+import { ArrowLeft, Lock, Printer } from "lucide-react";
 
-import { DiamondGlyph } from "@/components/clash/marks";
 import { otherHalfPair } from "@/components/clash/taste-lens";
 import { TradeoffTable } from "@/components/clash/tradeoff-table";
 import { Button } from "@/components/ui/button";
@@ -50,6 +49,7 @@ import {
   tableOnPaper,
   type BriefRow,
   type BriefTradeoff,
+  type SharedMinutes,
 } from "@/lib/brief";
 import { daysWithSets } from "@/lib/clashes";
 import { requestDecision, type Decision } from "@/lib/decision";
@@ -75,6 +75,19 @@ export const SIGN_OFF = ["Prepared by", "Reviewed by (head of programming)", "Da
 
 /** A link that names a day this page cannot read, or carries moves with no day. */
 export const UNAVAILABLE = "This brief link is unavailable. Open the timetable and choose ‘Open as a one-page brief’.";
+
+/**
+ * On paper, when a full sheet leaves the shared-minutes line off: what the plan does outside the published day's
+ * ranked clashes, in that line's own words and figures, with the set named (the line's first sentence, which names
+ * it, is not printed). So a printed sheet always shows the new overlap a kept move creates.
+ */
+export function outsideOnPaper(minutes: SharedMinutes): string {
+  const set = minutes.ranked === 1 ? "the published day’s one ranked clash" : `the published day’s ${minutes.ranked} ranked clashes`;
+  const { added, longest } = minutes.outside;
+  return longest
+    ? `Outside ${set}, the plan adds ${added} min of new or longer overlap (longest: ${longest.a} × ${longest.b}, ${longest.minutes} min).`
+    : `Outside ${set}, no overlap gets longer.`;
+}
 
 // ------------------------------------------------------------------------------------ loading
 
@@ -261,19 +274,18 @@ function BackLink({ href }: { href: string }) {
 
 /**
  * Loading, error and unknown-link states: the page's h1, one short line and the way back. The line's words sit in one
- * element beside the spinner, so a sentence never splits into flex columns.
+ * element, so a sentence never splits into flex columns. While loading it is still (no spinner: nothing moves that the
+ * visitor did not cause) and holds a screen's height, as the page's own fallback does, so the footer starts below the
+ * fold and the sheet arriving moves nothing in view.
  */
 function Notice({ children, href, busy = false }: { children: ReactNode; href: string; busy?: boolean }) {
   return (
-    <div className="container-page max-w-[60rem] pt-8 pb-12">
+    <div className={cn("container-page max-w-[60rem] pt-8 pb-12", busy && "min-h-svh")}>
       <h1 className="type-kicker text-muted-foreground">Clash brief</h1>
       <p
         role={busy ? "status" : "alert"}
         className="mt-2 flex max-w-prose items-center gap-2 text-lg leading-snug font-semibold sm:text-xl"
       >
-        {busy ? (
-          <LoaderCircle aria-hidden="true" className="size-5 shrink-0 animate-spin motion-reduce:animate-none" />
-        ) : null}
         <span>{children}</span>
       </p>
       {busy ? null : (
@@ -378,12 +390,13 @@ function Block({
   quietInPrint?: boolean;
 }) {
   const id = `brief-${title.toLowerCase().replace(/[^a-z]+/g, "-").replace(/^-|-$/g, "")}`;
+  // On paper a heading takes the sheet's own leading, not the screen label's 18px line.
   return (
     <section aria-labelledby={id} className={cn("mt-7 break-inside-avoid print:mt-[3pt]", className)}>
       <h2
         id={id}
         className={cn(
-          "type-kicker pb-1.5 print:pb-[1pt] print:text-[10pt]",
+          "type-kicker pb-1.5 print:pb-[1pt] print:text-[10pt] print:leading-[1.17]",
           quietInPrint && "print:sr-only",
         )}
       >
@@ -394,13 +407,12 @@ function Block({
   );
 }
 
+/**
+ * A hidden clash's mark in the table and the stacked rows: the word "Hidden" as plain semibold ink, with no ring,
+ * chip or fill (the note under the table says what it means). Raspberry stays on shared minutes.
+ */
 function HiddenMark() {
-  return (
-    <span className="tag text-foreground print:px-[3pt] print:text-[9pt]">
-      <DiamondGlyph className="size-2" />
-      Hidden
-    </span>
-  );
+  return <span className="font-semibold whitespace-nowrap text-foreground print:text-[9pt]">Hidden</span>;
 }
 
 function LockedMark() {
@@ -616,7 +628,8 @@ export function BriefContent({
   // What the plan does to the timetable's shared minutes, over the published day's ranked clashes and outside them.
   const minutes = plan && withMoves ? sharedMinutes(preset, day, plan) : null;
   // The minutes line and the decision lines are the first things a full sheet leaves off paper (they stay on the
-  // screen, where the decision line is not shown at all): the minutes line first, then the decision lines.
+  // screen, where the decision line is not shown at all): the minutes line first, then the decision lines. Without
+  // the minutes line, its second sentence (what the plan adds outside the ranked clashes) still prints.
   const paper = onPaper(steps, columns, tradeoff !== null);
 
   // On paper the coverage sentence runs on after the band sentence, in the room its last line leaves.
@@ -696,6 +709,16 @@ export function BriefContent({
             <>
               {" "}
               <p className="mt-1 print:mt-0 print:inline">{verdict}</p>
+            </>
+          ) : null}
+          {/* On paper only, where the minutes line below is left off: what the plan adds outside the ranked clashes,
+              run on after the verdict in the room its last line leaves. The screen has the whole minutes line. */}
+          {minutes && !paper.minutes ? (
+            <>
+              {" "}
+              <p data-new-overlap className="hidden print:inline">
+                {outsideOnPaper(minutes)}
+              </p>
             </>
           ) : null}
           {minutes ? (
@@ -805,7 +828,7 @@ export function BriefContent({
         className,
       )}
     >
-      <p className="type-kicker text-muted-foreground print:text-[9pt]">
+      <p className="type-kicker text-muted-foreground print:text-[9pt] print:leading-[1.17]">
         Clash brief · {festival}, {dayLabel}
       </p>
       <h1

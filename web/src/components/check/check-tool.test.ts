@@ -150,14 +150,21 @@ describe("the check tool's sheet", () => {
     expect(text(html)).toMatch(/Showing 18 of 25 rows: the first 12 and every flagged row Show all rows/);
   });
 
-  it("frames the sheet as the editor surface, clipped, with an unfilled header, inset horizontal rules only and Clear alone on a quiet row under it", () => {
-    // A field in the ruled style: the card fill between a 1px border-strong rule above and below, no side
-    // edges and no radius class at all (a bare rounded-none is banned), its focus outline kept.
+  it("frames the sheet as a 14px editor panel, clipped, with an unfilled header, inset horizontal rules only and Clear alone on a quiet row under it", () => {
+    // A panel (round 34, one radius system): the card fill inside a 1px border-strong edge on all four sides and the
+    // 14px panel corner (rounded-lg), overflow clipped so the gutter and the field end inside that corner; its focus
+    // outline kept, which follows the corner.
     expect(html).toMatch(
-      /<div class="overflow-hidden border-y border-border-strong bg-card has-\[textarea:focus-visible\]:outline-2 has-\[textarea:focus-visible\]:outline-offset-2 has-\[textarea:focus-visible\]:outline-ring">/,
+      /<div class="overflow-hidden rounded-lg border border-border-strong bg-card has-\[textarea:focus-visible\]:outline-2 has-\[textarea:focus-visible\]:outline-offset-2 has-\[textarea:focus-visible\]:outline-ring">/,
     );
-    const frame = html.match(/<div class="(overflow-hidden border-y border-border-strong bg-card[^"]*)"/)?.[1] ?? "";
-    expect(frame).not.toMatch(/(^|\s)(rounded(-[a-z0-9]+)?|border|border-surface-edge|border-x|border-l|border-r)(\s|$)/);
+    const frame = html.match(/<div class="(overflow-hidden rounded-lg border border-border-strong bg-card[^"]*)"/)?.[1] ?? "";
+    const classes = frame.split(/\s+/);
+    // One radius, the panel's: no other corner class, no capsule, no rounded-none and no arbitrary radius.
+    expect(classes.filter((name) => /^rounded/.test(name))).toEqual(["rounded-lg"]);
+    // An edge on all four sides in the control-edge ink: the plain border, never one side or a pair of rules.
+    expect(classes.filter((name) => /^border/.test(name))).toEqual(["border", "border-border-strong"]);
+    expect(classes).toContain("overflow-hidden");
+    expect(classes).toContain("bg-card");
     expect(html).toMatch(/<table[^>]*class="w-full border-separate border-spacing-0/);
     // The header row has no fill; its rule is an inset hairline.
     expect(html).toContain("<thead><tr><th");
@@ -192,10 +199,10 @@ describe("the check tool's sheet", () => {
 
 describe("the sheet's header row", () => {
   const html = renderToStaticMarkup(createElement(CheckTool, { startWithSample: true }));
-  const surface = html.slice(html.indexOf('<div class="overflow-hidden border-y border-border-strong bg-card'));
+  const surface = html.slice(html.indexOf('<div class="overflow-hidden rounded-lg border border-border-strong bg-card'));
   const header = surface.slice(0, surface.indexOf("<table"));
   // The sheet's name row: from the name's label to the sheet's frame.
-  const nameRow = html.slice(html.indexOf("<label"), html.indexOf('<div class="overflow-hidden border-y border-border-strong bg-card'));
+  const nameRow = html.slice(html.indexOf("<label"), html.indexOf('<div class="overflow-hidden rounded-lg border border-border-strong bg-card'));
 
   it("sits inside the sheet at the top: one wrapping row over an inset hairline, Table / CSV first in source and on screen", () => {
     expect(header).toMatch(
@@ -205,7 +212,7 @@ describe("the sheet's header row", () => {
     expect(header).toMatch(/after:content-\[&#x27;&#x27;\]"><div role="radiogroup" aria-label="Show the draft grid as"/);
     expect(html).not.toContain("order-first");
     // The sheet's name stays above the sheet.
-    expect(html.indexOf("Invented sample, to show the format")).toBeLessThan(html.indexOf("overflow-hidden border-y border-border-strong"));
+    expect(html.indexOf("Invented sample, to show the format")).toBeLessThan(html.indexOf("overflow-hidden rounded-lg border border-border-strong"));
   });
 
   /** The opening tag's attributes and classes of the button that reads `label`. */
@@ -269,8 +276,14 @@ describe("the sheet's header row", () => {
     // The only solid ink button in the header is the submit, and nothing is outlined.
     expect(header.match(/data-variant="(default|ink)"/g)).toHaveLength(1);
     expect(header).not.toContain('data-variant="outline"');
-    // (The frame's own rule above and below is border-strong; inside it, no control is outlined.)
-    expect(header.slice(header.indexOf(">") + 1)).not.toContain("border-border-strong");
+    // (The frame's own edge is border-strong; inside it, no control is outlined. Round 34: the shared switch's thumb
+    // carries its own 1px border-strong edge, pinned in segmented-control.test.ts, so the switch is left out here.)
+    const bar = header.slice(header.indexOf(">") + 1);
+    const outsideSwitch = bar.slice(0, bar.indexOf('<div role="radiogroup"')) + bar.slice(bar.indexOf("<button"));
+    expect(bar.indexOf('<div role="radiogroup"')).toBeGreaterThan(-1);
+    expect(bar.indexOf('<div role="radiogroup"')).toBeLessThan(bar.indexOf("<button"));
+    expect(outsideSwitch).toContain(">Check the grid<");
+    expect(outsideSwitch).not.toContain("border-border-strong");
     expect(header).not.toContain("border-[1.5px]");
     expect(header).not.toContain("&middot;");
     // No control was added: the bar holds the check and the two tabs, the name row the two utilities, nothing else.
@@ -431,8 +444,16 @@ describe("numbered rule breaks, tied to their rows", () => {
     // The right column's list carries the same numbers, in the same order.
     const list = html.slice(html.indexOf('aria-label="Rule breaks"'), html.indexOf("Sets that share time"));
     expect(discs(list)).toEqual([1, 2, 3, 4]);
-    // Discs are inline SVG circles, never a rounded-full box.
-    expect(html).toMatch(/<circle[^>]*fill="var\(--primary\)"/);
+    // Discs are inline SVG circles, never a rounded-full box: ink with the number in paper (round 34: a rule break is
+    // ink, never the raspberry of shared time).
+    expect(html).toMatch(/<circle[^>]*fill="var\(--foreground\)"/);
+    const discMarks = html.match(/<svg aria-hidden="true"[^>]*data-break-disc="\d+"[^>]*>[\s\S]*?<\/svg>/g) ?? [];
+    expect(discMarks.length).toBeGreaterThan(0);
+    for (const disc of discMarks) {
+      expect(disc).toMatch(/<circle [^>]*fill="var\(--foreground\)"/);
+      expect(disc).toMatch(/<text [^>]*fill="var\(--background\)"/);
+      expect(disc).not.toContain("--primary");
+    }
   });
 
   it("marks every row a break names with the same number in its gutter, never in the act cell, past row 12 after Show all rows", () => {
@@ -1057,7 +1078,7 @@ describe("a figure under each rule break of the invented sample", () => {
     expect(buttons[1].classes.endsWith(" px-2 decoration-1 underline-offset-4 hover:bg-transparent hover:underline ml-1 max-sm:-ml-2")).toBe(true);
     expect(buttons[2].classes.endsWith(" h-11 px-5 text-[0.9375rem] max-sm:w-full lg:px-4")).toBe(true);
     // The two utilities come before the sheet's frame, the switch before the check.
-    expect(top.indexOf("Check an invented sample")).toBeLessThan(top.indexOf("overflow-hidden border-y border-border-strong"));
+    expect(top.indexOf("Check an invented sample")).toBeLessThan(top.indexOf("overflow-hidden rounded-lg border border-border-strong"));
     expect(top.indexOf('aria-label="Show the draft grid as"')).toBeLessThan(top.indexOf("Check the grid"));
     expect(top).not.toContain("data-break-strip");
   });
@@ -1503,6 +1524,47 @@ describe("round 31: Check a published day (C8)", () => {
     expect(source).toContain("Check a published day: {publishedDay.title}");
     // The published label is shown above the results and printed on the brief.
     expect(source).toMatch(/published: run\.published \?\? null/);
+  });
+
+  it("keeps a phone's line for the action until the API answers, with nothing to read or press, so the sheet never moves (round 34)", () => {
+    const html = renderToStaticMarkup(createElement(CheckTool, { startWithSample: true }));
+    const nameRow = html.slice(html.indexOf("<label"), html.indexOf('<div class="overflow-hidden rounded-lg border border-border-strong bg-card'));
+    // After the two utilities: one empty line, hidden from assistive technology, the action's height on a phone
+    // (44px and the button's own padding, border and type), and nothing from sm, where the pair sits on one line.
+    const holder = nameRow.match(/<\/button><span aria-hidden="true" class="([^"]*)">([^<]*)<\/span><\/div>/);
+    expect(holder?.[1]).toBe("block min-h-11 w-full border border-transparent py-2.5 text-[0.9375rem] sm:hidden");
+    expect(holder?.[2].trim()).toBe("");
+    expect(nameRow.match(/<button/g)).toHaveLength(2);
+    // Undefined until the API answers; null (no published day) leaves no line, and a day replaces it with the action.
+    const source = readFileSync(fileURLToPath(new URL("./check-tool.tsx", import.meta.url)), "utf8");
+    expect(source).toContain("useState<PublishedDay | null | undefined>(undefined)");
+    expect(source).toMatch(/\) : publishedDay === undefined \? \(/);
+  });
+});
+
+describe("the sample the page opens with is drawn in place (round 34: motion answers an action, never the first paint)", () => {
+  const sectionsOf = (html: string) => [...html.matchAll(/<section [^>]*aria-labelledby="(check-rules-heading|check-shared-heading)"[^>]*class="([^"]*)"/g)];
+
+  it("opens with the sample's results and no reveal on either section", () => {
+    const html = renderToStaticMarkup(createElement(CheckTool, { startWithSample: true }));
+    const sections = sectionsOf(html);
+    expect(sections).toHaveLength(2);
+    for (const [, , classes] of sections) expect(classes).not.toMatch(/cc-check-(rules|shared)/);
+  });
+
+  it("reveals the results of a check a visitor runs, and not those drawn still", () => {
+    if (!sample.ok) throw new Error("the sample should read");
+    const props = { report: sample.report, decisions: new Map(), onDecide: () => {}, showAll: false, onShowAll: () => {}, nonce: 2 };
+    const pressed = sectionsOf(renderToStaticMarkup(createElement(CheckResults, props))).map((m) => m[2]);
+    expect(pressed[0]).toContain("cc-check-rules");
+    expect(pressed[1]).toContain("cc-check-shared");
+    for (const [, , classes] of sectionsOf(renderToStaticMarkup(createElement(CheckResults, { ...props, still: true })))) {
+      expect(classes).not.toMatch(/cc-check-(rules|shared)/);
+    }
+    // Still only for the arrival's own run: a check, the sample loaded again or a change tried each reveal.
+    const source = readFileSync(fileURLToPath(new URL("./check-tool.tsx", import.meta.url)), "utf8");
+    expect(source).toContain("still={run.arrival === true && !working}");
+    expect(source.match(/arrival: true/g)).toHaveLength(1);
   });
 });
 

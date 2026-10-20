@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 
 /**
  * Scroll-triggered motion that plays once per page load. Every piece of motion on the site is drawn
@@ -222,28 +222,4 @@ export function useReveal(
     return watchReveal(element, { threshold, fallbackMs, onPhase: (next) => setPhase(next) });
   }, [ref, threshold, fallbackMs, enabled]);
   return phase;
-}
-
-/**
- * The opening reveal on the home page (`components/site/intro-reveal.tsx`). A script in the page's
- * head sets `data-intro="play"` on `<html>` when the intro is to play; the overlay sets it to "done"
- * and sends this event when the curtain has lifted or the visitor skipped it.
- */
-export const INTRO_DONE_EVENT = "cc:intro-done";
-
-function introPlaying(): boolean {
-  return typeof document !== "undefined" && document.documentElement.dataset.intro === "play";
-}
-
-function subscribeIntro(onChange: () => void): () => void {
-  window.addEventListener(INTRO_DONE_EVENT, onChange);
-  return () => window.removeEventListener(INTRO_DONE_EVENT, onChange);
-}
-
-/**
- * False only while the opening reveal is on screen, so a piece that would play under the curtain (the
- * hero receipt, M1) waits for it. True on the server, on every page without the intro, and once it ends.
- */
-export function useIntroDone(): boolean {
-  return useSyncExternalStore(subscribeIntro, () => !introPlaying(), () => true);
 }

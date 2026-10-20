@@ -51,6 +51,11 @@ type Props = {
   onShowAll: (showAll: boolean) => void;
   /** Changes with every check, so the sections reveal again (the reveal is skipped under reduced motion). */
   nonce: number;
+  /**
+   * Drawn in place with no reveal: the results the page opens with, which no press caused (motion answers a
+   * visitor's action, never the first paint).
+   */
+  still?: boolean;
   /** The first heading, which takes focus after a check. */
   headingRef?: Ref<HTMLHeadingElement>;
   /** "Find a change" for each break and each pair; left out, the results carry no search. */
@@ -145,7 +150,7 @@ export function nextStep(item: Pick<RuleBreak, "rule" | "rows">, report: Pick<Ch
 }
 
 /**
- * A row reference as a button: "row 21" in 12px mono on an 8px label corner with a control edge, its hit
+ * A row reference as a button: "row 21" in 12px mono on the 6px label corner with a control edge, its hit
  * area stretched to 44px above and below. It shows that row in the draft table.
  */
 const ROW_REF =
@@ -155,15 +160,16 @@ const ROW_REF =
  * A break's heading as a button: pressed, every row the break names stays marked in the draft table.
  * The heading keeps its type and starts with the break's numbered disc; the press shows as the wash
  * with a 2px ink outline (the focus ring takes its place while the button has keyboard focus). Never
- * vermilion: only the disc is.
+ * raspberry: a rule break is not shared time.
  */
 export const BREAK_HEADING =
   "-mx-1.5 inline-flex min-h-11 max-w-full items-center gap-2 rounded-md px-1.5 text-left text-base leading-6 font-semibold transition-colors duration-150 ease-out hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-pressed:bg-accent aria-pressed:not-focus-visible:outline-2 aria-pressed:not-focus-visible:outline-offset-0 aria-pressed:not-focus-visible:outline-foreground motion-reduce:transition-none";
 
 /**
- * A rule break's number as a vermilion disc, drawn as inline SVG: 20px beside a break's heading, 16px at
- * the start of each grid row the break names. Decorative: the heading and the row say "Rule break N."
- * to assistive technology in words.
+ * A rule break's number as an ink disc with the number in paper, drawn as inline SVG: 20px beside a
+ * break's heading, 16px at the start of each grid row the break names. A rule break is ink with its
+ * number and words, never the raspberry of shared time. Decorative: the heading and the row say "Rule
+ * break N." to assistive technology in words.
  */
 export function BreakDisc({ n, size = 20 }: { n: number; size?: 16 | 20 }) {
   const r = size / 2;
@@ -177,13 +183,13 @@ export function BreakDisc({ n, size = 20 }: { n: number; size?: 16 | 20 }) {
       viewBox={`0 0 ${size} ${size}`}
       className="inline-block shrink-0 align-middle"
     >
-      <circle cx={r} cy={r} r={r} fill="var(--primary)" />
+      <circle cx={r} cy={r} r={r} fill="var(--foreground)" />
       <text
         x={r}
         y={r}
         dy="0.35em"
         textAnchor="middle"
-        fill="var(--primary-foreground)"
+        fill="var(--background)"
         fontSize={size === 20 ? 11 : 10}
         fontWeight={700}
         className="font-mono tabular-nums"
@@ -331,6 +337,7 @@ export function CheckResults({
   showAll,
   onShowAll,
   nonce,
+  still = false,
   headingRef,
   trial,
   trialHeadingRef,
@@ -395,7 +402,7 @@ export function CheckResults({
         </nav>
       </div>
 
-      <section key={`rules-${nonce}`} aria-labelledby={RESULT_IDS.rules} className={cn(PANEL, "cc-check-rules")}>
+      <section key={`rules-${nonce}`} aria-labelledby={RESULT_IDS.rules} className={cn(PANEL, !still && "cc-check-rules")}>
         <h2 id={RESULT_IDS.rules} ref={headingRef} tabIndex={-1} className="type-title scroll-mt-24 outline-offset-4 print:text-[13pt] print:outline-none">
           Rule breaks ({breaks.length})
         </h2>
@@ -485,7 +492,7 @@ export function CheckResults({
 
       {between}
 
-      <section key={`shared-${nonce}`} aria-labelledby={RESULT_IDS.shared} className={cn(PANEL, "cc-check-shared")}>
+      <section key={`shared-${nonce}`} aria-labelledby={RESULT_IDS.shared} className={cn(PANEL, !still && "cc-check-shared")}>
         <h2 id={RESULT_IDS.shared} className="type-title scroll-mt-24 print:text-[13pt]">
           Sets that share time ({pairCountLabel(shared.length)})
         </h2>

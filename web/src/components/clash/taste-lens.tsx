@@ -1,21 +1,16 @@
-import { useRef, type CSSProperties } from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 
 import { ordinal } from "@/lib/clashes";
 import type { LensApart, Lenses } from "@/lib/lenses";
 import type { PairClash } from "@/lib/preset";
-import { useReveal } from "@/lib/use-in-view";
+import { cn } from "@/lib/utils";
 
 /** The anchor of the section. */
 export const TASTE_LENS_ID = "taste-lens";
 
 /** How many pairs each list shows. */
 export const LENS_LIST_LIMIT = 5;
-
-/** M6: rows rise this far apart; the second list starts this much after the first. */
-const ROW_STAGGER_MS = 40;
-const SECOND_LIST_MS = 160;
 
 type LensRow = { a: string; b: string; a_id: string; b_id: string; rank: number; other: number | null };
 
@@ -107,7 +102,6 @@ function LensList({
   describe,
   ranked,
   onOpen,
-  startMs,
   embedded = false,
 }: {
   title: string;
@@ -115,8 +109,6 @@ function LensList({
   describe: (row: LensRow) => string;
   ranked: readonly PairClash[];
   onOpen: (clash: PairClash, trigger: HTMLElement | null) => void;
-  /** When this list's rows start to rise, if the section plays (M6). */
-  startMs: number;
   /**
    * These pairs drop out of the top once taste overlap counts. The list's heading names it; the rows
    * carry no edge of their own (no left stripe).
@@ -128,12 +120,18 @@ function LensList({
   if (rows.length === 0) return null;
   const Heading = embedded ? "h4" : "h3";
   return (
-    // On wide screens both lists share two grid rows (heading, rows), so a heading that wraps in one
-    // column leaves the two lists' rows aligned.
-    <div className="min-w-0 lg:row-span-2 lg:grid lg:grid-rows-subgrid">
+    // Side by side, both lists share two grid rows (heading, rows), so a heading that wraps in one column
+    // leaves the two lists' rows aligned. Embedded, the lists sit side by side once their slot is 36rem wide.
+    <div
+      className={
+        embedded
+          ? "min-w-0 @xl:row-span-2 @xl:grid @xl:grid-rows-subgrid"
+          : "min-w-0 lg:row-span-2 lg:grid lg:grid-rows-subgrid"
+      }
+    >
       <Heading className="pb-2 text-[0.8125rem] leading-5 font-semibold">{title}</Heading>
       <ol className="divide-y divide-border">
-        {rows.map((row, i) => {
+        {rows.map((row) => {
           const clash = findClash(ranked, row.a_id, row.b_id);
           const body = (
             <>
@@ -144,16 +142,12 @@ function LensList({
             </>
           );
           return (
-            <li
-              key={`${row.a_id}|${row.b_id}`}
-              className="cc-lens-row"
-              style={{ "--reveal-delay": `${startMs + i * ROW_STAGGER_MS}ms` } as CSSProperties}
-            >
+            <li key={`${row.a_id}|${row.b_id}`}>
               {clash ? (
                 <button
                   type="button"
                   onClick={(event) => onOpen(clash, event.currentTarget)}
-                  className="group grid min-h-11 w-full cursor-pointer grid-cols-[minmax(0,1fr)_1rem] items-center gap-x-3 py-2.5 pr-1 pl-1 text-left text-sm leading-snug hover:bg-accent focus-visible:bg-accent"
+                  className="group grid min-h-11 w-full cursor-pointer grid-cols-[minmax(0,1fr)_1rem] items-center gap-x-3 rounded-md py-2.5 pr-1 pl-1 text-left text-sm leading-snug hover:bg-accent focus-visible:bg-accent"
                 >
                   <span className="min-w-0">{body}</span>
                   <ChevronRight
@@ -206,14 +200,15 @@ export function otherHalfPair(
 
 /**
  * "Taste also lowers some clashes: A × B ranks #9 on time and draw but #31 with taste (taste overlap 12
- * of 100 on this bill). Lower priority by this index; a candidate to keep." The parenthesis only with the
- * pair's own taste overlap from page data (`overlap`, already formatted 0 to 100). It says where the pair
- * ranks, nothing about how many people it shares. On the invented day it says so and credits no source.
+ * of 100 on this bill): by this index, a candidate to keep." The parenthesis only with the pair's own taste
+ * overlap from page data (`overlap`, already formatted 0 to 100). It says where the pair ranks, nothing about
+ * how many people it shares, and whose reading calls it a candidate. On the invented day it says so and
+ * credits no source.
  */
 export function otherHalfLine(pair: Pick<OtherHalfPair, "a" | "b" | "from" | "to">, overlap: string | null, synthetic = false): string {
   const reading = overlap === null ? "" : ` (${synthetic ? "invented taste overlap" : "taste overlap"} ${overlap} of 100 on this bill)`;
   const lead = synthetic ? "On this invented day, taste also lowers some clashes" : "Taste also lowers some clashes";
-  return `${lead}: ${pair.a} × ${pair.b} ranks #${pair.from} on time and draw but #${pair.to} with taste${reading}. Lower priority by this index; a candidate to keep.`;
+  return `${lead}: ${pair.a} × ${pair.b} ranks #${pair.from} on time and draw but #${pair.to} with taste${reading}: by this index, a candidate to keep.`;
 }
 
 function apartLine(apart: readonly LensApart[]): string {
@@ -255,10 +250,6 @@ export function TasteLens({
     lenses.ranked,
   );
   const unchanged = lenses.only_with_taste === 0 && lenses.only_without_taste === 0;
-  // M6: once the lists scroll into view, the draw-and-time rows rise, then the taste rows, then the
-  // pairs taste overlap pushes out of the top get their edge. The server HTML is the final frame.
-  const listsRef = useRef<HTMLDivElement | null>(null);
-  const phase = useReveal(listsRef, { threshold: 0.4 });
   const { priced_with_taste: pricedWith, priced_without_taste: pricedWithout } = lenses;
 
   const linkClass = "font-semibold text-foreground underline underline-offset-4";
@@ -277,9 +268,11 @@ export function TasteLens({
   const lists =
     withTaste.length > 0 || withoutTaste.length > 0 ? (
       <div
-        ref={listsRef}
-        data-reveal={phase === "still" ? undefined : phase}
-        className={embedded ? "mt-6 grid gap-8 lg:grid-cols-2 lg:gap-x-10 lg:gap-y-0" : "mt-8 grid gap-10 lg:grid-cols-2 lg:gap-x-12 lg:gap-y-0"}
+        className={
+          embedded
+            ? "mt-6 grid gap-8 @xl:grid-cols-2 @xl:gap-x-10 @xl:gap-y-0"
+            : "mt-8 grid gap-10 lg:grid-cols-2 lg:gap-x-12 lg:gap-y-0"
+        }
       >
         <LensList
           title="Costliest with taste overlap, lower without"
@@ -289,7 +282,6 @@ export function TasteLens({
           }
           ranked={ranked}
           onOpen={onOpen}
-          startMs={SECOND_LIST_MS}
           embedded={embedded}
         />
         <LensList
@@ -300,20 +292,21 @@ export function TasteLens({
           }
           ranked={ranked}
           onOpen={onOpen}
-          startMs={0}
           marked
           embedded={embedded}
         />
       </div>
     ) : null;
+  // The pairs that price at zero, as one inset block: a quiet 1px edge on all sides at the 10px block corner,
+  // never a fill, so it reads as a note beside the lists rather than another list.
   const apart =
     lenses.apart.length > 0 ? (
       <div
-        className={
-          embedded
-            ? "mt-6 max-w-prose space-y-1.5 border-t border-border pt-4 text-sm leading-relaxed"
-            : "mt-8 max-w-3xl space-y-1.5 rounded-md border border-border p-4 text-sm leading-relaxed sm:p-5"
-        }
+        data-lens-apart=""
+        className={cn(
+          "space-y-1.5 rounded-md border border-border p-4 text-sm leading-relaxed",
+          embedded ? "mt-6 max-w-prose" : "mt-8 max-w-3xl sm:p-5",
+        )}
       >
         <p>
           <span className="font-semibold">High taste overlap, never on at the same time:</span>{" "}
@@ -330,7 +323,8 @@ export function TasteLens({
 
   if (embedded) {
     return (
-      <div id={TASTE_LENS_ID} aria-labelledby="taste-lens-heading" role="group" className={className}>
+      // A size container: the lists' columns follow the slot the taste section gives the disclosure.
+      <div id={TASTE_LENS_ID} aria-labelledby="taste-lens-heading" role="group" className={cn("@container", className)}>
         <h3 id="taste-lens-heading" className="type-title">
           What taste overlap changes
         </h3>

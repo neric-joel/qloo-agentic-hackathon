@@ -27,8 +27,8 @@ const PRINT_CSS = `
     --muted-foreground: #525864;
     --border: #d6d9de;
     --border-strong: #7b818a;
-    --primary: #ca2a02;
-    --destructive: #ca2a02;
+    --primary: #b61b75;
+    --destructive: #141821;
     --highlight: #c7dcfc;
     --highlight-foreground: #141821;
   }
@@ -36,12 +36,16 @@ const PRINT_CSS = `
 }
 `;
 
+/**
+ * The first paint, before the link is read: the sheet's own loading notice, box for box (still, with no spinner), a
+ * screen tall so the footer starts below the fold and nothing in view moves when the sheet arrives.
+ */
 function Loading() {
   return (
-    <div className="container-page max-w-[60rem] pt-8 pb-12">
+    <div className="container-page min-h-svh max-w-[60rem] pt-8 pb-12">
       <h1 className="type-kicker text-muted-foreground">Clash brief</h1>
-      <p role="status" className="mt-2 text-lg font-semibold sm:text-xl">
-        Loading the brief.
+      <p role="status" className="mt-2 flex max-w-prose items-center gap-2 text-lg leading-snug font-semibold sm:text-xl">
+        <span>Loading the brief.</span>
       </p>
     </div>
   );

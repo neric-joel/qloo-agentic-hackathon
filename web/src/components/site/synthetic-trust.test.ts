@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { BriefContent } from "@/components/brief/brief-sheet";
 import { ClashControlFallback, SYNTHETIC_PROOF_LINE } from "@/components/clash/clash-control";
 import { SummaryBoard, SummaryScore } from "@/components/clash/server-summary";
+import { COMPLAINTS_ELSEWHERE, WhyThisMatters } from "@/components/clash/why-this-matters";
 import {
   HOW_TO_READ,
   HOW_TO_READ_SYNTHETIC,
@@ -13,7 +14,9 @@ import {
   figuresAttribution,
   noPricedClashes,
 } from "@/lib/brief";
+import { qlooCredits } from "@/lib/credit";
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
+import { METHOD_FIGURES } from "@/lib/method-figures";
 import { parsePreset } from "@/lib/preset";
 import {
   SYNTHETIC_DESCRIPTION_LEAD,
@@ -113,7 +116,7 @@ describe("the first screen while the day loads", () => {
   it("keeps the published-day proof line for a real day and for no summary", () => {
     for (const summary of [summarize(real()), null]) {
       const html = text(renderToStaticMarkup(createElement(ClashControlFallback, { intro, summary })));
-      expect(html).toContain("Glastonbury 2025");
+      expect(html).toContain("Neither festival uses Clash Control.");
       expect(html).not.toContain(SYNTHETIC_PROOF_LINE);
     }
   });
@@ -205,13 +208,42 @@ describe("the first page's meta and Open Graph description", () => {
     vi.unstubAllGlobals();
   });
 
-  function serveDay(synthetic: boolean) {
+  /** The tiny preset's decision (invented): Bo Diddly Squat 60 minutes later. */
+  const DECISION = {
+    kind: "decision",
+    day: 0,
+    skipped_locked: 0,
+    skipped_no_place: 0,
+    clash: { a_id: "ann", b_id: "bo", rank: 1, minutes: 60 },
+    published_budget: 104.2,
+    move: {
+      act_id: "bo",
+      act: "Bo Diddly Squat",
+      from: "Side 20:30-22:00",
+      stage_id: "side",
+      stage: "Side",
+      day: 0,
+      start: "21:30",
+      end: "23:00",
+      minutes_moved: 60,
+      legal_places: 4,
+      stage_changed: false,
+      budget_after: 98.4,
+      minutes_shared_after: 0,
+      same_index_alternative: null,
+    },
+    rule: null,
+  };
+
+  function serveDay(synthetic: boolean, decision = false) {
     const list = [{ id: "tiny-fest-sat", title: "Tiny Fest, Saturday", city: null, sets: 3, stages: 2, scored_share: 0.67, synthetic }];
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
         if (url.endsWith("/api/presets")) return new Response(JSON.stringify(list), { status: 200 });
-        if (url.endsWith("/decision")) return new Response("{}", { status: 404 });
+        if (url.endsWith("/decision")) {
+          return decision ? new Response(JSON.stringify(DECISION), { status: 200 }) : new Response("{}", { status: 404 });
+        }
         return new Response(JSON.stringify({ ...rawTinyPreset(), synthetic }), { status: 200 });
       }),
     );
@@ -226,50 +258,64 @@ describe("the first page's meta and Open Graph description", () => {
     }
   });
 
-  it("says in the hero that taste overlap is a rank, not attendance, on both kinds of day", async () => {
+  it("says in the hero that taste overlap is a rank, not attendance, beside its number, on both kinds of day", async () => {
     for (const invented of [false, true]) {
-      serveDay(invented);
+      serveDay(invented, true);
       const { default: Home } = await import("@/app/page");
       const page = await Home({ searchParams: Promise.resolve({}) });
       // The first paint is the fallback, which carries the same static pitch the interactive page gets.
-      const plain = text(renderToStaticMarkup(page.props.fallback));
+      const html = renderToStaticMarkup(page.props.fallback);
+      const plain = text(html);
       expect(plain).toContain("Which clash is worth moving?");
-      // The audience leads the lede: no eyebrow above the headline.
-      expect(plain).toContain("For heads of programming: equal-length clashes can cost very different amounts.");
-      // The lede is at most 28 words on both kinds of day, the parenthetical included.
-      const ledeHtml = /<h1 id="pitch-heading"[^>]*>[\s\S]*?<\/h1>\s*<p[^>]*>([\s\S]*?)<\/p>/.exec(
-        renderToStaticMarkup(page.props.fallback),
-      )?.[1];
+      // The audience leads the lede, word for word: no eyebrow above the headline, no parenthetical in it.
+      const ledeHtml = /<h1 id="pitch-heading"[^>]*>[\s\S]*?<\/h1>\s*<p[^>]*>([\s\S]*?)<\/p>/.exec(html)?.[1];
       expect(ledeHtml).toBeDefined();
       const lede = text(ledeHtml ?? "").trim();
-      expect(lede.startsWith("For heads of programming")).toBe(true);
-      expect(lede.endsWith(invented ? "(an invented rank, not attendance)." : "(a rank, not attendance).")).toBe(true);
-      expect(lede.split(/\s+/).length).toBeLessThanOrEqual(28);
+      expect(lede).toBe(
+        invented
+          ? "For heads of programming: clashes ranked by minutes shared, popularity and audience taste overlap."
+          : "For heads of programming: clashes ranked by minutes shared, popularity and audience taste overlap, from Qloo data.",
+      );
+      expect(lede).not.toContain("attendance");
       expect(plain.indexOf("For heads of programming")).toBeGreaterThan(plain.indexOf("Which clash is worth moving?"));
-      // The complaint figures are one sentence after the lede, with a link to their sources, on both days.
-      const stat = "Fans and press complained about 45 clashes at 5 festivals; the median overlap was 50 minutes. Sources";
-      expect(plain).toContain(stat);
-      expect(plain.indexOf(stat)).toBeGreaterThan(plain.indexOf("taste overlap"));
-      // The count of pairs stays in Why this matters; the hero carries one figure line, not a strip.
-      expect(plain).not.toContain("pairs of acts");
-      expect(renderToStaticMarkup(page.props.fallback)).toMatch(/<a href="#why-this-matters"[^>]*>Sources<\/a>/);
-      // In the foreground colour, not muted, so the figures keep their contrast.
-      const statTag = /<div data-hero-stat=""[^>]*>/.exec(renderToStaticMarkup(page.props.fallback))?.[0] ?? "";
-      expect(statTag).toContain("text-foreground");
-      expect(statTag).not.toContain("text-muted-foreground");
+      // The qualifier sits in the taste line, in one element with the rank and the Derived stamp after it.
+      const taste = /<p data-taste-line=""[^>]*>([\s\S]*?)<\/p>/.exec(html)?.[1] ?? "";
+      const words = taste.slice(0, taste.indexOf("<span"));
+      expect(words.trim().endsWith(invented ? "(an invented rank, not attendance)" : "(a rank, not attendance)")).toBe(true);
+      expect(taste.slice(taste.indexOf("<span"))).toMatch(/^<span[^>]*data-provenance="derived"[^>]*>[\s\S]*Derived<\/span>$/);
+      // The hero carries no stat sentence: its figures sit in Why this matters beside their qualifier.
+      expect(html).not.toContain("data-hero-stat");
+      expect(plain).not.toContain("Fans and press complained about");
       if (invented) {
-        expect(plain).toContain("taste overlap (an invented rank, not attendance).");
-        // Nothing on an invented day credits Qloo in the lede.
+        expect(words).toContain("on this invented bill");
+        // Nothing on an invented day credits Qloo in the lede or anywhere in the hero.
         expect(ledeHtml).not.toMatch(/Qloo/);
         expect(plain).not.toContain("(a rank, not attendance)");
         expect(plain).toContain(SYNTHETIC_PROOF_LINE);
+        expect(plain).toContain("Invented timetable");
+        const heroHtml = html.slice(0, html.indexOf('aria-label="Timetable"'));
+        const all = `${text(heroHtml)}. ${[...heroHtml.matchAll(/(?:title|aria-label)="([^"]*)"/g)].map((m) => m[1]).join(". ")}`;
+        expect(qlooCredits(all)).toEqual([]);
       } else {
-        expect(plain).toContain("from Qloo data (a rank, not attendance).");
-        expect(plain).toContain(
-          "Run on the public timetables of Glastonbury 2025 and Riot Fest 2026. Neither festival uses Clash Control.",
-        );
+        expect(plain).toContain("Neither festival uses Clash Control.");
+        expect(plain).not.toContain(SYNTHETIC_PROOF_LINE);
       }
     }
+  });
+
+  it("keeps the complaint figures, 45 clashes at 5 festivals, in Why this matters beside their qualifier", () => {
+    const { complaints } = METHOD_FIGURES;
+    expect(complaints.clustersVerified).toBe(45);
+    expect(complaints.festivals).toBe(5);
+    const plain = text(renderToStaticMarkup(createElement(WhyThisMatters)));
+    const figure = plain.indexOf(`${complaints.clustersVerified} clashes`);
+    expect(figure).toBeGreaterThan(-1);
+    expect(plain.slice(figure, figure + 120)).toContain(`at ${complaints.festivals} festivals`);
+    expect(COMPLAINTS_ELSEWHERE).toBe("Most of these complaints are about other festivals and days, not the days this app shows.");
+    const elsewhere = plain.indexOf(COMPLAINTS_ELSEWHERE);
+    expect(elsewhere).toBeGreaterThan(figure);
+    // Beside it: in the same column, within a few lines.
+    expect(elsewhere - figure).toBeLessThan(400);
   });
 
   it("keeps the published-day description for a real day", async () => {

@@ -547,10 +547,12 @@ describe("/method page", () => {
     expect(section.match(/\d/g)).toBeNull();
   });
 
-  it("opens with three short-version rows (the failed test with popularity and the moves check, what held, what the measure is), round 33", () => {
+  it("opens with two short-version rows (the failed test with popularity and the moves check, what the measure is), round 34", () => {
     const html = renderToStaticMarkup(createElement(MethodPage));
     const box = html.match(/<section aria-labelledby="short-heading"[\s\S]*?<\/section>/)?.[0] ?? "";
-    expect(box.match(/<li/g)).toHaveLength(3);
+    // Round 34 (audit M4): the row on what the same test showed duplicated "What it does show" in #tested, so the
+    // short version drops it and the figures are said once, there.
+    expect(box.match(/<li/g)).toHaveLength(2);
     const text = pageText();
     expect(text).toContain(
       "It ranks a day's clashes and tests moves against timetable rules. Taste overlap is a rank, not attendance.",
@@ -574,14 +576,13 @@ describe("/method page", () => {
     );
     // AUC can fall below 0.5, so the page never calls 0.5 its floor.
     expect(text).not.toMatch(/from 0\.5/);
-    // Each term's plain words come before (or with) its first bare use. The one exception is the short version's line
-    // on what the same test showed (round 31), which states the AUC figures right under the failed test; outside it,
-    // AUC's first use carries its plain words.
-    const held = text.indexOf("In the same test, taste overlap ranked");
-    expect(held).toBeGreaterThan(-1);
-    const afterHeld = text.slice(text.indexOf("Taste overlap is nearly unrelated to popularity (correlation", held));
-    expect(afterHeld.indexOf("AUC")).toBe(afterHeld.indexOf("AUC (0.5 means"));
-    expect(text.slice(0, held)).not.toContain("AUC");
+    // Each term's plain words come before (or with) its first bare use. Round 34: with the short version's duplicate
+    // line gone (audit M4) there is no exception: AUC's first use on the page carries its plain words.
+    expect(text).not.toContain("In the same test, taste overlap ranked");
+    expect(text.indexOf("AUC")).toBeGreaterThan(-1);
+    expect(text.indexOf("AUC")).toBe(text.indexOf("AUC (0.5 means"));
+    // The figures that line carried are said once, after the table that defines AUC.
+    expect(text.indexOf("What it does show: in this test taste overlap ranked")).toBeGreaterThan(text.indexOf("AUC (0.5 means"));
     expect(text.indexOf("25% highest-ranked")).toBeLessThan(text.indexOf("top quarter"));
     expect(text).not.toMatch(/pre-set bar|re-ordering|top quartile/i);
   });
@@ -661,12 +662,11 @@ describe("/method exploratory result", () => {
     // The exploratory answer stays visible in #tested; the short version does not repeat it.
     expect(text).not.toContain("exploratory");
     expect(pageText()).toContain("The exploratory follow-up did not establish an advantage over popularity.");
-    // The test section below holds the full table; here AUC appears only in the line on what the same test showed,
-    // directly after the failed test (round 31).
-    const held = text.indexOf("In the same test, taste overlap ranked");
-    expect(held).toBeGreaterThan(text.indexOf("The test we set before building failed."));
-    expect(text.slice(0, held)).not.toContain("AUC");
-    expect(text.slice(text.indexOf("(correlation", held))).not.toContain("AUC");
+    // The test section below holds the full table and what the same test did show; the short version states no AUC
+    // (round 34, audit M4: its line on what the test showed repeated "What it does show").
+    expect(text).not.toContain("In the same test, taste overlap ranked");
+    expect(text).not.toContain("AUC");
+    expect(text).not.toContain("correlation");
   });
 
   it("uses none of the words the page must not use about this result", () => {

@@ -2,7 +2,10 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { NO_MOVES, TO_DECIDE } from "@/lib/brief";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+import { NO_MOVES, TO_DECIDE, sharedMinutes, sharedMinutesSentence } from "@/lib/brief";
 import { qlooCredits } from "@/lib/credit";
 import { DO_NOT_USE } from "@/lib/demand";
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
@@ -19,6 +22,7 @@ import {
   UNAVAILABLE,
   briefTarget,
   chooseBriefPreset,
+  outsideOnPaper,
   type Outcome,
 } from "./brief-sheet";
 
@@ -114,8 +118,28 @@ describe("the notices", () => {
       const html = screen(state);
       expect(h1s(html), state.status).toHaveLength(1);
     }
-    expect(screen({ status: "loading" })).toMatch(/<p role="status"[^>]*><svg[^>]*shrink-0[^>]*>[\s\S]*?<\/svg><span>Loading the brief\.<\/span><\/p>/);
+    // The words in one element; still while loading (round 34: no spinner, nothing moves that the visitor did not cause).
+    expect(screen({ status: "loading" })).toMatch(/<p role="status"[^>]*><span>Loading the brief\.<\/span><\/p>/);
+    expect(screen({ status: "loading" })).not.toMatch(/<svg|animate-/);
     expect(text(screen({ status: "error" }))).toContain("Could not load this brief.");
+  });
+
+  it("holds a screen's height while loading, in the page's first paint and in the sheet's own notice, so the sheet arriving moves nothing in view (round 34)", () => {
+    // The sheet's notice: a screen tall while loading; the final notices (error, unavailable) keep their own height.
+    const container = (html: string) => (html.match(/^<div class="([^"]*)">/)?.[1] ?? "").split(" ");
+    expect(container(screen({ status: "loading" }))).toContain("min-h-svh");
+    expect(container(screen({ status: "error" }))).not.toContain("min-h-svh");
+    expect(container(screen({ status: "missing" }, "../etc"))).not.toContain("min-h-svh");
+    // The page's fallback, painted before the link is read: the same box, h1 and status line as the notice, still, and
+    // a screen tall too.
+    const page = readFileSync(fileURLToPath(new URL("../../app/brief/page.tsx", import.meta.url)), "utf8");
+    const fallback = page.slice(page.indexOf("function Loading()"), page.indexOf("export default"));
+    expect(fallback).toContain('<div className="container-page min-h-svh max-w-[60rem] pt-8 pb-12">');
+    expect(fallback).toContain('<h1 className="type-kicker text-muted-foreground">Clash brief</h1>');
+    const status = screen({ status: "loading" }).match(/<p role="status" class="([^"]*)"/)?.[1] ?? "";
+    expect(status).not.toBe("");
+    expect(fallback.replace(/\s*\n\s*/g, "")).toContain(`<p role="status" className="${status}"><span>Loading the brief.</span></p>`);
+    expect(fallback).not.toMatch(/animate-|Loader/);
   });
 });
 
@@ -231,5 +255,98 @@ describe("the table's caption (round 32, V7)", () => {
     expect(caption).not.toBe("");
     expect(caption.endsWith(", costliest first")).toBe(rows >= 2);
     expect(caption.startsWith(rows === 1 ? "The costliest clash" : "The ")).toBe(true);
+  });
+});
+
+describe("the Hidden mark (round 34, R3)", () => {
+  it("prints Hidden as plain ink text in the table and the stacked rows: no ring, chip, fill or corner", () => {
+    const html = renderToStaticMarkup(createElement(BriefContent, { preset: published(), day: 0, plan: null }));
+    const marks = [...html.matchAll(/<span class="([^"]*)">Hidden<\/span>/g)].map((m) => m[1]);
+    // One in the wide table and one in the stacked rows for the tiny day's one hidden clash.
+    expect(marks).toHaveLength(2);
+    for (const cls of marks) {
+      expect(cls).toBe("font-semibold whitespace-nowrap text-foreground print:text-[9pt]");
+      expect(cls.split(" ").filter((name) => /^(tag|ring|bg-|border|rounded|shadow)/.test(name))).toEqual([]);
+    }
+    // No hidden-clash ring glyph and no chip beside it: raspberry stays on shared minutes.
+    expect(html).not.toContain('data-mark="hidden"');
+    expect(html).not.toContain('class="tag');
+    expect(html).not.toMatch(/var\(--primary\)|text-primary|bg-primary/);
+    // The table's column still says what the word means, with the note under the table.
+    expect(text(html)).toContain("Hidden clashes: the two acts’ main genre tags differ");
+  });
+
+  it("draws the sheet on screen as a 14px panel and prints it as the page, with no corner, edge or fill", () => {
+    const html = renderToStaticMarkup(createElement(BriefContent, { preset: published(), day: 0, plan: null }));
+    const article = html.match(/<article aria-labelledby="brief-heading" class="([^"]*)"/)?.[1].split(" ") ?? [];
+    expect(article).toContain("rounded-lg");
+    expect(article).toContain("border");
+    expect(article).toContain("bg-card");
+    for (const name of ["print:rounded-none", "print:border-0", "print:bg-transparent", "print:p-0"]) expect(article).toContain(name);
+    expect(article.filter((name) => /^rounded/.test(name))).toEqual(["rounded-lg"]);
+  });
+});
+
+describe("the new overlap on paper (round 34, pass 1)", () => {
+  function step(actId: string, act: string, stage: string, stageId: string, start: string, end: string, budgetAfter: number) {
+    return { act, actId, move: `${act}: moved`, stage, stageId, day: 0, start, end, budgetAfter };
+  }
+  // Four kept moves on the tiny day: two columns of steps, so a full sheet leaves the minutes line off paper. Cy
+  // Twombly ends on Side 20:00 to 21:00, under Ann Arbor's set on Main: 60 new minutes outside the day's one ranked
+  // clash, which Bo Diddly Squat's later set shortens from 60 to 30.
+  const four: Plan = {
+    publishedBudget: 112.5,
+    budget: 101,
+    steps: [
+      step("cy", "Cy Twombly", "Side", "side", "17:00", "18:00", 110),
+      step("cy", "Cy Twombly", "Side", "side", "17:15", "18:15", 108),
+      step("bo", "Bo Diddly Squat", "Side", "side", "21:00", "22:00", 104),
+      step("cy", "Cy Twombly", "Side", "side", "20:00", "21:00", 101),
+    ],
+    clashes: [{ a: "Ann Arbor", b: "Bo Diddly Squat", points: 2.1 }],
+    options: null,
+  };
+  const one: Plan = { ...four, steps: [four.steps[2]], budget: 104 };
+
+  it("words what the plan adds outside the ranked clashes as the minutes line does, with the set named", () => {
+    expect(outsideOnPaper({ ranked: 15, before: 815, after: 800, outside: { added: 15, longest: { a: "Sprints", b: "Joy Crookes", minutes: 15 } } })).toBe(
+      "Outside the published day’s 15 ranked clashes, the plan adds 15 min of new or longer overlap (longest: Sprints × Joy Crookes, 15 min).",
+    );
+    expect(outsideOnPaper({ ranked: 1, before: 45, after: 30, outside: { added: 0, longest: null } })).toBe(
+      "Outside the published day’s one ranked clash, no overlap gets longer.",
+    );
+    // The same claim and figures as the minutes line's second sentence: only its "them" is named.
+    const minutes = { ranked: 6, before: 210, after: 150, outside: { added: 105, longest: { a: "Act Seven", b: "Act One", minutes: 60 } } };
+    expect(sharedMinutesSentence(minutes)).toContain(outsideOnPaper(minutes).replace("Outside the published day’s 6 ranked clashes", "Outside them"));
+    expect(outsideOnPaper(minutes)).not.toMatch(/attend|people|fans|crowd|audience|revenue|money|\$|£/i);
+  });
+
+  it("prints it after the verdict whenever the minutes line is left off paper, and never on the screen", () => {
+    const minutes = sharedMinutes(published(), 0, four);
+    expect(minutes).toEqual({ ranked: 1, before: 60, after: 30, outside: { added: 60, longest: { a: "Cy Twombly", b: "Ann Arbor", minutes: 60 } } });
+    const line = "Outside the published day’s one ranked clash, the plan adds 60 min of new or longer overlap (longest: Cy Twombly × Ann Arbor, 60 min).";
+    expect(outsideOnPaper(minutes!)).toBe(line);
+    const html = renderToStaticMarkup(createElement(BriefContent, { preset: published(), day: 0, plan: four }));
+    // The whole minutes line stays on the screen and leaves paper; the new overlap stays on paper, run on after the
+    // verdict, in the sheet's own ink, and is hidden on the screen at every width.
+    expect(html).toMatch(/<p data-shared-minutes="true" class="mt-1 print:mt-\[2pt\] print:hidden">/);
+    const clause = html.match(/<p data-new-overlap="true" class="([^"]*)">([^<]*)<\/p>/);
+    expect(clause?.[1]).toBe("hidden print:inline");
+    expect(clause?.[2]).toBe(line);
+    expect(html.indexOf("data-new-overlap")).toBeGreaterThan(html.indexOf("4 kept moves"));
+    expect(html.indexOf("data-new-overlap")).toBeLessThan(html.indexOf("data-shared-minutes"));
+    // Where the minutes line prints (one kept move, one column), it says this itself, and nothing repeats it.
+    const short = renderToStaticMarkup(createElement(BriefContent, { preset: published(), day: 0, plan: one }));
+    expect(short).toMatch(/<p data-shared-minutes="true" class="mt-1 print:mt-\[2pt\]">/);
+    expect(short).not.toContain("data-new-overlap");
+    expect(renderToStaticMarkup(createElement(BriefContent, { preset: published(), day: 0, plan: null }))).not.toContain("data-new-overlap");
+  });
+
+  it("sets the sheet's kicker and section heads in the sheet's own leading on paper, so the line fits the page", () => {
+    const html = renderToStaticMarkup(createElement(BriefContent, { preset: published(), day: 0, plan: four }));
+    const heads = [...html.matchAll(/<h2 id="brief-[^"]*" class="([^"]*)"/g)].map((m) => m[1].split(" "));
+    expect(heads.length).toBeGreaterThan(3);
+    for (const head of heads) expect(head).toEqual(expect.arrayContaining(["type-kicker", "print:text-[10pt]", "print:leading-[1.17]"]));
+    expect(html).toContain('<p class="type-kicker text-muted-foreground print:text-[9pt] print:leading-[1.17]">Clash brief · ');
   });
 });

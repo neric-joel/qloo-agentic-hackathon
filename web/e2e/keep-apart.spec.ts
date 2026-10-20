@@ -135,24 +135,24 @@ test.describe("keep two sets apart", () => {
     await expect(keep.changes).toHaveCount(0);
   });
 
-  test("the card's two buttons carry its pair here: Try this rule yourself, and Keep the two-set change", async ({ page }) => {
+  test("the index card's two buttons carry its pair here: Try this rule yourself, and Keep the two-set change", async ({ page }) => {
     const home = new HomePage(page);
     const keep = section(page);
     const move = new TryAMove(page);
     await home.goto(DAYS.glastonbury.id);
 
-    await home.showWorking.click();
-    await home.working.getByRole("button", { name: "Try this rule yourself" }).click();
+    // The secondary actions sit under the working in the index card, with no click to reach them.
+    await home.details.getByRole("button", { name: "Try this rule yourself" }).click();
     await expect(keep.area.getByRole("heading", { level: 4, name: "Keeping Sprints and Katy J Pearson apart" })).toBeFocused();
     await expect(keep.changes.first()).toBeVisible();
 
-    await home.working.getByRole("button", { name: "Keep the two-set change" }).click();
+    await home.details.getByRole("button", { name: "Keep the two-set change" }).click();
     await expect(move.kept).toHaveCount(1);
     await expect(move.kept.first()).toContainText("Change to keep Sprints and Katy J Pearson apart:");
     // The card says it is in the plan, and pressing again says so.
-    await expect(home.working.getByRole("button", { name: /^In your plan/ })).toBeVisible();
-    await home.working.getByRole("button", { name: /^In your plan/ }).click();
-    await expect(home.cardAnnouncement).toHaveText("Already in your plan.");
+    await expect(home.details.getByRole("button", { name: /^In your plan/ })).toBeVisible();
+    await home.details.getByRole("button", { name: /^In your plan/ }).click();
+    await expect(home.detailsAnnouncement).toHaveText("Already in your plan.");
     await expect(move.kept).toHaveCount(1);
   });
 });

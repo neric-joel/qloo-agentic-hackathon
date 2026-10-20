@@ -1,4 +1,4 @@
-import { DAYS, requireSavedDays } from "./helpers";
+import { DAYS, requireSavedDays, visibleTexts } from "./helpers";
 import { expect, test } from "./fixtures";
 import { HomePage } from "./pages/home-page";
 
@@ -24,7 +24,14 @@ test.describe("timetable board", () => {
     await expect(unpriced.filter({ hasText: /^Thandii/ })).toHaveCount(1);
 
     // Every tile names its act, stage, times and draw; a priced one says whether it is in a ranked clash.
-    await expect(home.tile("Sprints")).toHaveAccessibleName(/^Sprints , Woodsies\. 14:00–15:00 .*Draw \d+ .*In 1 ranked clash; press Enter to open the costliest, number 1, with Katy J Pearson\.$/);
+    await expect(home.tile("Sprints")).toHaveAccessibleName(/^Sprints , Woodsies\. 14:00–15:00 .*Draw \d+\. .*In 1 ranked clash; press Enter to open the costliest, number 1, with Katy J Pearson\.$/);
+    // The draw is said to a screen reader and in the tile's title, and no longer printed on any tile.
+    await expect(home.tile("Sprints")).toHaveAttribute("title", /· Draw \d+$/);
+    const printed = (await visibleTexts(tiles)).filter((text) => /Draw \d+/.test(text));
+    expect(printed, "tiles whose visible text prints a draw").toEqual([]);
+    // The one festival-day picker is in the hero, not in the board's header.
+    await expect(page.getByRole("radiogroup", { name: "Festival day" })).toHaveCount(1);
+    await expect(home.hero.getByRole("radiogroup", { name: "Festival day" })).toHaveCount(1);
     await expect(home.tile("The Libertines")).toHaveAccessibleName(/No ranked clash\.$/);
   });
 

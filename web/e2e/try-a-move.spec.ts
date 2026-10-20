@@ -8,21 +8,20 @@ import { minutes, parsePlace, TryAMove } from "./pages/try-a-move";
  * another, undo, start over. Every price comes from the engine through /api, with no language model.
  */
 
-/** The day's published Clash Budget Index: the first figure of the decision card's receipt ("A to B."). */
+/** The day's published Clash Budget Index: the first figure of the index card's "A to B." */
 async function publishedIndex(home: HomePage): Promise<string> {
-  const receipt = await home.card.getByText(/^\d+\.\d to \d+\.\d\.$/).innerText();
-  return /^(\d+\.\d)/.exec(receipt)?.[1] ?? "";
+  return home.publishedIndex();
 }
 
 test.describe("try a move", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
 
-  test("the starting list names the card's two sets, each with the minutes it shares and its partner", async ({ page }) => {
+  test("the starting list names the hero decision's two sets, each with the minutes it shares and its partner", async ({ page }) => {
     const home = new HomePage(page);
     const move = new TryAMove(page);
     await home.goto(DAYS.glastonbury.id);
 
-    // Two sets to start with (START_WITH in try-a-move.tsx): the decision card's pair; every other set is in the select.
+    // Two sets to start with (START_WITH in try-a-move.tsx): the hero decision's pair; every other set is in the select.
     const rows = move.starters.getByRole("button");
     await expect(rows).toHaveCount(2);
     for (const row of await rows.all()) {
@@ -127,7 +126,7 @@ test.describe("try a move", () => {
     await expect(move.announcement.last()).toHaveText(/^Plan: 1 kept move\. Clash Budget Index \d+\.\d to \d+\.\d, \d+\.\d lower\.$/);
     // The plan is previewed on the board, and the key says what a dashed slot is.
     await expect(page.getByRole("list", { name: "Timetable key" }).filter({ visible: true }).filter({ hasText: "Tested place" })).toHaveCount(1);
-    // The published index above the board is still the published one (the card's starting figure).
+    // The published index above the board is still the published one (the index card's starting figure).
     const published = await publishedIndex(home);
     const dial = page.getByRole("figure").filter({ hasText: "Clash Budget Index" });
     await expect(dial.getByText(published, { exact: true }).first()).toBeVisible();

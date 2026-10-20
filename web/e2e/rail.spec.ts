@@ -12,16 +12,8 @@ test.describe("section rail", () => {
     await home.goto(DAYS.glastonbury.id);
 
     const links = home.rail.getByRole("link");
-    // Hidden clashes comes second, straight after the card's own three rankings.
-    await expect(links).toHaveText([
-      /What Qloo changes/,
-      /Hidden clashes/,
-      /Why this matters/,
-      /Timetable/,
-      /Try a move/,
-      /Recorded runs/,
-      /Sources/,
-    ]);
+    // Hidden clashes comes second, straight after the hero pair's own three rankings. Labels only: no numerals.
+    await expect(links).toHaveText(["What Qloo changes", "Hidden clashes", "Why this matters", "Timetable", "Try a move", "Recorded runs", "Sources"]);
 
     // Every link points at an element that exists, and the targets run down the page in the same order.
     const hrefs = await links.evaluateAll((all) => all.map((link) => link.getAttribute("href") ?? ""));

@@ -38,7 +38,7 @@ test.describe("the browser only talks to this site", () => {
     await home.agent.getByRole("button", { name: /^Replay the recorded run: Ask for a move the rules refuse/ }).click();
     await home.agent.getByRole("button", { name: "Skip to the answer" }).click();
     await expect(home.agent.getByRole("status").filter({ hasText: /\S/ })).toHaveText("The recorded run has finished.", { timeout: 15_000 });
-    await home.chooseDay(DAYS.riot.title);
+    await home.chooseDay(DAYS.riot.festival);
     await expect(home.page.getByText(`Published timetable · ${DAYS.riot.title}`)).toBeVisible();
 
     // The method page, the brief, and the check with its one optional request, in saved mode.

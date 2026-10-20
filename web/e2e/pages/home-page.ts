@@ -3,24 +3,52 @@ import { expect, type Locator, type Page } from "@playwright/test";
 import { READY_TIMEOUT, startsWith } from "../helpers";
 import { SiteChrome } from "./site-chrome";
 
-/** The home page: the hero decision, the section rail, the board, and the sections under it. */
+/**
+ * The home page: the hero (the festival day, the day drawn as a graph with its toggle and key, and the decision
+ * group beside it), the section nav, the index card under the hero, the board, and the sections under it.
+ */
 export class HomePage {
   readonly chrome: SiteChrome;
 
   // The hero.
   readonly heading: Locator;
   readonly hero: Locator;
-  readonly card: Locator;
-  readonly cardHeading: Locator;
+  readonly lede: Locator;
+  /** "Festival day": one option per saved day, labelled with the festival ("Glastonbury 2025"). */
+  readonly dayPicker: Locator;
+  /** The line under the picker: the day, the kind of timetable, the saved reading's date, the proof line. */
+  readonly dateline: Locator;
+  /** "Drawing shows": the day as published (on the invented day "Invented timetable"), or with the move. */
+  readonly viewToggle: Locator;
+  /** The day drawn as a graph: a group named for what it shows ("... drawn with ..." or "... as published ..."). */
+  readonly graph: Locator;
+  /** The key under the drawing ("Lines: the 15 costliest of ..."). */
+  readonly graphKey: Locator;
+  /** The decision group: the move lead, the readout, the side effects, the taste line, who scored it, Keep. */
+  readonly group: Locator;
+  readonly moveLead: Locator;
+  readonly readout: Locator;
+  readonly sideEffects: Locator;
+  readonly tasteLine: Locator;
+  readonly attribution: Locator;
+  /** "Keep this move", which reads "Kept in your plan" in the same cell once the plan holds the move. */
   readonly keepMove: Locator;
-  /** "Kept in your plan." with its "See your plan" link, in place under the button that was pressed. */
+  /** The room under Keep that its confirmation fills (always on the page while there is a move). */
+  readonly keptSlot: Locator;
+  /** "Kept in your plan." with its "See your plan" link, in its slot under Keep. */
   readonly keptNotice: Locator;
   readonly seeYourPlan: Locator;
-  /** What the card says to a screen reader after a press ("Testing Sprints at 14:15.", "Already in your plan."). */
-  readonly cardAnnouncement: Locator;
+  /** What the group says to a screen reader after a press ("Testing Sprints at 14:15.", "Already in your plan."). */
+  readonly groupAnnouncement: Locator;
+  readonly pasteLink: Locator;
+
+  // The index card under the hero, in the section on what taste changes.
+  readonly details: Locator;
+  readonly indexBlock: Locator;
   readonly showWorking: Locator;
   readonly working: Locator;
-  readonly pasteLink: Locator;
+  /** What the index card says to a screen reader after one of its own presses. */
+  readonly detailsAnnouncement: Locator;
 
   // The rail.
   readonly rail: Locator;
@@ -28,7 +56,6 @@ export class HomePage {
   // The board.
   readonly boardHeading: Locator;
   readonly board: Locator;
-  readonly dayPicker: Locator;
   readonly costliest: Locator;
   readonly clashLinks: Locator;
   readonly trace: Locator;
@@ -53,30 +80,42 @@ export class HomePage {
 
     this.heading = page.getByRole("heading", { level: 1, name: "Which clash is worth moving?" });
     this.hero = page.getByRole("region", { name: "Which clash is worth moving?" });
-    // The card is the one region in the hero whose name ends in the minutes it shares.
-    this.card = this.hero.getByRole("region", { name: /minutes? shared$/ });
-    this.cardHeading = this.card.getByRole("heading", { level: 2 });
-    // "Keep this move" is drawn twice (one per width) and only one is displayed, so this finds one. The
-    // same holds for the notice under it.
-    this.keepMove = this.card.getByRole("button", { name: "Keep this move" });
-    this.keptNotice = this.card.getByRole("status").filter({ hasText: "Kept in your plan." });
+    this.lede = this.hero.getByText(/^For heads of programming: /);
+    this.dayPicker = page.getByRole("radiogroup", { name: "Festival day" });
+    this.dateline = this.hero.locator("[data-dateline]");
+    this.viewToggle = this.hero.getByRole("radiogroup", { name: "Drawing shows" });
+    this.graph = this.hero.locator("[data-day-graph]");
+    this.graphKey = this.hero.locator("[data-day-graph-key]");
+    this.group = this.hero.locator("[data-hero-group]");
+    this.moveLead = this.group.getByRole("heading", { level: 2 });
+    this.readout = this.group.locator("[data-readout]");
+    this.sideEffects = this.group.locator("[data-side-effects]");
+    this.tasteLine = this.group.locator("[data-taste-line]");
+    this.attribution = this.group.locator("[data-attribution]");
+    this.keepMove = this.group.getByRole("button", { name: /^(Keep this move|Kept in your plan)$/ });
+    this.keptSlot = this.group.locator("[data-kept-notice]");
+    this.keptNotice = this.keptSlot.filter({ hasText: "Kept in your plan." });
     this.seeYourPlan = this.keptNotice.getByRole("link", { name: "See your plan" });
-    // The card's own spoken line is its last status region (the kept notice comes before it).
-    this.cardAnnouncement = this.card.getByRole("status").last();
-    this.showWorking = this.card.getByRole("button", { name: "Show the working" });
-    this.working = this.card.getByRole("region", { name: "Show the working" });
+    // The group's own spoken line is its last status region (the kept notice's slot comes before it).
+    this.groupAnnouncement = this.group.getByRole("status").last();
     this.pasteLink = this.hero.getByRole("link", { name: "Paste your own draft grid" });
+
+    this.details = page.locator("[data-decision-details]");
+    this.indexBlock = this.details.locator("[data-index-block]");
+    this.showWorking = this.details.getByRole("button", { name: "Show the working" });
+    this.working = this.details.getByRole("region", { name: "Show the working" });
+    this.detailsAnnouncement = this.details.getByRole("status").last();
 
     this.rail = page.getByRole("navigation", { name: "On this page" });
 
     this.boardHeading = page.getByRole("heading", { level: 2, name: /^Where the clashes fall/ });
     this.board = page.getByRole("group", { name: /timetable\. Use the arrow keys to move between sets\.$/ });
-    this.dayPicker = page.getByRole("radiogroup", { name: "Festival day" });
     this.costliest = page.getByRole("region", { name: /^The \d+ costliest clashes$/ });
     this.clashLinks = page.getByRole("list", { name: "Clash links" });
     this.trace = page.getByRole("button", { name: /^How Qloo was used/ }).first();
 
-    this.whatQloo = page.getByRole("region", { name: /^Same \d+-minute clash/ });
+    // Named by its heading, which changes with what taste does to the pair; its id is the nav's target.
+    this.whatQloo = page.locator("#what-qloo-changes");
     this.whyThisMatters = page.getByRole("region", { name: "Who has complained, and what nobody has tested" });
     this.hiddenWall = page.getByRole("region", { name: /^Hidden clashes: / });
     this.tryAMove = page.getByRole("region", { name: "Move a set and see what it costs" });
@@ -91,28 +130,33 @@ export class HomePage {
     this.drawer = page.getByRole("dialog");
   }
 
-  /** Opens the home page, on a named day when given, and waits until the interactive board is drawn. */
+  /** Opens the home page, on a named day when given, and waits until the interactive page is drawn. */
   async goto(day?: string): Promise<void> {
     await this.page.goto(day ? `/?preset=${day}` : "/", { waitUntil: "domcontentloaded" });
     await this.waitUntilReady();
   }
 
   /**
-   * The server draws the pitch and a summary at once; the interactive page replaces them when the day
-   * has arrived in the browser. The board heading only exists in the interactive page, so once it shows
-   * every button on the page has its handler. The rail's first link, "What Qloo changes", and the card's
-   * pointer to it only appear when the day's three rankings have arrived (a separate request); waiting for
-   * it means the page has stopped growing, so scroll positions and tab order are settled.
+   * The server draws the hero's final frame at once (its Keep in place but not pressable); the interactive page
+   * replaces it when the day has arrived in the browser. The board heading only exists in the interactive page,
+   * so once it shows every control on the page has its handler. The decision group then waits for the day's
+   * decision (a skeleton holds its room until it comes), and the section on what taste changes takes its
+   * heading from the day's three rankings (a separate request); waiting for both means the page has stopped
+   * growing, so scroll positions and tab order are settled.
    *
-   * Those two arrivals (and hydration) wait on the dev server, which under four workers can take longer than
-   * the default 10 s expect timeout, so each step waits up to `READY_TIMEOUT` for its element; it returns as
-   * soon as the element shows.
+   * Those arrivals (and hydration) wait on the dev server, which under four workers can take longer than the
+   * default 10 s expect timeout, so each step waits up to `READY_TIMEOUT` for its element; it returns as soon as
+   * the element shows.
    */
   async waitUntilReady(): Promise<void> {
     await expect(this.heading).toBeVisible({ timeout: READY_TIMEOUT });
     await expect(this.boardHeading).toBeVisible({ timeout: READY_TIMEOUT });
     await expect(this.board).toBeVisible({ timeout: READY_TIMEOUT });
+    await expect(this.group).toBeVisible({ timeout: READY_TIMEOUT });
     await expect(this.rail.getByRole("link").first()).toHaveText(/What (Qloo|taste) changes/, { timeout: READY_TIMEOUT });
+    await expect(this.whatQloo.getByRole("heading", { level: 2 })).toHaveText(/^Adding taste (moves|leaves) this pair/, {
+      timeout: READY_TIMEOUT,
+    });
   }
 
   /** Opens the "Keep two sets apart" disclosure as a visitor does, by pressing its summary, unless it is open. */
@@ -122,14 +166,32 @@ export class HomePage {
     await expect(this.keepApart).toBeVisible();
   }
 
-  /** Chooses a festival day in the picker above the board, as a visitor does: by pressing its label. */
-  async chooseDay(title: string): Promise<void> {
-    await this.dayPicker.locator("label").filter({ hasText: title }).click();
+  /** Chooses a festival day in the hero's picker, as a visitor does: by pressing its label ("Riot Fest 2026"). */
+  async chooseDay(festival: string): Promise<void> {
+    await this.dayPicker.locator("label").filter({ hasText: festival }).click();
+  }
+
+  /** Chooses what the drawing shows, as a visitor does: by pressing the option's label. */
+  async chooseView(label: string | RegExp): Promise<void> {
+    await this.viewToggle.locator("label").filter({ hasText: label }).click();
   }
 
   /** The board's heading as text, e.g. "Where the clashes fall: 5 stages, 39 sets". */
   async boardTitle(): Promise<string> {
     return (await this.boardHeading.innerText()).replace(/\s+/g, " ").trim();
+  }
+
+  /** The drawing's accessible name: the title that names its view. */
+  async graphTitle(): Promise<string> {
+    return (await this.graph.getAttribute("aria-label")) ?? (await this.graph.evaluate((element) => {
+      const id = element.getAttribute("aria-labelledby");
+      return (id ? document.getElementById(id)?.textContent : "") ?? "";
+    }));
+  }
+
+  /** The drawing's lines as drawn at this width: one button per line, in the layout on show. */
+  graphLines(): Locator {
+    return this.graph.locator("[data-hit]").filter({ visible: true });
   }
 
   /** A set's tile on the board, by the act's name. */
@@ -145,5 +207,18 @@ export class HomePage {
   /** A link in the section rail, by its label. */
   railLink(label: string | RegExp): Locator {
     return this.rail.getByRole("link", { name: label });
+  }
+
+  /** The day's published Clash Budget Index: the first figure of the index card's "A to B." */
+  async publishedIndex(): Promise<string> {
+    const figures = await this.indexBlock.getByText(/^\d+\.\d to \d+\.\d\.$/).innerText();
+    return /^(\d+\.\d)/.exec(figures)?.[1] ?? "";
+  }
+
+  /** The index card's two figures: the published index and the index with the move. */
+  async indexFigures(): Promise<{ before: string; after: string }> {
+    const figures = await this.indexBlock.getByText(/^\d+\.\d to \d+\.\d\.$/).innerText();
+    const [before = "", after = ""] = figures.match(/\d+\.\d/g) ?? [];
+    return { before, after };
   }
 }

@@ -107,6 +107,47 @@ test.describe("theme toggle", () => {
     await expect(chrome.themeButton).toHaveAttribute("aria-expanded", "false");
   });
 
+  test.describe("with motion allowed", () => {
+    test.use({ reducedMotion: "no-preference" });
+
+    test("a theme switch starts no animation and no colour transition: the colours change at once", async ({ page }) => {
+      await page.emulateMedia({ colorScheme: "light" });
+      await page.goto("/", { waitUntil: "domcontentloaded" });
+      const chrome = new SiteChrome(page);
+      await chrome.waitForHydration();
+      await expect(page.getByRole("heading", { level: 1, name: "Which clash is worth moving?" })).toBeVisible();
+
+      await chrome.themeButton.click();
+      const radio = page.getByRole("radio", { name: "Dark", exact: true });
+      const option = page.locator("label").filter({ has: radio });
+      await expect(option).toBeVisible();
+      // The pointer rests on the option first, and its own hover feedback settles, so only the press is counted.
+      await option.hover();
+      await expect.poll(() => page.evaluate(() => document.getAnimations().length), "the hover feedback has settled").toBe(0);
+      // Counted from the press: every transition or animation that starts anywhere on the page, and any view
+      // transition (the old circular reveal) the switch would run.
+      await page.evaluate(() => {
+        const seen = { transitions: 0, animations: 0, viewTransitions: 0 };
+        (window as unknown as { __themeSwitch: typeof seen }).__themeSwitch = seen;
+        document.addEventListener("transitionstart", () => seen.transitions++, true);
+        document.addEventListener("animationstart", () => seen.animations++, true);
+        const start = document.startViewTransition?.bind(document);
+        if (start) {
+          (document as unknown as { startViewTransition: typeof start }).startViewTransition = ((...args: Parameters<typeof start>) => {
+            seen.viewTransitions++;
+            return start(...args);
+          }) as typeof start;
+        }
+      });
+      await option.click();
+      await expect.poll(() => chrome.appliedTheme()).toBe("dark");
+      await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 500)));
+      const seen = await page.evaluate(() => (window as unknown as { __themeSwitch: Record<string, number> }).__themeSwitch);
+      expect(seen, "no transition, animation or view transition from the press to 500 ms after it").toEqual({ transitions: 0, animations: 0, viewTransitions: 0 });
+      expect(await page.locator("html").getAttribute("data-theme-switching"), "the switching guard is cleared").toBeNull();
+    });
+  });
+
   test("the home page reads in both themes: the hero stays on screen and nothing overflows", async ({ page }) => {
     await page.goto("/", { waitUntil: "domcontentloaded" });
     const chrome = new SiteChrome(page);

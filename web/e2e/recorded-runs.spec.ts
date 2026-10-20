@@ -212,7 +212,7 @@ test.describe("recorded agent runs", () => {
   });
 
   for (const choice of ["Add to your plan", "Replace your plan"] as const) {
-    test(`after the card's move is kept, Keep this place offers Add and Replace, and ${choice} says what it did`, async ({ page, guard }) => {
+    test(`after the hero's move is kept, Keep this place offers Add and Replace, and ${choice} says what it did`, async ({ page, guard }) => {
       const home = new HomePage(page);
       const move = new TryAMove(page);
       await home.goto(DAYS.glastonbury.id);

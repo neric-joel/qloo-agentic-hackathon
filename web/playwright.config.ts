@@ -34,7 +34,8 @@ export default defineConfig({
   use: {
     baseURL,
     locale: "en-US",
-    // The opening curtain only plays with motion allowed; its own spec turns that back on.
+    // Every spec reads end states with motion reduced; the few that measure the drawing's move or the theme switch
+    // turn motion back on for themselves.
     reducedMotion: "reduce",
     screenshot: "only-on-failure",
     trace: "on-first-retry",

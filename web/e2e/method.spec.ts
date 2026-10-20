@@ -17,7 +17,9 @@ test.describe("how we know (/method)", () => {
   test("renders its four sections after a short version that leads with the failed test", async ({ page }) => {
     await expect(page).toHaveTitle(/How we know/);
     const article = page.getByRole("article");
-    await expect(article).toContainText("This page says what that number is, what we checked it against, and where the check fell short.");
+    // The lede is one sentence; the line that only described the page is cut.
+    await expect(article.getByText("Clash Control scores set-time clashes with a number it derives from Qloo data.", { exact: true })).toBeVisible();
+    await expect(article).not.toContainText("This page says what that number is");
 
     for (const name of ["The short version", "What the score is", "What we tested it against", "What taste overlap cannot tell you", "How the rest works"]) {
       await expect(article.getByRole("region", { name }).getByRole("heading", { level: 2, name })).toBeVisible();
@@ -112,7 +114,8 @@ test.describe("how we know (/method)", () => {
 
   test("the home page quotes the same failed test", async ({ page }) => {
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    const home = page.getByRole("region", { name: /^Same \d+-minute clash/ });
+    // The section under the hero, named by what taste does to the hero's pair.
+    const home = page.locator("#what-qloo-changes");
     await expect(home).toContainText("Our test failed: taste overlap put 46.8% of complained-about clashes in the top quarter of their day, below our 60% bar.");
     await expect(home.getByRole("link", { name: "How we know" })).toHaveAttribute("href", "/method#tested");
   });
@@ -152,7 +155,8 @@ test.describe("how we know (/method)", () => {
 
   test("the contents links jump to their sections and mark the current one", async ({ page }) => {
     const contents = page.getByRole("navigation", { name: "On this page" });
-    await expect(contents.getByRole("link")).toHaveText(["1What the score is", "2What we tested it against", "3What taste overlap cannot tell you", "4How the rest works"]);
+    // Labels only: no numerals.
+    await expect(contents.getByRole("link")).toHaveText(["What the score is", "What we tested it against", "What taste overlap cannot tell you", "How the rest works"]);
     for (const [label, id] of [["What we tested it against", "tested"], ["What taste overlap cannot tell you", "limits"], ["How the rest works", "the-rest"], ["What the score is", "price"]] as const) {
       const link = contents.getByRole("link", { name: label });
       await link.click();
@@ -178,6 +182,9 @@ test.describe("how we know (/method)", () => {
     }
     const formula = page.getByRole("group").filter({ has: page.locator("summary", { hasText: /^How the score is calculated/ }) });
     await expect(formula).toContainText("taste overlap");
+    // The complaint figures with their median: home states the 45 clashes, and the median of 50 minutes is said here.
+    const sources = page.getByRole("group").filter({ has: page.locator("summary", { hasText: /^Sources for the 45 clashes/ }) });
+    await expect(sources).toContainText(/45 clashes that fans or the press complained about at five festivals had a verified overlap in time: 86 pairs of acts, overlapping for a median of 50 minutes \(from 10 to 90\)\./);
   });
 
   test("says what taste overlap is not, and links back to the timetable", async ({ page }) => {

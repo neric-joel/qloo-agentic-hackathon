@@ -24,14 +24,14 @@ test.describe("honesty lines", () => {
       const home = new HomePage(page);
       await home.goto(day.id);
 
-      // The reading sits in the decision card, in the same block as the index it qualifies.
-      const reading = home.card.getByText(HONESTY.reading);
-      await expect(reading).toBeVisible();
-      await expect(reading).toBeInViewport();
-      await expect(home.card.locator("[data-index-block]")).toContainText(HONESTY.reading);
-      // The festivals did not ask for this: stated in the hero, and again where the numbers come from.
+      // The reading sits beside the move in the hero, on the first screen, and in the same block as the index
+      // it qualifies, in the index card under the hero.
+      await expect(home.attribution).toHaveText(`Selected and scored by this app’s index. ${HONESTY.reading}`);
+      await expect(home.attribution).toBeInViewport();
+      await expect(home.indexBlock).toContainText(HONESTY.reading);
+      // The festivals did not ask for this: stated in the hero's dateline, and again where the numbers come from.
+      await expect(home.dateline).toContainText(HONESTY.neither);
       await expect(home.hero.getByText(HONESTY.neither)).toBeVisible();
-      await expect(home.hero).toContainText("Run on the public timetables of Glastonbury 2025 and Riot Fest 2026.");
       await expect(home.sources).toContainText(SOURCES_LINE[day.id]);
     });
   }
@@ -42,16 +42,19 @@ test.describe("honesty lines", () => {
 
     await home.keepMove.click();
     await expect(new TryAMove(page).plan).toBeVisible();
-    await expect(home.card).toContainText(HONESTY.reading);
+    await expect(home.attribution).toContainText(HONESTY.reading);
+    await expect(home.indexBlock).toContainText(HONESTY.reading);
     await expect(home.hero).toContainText(HONESTY.neither);
 
-    await home.chooseDay(DAYS.riot.title);
+    await home.chooseDay(DAYS.riot.festival);
     await expect(home.page.getByText(`Published timetable · ${DAYS.riot.title}`)).toBeVisible();
-    await expect(home.card).toContainText(HONESTY.reading);
+    await expect(home.attribution).toContainText(HONESTY.reading);
+    await expect(home.indexBlock).toContainText(HONESTY.reading);
     await expect(home.hero).toContainText(HONESTY.neither);
 
     await new SiteChrome(page).chooseTheme("Dark");
-    await expect(home.card).toContainText(HONESTY.reading);
+    await expect(home.attribution).toContainText(HONESTY.reading);
+    await expect(home.indexBlock).toContainText(HONESTY.reading);
     await expect(home.hero).toContainText(HONESTY.neither);
   });
 
@@ -60,8 +63,8 @@ test.describe("honesty lines", () => {
     await home.goto(DAYS.glastonbury.id);
     await scrollThrough(page);
 
-    // The card's score, the dial's score and the plan's score each carry the caveat in their own block.
-    await expect(home.card.locator("[data-index-block]")).toContainText("Selected and scored by this app’s index. A reading, not a verdict.");
+    // The index card's score, the dial's score and the plan's score each carry the caveat in their own block.
+    await expect(home.indexBlock).toContainText("Selected and scored by this app’s index. A reading, not a verdict.");
     const dial = page.getByRole("figure").filter({ hasText: "Clash Budget Index" });
     // What 100 means and which way is better: in the sentence under the figure, in its explanation, and in the
     // scale's own description (which also says the random timetables are of this lineup).
@@ -72,13 +75,37 @@ test.describe("honesty lines", () => {
     await expect(new TryAMove(page).planRegion).toContainText("Scored by the same measure the places are found with, so a lower number shows what that measure rewards, not that audiences would be better served.");
   });
 
-  test("the pitch says taste overlap is a rank, not attendance, and who it is for", async ({ page }) => {
+  test("the pitch says who it is for, and the taste number says it is a rank, not attendance, beside it", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
-    await expect(home.hero).toContainText("For heads of programming:");
-    await expect(home.hero).toContainText("from Qloo data (a rank, not attendance)");
-    await expect(home.hero).toContainText("Fans and press complained about 45 clashes at 5 festivals; the median overlap was 50 minutes.");
+    await expect(home.lede).toContainText("For heads of programming:");
+    await expect(home.lede).toContainText("from Qloo data.");
+    // The qualifier sits beside its number, in one element with the Derived stamp (the rank is this app's).
+    await expect(home.tasteLine).toContainText(/^Taste overlap: \d+ of 100 on this bill \(a rank, not attendance\)/);
+    await expect(home.tasteLine.getByText("Derived")).toBeVisible();
+    // The complaint figures left the hero: they sit in Why this matters, beside the line that limits them.
+    await expect(home.hero).not.toContainText("Fans and press complained");
+    const finding = home.whyThisMatters.getByRole("heading", { level: 3, name: /^45 clashes that fans or the press complained about at 5 festivals/ });
+    await expect(finding).toBeVisible();
+    const limit = home.whyThisMatters.getByText("Most of these complaints are about other festivals and days, not the days this app shows.");
+    await expect(limit).toBeVisible();
+    const [heading, line] = await Promise.all([finding.boundingBox(), limit.boundingBox()]);
+    expect(Math.abs((line?.y ?? 0) - ((heading?.y ?? 0) + (heading?.height ?? 0))), "the limit sits right under the figures").toBeLessThan(200);
+  });
+
+  test("at 1440 x 900 the move's caveats are on the first screen: who scored it, that it is a reading, and the taste qualifier", async ({ page, isPhone }) => {
+    test.skip(isPhone, "The desktop first screen is measured at 1440 x 900.");
+    const home = new HomePage(page);
+    await home.goto(DAYS.glastonbury.id);
+
+    for (const part of [home.attribution, home.tasteLine, home.sideEffects, home.keepMove, home.dateline]) {
+      const box = await part.boundingBox();
+      expect(box, "drawn").not.toBeNull();
+      expect((box?.y ?? 0) + (box?.height ?? 0), "ends inside the first 900 px").toBeLessThanOrEqual(900);
+    }
+    await expect(home.attribution).toHaveText("Selected and scored by this app’s index. A reading, not a verdict.");
+    await expect(home.tasteLine).toContainText("(a rank, not attendance)");
   });
 
   test("the printed brief carries the same caveats", async ({ page }) => {

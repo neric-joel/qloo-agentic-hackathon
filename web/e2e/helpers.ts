@@ -1,9 +1,12 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
-/** The two saved festival days the local API serves, by the id the page puts in `?preset=`. */
+/**
+ * The two saved festival days the local API serves, by the id the page puts in `?preset=`. `festival` is the
+ * hero picker's label (the title before its first ", "); the day's name opens the dateline under it.
+ */
 export const DAYS = {
-  glastonbury: { id: "glastonbury-2025-sun", title: "Glastonbury 2025, Sunday" },
-  riot: { id: "riot-fest-2026-sun", title: "Riot Fest 2026, Sunday" },
+  glastonbury: { id: "glastonbury-2025-sun", title: "Glastonbury 2025, Sunday", festival: "Glastonbury 2025", dayName: "Sunday" },
+  riot: { id: "riot-fest-2026-sun", title: "Riot Fest 2026, Sunday", festival: "Riot Fest 2026", dayName: "Sunday" },
 } as const;
 
 /**
@@ -96,6 +99,32 @@ export async function scrollThrough(page: Page): Promise<void> {
     await page.evaluate((top) => window.scrollTo(0, top), y);
   }
   await page.evaluate(() => window.scrollTo(0, 0));
+}
+
+/**
+ * The text a sighted visitor sees inside each element: its text nodes, less any inside a screen-reader-only box
+ * (clipped to 1 px) or a box that is not rendered. `innerText` keeps screen-reader text, so it cannot say this.
+ */
+export async function visibleTexts(locator: Locator): Promise<string[]> {
+  return locator.evaluateAll((all) =>
+    all.map((root) => {
+      const shown = (element: Element | null): boolean => {
+        for (let node = element; node && node !== root.parentElement; node = node.parentElement) {
+          const box = node.getBoundingClientRect();
+          const style = getComputedStyle(node);
+          if (style.display === "none" || style.visibility === "hidden") return false;
+          if (box.width <= 1 && box.height <= 1) return false;
+        }
+        return true;
+      };
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      const parts: string[] = [];
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (node.textContent?.trim() && shown(node.parentElement)) parts.push(node.textContent);
+      }
+      return parts.join(" ").replace(/\s+/g, " ").trim();
+    }),
+  );
 }
 
 /** The accessible name of whatever has keyboard focus, or its text when it has none. */

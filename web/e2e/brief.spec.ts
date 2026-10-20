@@ -7,7 +7,7 @@ import { TryAMove } from "./pages/try-a-move";
 /** /brief: the one-page print view of a festival day, with the plan a visitor kept. */
 
 const PLAN = "moves=gurriers~woodsies~0~1215";
-/** The decision card's own move, which also sets the brief's two changes side by side (its longest form). */
+/** The hero decision's own move, which also sets the brief's two changes side by side (its longest form). */
 const CARD_PLAN = "moves=sprints~woodsies~0~1415";
 
 test.describe("one-page brief", () => {
@@ -57,7 +57,7 @@ test.describe("one-page brief", () => {
     const home = new HomePage(page);
     const move = new TryAMove(page);
     await home.goto(DAYS.glastonbury.id);
-    await home.keepMove.click(); // the card's own move, so the brief can set it beside the alternative
+    await home.keepMove.click(); // the hero's own move, so the brief can set it beside the alternative
     await expect(move.kept).toHaveCount(1);
     const keptLine = (await move.kept.first().innerText()).replace(/\s+/g, " ");
     const [, from, to] = /(\d+\.\d) → (\d+\.\d)/.exec(keptLine) ?? [];
@@ -69,7 +69,7 @@ test.describe("one-page brief", () => {
     await expect(plan).toContainText(new RegExp(`1 kept move: Clash Budget Index ${from} → ${to}, `));
     await expect(plan.getByRole("listitem").first()).toContainText("1. Sprints · Woodsies");
     await expect(plan).toContainText("Scored by the same measure the places are found with");
-    // Side by side with the card's alternative, and the costliest clashes after the plan.
+    // Side by side with the decision's alternative, and the costliest clashes after the plan.
     await expect(plan.getByRole("region", { name: "The two changes side by side" })).toBeVisible();
     await expect(page.getByRole("region", { name: "The five costliest clashes with these moves" }).getByRole("listitem")).toHaveCount(5);
     await expect(page.getByRole("region", { name: "The costliest clash on the published day, before these moves" })).toBeVisible();
@@ -121,7 +121,7 @@ test.describe("one-page brief", () => {
     await expect(article.getByRole("heading", { level: 1 })).toBeVisible();
   });
 
-  for (const [name, plan] of [["a plan", PLAN], ["the card's move and its alternative", CARD_PLAN], ["no plan", ""]] as const) {
+  for (const [name, plan] of [["a plan", PLAN], ["the hero's move and its alternative", CARD_PLAN], ["no plan", ""]] as const) {
     test(`print media: the brief with ${name} fits one Letter page and one A4 page`, async ({ page }) => {
       await open(page, `preset=${DAYS.glastonbury.id}&day=0${plan ? `&${plan}` : ""}`);
       await page.emulateMedia({ media: "print" });

@@ -8,22 +8,34 @@ for (const day of Object.values(DAYS)) {
   test.describe(`home on ${day.title}`, () => {
     test.beforeEach(async ({ page }) => requireSavedDays(page));
 
-    test("loads with the pitch, the decision card, the score and the board", async ({ page }) => {
+    test("loads with the pitch, the drawn day, the decision group, the index card and the board", async ({ page }) => {
       const home = new HomePage(page);
       await home.goto(day.id);
 
       await expect(page).toHaveTitle(/Clash Control/);
       await expect(home.heading).toBeVisible();
-      await expect(home.hero).toContainText("equal-length clashes can cost very different amounts");
-      await expect(home.hero).toContainText("a rank, not attendance");
-      // The lede says the app scores each clash; the card says the score is not money.
-      await expect(home.hero).toContainText("Clash Control scores each by its audiences’ taste overlap, from Qloo data (a rank, not attendance).");
+      // The lede says who it is for and what the ranking reads, from Qloo data; the attendance qualifier sits
+      // beside the taste number, in the group's taste line.
+      await expect(home.lede).toHaveText("For heads of programming: clashes ranked by minutes shared, popularity and audience taste overlap, from Qloo data.");
+      await expect(home.tasteLine).toContainText("(a rank, not attendance)");
 
-      // The decision card: a dateline naming the day, the receipt as its heading, the score and its caveat.
-      await expect(home.card).toContainText(`${day.title} · published timetable`);
-      await expect(home.cardHeading).toHaveAccessibleName(/ \d+ to \d+ minutes shared$/);
-      await expect(home.card.getByText("Clash Budget Index", { exact: true })).toBeVisible();
+      // The hero: the picker on this day, the dateline naming the day, the day drawn, and the decision group with
+      // its move, readout and the one filled action.
+      await expect(home.dayPicker.getByRole("radio", { name: day.festival })).toBeChecked();
+      await expect(home.dateline).toContainText(`${day.dayName}. Published timetable; saved Qloo reading built `);
+      await expect(home.graph).toBeVisible();
+      await expect(home.graph).toHaveAccessibleName(new RegExp(`^${day.title}, drawn with .+: \\d+ sets on \\d+ stages$`));
+      // The key says what the drawing's lines, their width and its dashes mean, and names any overlap the move
+      // changes that the ranked list does not hold (Riot Fest: the one the move ends), with "not ranked".
+      await expect(home.graphKey).toHaveText(
+        /^Lines: the \d+ costliest of \d+ scored clashes \(\d+ in all\)(, plus the chosen clash)?(, plus (the overlap the move (ends|shortens|lengthens)|\d+ overlaps the move changes)( \((\d+ )?not ranked\))?)?; thicker means a higher taste overlap rank\. Dashed: published slot or new overlap\.$/,
+      );
+      await expect(home.moveLead).toHaveText(/ \d+ minutes? (earlier|later)$/);
+      await expect(home.readout).toHaveText(/^\d+ →\s+to \d+ min shared with .+$/);
       await expect(home.keepMove).toBeVisible();
+
+      // The index card under the hero: the score and its caveat, the working closed.
+      await expect(home.details.getByText("Clash Budget Index", { exact: true })).toBeVisible();
       await expect(home.showWorking).toHaveAttribute("aria-expanded", "false");
 
       // The board names the day it shows, and draws as many sets as its heading counts.
@@ -31,15 +43,15 @@ for (const day of Object.values(DAYS)) {
       const [, stages, sets] = /(\d+) stages, (\d+) sets/.exec(await home.boardTitle()) ?? [];
       expect(Number(stages), "stages in the heading").toBeGreaterThanOrEqual(2);
       await expect(home.board.getByRole("button")).toHaveCount(Number(sets));
-      await expect(home.dayPicker.getByRole("radio", { name: day.title })).toBeChecked();
+      // The drawing draws the same day: as many sets and stages as the board.
+      await expect(home.graph).toHaveAccessibleName(new RegExp(`: ${sets} sets on ${stages} stages$`));
     });
 
-    test("the card's starting score is the day's published Clash Budget Index", async ({ page }) => {
+    test("the index card's starting score is the day's published Clash Budget Index", async ({ page }) => {
       const home = new HomePage(page);
       await home.goto(day.id);
 
-      const receipt = await home.card.getByText(/^\d+\.\d to \d+\.\d\.$/).innerText();
-      const [before = "", after = ""] = receipt.match(/\d+\.\d/g) ?? [];
+      const { before, after } = await home.indexFigures();
       expect(Number(after), "a move lowers the index").toBeLessThan(Number(before));
 
       const dial = page.getByRole("figure").filter({ hasText: "Clash Budget Index" });
@@ -56,7 +68,9 @@ for (const day of Object.values(DAYS)) {
       const home = new HomePage(page);
       await home.goto(day.id);
 
-      await expect(home.card).toContainText("A reading, not a verdict.");
+      // Beside the move in the hero, and again in the index's own block.
+      await expect(home.attribution).toContainText(HONESTY.reading);
+      await expect(home.indexBlock).toContainText(HONESTY.reading);
       await expect(home.hero).toContainText(HONESTY.neither);
       await expect(home.sources).toContainText("does not use Clash Control");
       await expect(home.chrome.footer).toContainText("The festivals shown do not use Clash Control");
@@ -96,17 +110,19 @@ test.describe("switching festival day", () => {
   test("the picker moves between the two days and the URL follows", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
-    const first = await home.cardHeading.innerText();
+    const first = await home.moveLead.innerText();
 
-    await home.chooseDay(DAYS.riot.title);
+    await home.chooseDay(DAYS.riot.festival);
     await expect(page).toHaveURL(new RegExp(`preset=${DAYS.riot.id}`));
     await expect(home.page.getByText(`Published timetable · ${DAYS.riot.title}`)).toBeVisible();
-    await expect(home.dayPicker.getByRole("radio", { name: DAYS.riot.title })).toBeChecked();
-    await expect(home.cardHeading).not.toHaveText(first);
+    await expect(home.dayPicker.getByRole("radio", { name: DAYS.riot.festival })).toBeChecked();
+    await expect(home.moveLead).not.toHaveText(first);
+    // The drawing and the board both show the new day.
+    await expect(home.graph).toHaveAccessibleName(new RegExp(`^${DAYS.riot.title}, `));
     await expect(home.tile("Bowling for Soup")).toBeVisible();
     await expect(home.tile("Sprints")).toHaveCount(0);
 
-    await home.chooseDay(DAYS.glastonbury.title);
+    await home.chooseDay(DAYS.glastonbury.festival);
     await expect(page).toHaveURL(new RegExp(`preset=${DAYS.glastonbury.id}`));
     await expect(home.tile("Sprints")).toBeVisible();
   });
@@ -121,6 +137,6 @@ test.describe("switching festival day", () => {
     const home = new HomePage(page);
     await home.goto("no-such-festival-day");
     await expect(home.page.getByText(/^Published timetable · /)).toContainText(DAYS.glastonbury.title);
-    await expect(home.dayPicker.getByRole("radio", { name: DAYS.glastonbury.title })).toBeChecked();
+    await expect(home.dayPicker.getByRole("radio", { name: DAYS.glastonbury.festival })).toBeChecked();
   });
 });

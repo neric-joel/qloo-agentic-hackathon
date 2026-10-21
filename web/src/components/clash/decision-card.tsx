@@ -56,8 +56,18 @@ function LineLabel({ n, className }: { n: number; className?: string }) {
   );
 }
 
-type DecisionDetailsProps = {
+/**
+ * Which part of the index card a rendering draws. "whole" is the card with everything in it. The section on what
+ * taste changes renders the card twice: "card" is the card, whose hidden-clash line, two-set change line and their
+ * two actions show below 1024px only, and "beside" is those two lines with their actions, shown from 1024px only, in
+ * the section's right column beside the card, so the change line's index figure keeps the card's scale in view.
+ */
+export type DecisionPart = "whole" | "card" | "beside";
+
+export type DecisionDetailsProps = {
   copy: DecisionCopy;
+  /** The part of the card to draw (`DecisionPart`); the whole card by default. */
+  part?: DecisionPart;
   /** Opens the rule search for the pair. Absent when there is no rule line to try. */
   onTryRule?: () => void;
   /**
@@ -68,7 +78,10 @@ type DecisionDetailsProps = {
   onKeepChange?: () => string | null | void;
   /** What the plan already holds of this decision: the move, and line 3's change. */
   kept?: { move: boolean; change: boolean };
-  /** Opens the day's hero clash (a hidden clash when it has one), with the button as the place to return to. */
+  /**
+   * Opens the clash the hidden-clash line describes when the card has that line, otherwise the day's hero clash,
+   * with the button as the place to return to.
+   */
   onOpenHidden?: (trigger: HTMLElement) => void;
   /** What that link says; "Open a hidden clash" unless the day has none. */
   hiddenLabel?: string;
@@ -532,6 +545,14 @@ export function KeptNotice({
  */
 const RULED_CORNER = "rounded-md";
 
+/**
+ * The corner of an action that closes a sentence beside the card: a text link's 6px, never the 10px control
+ * corner. Its box is the sentence's line, about 20px tall, so 10px would be half its height (a pill, and a stadium
+ * ring); a box tall enough for 10px would put its focus ring through the line above. 4px of margin before it keeps
+ * the ring clear of the sentence's last word.
+ */
+const INLINE_CORNER = "rounded-sm ml-1";
+
 /** The re-check action itself, with no hook: it only opens the pair's drawer and sends nothing. */
 export function PairRecheck({ onOpenPair }: { onOpenPair: (trigger: HTMLElement) => void }) {
   return (
@@ -563,10 +584,12 @@ function PairRecheckWhenOn({ onOpenPair }: { onOpenPair: (trigger: HTMLElement) 
  * secondary actions: the rule search, the keep button with what it keeps, and the day's hidden clash.
  * The move itself, its readout and "Keep this move" are the hero's (`HeroDecision`). Every string comes
  * from `buildDecisionCopy`, so the server HTML and the interactive page print the same card. It never
- * changes the dial, which stays the reading of the published timetable.
+ * changes the dial, which stays the reading of the published timetable. `part` draws the whole card, or one of
+ * the two parts the section on what taste changes places from 1024px (`DecisionPart`).
  */
 export function DecisionDetails({
   copy,
+  part = "whole",
   onTryRule,
   onKeepChange,
   kept,
@@ -646,11 +669,17 @@ export function DecisionDetails({
       </p>
     );
 
+  // In the "card" part, what moves beside the card from 1024px shows below 1024px only.
+  const narrowOnly = part === "card" ? "lg:hidden" : undefined;
+  const hidden = isHiddenDecision(copy);
+  const hiddenText = hidden
+    ? hiddenClashLine({ count: hiddenCount, ranked: rankedCount, genres, taste: tasteOverlapOf(copy), invented })
+    : null;
   // The decision's own clash, when it carries the Hidden label: in ink, as a fact of the board, never the
   // teal of a Qloo figure.
-  const hiddenLine = isHiddenDecision(copy) ? (
-    <p data-hidden-line="" className="mt-4 max-w-prose text-sm leading-snug">
-      {hiddenClashLine({ count: hiddenCount, ranked: rankedCount, genres, taste: tasteOverlapOf(copy), invented })}
+  const hiddenLine = hiddenText ? (
+    <p data-hidden-line="" className={cn("mt-4 max-w-prose text-sm leading-snug", narrowOnly)}>
+      {hiddenText}
     </p>
   ) : null;
   // The working's last lines on a published day: where the reading came from, with the Recorded stamp,
@@ -660,46 +689,121 @@ export function DecisionDetails({
 
   // The secondary actions are ruled text (the button's "ruled" variant), like a note in a running order's
   // margin: no fill, no box. The one filled action, "Keep this move", is the hero's. Like every button they
-  // take the 10px control corner (`RULED_CORNER`), which only their focus ring shows.
+  // take the 10px control corner (`RULED_CORNER`), which only their focus ring shows; the two that close a
+  // sentence beside the card take a text link's corner instead (`INLINE_CORNER`).
   const ruled = cn("py-2 text-left whitespace-normal", RULED_CORNER);
   const showRule = Boolean(onTryRule && copy.seedRule);
   const showKeep = Boolean(onKeepChange && copy.seedChange);
-  const actions =
-    showRule || showKeep || onOpenHidden ? (
-      <div className="flex flex-wrap gap-x-5">
-        {showRule ? (
-          <Button type="button" variant="ruled" className={ruled} onClick={tryRule}>
-            Try this rule yourself
-            <ArrowRight aria-hidden="true" />
-          </Button>
-        ) : null}
-        {showKeep ? (
-          // Not disabled once kept: it stays pressable so a repeat press says "Already in your plan."
-          // and a keyboard visitor never loses focus to the page. Once kept it is a quiet state: a
-          // check, no underline, muted ink.
+  // Not disabled once kept: it stays pressable so a repeat press says "Already in your plan." and a keyboard
+  // visitor never loses focus to the page. Once kept it is a quiet state: a check, no underline, muted ink.
+  const keepLabel = kept?.change ? (
+    <>
+      <Check aria-hidden="true" />
+      In your plan<span className="sr-only">: {copy.changeLabel?.replace(/^Keep /, "")}</span>
+    </>
+  ) : (
+    (copy.changeLabel ?? "Keep this change")
+  );
+  const openLabel = (
+    <>
+      {hiddenLabel ?? "Open a hidden clash"}
+      <ArrowRight aria-hidden="true" />
+    </>
+  );
+  const tryLabel = (
+    <>
+      Try this rule yourself
+      <ArrowRight aria-hidden="true" />
+    </>
+  );
+
+  if (part === "beside") {
+    // From 1024px, beside the card: each line with its action at its end, as a link closes a sentence, at the
+    // sentence's own size. The action takes a text link's corner (`INLINE_CORNER`) and its 44px target from a hit
+    // area that adds no height to the line. When the card's pair carries the Hidden label, the action that opens
+    // that pair closes the hidden-clash line; otherwise the day's hero clash is a ruled line of its own, last, with
+    // the 10px control corner. At the column's full measure, as the figure above them.
+    const inline = cn(
+      INLINE_CORNER,
+      "relative min-h-0 align-baseline text-[length:inherit] after:absolute after:-inset-x-1 after:-inset-y-3.5 after:content-['']",
+    );
+    const openInline = onOpenHidden ? (
+      <Button type="button" variant="ruled" className={inline} onClick={(event) => onOpenHidden(event.currentTarget)}>
+        {openLabel}
+      </Button>
+    ) : null;
+    const besideHidden = hiddenText ? (
+      <p data-hidden-line="" className="text-sm leading-snug">
+        {hiddenText}
+        {openInline ? <> {openInline}</> : null}
+      </p>
+    ) : null;
+    const besideChange =
+      showKeep && copy.changeSummary ? (
+        <p data-change-line="" className="text-[0.8125rem] leading-snug text-muted-foreground">
+          <span id={changeSummaryId}>{copy.changeSummary}</span>{" "}
           <Button
             type="button"
             variant="ruled"
             data-kept={kept?.change ? "" : undefined}
-            className={cn(ruled, kept?.change && "text-muted-foreground no-underline")}
+            className={cn(inline, kept?.change && "text-muted-foreground no-underline")}
+            aria-describedby={changeSummaryId}
+            onClick={keepChange}
+          >
+            {keepLabel}
+          </Button>
+        </p>
+      ) : null;
+    const besideOpen =
+      onOpenHidden && !hiddenText ? (
+        <div>
+          <Button type="button" variant="ruled" className={ruled} onClick={(event) => onOpenHidden(event.currentTarget)}>
+            {openLabel}
+          </Button>
+        </div>
+      ) : null;
+    if (!besideHidden && !besideChange && !besideOpen) return null;
+    return (
+      <div data-index-beside="" className={cn("hidden space-y-4 lg:block", className)}>
+        {besideHidden}
+        {besideChange}
+        {besideOpen}
+        <p role="status" aria-live="polite" className="sr-only">
+          {status}
+        </p>
+      </div>
+    );
+  }
+
+  const actions =
+    showRule || showKeep || onOpenHidden ? (
+      <div className="flex flex-wrap gap-x-5">
+        {showRule ? (
+          <Button type="button" variant="ruled" className={cn(ruled, narrowOnly)} onClick={tryRule}>
+            {tryLabel}
+          </Button>
+        ) : null}
+        {showKeep ? (
+          <Button
+            type="button"
+            variant="ruled"
+            data-kept={kept?.change ? "" : undefined}
+            className={cn(ruled, kept?.change && "text-muted-foreground no-underline", narrowOnly)}
             aria-describedby={`${ruleLineId} ${changeSummaryId}`}
             onClick={keepChange}
           >
-            {kept?.change ? (
-              <>
-                <Check aria-hidden="true" />
-                In your plan<span className="sr-only">: {copy.changeLabel?.replace(/^Keep /, "")}</span>
-              </>
-            ) : (
-              (copy.changeLabel ?? "Keep this change")
-            )}
+            {keepLabel}
           </Button>
         ) : null}
         {onOpenHidden ? (
-          // The day's hero clash, as a ruled text link with its arrow, 44 px tall.
-          <Button type="button" variant="ruled" className={ruled} onClick={(event) => onOpenHidden(event.currentTarget)}>
-            {hiddenLabel ?? "Open a hidden clash"}
-            <ArrowRight aria-hidden="true" />
+          // The card's hidden pair, or else the day's hero clash, as a ruled text link with its arrow, 44 px tall.
+          <Button
+            type="button"
+            variant="ruled"
+            className={cn(ruled, narrowOnly)}
+            onClick={(event) => onOpenHidden(event.currentTarget)}
+          >
+            {openLabel}
           </Button>
         ) : null}
       </div>
@@ -707,9 +811,17 @@ export function DecisionDetails({
   // What the keep button keeps, under the buttons, across the card's width.
   const changeSummary =
     showKeep && copy.changeSummary ? (
-      <p id={changeSummaryId} className="mt-2 max-w-prose text-[0.8125rem] leading-snug text-muted-foreground">
+      <p id={changeSummaryId} className={cn("mt-2 max-w-prose text-[0.8125rem] leading-snug text-muted-foreground", narrowOnly)}>
         {copy.changeSummary}
       </p>
+    ) : null;
+  // In the "card" part from 1024px, the rule search sits on the working toggle's row (the same action, drawn once at
+  // each width), and every other action and the change line are beside the card.
+  const tryBesideToggle =
+    part === "card" && showRule ? (
+      <Button type="button" variant="ruled" className={cn(ruled, "hidden lg:inline-flex")} onClick={tryRule}>
+        {tryLabel}
+      </Button>
     ) : null;
   // "Show the working": a native button, so click, Enter and Space all work; the region it controls
   // carries `hidden` while closed, so nothing in it is in the tab order. Its 10px control corner and 8px
@@ -741,7 +853,10 @@ export function DecisionDetails({
     >
       {figure}
       {hiddenLine}
-      <div className="mt-3">{workingToggle}</div>
+      <div className={cn("mt-3", tryBesideToggle && "lg:flex lg:flex-wrap lg:items-center lg:gap-x-6")}>
+        {workingToggle}
+        {tryBesideToggle}
+      </div>
 
       {/* The working, directly under its toggle: the two changes side by side (when the decision has a
           comparison) and rows 1 to 3. */}
@@ -806,7 +921,7 @@ export function DecisionDetails({
 
       {/* Under the working, the secondary actions and what the keep button keeps. */}
       {actions || changeSummary ? (
-        <div data-decision-actions="" className="mt-1">
+        <div data-decision-actions="" className={cn("mt-1", narrowOnly)}>
           {actions}
           {changeSummary}
         </div>

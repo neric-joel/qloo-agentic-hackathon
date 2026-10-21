@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseAgentEvent, readAbstainData } from "./events";
+import { liveWhenRecorded, parseAgentEvent, readAbstainData, type QlooRequestRecord } from "./events";
 
 function expectEvent(raw: unknown) {
   const parsed = parseAgentEvent(raw);
@@ -116,6 +116,56 @@ describe("parseAgentEvent", () => {
     });
     if (event.type !== "tool_result") throw new Error("unreachable");
     expect(event.requests?.[0]?.recorded).toBe(true);
+  });
+
+  it("keeps a stated recorded false, and leaves an unstated one out", () => {
+    const requestOf = (request: Record<string, unknown>) => {
+      const event = expectEvent({
+        type: "tool_result",
+        id: "c1",
+        tool: "t",
+        ok: true,
+        summary: "ok",
+        latency_ms: 1,
+        provenance: "qloo",
+        requests: [{ path: "/search", params: {}, status: 200, latency_ms: 1, cached: false, ...request }],
+      });
+      if (event.type !== "tool_result") throw new Error("unreachable");
+      return event.requests?.[0];
+    };
+    expect(requestOf({ recorded: false })?.recorded).toBe(false);
+    expect(requestOf({})).not.toHaveProperty("recorded");
+    expect(requestOf({ recorded: null })).not.toHaveProperty("recorded");
+    expect(requestOf({ recorded: "yes" })).not.toHaveProperty("recorded");
+  });
+
+  it("keeps a well-formed capture provenance on a request and drops a malformed one", () => {
+    const requestOf = (captured: unknown) => {
+      const event = expectEvent({
+        type: "tool_result",
+        id: "c1",
+        tool: "t",
+        ok: true,
+        summary: "ok",
+        latency_ms: 1,
+        provenance: "recorded",
+        requests: [{ path: "/v2/analysis/compare", params: {}, status: 200, latency_ms: 1, cached: false, recorded: true, captured }],
+      });
+      if (event.type !== "tool_result") throw new Error("unreachable");
+      return event.requests?.[0];
+    };
+    const at = "2026-10-03T05:58:05Z";
+    expect(requestOf({ cached: false, recorded: false, at })?.captured).toEqual({ cached: false, recorded: false, at });
+    // A field the saved event did not state reads as null.
+    expect(requestOf({ cached: true, recorded: null })?.captured).toEqual({ cached: true, recorded: null, at: null });
+    // Malformed: dropped, the rest of the request kept, nothing thrown.
+    for (const bad of ["live", 1, [], { cached: "false", recorded: false, at }, { cached: false, recorded: 0, at }, { cached: false, recorded: false, at: 20261003 }]) {
+      const request = requestOf(bad);
+      expect(request, JSON.stringify(bad)).not.toHaveProperty("captured");
+      expect(request?.path).toBe("/v2/analysis/compare");
+    }
+    expect(requestOf(undefined)).not.toHaveProperty("captured");
+    expect(requestOf(null)).not.toHaveProperty("captured");
   });
 
   it("ignores unknown event types", () => {
@@ -247,6 +297,56 @@ describe("parseAgentEvent", () => {
       usage: { input_tokens: "many" },
     });
     expect(event).toEqual({ type: "run_finished", run_id: "r", qloo_calls: 2, elapsed_ms: 10 });
+  });
+});
+
+describe("liveWhenRecorded", () => {
+  const flags = (record: Partial<QlooRequestRecord>) => ({ cached: false, ...record });
+
+  it("is true only when the request was neither cached nor recorded, both stated", () => {
+    expect(liveWhenRecorded({ cached: false, recorded: false })).toBe(true);
+  });
+
+  it("is false when the request was cached or recorded", () => {
+    expect(liveWhenRecorded({ cached: true, recorded: false })).toBe(false);
+    expect(liveWhenRecorded({ cached: false, recorded: true })).toBe(false);
+    expect(liveWhenRecorded({ cached: true, recorded: true })).toBe(false);
+    expect(liveWhenRecorded({ cached: true })).toBe(false);
+  });
+
+  it("is unknown, never live, when recorded is missing", () => {
+    expect(liveWhenRecorded(flags({}))).toBeNull();
+    expect(liveWhenRecorded({ cached: false, recorded: undefined })).toBeNull();
+  });
+
+  it("reads a replayed request's capture provenance before its own flags", () => {
+    // Replayed now (its own recorded is true), reached Qloo live when it was recorded.
+    const replayed = { cached: false, recorded: true, captured: { cached: false, recorded: false, at: "2026-10-03T05:58:05Z" } };
+    expect(liveWhenRecorded(replayed)).toBe(true);
+    expect(liveWhenRecorded({ ...replayed, captured: { cached: true, recorded: false, at: null } })).toBe(false);
+    expect(liveWhenRecorded({ ...replayed, captured: { cached: false, recorded: true, at: null } })).toBe(false);
+    // The saved event did not say: unknown, even though the record's own flags would read live.
+    expect(liveWhenRecorded({ cached: false, recorded: false, captured: { cached: false, recorded: null, at: null } })).toBeNull();
+    expect(liveWhenRecorded({ cached: false, recorded: false, captured: { cached: null, recorded: false, at: null } })).toBeNull();
+  });
+
+  it("reads a parsed event's request the same way", () => {
+    const parsed = parseAgentEvent({
+      type: "tool_result",
+      id: "c1",
+      tool: "explain_clash",
+      ok: true,
+      summary: "ok",
+      latency_ms: 1,
+      provenance: "qloo",
+      requests: [
+        { path: "/v2/analysis/compare", params: {}, status: 200, latency_ms: 1, cached: false, recorded: false },
+        { path: "/v2/analysis/compare", params: {}, status: 200, latency_ms: 1, cached: false },
+        { path: "/v2/insights", params: {}, status: 200, latency_ms: 1, cached: true, recorded: false },
+      ],
+    });
+    if (parsed.kind !== "event" || parsed.event.type !== "tool_result") throw new Error("unreachable");
+    expect(parsed.event.requests?.map(liveWhenRecorded)).toEqual([true, null, false]);
   });
 });
 

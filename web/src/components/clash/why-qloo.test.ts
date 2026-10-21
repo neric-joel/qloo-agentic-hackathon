@@ -3,10 +3,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { qlooCredits } from "@/lib/credit";
+import { buildDecisionCopy, parseDecision } from "@/lib/decision";
 import type { Lenses } from "@/lib/lenses";
 import { parsePreset, type Act, type PairClash, type Twin } from "@/lib/preset";
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
 
+import { DecisionDetails } from "./decision-card";
 import { otherHalfPair, placeText } from "./taste-lens";
 import {
   changesLine,
@@ -33,6 +35,66 @@ import {
 } from "./why-qloo";
 
 // Every name and figure below is invented for the test.
+
+/** An index card's copy on the tiny fixture day: a hidden clash with a two-set change on line 3. */
+function cardCopy() {
+  const raw = rawTinyPreset() as ReturnType<typeof rawTinyPreset>;
+  const report = raw.report as unknown as { clashes: { label: string | null }[] };
+  report.clashes = report.clashes.map((clash) => ({ ...clash, label: "hidden" }));
+  const move = (act_id: string, act: string, from: string, stage_id: string, stage: string, start: string, end: string) => ({
+    act_id,
+    act,
+    from,
+    stage_id,
+    stage,
+    day: 0,
+    start,
+    end,
+    minutes_moved: 60,
+  });
+  const decision = parseDecision({
+    kind: "decision",
+    day: 0,
+    skipped_locked: 0,
+    skipped_no_place: 0,
+    clash: { a_id: "ann", b_id: "bo", rank: 1, minutes: 60 },
+    published_budget: 104.2,
+    move: {
+      ...move("bo", "Bo Diddly Squat", "Side 20:30-22:00", "side", "Side", "21:30", "23:00"),
+      legal_places: 4,
+      stage_changed: false,
+      budget_after: 98.4,
+      minutes_shared_after: 0,
+      same_index_alternative: null,
+    },
+    rule: {
+      kind: "rule_fixes",
+      a: { act_id: "ann", act: "Ann Arbor", locked: false, place: "Main 20:00-21:30" },
+      b: { act_id: "bo", act: "Bo Diddly Squat", locked: false, place: "Side 20:30-22:00" },
+      rule: "Ann Arbor and Bo Diddly Squat must not overlap",
+      shared_minutes: 60,
+      holds: false,
+      single_set_places: 0,
+      fixes_found: 1,
+      searched: "x",
+      fixes: [
+        {
+          sets_moved: 2,
+          minutes_moved: 120,
+          stage_changes: 0,
+          budget_after: 98.4,
+          moves: [
+            move("bo", "Bo Diddly Squat", "Side 20:30-22:00", "side", "Side", "21:30", "23:00"),
+            move("ann", "Ann Arbor", "Main 20:00-21:30", "main", "Main", "19:00", "20:30"),
+          ],
+        },
+      ],
+    },
+  });
+  const built = buildDecisionCopy(parsePreset(raw), decision);
+  if (!built) throw new Error("no card");
+  return built;
+}
 
 function text(html: string): string {
   return html
@@ -664,7 +726,7 @@ describe("TasteSection", () => {
     expect(text(render())).not.toMatch(/What Qloo changes|the clash in the decision above/);
   });
 
-  it("composes one DOM order, the phone's, and from 1024px sets the heading and the failed test beside the figure, then the aside beside the folds", () => {
+  it("composes one DOM order, the phone's, and from 1024px runs two columns on their own: heading, failed test and aside on the left, figure, the clash taste lowers and the folds on the right", () => {
     const html = render({ aside: true });
     // Reading order: heading, figure and limit, failed test, aside, the clash taste lowers, folds.
     const at = (needle: string) => html.indexOf(needle);
@@ -673,28 +735,83 @@ describe("TasteSection", () => {
       expect(i, `part ${n}`).toBeGreaterThan(-1);
       if (n > 0) expect(i).toBeGreaterThan(order[n - 1]);
     });
-    // Twelve columns from 1024px; 24px between blocks at every width.
-    expect(html).toContain('<div class="grid gap-y-6 lg:grid-cols-12 lg:gap-x-12">');
-    // Rows 1 and 2: the heading and the failed test in five columns, beside the figure with its limit in seven.
+    // Twelve columns from 1024px; 24px between blocks at every width. Row 3 is 0px tall, so the right column's second
+    // block and the aside each start under their own column's block, not under a shared row.
+    expect(html).toContain('<div class="grid gap-y-6 lg:grid-cols-12 lg:grid-rows-[auto_auto_0px_auto] lg:gap-x-12">');
+    // The left column: the heading (row 1) and the failed test (rows 2 and 3) in five columns, beside the figure with
+    // its limit in seven (rows 1 and 2).
     expect(html).toMatch(/<div class="min-w-0 lg:col-span-5 lg:col-start-1 lg:row-start-1"><h2 id="what-qloo-heading"/);
-    expect(html).toMatch(/<div data-failed-test="true" class="text-sm leading-relaxed min-w-0 lg:col-span-5 lg:col-start-1 lg:row-start-2">/);
+    expect(html).toMatch(/<div data-failed-test="true" class="text-sm leading-relaxed min-w-0 lg:col-span-5 lg:col-start-1 lg:row-span-2 lg:row-start-2">/);
     expect(html).toMatch(/<div class="min-w-0 lg:col-span-7 lg:col-start-6 lg:row-span-2 lg:row-start-1"><div data-rank-figure="">/);
-    // Row 3 mirrors them: the aside in seven columns on the left (so the reading order runs left to right), the clash
-    // taste lowers and the folds in five on the right.
-    expect(html).toMatch(/<div class="min-w-0 lg:col-span-7 lg:col-start-1 lg:row-start-3"><div data-test-aside="">The index card<\/div><\/div>/);
-    expect(html).toMatch(/<div class="min-w-0 lg:row-start-3 lg:col-span-5 lg:col-start-8"><p data-other-half=""/);
-    // In those five columns the equal-popularity cards stack, since their two-up grid is sized for the full width.
-    expect(html).toMatch(/<summary class="cc-disclosure-summary">Equal-popularity pairs \(1\)[\s\S]*?<div class="mt-4 mb-3 lg:\[&amp;_ul\]:grid-cols-1">/);
-    // With no aside, the clash taste lowers and the folds keep the figure's seven columns, and the cards pair up.
+    // Then the aside under the failed test in the same five columns (row 4; the reading order runs down the left
+    // column first), and the clash taste lowers and the folds under the figure in its seven (rows 3 and 4).
+    expect(html).toMatch(/<div class="min-w-0 lg:col-span-5 lg:col-start-1 lg:row-start-4"><div data-test-aside="">The index card<\/div><\/div>/);
+    expect(html).toMatch(/<div data-taste-side="" class="min-w-0 lg:col-span-7 lg:col-start-6 lg:row-span-2 lg:row-start-3"><p data-other-half=""/);
+    // In those seven columns the equal-popularity cards pair up, their two-up grid sized for that width.
+    expect(html).toMatch(/<summary class="cc-disclosure-summary">Equal-popularity pairs \(1\)[\s\S]*?<div class="mt-4 mb-3"><p class="max-w-prose text-sm leading-relaxed">Draw is Qloo popularity/);
+    expect(html).not.toContain("[&amp;_ul]:grid-cols-1");
+    // With no aside, the clash taste lowers and the folds keep the same seven columns, and the cards pair up.
     const wide = render();
-    expect(wide).toMatch(/<div class="min-w-0 lg:row-start-3 lg:col-span-7 lg:col-start-6"><p data-other-half=""/);
+    expect(wide).toMatch(/<div data-taste-side="" class="min-w-0 lg:col-span-7 lg:col-start-6 lg:row-span-2 lg:row-start-3"><p data-other-half=""/);
     expect(wide).not.toContain("[&amp;_ul]:grid-cols-1");
     expect(wide).toContain('<div class="mt-4 mb-3"><p class="max-w-prose text-sm leading-relaxed">Draw is Qloo popularity');
+    // A plain aside is drawn once: only the index card has lines that sit beside it.
+    expect(html.match(/data-test-aside=""/g)).toHaveLength(1);
     // The section ends on its own last block; the next section's top padding sets the gap.
     expect(html).toContain('<div class="container-page pt-16 pb-8 lg:pt-20 lg:pb-12">');
     // The aside renders with no readings too, after the failed test.
     const bare = render({ clash: null, lenses: null, twins: [], aside: true });
     expect(bare.indexOf("data-test-aside")).toBeGreaterThan(bare.indexOf("data-failed-test"));
+  });
+
+  it("from 1024px moves the index card's hidden-clash line and change line, with their actions, beside the card in the right column; below 1024px they stay in the card", () => {
+    const decision = cardCopy();
+    const html = renderToStaticMarkup(
+      createElement(TasteSection, {
+        clash: CLASH,
+        lenses: lenses(),
+        pairs: PAIRS,
+        twins: [TWIN],
+        acts: ACTS,
+        ranked: [],
+        onOpen: () => {},
+        aside: createElement(DecisionDetails, {
+          copy: decision,
+          onTryRule: () => {},
+          onKeepChange: () => null,
+          onOpenHidden: () => {},
+          hiddenCount: 5,
+          rankedCount: 15,
+        }),
+      }),
+    );
+    const at = (needle: string) => html.indexOf(needle);
+    // The card, in the left column under the failed test, then the right column: the clash taste lowers, the card's
+    // two lines, then the folds.
+    const card = html.slice(at("data-decision-details"), at("data-taste-side"));
+    const side = html.slice(at("data-taste-side"));
+    expect(at("data-decision-details")).toBeGreaterThan(at("data-failed-test"));
+    expect(side.indexOf("data-other-half")).toBeLessThan(side.indexOf("data-index-beside"));
+    expect(side.indexOf("data-index-beside")).toBeLessThan(side.indexOf("<details"));
+    // Beside the card from 1024px only: the hidden-clash line closed by its action, then the change line closed by its.
+    const beside = /<div data-index-beside="" class="([^"]*)">([\s\S]*?)<\/div>/.exec(side);
+    expect(beside?.[1].split(" ")).toEqual(expect.arrayContaining(["hidden", "lg:block", "lg:not-first:mt-4"]));
+    const besideText = text(beside?.[2] ?? "");
+    const hiddenLine = "A hidden clash, 1 of 5 among the day’s 15 ranked clashes:";
+    expect(besideText).toContain(hiddenLine);
+    expect(besideText.indexOf("Open a hidden clash")).toBeGreaterThan(besideText.indexOf(hiddenLine));
+    expect(besideText).toContain(`${decision.changeSummary} Keep the two-set change`);
+    expect(besideText.indexOf(decision.changeSummary ?? "never")).toBeGreaterThan(besideText.indexOf("Open a hidden clash"));
+    // In the card the same lines and actions show below 1024px only; the index block, its scale and the working stay.
+    expect(card).toMatch(/<p data-hidden-line="" class="[^"]*\blg:hidden\b[^"]*">A hidden clash/);
+    expect(card).toMatch(/<button[^>]*class="[^"]*\blg:hidden\b[^"]*"[^>]*>Keep the two-set change/);
+    expect(card).toMatch(/<button[^>]*class="[^"]*\blg:hidden\b[^"]*"[^>]*>Open a hidden clash/);
+    expect(card).toMatch(/<div data-decision-actions="" class="mt-1 lg:hidden">/);
+    expect(text(card)).toContain("A score, not money: 100 = the average random valid timetable of this lineup. Lower is better. Selected and scored by this app’s index. A reading, not a verdict.");
+    expect(card).toMatch(/<p data-index-scale="" class="(?![^"]*hidden)[^"]*">/);
+    expect(text(card)).toContain("Show the working");
+    // "Try this rule yourself" stays in the card at every width: on the working toggle's row from 1024px.
+    expect(card).toMatch(/<div class="mt-3 lg:flex lg:flex-wrap lg:items-center lg:gap-x-6"><button type="button" id="[^"]+" aria-expanded="false"[\s\S]*?<button[^>]*class="[^"]*\bhidden lg:inline-flex\b[^"]*"[^>]*>Try this rule yourself/);
   });
 
   it("says the other half of what taste does: the costliest pair on time and draw that falls furthest with taste, a candidate to keep", () => {

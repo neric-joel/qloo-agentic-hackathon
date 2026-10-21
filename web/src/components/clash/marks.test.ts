@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -38,7 +41,7 @@ describe("Meter", () => {
 });
 
 describe("OverlapPattern", () => {
-  it("is the shared-time hatch: 16px user-space tiles turned 45 degrees, one 1.5px vermilion line every 16px at full opacity", () => {
+  it("is the shared-time hatch: 16px user-space tiles turned 45 degrees, one 1.5px raspberry line every 16px at full opacity", () => {
     expect(OVERLAP).toEqual({ period: 16, stroke: 1.5, gap: 2 });
     const html = renderToStaticMarkup(
       createElement("svg", null, createElement("defs", null, createElement(OverlapPattern, { id: "cc-overlap-test" }))),
@@ -83,7 +86,7 @@ describe("OverlapWindow", () => {
     expect(html).not.toMatch(/opacity/);
   });
 
-  it("runs each edge cut from the top of the bar to its foot, 1px vermilion with crisp butt ends", () => {
+  it("runs each edge cut from the top of the bar to its foot, 1px raspberry with crisp butt ends", () => {
     const lines = [...html.matchAll(/<line [^>]*>/g)].map((m) => m[0]);
     expect(lines).toHaveLength(2);
     for (const line of lines) {
@@ -108,20 +111,22 @@ describe("OverlapSwatch", () => {
 });
 
 describe("DiamondGlyph", () => {
-  it("is the board's hidden-clash mark: a vermilion ring on the card in a 12px box, never the yellow highlight", () => {
+  it("is the board's hidden-clash mark: an ink ring on the card in a 12px box, never raspberry and never the yellow highlight", () => {
     const html = renderToStaticMarkup(createElement(DiamondGlyph));
     expect(html).toContain('viewBox="0 0 12 12"');
     expect(html).toContain('aria-hidden="true"');
     expect(html).toContain("size-3");
     expect(html).toContain('<circle data-mark="hidden"');
-    expect(html).toContain('fill="var(--card)" stroke="var(--primary)" stroke-width="2"');
+    // Hidden is a label, not shared time: its ring is ink (one meaning per hue).
+    expect(html).toContain('fill="var(--card)" stroke="var(--foreground)" stroke-width="2"');
+    expect(html).not.toContain("var(--primary)");
     expect(html).not.toContain("highlight");
     expect(html).not.toContain("rotate");
   });
 });
 
 describe("SeenDiscGlyph", () => {
-  it("is the board's seen-clash mark: a filled vermilion disc in a 12px box", () => {
+  it("is the board's seen-clash mark: a filled raspberry disc in a 12px box", () => {
     const html = renderToStaticMarkup(createElement(SeenDiscGlyph));
     expect(html).toContain('viewBox="0 0 12 12"');
     expect(html).toContain('<circle data-mark="seen"');
@@ -130,9 +135,10 @@ describe("SeenDiscGlyph", () => {
 });
 
 describe("LabelBadge", () => {
-  it("prints a clash label as the board's one tag: Hidden in vermilion with its outlined disc, the rest in ink", () => {
+  it("prints a clash label as the board's one tag: Hidden in ink with its outlined ink disc, the rest in ink", () => {
     const hidden = renderToStaticMarkup(createElement(LabelBadge, { label: "hidden" }));
-    expect(hidden).toMatch(/class="tag [^"]*tag-primary/);
+    expect(hidden).toMatch(/class="tag [^"]*tag-ink/);
+    expect(hidden).not.toMatch(/tag-primary|text-primary|var\(--primary\)/);
     expect(hidden).toContain('data-mark="hidden"');
     expect(hidden).not.toMatch(/rounded-full|bg-highlight/);
     const other = renderToStaticMarkup(createElement(LabelBadge, { label: "false" }));
@@ -142,7 +148,7 @@ describe("LabelBadge", () => {
 });
 
 describe("ClashDisc", () => {
-  it("is the board's clash link marker: a 22px round disc, never a turned square, filled when seen and outlined when hidden", () => {
+  it("is the board's clash link marker: a 22px round disc, never a turned square, filled raspberry when seen and an ink ring when hidden", () => {
     for (const hidden of [false, true]) {
       const html = renderToStaticMarkup(createElement(ClashDisc, { hidden }));
       expect(html).toMatch(/class="[^"]*\brounded-full\b/);
@@ -151,9 +157,36 @@ describe("ClashDisc", () => {
       expect(html).toContain('aria-hidden="true"');
     }
     expect(renderToStaticMarkup(createElement(ClashDisc, { hidden: false }))).toMatch(/data-clash-disc="seen"[^>]*bg-primary/);
-    expect(renderToStaticMarkup(createElement(ClashDisc, { hidden: true }))).toMatch(
-      /data-clash-disc="hidden"[^>]*border-2 border-primary bg-card/,
-    );
+    const hidden = renderToStaticMarkup(createElement(ClashDisc, { hidden: true }));
+    expect(hidden).toMatch(/data-clash-disc="hidden"[^>]*border-2 border-foreground bg-card/);
+    // Hidden is a label, not shared time: no raspberry on its disc (one meaning per hue).
+    expect(hidden).not.toMatch(/border-primary|bg-primary|text-primary/);
+  });
+});
+
+describe("Hidden in ink where another file draws it", () => {
+  // The list's label word (clash-list.tsx) and the key's swatch (timetable-legend.tsx) carry their own
+  // colour classes; globals.css holds both to ink, outside every layer, so those classes cannot win.
+  const css = readFileSync(join(__dirname, "../../app/globals.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const depthAt = (index: number) => {
+    let depth = 0;
+    for (let i = 0; i < index; i++) {
+      if (css[i] === "{") depth++;
+      else if (css[i] === "}") depth--;
+    }
+    return depth;
+  };
+
+  it("draws the key's Hidden clash swatch as an ink ring and the list's label word in ink, outside any layer", () => {
+    for (const rule of [
+      /span\[data-mark="hidden"\]\s*\{\s*border-color:\s*var\(--foreground\);\s*\}/,
+      /\[data-clash-badge\]\s*\{\s*color:\s*var\(--foreground\);\s*\}/,
+    ]) {
+      const match = rule.exec(css);
+      expect(match).not.toBeNull();
+      expect(depthAt(match!.index)).toBe(0);
+    }
+    expect(css).not.toMatch(/\[data-mark="hidden"\][^{]*\{[^}]*var\(--primary\)/);
   });
 });
 

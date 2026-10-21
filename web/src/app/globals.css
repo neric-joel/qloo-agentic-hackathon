@@ -306,9 +306,22 @@
   html {
     @apply font-sans;
     -webkit-text-size-adjust: 100%;
-    /* The one offset for anchors and keyboard focus: lands them just under the 4rem sticky
-       header. Do not add scroll-mt-* on top, or the two offsets add up. */
+    /* The offset for anchors and keyboard focus: lands them just under the 4rem sticky header (the
+       home's section nav sets its own). A scroll margin on a target adds to it. */
     scroll-padding-top: 5rem;
+  }
+
+  /* The home's section-nav targets (`jumpLinks` in components/clash/clash-control.tsx). After a jump each
+     section's first line clears the sticky bars by at least 8px. The bars are the 56px header below 768px,
+     and the 64px header plus the 44px nav from 768px; the nav sets the page's scroll padding to 63px and
+     82px. The margin makes up the rest, so a section with no top padding of its own still lands clear of
+     them. A target that sets its own scroll margin (a scroll-mt-* class) keeps it. */
+  :where(#what-qloo-changes, #hidden-wall, #why-this-matters, #board-heading, #try-a-move, #agent, #sources) {
+    scroll-margin-top: calc(3.5rem + 0.5rem - 3.9375rem);
+
+    @media (min-width: 48rem) {
+      scroll-margin-top: calc(4rem + 2.75rem + 0.5rem - 5.125rem);
+    }
   }
 
   body {
@@ -546,8 +559,9 @@
   /*
    * The house stamp for every chip on the site: a sentence-case stamp in the sans with a 6px
    * corner (the label radius, never a pill) and a hairline in its own ink, used for the Hidden clash
-   * label, signal chips and "No Qloo signal". No tinted fill and no icon box. Its ink, raspberry and
-   * teal text clear AA on card and paper in both themes (app/tokens.test.ts).
+   * label, signal chips and "No Qloo signal". No tinted fill and no icon box. Its ink and teal text
+   * clear AA on card and paper in both themes (app/tokens.test.ts). Hidden is a label, not shared
+   * time, so it is ink like every other label.
    */
   .tag {
     display: inline-flex;
@@ -575,10 +589,24 @@
   .tag-ink {
     color: var(--foreground);
   }
+}
 
-  .tag-primary {
-    color: var(--primary);
-  }
+/*
+ * The label word on a row of the costliest-clashes list (components/clash/clash-list.tsx marks it
+ * data-clash-badge): ink for every label, Hidden included, beside its ink ring. Raspberry stays for
+ * shared minutes and their cost. Outside any layer, so it holds over the row's own colour class.
+ */
+[data-clash-badge] {
+  color: var(--foreground);
+}
+
+/*
+ * The key's "Hidden clash" swatch (components/clash/timetable-legend.tsx marks it data-mark="hidden"):
+ * an ink ring on the card, the same as the board's hidden disc it stands for. Outside any layer, so it
+ * holds over the swatch's own border colour class.
+ */
+span[data-mark="hidden"] {
+  border-color: var(--foreground);
 }
 
 @keyframes caret-blink {
@@ -875,14 +903,16 @@ input:checked + span .cc-theme-rays {
   animation: cc-ring-out-b 280ms var(--ease-out);
 }
 
-.cc-ring-lens {
+/* The hidden-clash pair fades in only when the visitor picks another pair: taste-ring.tsx sets
+   data-picked on the panel then, never on the first paint or a mount. */
+.cc-ring-lens[data-picked] {
   animation: cc-ring-fade 140ms var(--ease-out);
 }
 
 @media (prefers-reduced-motion: reduce), print {
   .cc-ring-a,
   .cc-ring-b,
-  .cc-ring-lens {
+  .cc-ring-lens[data-picked] {
     animation: none;
   }
 }

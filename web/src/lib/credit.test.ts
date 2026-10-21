@@ -285,15 +285,17 @@ describe("the invented day credits no Qloo anywhere on the page", () => {
     expect(sweep["clash drawer (hidden clash)"]).not.toContain("Check it with Qloo now");
     expect(sweep["clash drawer (weak signal)"]).toContain("Weak signal: the figures for at least one act are thin");
     expect(sweep["coverage strip"]).toContain("Signal coverage");
-    expect(sweep["timetable legend"]).toContain("No priced signal: left out, not scored as zero");
-    expect(sweep["timetable list"]).toContain("No priced signal, not priced");
-    expect(sweep["timetable grid"]).toContain("No priced signal");
+    expect(sweep["timetable legend"]).toContain("No taste signal: left out, not scored as zero");
+    expect(sweep["timetable list"]).toContain("No taste signal, not scored");
+    expect(sweep["timetable grid"]).toContain("No taste signal");
     expect(sweep["taste lens"]).toContain("not that these numbers pick the right clashes");
     expect(sweep["taste lens (no shuffle)"]).toContain("popularity is also an invented figure here");
     expect(noSignalMove(true, "Cy Twombly")).toBe(
-      "Cy Twombly has no usable signal on this day, so its clashes are not priced and no place changes the Clash Budget Index.",
+      "Cy Twombly has no usable signal on this day, so its clashes are not scored and no place changes the Clash Budget Index.",
     );
-    expect(noSignalMove(false, "Cy Twombly")).toMatch(/^Qloo has no usable signal for Cy Twombly/);
+    expect(noSignalMove(false, "Cy Twombly")).toBe(
+      "Qloo has no usable signal for Cy Twombly, so its clashes are not scored and no place changes the Clash Budget Index.",
+    );
   });
 
   it("keeps the real words on a published day", () => {

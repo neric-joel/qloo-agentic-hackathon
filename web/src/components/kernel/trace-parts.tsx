@@ -1,8 +1,12 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { History } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-import type { QlooRequestRecord } from "@/lib/events";
+// One date format for a saved reading and a recorded run: UTC, so the server and every browser print the same day.
+import { builtDate } from "@/components/clash/decision-card";
+import { isControlQuery } from "@/lib/control-acts";
+import { liveWhenRecorded, type QlooRequestRecord } from "@/lib/events";
 import { describeStatus, formatLatency, isSuccessStatus, summarizeParam } from "@/lib/format";
 import type { TracedRequest } from "@/lib/run-state";
 
@@ -88,6 +92,37 @@ function SourcePill({ record }: { record: QlooRequestRecord }) {
 }
 
 /**
+ * What a replayed request was when its run was recorded, read from its capture provenance (`captured`, set only
+ * on a replay): "Live when recorded, 3 Oct 2026; replayed now, nothing fetched." when it reached Qloo live then
+ * (`liveWhenRecorded`: neither cached nor from a saved fixture, both stated), "From the cache when recorded, 3 Oct
+ * 2026; replayed now." when it was cached then, else null (a live run's request, or one whose saved event does
+ * not say). The date is the run's recorded date in UTC (`builtDate`), so every time zone prints the same day.
+ */
+export function replayedRequestText(record: Pick<QlooRequestRecord, "cached" | "recorded" | "captured">): string | null {
+  const captured = record.captured;
+  if (!captured) return null;
+  const date = captured.at ? builtDate(captured.at) : null;
+  const when = date ? `, ${date}` : "";
+  if (captured.cached === true) return `From the cache when recorded${when}; replayed now.`;
+  if (liveWhenRecorded(record) === true) return `Live when recorded${when}; replayed now, nothing fetched.`;
+  return null;
+}
+
+/** True for a request the trace counts as live when recorded: a replayed one whose capture says so. */
+export function isLiveWhenRecorded(record: Pick<QlooRequestRecord, "cached" | "recorded" | "captured">): boolean {
+  return record.captured !== undefined && liveWhenRecorded(record) === true;
+}
+
+/** Where the control acts are explained, and what the label's title says they are for. */
+export const CONTROL_ACT_HREF = "/method#controls";
+export const CONTROL_ACT_TITLE = "Looked up to check that unrelated audiences rank near the bottom.";
+
+/** True for a /search request whose query is one of the control acts (`isControlQuery`). */
+export function isControlSearch(record: Pick<QlooRequestRecord, "path" | "params">): boolean {
+  return record.path === "/search" && typeof record.params.query === "string" && isControlQuery(record.params.query);
+}
+
+/**
  * A parameter value. A long comma list (the candidate acts of an audience ranking run to dozens of
  * ids) prints its first few items and a count; "Show all" holds the value exactly as sent.
  */
@@ -109,8 +144,26 @@ function ParamValue({ value }: { value: string }) {
   );
 }
 
-function ParamsTable({ item }: { item: TracedRequest }) {
+/**
+ * After a control act's query: a plain label, "control act", that links to where the control acts are explained,
+ * its title saying what they were looked up for.
+ */
+function ControlActLabel() {
+  return (
+    <Link
+      href={CONTROL_ACT_HREF}
+      title={CONTROL_ACT_TITLE}
+      className="ml-2 font-sans font-semibold whitespace-nowrap text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground"
+    >
+      control act
+    </Link>
+  );
+}
+
+function ParamsTable({ item, synthetic = false }: { item: TracedRequest; synthetic?: boolean }) {
   const entries = Object.entries(item.record.params);
+  // The invented day looked nothing up, so it has no control act to mark.
+  const control = !synthetic && isControlSearch(item.record);
   if (entries.length === 0) {
     return <p className="mt-3 text-xs text-muted-foreground">No parameters.</p>;
   }
@@ -130,6 +183,7 @@ function ParamsTable({ item }: { item: TracedRequest }) {
             </th>
             <td className="min-w-0 py-1.5 align-top font-mono break-words">
               <ParamValue value={value} />
+              {control && key === "query" ? <ControlActLabel /> : null}
             </td>
           </tr>
         ))}
@@ -161,6 +215,7 @@ function requestIdNote(record: QlooRequestRecord): string {
 export function RequestItem({ item, synthetic = false }: { item: TracedRequest; synthetic?: boolean }) {
   const { record, ordinal } = item;
   const savedBefore = !record.request_id && record.recorded === true && record.cached && !synthetic;
+  const replayedText = replayedRequestText(record);
   return (
     <li className="border-t border-border py-4 first:border-t-0 first:pt-0 last:pb-0">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
@@ -179,7 +234,12 @@ export function RequestItem({ item, synthetic = false }: { item: TracedRequest; 
         {Number.isFinite(record.latency_ms) ? <LatencyPill ms={record.latency_ms} /> : null}
         <SourcePill record={record} />
       </div>
-      <ParamsTable item={item} />
+      {replayedText ? (
+        <p data-replay-provenance="" className="mt-2 text-[0.8125rem] leading-5 text-foreground">
+          {replayedText}
+        </p>
+      ) : null}
+      <ParamsTable item={item} synthetic={synthetic} />
       <p className="mt-2 text-xs text-muted-foreground">
         {savedBefore ? NO_ID_SAVED_BEFORE : "Request ID "}
         {savedBefore ? null : record.request_id ? (

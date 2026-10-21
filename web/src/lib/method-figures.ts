@@ -76,8 +76,8 @@ export const METHOD_FIGURES = {
     /** Complained-about pairs with a Qloo signal for both acts. */
     scoredPairs: 68,
     /**
-     * Complaints (clusters) the scored pairs come from: one source each, and one complaint can name
-     * a group of acts. 45 complaints in all; 42 have at least one scored pair.
+     * Complaints (clusters) the complained-about pairs come from: one source each, and one complaint can
+     * name a group of acts. 45 complaints in all; 42 have at least one complained-about pair with a Qloo signal.
      */
     clusters: 42,
     /** Complained-about pairs left unscored because Qloo has no signal for one of the acts. */
@@ -131,10 +131,10 @@ export const METHOD_FIGURES = {
    * backtest folder (not in this repository; saved data only, no request sent). Run after the gate failed.
    *
    * Label shuffle: within each festival day the complaint labels are dealt out again at random among that
-   * day's scored pairs (each day keeps its number of complained-about pairs) and taste overlap's pooled AUC is
+   * day's concurrent pairs (each day keeps its number of complained-about pairs) and taste overlap's pooled AUC is
    * recomputed, `shuffles` times. `shufflesAtLeast` of them scored at least the observed AUC; the one-sided p is
-   * (that count + 1) / (shuffles + 1). The shuffle treats pairs as independent although the 68 scored pairs
-   * come from 42 complaints, so it understates the uncertainty; the page says so.
+   * (that count + 1) / (shuffles + 1). The shuffle treats pairs as independent although the 68 complained-about
+   * pairs come from 42 complaints, so it understates the uncertainty; the page says so.
    *
    * Gap: popularity's AUC minus taste overlap's (0.722 - 0.634, from the unrounded 0.722163 and 0.633974), with
    * a 95% interval from resampling whole festival days, the same resample for both measures.
@@ -149,7 +149,7 @@ export const METHOD_FIGURES = {
     gapInterval: [-0.098, 0.254],
   },
   /**
-   * Taste inside the full price: a second exploratory follow-up on the same 68 scored pairs, from scripts in the
+   * Taste inside the full price: a second exploratory follow-up on the same 68 complained-about pairs, from scripts in the
    * entry's private backtest folder (not in this repository; saved data only, no request sent), run after the gate
    * failed. Every AUC is pooled over the festival days with the same within-day ranks as the table above; every
    * interval is 95%.
@@ -197,7 +197,7 @@ export const METHOD_FIGURES = {
     /**
      * Where the two rankings disagree, in aggregate only (the pair-level table stays in the private folder):
      * complained-about pairs that taste overlap puts in their day's top quarter (within-day percentile 0.75 or more)
-     * while popularity puts them in the bottom half (under 0.5), out of the scored pairs, the complaint clusters
+     * while popularity puts them in the bottom half (under 0.5), out of the 68 complained-about pairs, the complaint clusters
      * they come from, and how many of them are also in the top quarter on time and draw (the taste-removed price).
      */
     tasteOverPopularity: { pairs: 4, ofPairs: 68, clusters: 2, alsoTopOnTimeAndDraw: 4 },
@@ -431,7 +431,7 @@ export function numberWord(value: number, { capitalize = false } = {}): string {
 
 /**
  * The cluster clause that goes next to the shuffle p: the shuffle treats pairs as independent, but
- * the scored pairs come from fewer complaints, so p understates the uncertainty.
+ * the complained-about pairs come from fewer complaints, so p understates the uncertainty.
  * "the 68 pairs come from 42 complaints, so this p understates the uncertainty".
  */
 export function clusterClause(
@@ -441,8 +441,8 @@ export function clusterClause(
 }
 
 /**
- * Why two sets of counts appear on the site: the public set's verified overlaps against the scored
- * pairs the AUC uses. "The 45 complaints and 86 pairs ... are the verified overlaps in the public
+ * Why two sets of counts appear on the site: the public set's verified overlaps against the
+ * complained-about pairs the AUC uses. "The 45 complaints and 86 pairs ... are the verified overlaps in the public
  * set; the AUC scores 68 pairs from 42 complaints, the ones with a Qloo signal for both acts; 16 more
  * have no Qloo signal for one act, and 2 involve a set on a minor stage the test leaves out."
  */

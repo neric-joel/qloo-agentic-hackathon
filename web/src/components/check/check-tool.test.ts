@@ -153,9 +153,9 @@ describe("the check tool's sheet", () => {
   it("frames the sheet as a 14px editor panel, clipped, with an unfilled header, inset horizontal rules only and Clear alone on a quiet row under it", () => {
     // A panel (round 34, one radius system): the card fill inside a 1px border-strong edge on all four sides and the
     // 14px panel corner (rounded-lg), overflow clipped so the gutter and the field end inside that corner; its focus
-    // outline kept, which follows the corner.
+    // outline kept, which follows the corner, for the text and (round 35) for the table that takes a paste.
     expect(html).toMatch(
-      /<div class="overflow-hidden rounded-lg border border-border-strong bg-card has-\[textarea:focus-visible\]:outline-2 has-\[textarea:focus-visible\]:outline-offset-2 has-\[textarea:focus-visible\]:outline-ring">/,
+      /<div class="overflow-hidden rounded-lg border border-border-strong bg-card has-\[textarea:focus-visible\]:outline-2 has-\[textarea:focus-visible\]:outline-offset-2 has-\[textarea:focus-visible\]:outline-ring has-\[\[data-paste-target\]:focus-visible\]:outline-2 has-\[\[data-paste-target\]:focus-visible\]:outline-offset-2 has-\[\[data-paste-target\]:focus-visible\]:outline-ring">/,
     );
     const frame = html.match(/<div class="(overflow-hidden rounded-lg border border-border-strong bg-card[^"]*)"/)?.[1] ?? "";
     const classes = frame.split(/\s+/);
@@ -294,11 +294,17 @@ describe("the sheet's header row", () => {
     expect(header).not.toContain(">Clear<");
   });
 
-  it("sets the two utilities as one group at the right of the name from sm, on the name's line or wrapped whole under it, and on a phone on their own lines at the left", () => {
-    const row = nameRow.match(/^<label[^>]*>Draft grid<\/label>(?:<span[^>]*>[^<]*<\/span>)?<\/div><div class="([^"]*)"><button/)?.[1] ?? "";
+  it("sets the two utilities as one group at the right of the name from sm, on the name's line from xl or on a line of its own under it, and on a phone on their own lines at the left", () => {
+    const row =
+      nameRow.match(/^<label[^>]*>Draft grid<\/label>(?:<span[^>]*>[^<]*<\/span>)?<\/div><div class="([^"]*)">(?:<span aria-hidden="true"[^>]*>[^<]*<\/span>)?<button/)?.[1] ?? "";
     // The 44px hit areas pulled 10px into the row above and below (its 12px foot keeps them clear of the frame),
-    // the last word's edge on the column's edge.
-    expect(row.split(" ")).toEqual(expect.arrayContaining(["ml-auto", "flex", "flex-wrap", "items-center", "max-sm:ml-0", "sm:-my-2.5", "sm:-mr-2"]));
+    // the last word's edge on the column's edge. Round 35: the group grows to fill its line and sets the actions
+    // right, so its own box never moves when the published day's action arrives (verify P9); below xl it has a
+    // line of its own, wide enough for all three.
+    expect(row.split(" ")).toEqual(
+      expect.arrayContaining(["flex", "min-w-0", "flex-[1_0_auto]", "flex-wrap", "items-center", "justify-end", "max-xl:basis-full", "max-sm:justify-start", "sm:-my-2.5", "sm:-mr-2"]),
+    );
+    expect(row.split(" ")).not.toContain("ml-auto");
     const outer = html.match(/<div class="([^"]*)"><div class="flex min-w-0 flex-wrap items-baseline gap-x-2\.5 gap-y-0\.5"><label/)?.[1] ?? "";
     // The pair wraps whole under the name where the row is too narrow, 10px under it so no hit area reaches its text.
     expect(outer.split(" ")).toEqual(expect.arrayContaining(["flex", "flex-wrap", "items-start", "gap-x-6", "sm:gap-y-2.5"]));
@@ -832,7 +838,7 @@ describe("the table's row-number gutter, column gap and stage breaks", () => {
     const lines = SAMPLE_GRID.split("\n");
     for (const set of parsed.sets) expect(lines[set.row - 1].startsWith(`${set.act},${set.stage},`)).toBe(true);
     // The CSV gutter prints 1..N, one number per line of the text, so each set's line number is its table row.
-    const gutter = page.match(/<div aria-hidden="true" class="w-10 shrink-0[^"]*">([\s\S]*?)<\/div><textarea/)?.[1] ?? "";
+    const gutter = page.match(/<div aria-hidden="true" data-gutter="" class="shrink-0 [^"]*w-10[^"]*">([\s\S]*?)<\/div><textarea/)?.[1] ?? "";
     const numbers = [...gutter.matchAll(/<div>(\d+)<\/div>/g)].map((m) => Number(m[1]));
     expect(numbers).toEqual(lines.map((_, at) => at + 1));
     for (const set of parsed.sets) expect(numbers[set.row - 1]).toBe(set.row);
@@ -1074,7 +1080,8 @@ describe("a figure under each rule break of the invented sample", () => {
       ["Check an invented sample", "button"],
       ["Check the grid", "submit"],
     ]);
-    expect(buttons[0].classes.endsWith(" px-2 decoration-1 underline-offset-4 hover:bg-transparent hover:underline max-sm:-ml-2")).toBe(true);
+    // Round 35: the template takes the 4px step too, since the published day's action now comes before it.
+    expect(buttons[0].classes.endsWith(" px-2 decoration-1 underline-offset-4 hover:bg-transparent hover:underline ml-1 max-sm:-ml-2")).toBe(true);
     expect(buttons[1].classes.endsWith(" px-2 decoration-1 underline-offset-4 hover:bg-transparent hover:underline ml-1 max-sm:-ml-2")).toBe(true);
     expect(buttons[2].classes.endsWith(" h-11 px-5 text-[0.9375rem] max-sm:w-full lg:px-4")).toBe(true);
     // The two utilities come before the sheet's frame, the switch before the check.
@@ -1526,15 +1533,20 @@ describe("round 31: Check a published day (C8)", () => {
     expect(source).toMatch(/published: run\.published \?\? null/);
   });
 
-  it("keeps a phone's line for the action until the API answers, with nothing to read or press, so the sheet never moves (round 34)", () => {
+  it("keeps a line for the action until the API answers below lg (round 34: a phone's), with nothing to read or press, so the sheet never moves", () => {
     const html = renderToStaticMarkup(createElement(CheckTool, { startWithSample: true }));
     const nameRow = html.slice(html.indexOf("<label"), html.indexOf('<div class="overflow-hidden rounded-lg border border-border-strong bg-card'));
-    // After the two utilities: one empty line, hidden from assistive technology, the action's height on a phone
-    // (44px and the button's own padding, border and type), and nothing from sm, where the pair sits on one line.
-    const holder = nameRow.match(/<\/button><span aria-hidden="true" class="([^"]*)">([^<]*)<\/span><\/div>/);
-    expect(holder?.[1]).toBe("block min-h-11 w-full border border-transparent py-2.5 text-[0.9375rem] sm:hidden");
+    // In the action's own place, before the two utilities (round 35): one empty line, hidden from assistive
+    // technology, the action's height (44px and the button's own padding, border and type) wherever the three
+    // actions do not fit one line (below lg; a phone, 640 and 768 measured), and nothing from lg, where the action
+    // takes room to the left of the pair and the pair stays put.
+    const holder = nameRow.match(/<div class="[^"]*justify-end[^"]*"><span aria-hidden="true" class="([^"]*)">([^<]*)<\/span><button/);
+    expect(holder?.[1]).toBe("block min-h-11 w-full border border-transparent py-2.5 text-[0.9375rem] lg:hidden");
     expect(holder?.[2].trim()).toBe("");
     expect(nameRow.match(/<button/g)).toHaveLength(2);
+    // Once the action is there, a break with no height keeps it on its own line below lg, as the holder was.
+    const source0 = readFileSync(fileURLToPath(new URL("./check-tool.tsx", import.meta.url)), "utf8");
+    expect(source0).toContain('{publishedDay ? <span aria-hidden="true" className="basis-full lg:hidden" /> : null}');
     // Undefined until the API answers; null (no published day) leaves no line, and a day replaces it with the action.
     const source = readFileSync(fileURLToPath(new URL("./check-tool.tsx", import.meta.url)), "utf8");
     expect(source).toContain("useState<PublishedDay | null | undefined>(undefined)");
@@ -1882,5 +1894,145 @@ describe("round 32: a published day compares its own costliest clashes, values f
     const brief = text(renderToStaticMarkup(createElement(CheckBrief, { report: outcome.report, applied: [], decisions: [], price: null, preview: true })));
     expect(brief).toContain("Rule breaks: 0.");
     expect(brief).not.toContain("0 of 0");
+  });
+});
+
+describe("round 35: a real paste survives first contact", () => {
+  // Every name is invented. Line 4's start is 25:70; one stage is written "Main   Stage".
+  const MESSY = [
+    "Tidal Fields,Main Stage,14:00,15:00",
+    "Cobalt Rows,Side Stage,14:15,15:15",
+    "Paper Lanterns,Tent,14:30,15:15",
+    "Glass Harbour,Tent,25:70,19:30",
+    "Saltmarsh,Main Stage,15:30,16:30",
+    "Quiet Engine,Side Stage,15:45,16:45",
+    "Nobody Has Heard Of Us,Tent,16:00,16:45",
+    "Velvet Static,Main   Stage,17:00,18:00",
+    "Orbit Choir,Side Stage,17:15,18:15",
+    "Lowland Kites,Tent,17:30,18:15",
+    "Amber Kite,Main Stage,18:30,19:30",
+    "Ember Coast,Side Stage,18:45,19:45",
+  ].join("\n");
+  const source = readFileSync(fileURLToPath(new URL("./check-tool.tsx", import.meta.url)), "utf8");
+  const tool = (grid: string, checkOnLoad = true) =>
+    renderToStaticMarkup(createElement(CheckTool, { initial: { grid, changeover: "", curfew: "", pairs: "" }, checkOnLoad }));
+
+  it("takes a paste on the Table view: a focusable region whose paste lands in the CSV editor, checks nothing and says so once", () => {
+    const html = renderToStaticMarkup(createElement(CheckTool, { startWithSample: true }));
+    const region = html.match(/<div [^>]*data-paste-target=""[^>]*>(?=<div><div class="px-2 max-sm:px-1"><table)/)?.[0] ?? "";
+    expect(region).toContain('role="region"');
+    expect(region).toContain('aria-label="Draft grid as a table. Paste a grid here to edit it as CSV."');
+    expect(region).toContain('tabindex="0"');
+    // Its focus ring is the panel's (round 34's 14px corner), never a square ring of its own.
+    expect(region).toContain('class="outline-none focus-visible:outline-none"');
+    expect(source).toContain("onPaste={pasteOnTable}");
+    const paste = source.slice(source.indexOf("function pasteOnTable("), source.indexOf("/** A rule break's row button"));
+    expect(paste).toContain('event.clipboardData.getData("text/plain")');
+    expect(paste).toContain('update("grid", text);');
+    expect(paste).toContain('setView("csv");');
+    expect(paste).toContain("setNote(pastedLine(text));");
+    expect(paste).toContain("setFocusGrid((count) => count + 1);");
+    // Nothing is checked on a paste, and nothing leaves: no check, no request.
+    expect(paste).not.toMatch(/\bcheck\(|runCheck|requestPrice|fetch/);
+    // The polite region is always in the page, so the paste line is said even with no check on show.
+    expect(source).toMatch(/<p role="status" aria-live="polite" className="sr-only">\s*\{note \|\| \(run && outcome\?\.ok/);
+    // Said once: the paste's note already says to check again, so while it is the note on show the stale
+    // line ("You changed the grid or settings…") is drawn in the same place outside any live region.
+    expect(paste).toContain("setPasteNote(pastedLine(text));");
+    expect(source).toContain('const saidByPaste = note !== "" && note === pasteNote;');
+    expect(source).toMatch(
+      /<div role="status" className="empty:hidden print:hidden">\s*\{stale && !saidByPaste \? <p className="text-sm font-semibold text-warning">\{TRIAL_COPY\.stale\}<\/p> : null\}\s*<\/div>/,
+    );
+    const quiet = source.match(/\{stale && saidByPaste \? \(\s*(<div data-stale-quiet="" className="print:hidden">[\s\S]*?<\/div>)\s*\) : null\}/)?.[1] ?? "";
+    expect(quiet).toContain('<p className="text-sm font-semibold text-warning">{TRIAL_COPY.stale}</p>');
+    expect(quiet).not.toMatch(/role=|aria-live/);
+    // Any other note (a check clears it to blank) puts the stale line back in its live region.
+    expect(source).toMatch(/const check = useCallback\([\s\S]*?setNote\(""\);/);
+  });
+
+  it("checks the readable lines of a messy paste and opens its results with what it skipped", () => {
+    const html = tool(MESSY);
+    const page = text(html);
+    expect(html).not.toContain("The grid was not checked.");
+    const notice = html.match(/<div data-skipped="" class="([^"]*)">([\s\S]*?)<\/div>/);
+    expect(notice?.[1]).toBe("rounded-md border border-border-strong bg-card p-4 text-sm leading-relaxed print:hidden");
+    expect(text(notice?.[2] ?? "")).toBe(
+      "1 line skipped and not checked: line 4. The other 11 sets were checked. Line 4: the start time is not a time such as 18:00, 24:30, 6:00 PM or 6pm (hours up to 47).",
+    );
+    // First in the results, right under their header line.
+    expect(html.indexOf("data-skipped=")).toBeLessThan(html.indexOf("Read 11 sets on 3 stages."));
+    expect(html).toMatch(/<div class="scroll-mt-24 print:hidden"><p class="[^"]*">Checked<\/p><\/div><div data-skipped=""/);
+    expect(page).toContain("No rule breaks found among the 11 sets checked, against the settings above.");
+    expect(page).not.toContain("No rule breaks found against the settings above.");
+    // The preview beside the sheet says it too, under its verdict, and draws no outline.
+    expect(html).toMatch(/<p data-preview-skipped="" class="[^"]*text-muted-foreground">1 line skipped and not checked: line 4\. The other 11 sets were checked\.<\/p>/);
+    expect(html).not.toContain("data-preview-box");
+    // The live region says the sentence before the counts.
+    expect(html).toMatch(/<p role="status" aria-live="polite" class="sr-only">1 line skipped and not checked: line 4\. The other 11 sets were checked\. Rule breaks: 0\./);
+  });
+
+  it("marks each skipped line beside the editor, its number in ink with the word, and leaves the field's own classes alone", () => {
+    const html = tool(MESSY);
+    const gutter = html.match(/<div aria-hidden="true" data-gutter="" class="([^"]*)">([\s\S]*?)<\/div><textarea/);
+    expect(gutter?.[1].split(" ")).toContain("w-24");
+    expect(gutter?.[2]).toContain('<div data-skipped-line="4" class="font-semibold whitespace-nowrap text-foreground">skipped 4</div>');
+    expect((gutter?.[2].match(/data-skipped-line/g) ?? []).length).toBe(1);
+    // The column header's gutter keeps the same width, so the names stay over their columns.
+    expect(html).toContain('<span class="shrink-0 border-r border-border w-24"></span>');
+    // The field is the same field: no class added for a skipped line.
+    const field = html.match(/<textarea[^>]*rows="8"[^>]*class="([^"]*)"/)?.[1];
+    const plain = tool(SAMPLE_GRID).match(/<textarea[^>]*rows="8"[^>]*class="([^"]*)"/)?.[1];
+    expect(field).toBe(plain);
+    // With nothing skipped, the gutter stays 40px and marks nothing.
+    expect(tool(SAMPLE_GRID)).not.toContain("data-skipped-line");
+    expect(tool(SAMPLE_GRID)).toMatch(/data-gutter="" class="[^"]* w-10 /);
+    // Marks follow the text that was checked: an edit hides them until the next check.
+    expect(source).toContain("const marked = !stale && skippedLines.length > 0 ? new Set(skippedLines.map((item) => item.line)) : null;");
+    // A check that skipped lines shows the text, and the editor's own scroll brings the first into view.
+    expect(source).toContain('if (outcome.ok && (outcome.report.skipped ?? []).length > 0) setView("csv");');
+    expect(source).toMatch(/const first = run\.outcome\.report\.skipped\?\.\[0\];[\s\S]*?area\.scrollTop = Math\.max\(0, top - line\);/);
+  });
+
+  it("says the preview is unavailable in the outline's own box, at its height, when the text does not read", () => {
+    const unreadable = tool("A,Main,25:70,19:00\nOnly,two", false);
+    const box = unreadable.match(/<div data-preview-box="" class="relative mt-3"><div aria-hidden="true" class="([^"]*)">([\s\S]*?)<\/div><p data-preview-unavailable="" class="([^"]*)">([^<]*)<\/p><\/div>/);
+    expect(box?.[1]).toBe("space-y-3 invisible");
+    expect((box?.[2].match(/<span /g) ?? []).length).toBe(6);
+    expect(box?.[3]).toBe("absolute inset-x-0 top-0 text-sm leading-5 text-muted-foreground");
+    expect(box?.[4]).toBe("Preview unavailable: fix the lines listed and check again.");
+    // An empty field keeps the outline drawn, with no notice.
+    const empty = renderToStaticMarkup(createElement(CheckTool, {}));
+    expect(empty).toMatch(/<div data-preview-box="" class="relative mt-3"><div aria-hidden="true" class="space-y-3">/);
+    expect(empty).not.toContain("data-preview-unavailable");
+  });
+
+  it("adds the separator hint once after the line messages when the lines look separated by semicolons", () => {
+    const html = tool(MESSY.split(",").join(";"));
+    const alert = html.slice(html.indexOf('role="alert"'), html.indexOf("</ul>", html.indexOf('role="alert"')) + 200);
+    expect(alert).toContain("The grid was not checked.");
+    expect(alert).toMatch(/<\/ul><p data-separator-hint="" class="mt-2 break-words">These lines look separated by semicolons\. Use commas or tabs between act, stage, start and end\.<\/p>/);
+    expect(html.split("These lines look separated by semicolons.").length - 1).toBe(1);
+    expect(tool(MESSY)).not.toContain("separated by semicolons");
+  });
+
+  it("measures the rule check of every check a visitor runs, says it in the results header, and never keeps or sends it", () => {
+    const check = source.slice(source.indexOf("const check = useCallback("), source.indexOf("// Any edit to the paste or the settings"));
+    expect(check).toMatch(/const started = performance\.now\(\);\s*const outcome = runCheck\(next\);\s*const ms = Math\.max\(1, Math\.round\(performance\.now\(\) - started\)\);/);
+    expect(check).toContain("...(outcome.ok ? { ms } : {}),");
+    expect(source).toContain("{checkTimeLine(pasted.sets.length, pasted.stages.length, run.ms)}");
+    // The sample the page opens with ran on no press: no time, the plain Checked label, nothing to differ on hydration.
+    expect(source.replace(/\/\*\*[\s\S]*?\*\//g, "").match(/performance\.now\(\)/g)).toHaveLength(2);
+    expect(renderToStaticMarkup(createElement(CheckTool, { startWithSample: true }))).not.toContain("data-check-time");
+    // Never stored, never sent, never time saved.
+    for (const word of [/ms[^\n]*localStorage/, /ms[^\n]*priceBody/, /time saved/i]) expect(source).not.toMatch(word);
+  });
+
+  it("loses no skipped line from the downloaded file: a check that skipped lines downloads the text as pasted", () => {
+    expect(source).toContain("!working && skippedLines.length > 0 ? run.input.grid : gridText(shown.sets)");
+  });
+
+  it("scrolls to the results' top only once the preview reads the checked text, so nothing above moves after the scroll", () => {
+    expect(source).toMatch(/if \(!scrollPending\.current \|\| previewInput !== input\) return;/);
+    expect(source).toContain("(workingRef.current ?? resultsTopRef.current ?? headingRef.current)?.scrollIntoView({ block: \"start\" });");
   });
 });

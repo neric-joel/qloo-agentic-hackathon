@@ -45,6 +45,29 @@ function SheetOverlay({
   )
 }
 
+/**
+ * Where a sheet sits, and so which of its corners are round. A corner that sits on a screen edge is square
+ * (it meets the edge, so a curve there would show the page behind it); every other corner takes the panel
+ * radius, 14 px. Below 640 px a side sheet fills the screen, so all four of its corners are square, and a
+ * top or bottom sheet rounds only the two corners away from its edge. From 640 px every sheet floats 12 px
+ * inside the window and rounds all four corners. The sheet clips what it holds to its own corners, so a
+ * filled footer never shows a square corner past the curve; its scroll area scrolls inside it.
+ */
+const SHEET_SIDES = [
+  // Right: the whole screen below 640 px; from 640 px a panel 12 px in from the top, right and bottom.
+  "data-[side=right]:inset-y-0 data-[side=right]:right-0 data-[side=right]:h-full data-[side=right]:w-full",
+  "data-[side=right]:sm:inset-y-3 data-[side=right]:sm:right-3 data-[side=right]:sm:h-auto data-[side=right]:sm:max-w-xl data-[side=right]:sm:rounded-lg data-[side=right]:sm:border",
+  // Left: the same, mirrored.
+  "data-[side=left]:inset-y-0 data-[side=left]:left-0 data-[side=left]:h-full data-[side=left]:w-full",
+  "data-[side=left]:sm:inset-y-3 data-[side=left]:sm:left-3 data-[side=left]:sm:h-auto data-[side=left]:sm:max-w-xl data-[side=left]:sm:rounded-lg data-[side=left]:sm:border",
+  // Bottom: on the screen's foot below 640 px, its two upper corners round; from 640 px a panel 12 px in.
+  "data-[side=bottom]:inset-x-0 data-[side=bottom]:bottom-0 data-[side=bottom]:h-auto data-[side=bottom]:rounded-t-lg data-[side=bottom]:border-t",
+  "data-[side=bottom]:sm:inset-x-3 data-[side=bottom]:sm:bottom-3 data-[side=bottom]:sm:rounded-lg data-[side=bottom]:sm:border",
+  // Top: the same, upside down.
+  "data-[side=top]:inset-x-0 data-[side=top]:top-0 data-[side=top]:h-auto data-[side=top]:rounded-b-lg data-[side=top]:border-b",
+  "data-[side=top]:sm:inset-x-3 data-[side=top]:sm:top-3 data-[side=top]:sm:rounded-lg data-[side=top]:sm:border",
+].join(" ")
+
 function SheetContent({
   className,
   children,
@@ -62,7 +85,9 @@ function SheetContent({
         data-slot="sheet-content"
         data-side={side}
         className={cn(
-          "fixed z-50 flex flex-col bg-popover text-sm text-popover-foreground border-surface-edge transition duration-200 ease-in-out outline-none data-[side=bottom]:inset-x-0 data-[side=bottom]:bottom-0 data-[side=bottom]:h-auto data-[side=bottom]:rounded-t-xl data-[side=bottom]:border-t data-[side=left]:inset-y-0 data-[side=left]:left-0 data-[side=left]:h-full data-[side=left]:w-full data-[side=left]:rounded-r-xl data-[side=left]:border-r data-[side=right]:inset-y-0 data-[side=right]:right-0 data-[side=right]:h-full data-[side=right]:w-full data-[side=right]:rounded-l-xl data-[side=right]:border-l data-[side=top]:inset-x-0 data-[side=top]:top-0 data-[side=top]:h-auto data-[side=top]:rounded-b-xl data-[side=top]:border-b data-[side=left]:sm:max-w-xl data-[side=right]:sm:max-w-xl data-open:animate-in data-open:fade-in-0 data-[side=bottom]:data-open:slide-in-from-bottom-10 data-[side=left]:data-open:slide-in-from-left-10 data-[side=right]:data-open:slide-in-from-right-10 data-[side=top]:data-open:slide-in-from-top-10 data-closed:animate-out data-closed:fade-out-0 data-[side=bottom]:data-closed:slide-out-to-bottom-10 data-[side=left]:data-closed:slide-out-to-left-10 data-[side=right]:data-closed:slide-out-to-right-10 data-[side=top]:data-closed:slide-out-to-top-10",
+          "fixed z-50 flex flex-col overflow-hidden bg-popover text-sm text-popover-foreground border-surface-edge transition duration-200 ease-in-out outline-none",
+          SHEET_SIDES,
+          "data-open:animate-in data-open:fade-in-0 data-[side=bottom]:data-open:slide-in-from-bottom-10 data-[side=left]:data-open:slide-in-from-left-10 data-[side=right]:data-open:slide-in-from-right-10 data-[side=top]:data-open:slide-in-from-top-10 data-closed:animate-out data-closed:fade-out-0 data-[side=bottom]:data-closed:slide-out-to-bottom-10 data-[side=left]:data-closed:slide-out-to-left-10 data-[side=right]:data-closed:slide-out-to-right-10 data-[side=top]:data-closed:slide-out-to-top-10",
           className
         )}
         {...props}

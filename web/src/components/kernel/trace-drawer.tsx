@@ -14,13 +14,13 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import type { RunMode } from "@/lib/events";
+import type { QlooRequestRecord, RunMode } from "@/lib/events";
 import { formatLatency, isSuccessStatus, latencyParts, median, pluralize } from "@/lib/format";
 import { selectRequests, type ToolCallState, type TracedRequest } from "@/lib/run-state";
 
 import { CopyJsonButton } from "./copy-json-button";
 import { PROVENANCE_META, PROVENANCE_ORDER, ProvenanceChip } from "./provenance-chip";
-import { FailedPill, RequestItem, dotted } from "./trace-parts";
+import { FailedPill, RequestItem, dotted, isLiveWhenRecorded } from "./trace-parts";
 
 function Stat({ value, unit, label }: { value: string; unit?: string; label: string }) {
   return (
@@ -123,6 +123,45 @@ export function noRequestsNote(savedReading: boolean, synthetic: boolean): strin
   return savedReading && !synthetic ? SAVED_READING_NOTE : NO_QLOO_NOTE;
 }
 
+/** One figure in the drawer's summary: its label, its value and any unit. */
+export type TraceStat = { label: string; value: string; unit?: string };
+
+/**
+ * The drawer's summary, in order. Requests and Cached always; then the median latency of live requests when any
+ * reached Qloo just now, else Recorded (a saved trace has no live latency to take a median of), followed by
+ * "Live when recorded" when a replayed request reached Qloo live while its run was recorded (counted only from
+ * the saved event's own flags, `isLiveWhenRecorded`).
+ */
+export function traceStats(records: readonly QlooRequestRecord[]): TraceStat[] {
+  const total = records.length;
+  const stats: TraceStat[] = [
+    { label: total === 1 ? "Request" : "Requests", value: String(total) },
+    { label: "Cached", value: String(records.filter((record) => record.cached).length) },
+  ];
+  const liveLatencies = records.filter((record) => !record.cached && !record.recorded).map((record) => record.latency_ms);
+  if (liveLatencies.length > 0) {
+    const medianLive = latencyParts(median(liveLatencies) ?? Number.NaN);
+    stats.push({ label: "Median", value: medianLive?.value ?? "n/a", unit: medianLive?.unit });
+    return stats;
+  }
+  stats.push({ label: "Recorded", value: String(records.filter((record) => record.recorded).length) });
+  const liveWhenRecorded = records.filter(isLiveWhenRecorded).length;
+  if (liveWhenRecorded > 0) stats.push({ label: "Live when recorded", value: String(liveWhenRecorded) });
+  return stats;
+}
+
+/** What Copy JSON copies and Raw JSON shows: the run, and every request exactly as the trace holds it. */
+export function traceJson(
+  records: readonly QlooRequestRecord[],
+  { runId, mode, qlooCalls }: { runId?: string; mode?: RunMode; qlooCalls?: number } = {},
+): string {
+  return JSON.stringify(
+    { run_id: runId ?? null, mode: mode ?? null, qloo_calls: qlooCalls ?? records.length, requests: records },
+    null,
+    2,
+  );
+}
+
 /**
  * The drawer's status line: a run still streaming says so; a run with an id has finished; a ledger that is not
  * a run (the day's saved build, one pair's requests) has nothing to finish, so it says nothing.
@@ -163,16 +202,11 @@ export function TraceDrawer({
   const requestCount = pluralize(total, "request");
   // The board's toolbar trigger reads as a ruled line of text, not a filled button.
   const ruled = triggerVariant === "ruled" || triggerVariant === "ink";
-  const cachedCount = records.filter((record) => record.cached).length;
   const failedCount = records.filter((record) => !isSuccessStatus(record.status)).length;
-  const liveLatencies = records
-    .filter((record) => !record.cached && !record.recorded)
-    .map((record) => record.latency_ms);
-  const recordedCount = records.filter((record) => record.recorded).length;
   // A median only means something for requests that reached Qloo just now. A saved trace has none,
-  // so it counts its recorded requests instead of printing an empty median.
-  const hasLive = liveLatencies.length > 0;
-  const medianLive = hasLive ? latencyParts(median(liveLatencies) ?? Number.NaN) : null;
+  // so it counts its recorded requests instead of printing an empty median (`traceStats`).
+  const hasLive = records.some((record) => !record.cached && !record.recorded);
+  const stats = useMemo(() => traceStats(records), [records]);
 
   // Requests are numbered across the whole run, so each tool call takes the next slice.
   const groups = useMemo(() => {
@@ -187,20 +221,7 @@ export function TraceDrawer({
   }, [toolCalls, traced]);
   const otherCalls = toolCalls.filter((call) => call.requests.length === 0);
 
-  const json = useMemo(
-    () =>
-      JSON.stringify(
-        {
-          run_id: runId ?? null,
-          mode: mode ?? null,
-          qloo_calls: qlooCalls ?? total,
-          requests: records,
-        },
-        null,
-        2,
-      ),
-    [runId, mode, qlooCalls, total, records],
-  );
+  const json = useMemo(() => traceJson(records, { runId, mode, qlooCalls }), [runId, mode, qlooCalls, records]);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -250,21 +271,22 @@ export function TraceDrawer({
           tabIndex={0}
           role="region"
           aria-label="Trace details"
-          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-6 sm:px-6"
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-6 focus-visible:-outline-offset-2 sm:px-6"
         >
           <SheetDescription className="max-w-prose text-[0.9375rem] leading-relaxed">
             {description ??
               "Every request this run sent to Qloo, in order. The API key stays on the server and is never shown or sent to the browser."}
           </SheetDescription>
 
-          <dl className="mt-6 grid grid-cols-3 gap-4 rounded-md bg-background p-4">
-            <Stat value={String(total)} label={total === 1 ? "Request" : "Requests"} />
-            <Stat value={String(cachedCount)} label="Cached" />
-            {hasLive ? (
-              <Stat value={medianLive?.value ?? "n/a"} unit={medianLive?.unit} label="Median" />
-            ) : (
-              <Stat value={String(recordedCount)} label="Recorded" />
+          <dl
+            className={cn(
+              "mt-6 grid gap-4 rounded-md bg-background p-4",
+              stats.length > 3 ? "grid-cols-2 items-end sm:grid-cols-4" : "grid-cols-3",
             )}
+          >
+            {stats.map((stat) => (
+              <Stat key={stat.label} value={stat.value} unit={stat.unit} label={stat.label} />
+            ))}
           </dl>
           <p className="mt-3 mb-8 text-xs text-muted-foreground">
             {hasLive

@@ -273,8 +273,8 @@ describe("the first page's meta and Open Graph description", () => {
       const lede = text(ledeHtml ?? "").trim();
       expect(lede).toBe(
         invented
-          ? "For heads of programming: clashes ranked by minutes shared, popularity and audience taste overlap."
-          : "For heads of programming: clashes ranked by minutes shared, popularity and audience taste overlap, from Qloo data.",
+          ? "For heads of programming: taste data used to schedule, not to recommend. Clashes ranked by minutes shared, popularity and taste overlap."
+          : "For heads of programming: Qloo taste data used to schedule, not to recommend. Clashes ranked by minutes shared, popularity and taste overlap.",
       );
       expect(lede).not.toContain("attendance");
       expect(plain.indexOf("For heads of programming")).toBeGreaterThan(plain.indexOf("Which clash is worth moving?"));
@@ -301,6 +301,37 @@ describe("the first page's meta and Open Graph description", () => {
         expect(plain).not.toContain(SYNTHETIC_PROOF_LINE);
       }
     }
+  });
+
+  it("calls the saved reading global in the server HTML only when the preset sent no location", async () => {
+    const list = [{ id: "tiny-fest-sat", title: "Tiny Fest, Saturday", city: null, sets: 3, stages: 2, scored_share: 0.67, synthetic: false }];
+    const dateline = async (served: Raw) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string) => {
+          if (url.endsWith("/api/presets")) return new Response(JSON.stringify(list), { status: 200 });
+          if (url.includes("/decision")) return new Response(JSON.stringify(DECISION), { status: 200 });
+          return new Response(JSON.stringify({ ...rawTinyPreset(), ...served }), { status: 200 });
+        }),
+      );
+      const { default: Home } = await import("@/app/page");
+      const page = await Home({ searchParams: Promise.resolve({}) });
+      const html = renderToStaticMarkup(page.props.fallback);
+      return text(/<p data-dateline=""[^>]*>([\s\S]*?)<\/p>/.exec(html)?.[1] ?? "");
+    };
+    // No location sent (null, or none at all): the reading was asked for no place, so it is global.
+    expect(await dateline({ location: null })).toBe(
+      "Saturday. Published timetable; saved global Qloo reading built 1 Oct 2026. Neither festival uses Clash Control.",
+    );
+    expect(await dateline({})).toContain("saved global Qloo reading built 1 Oct 2026.");
+    // A location sent: no "global", and no city claim either.
+    const placed = await dateline({ location: "London" });
+    expect(placed).toBe("Saturday. Published timetable; saved Qloo reading built 1 Oct 2026. Neither festival uses Clash Control.");
+    expect(placed).not.toMatch(/global|London/);
+    // The invented day: no Qloo reading at all, so nothing is called global.
+    const invented = await dateline({ location: null, synthetic: true });
+    expect(invented.startsWith("Invented timetable. Shown here on an invented day")).toBe(true);
+    expect(invented).not.toContain("global");
   });
 
   it("keeps the complaint figures, 45 clashes at 5 festivals, in Why this matters beside their qualifier", () => {

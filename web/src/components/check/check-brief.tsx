@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 
-import { CHECK_COPY, RULE_LABELS, formatClock, pairCountLabel, type CheckReport } from "@/lib/check";
+import { CHECK_COPY, RULE_LABELS, formatClock, noBreaksLine, pairCountLabel, skippedSentence, type CheckReport } from "@/lib/check";
 import { decisionLine, type Decision } from "@/lib/check-decisions";
 import {
   PRICE_COPY,
@@ -134,6 +134,9 @@ export function CheckBrief({
   preview?: boolean;
 }) {
   const { sets, stages, settings, breaks, shared } = report;
+  // A partial check prints what it left out under the title, and every pair rule it could not check.
+  const skipped = skippedSentence(report.skipped ?? [], sets.length);
+  const unchecked = report.uncheckedPairs ?? [];
   const reorder = price ? orderLine(price) : null;
   const missed = price ? notCompared(priceSkipped, price) : [];
   const missedLine = price ? notComparedLine(missed, price) : null;
@@ -147,6 +150,16 @@ export function CheckBrief({
       {published ? <p className="mt-[2pt] font-semibold">{published}</p> : null}
       <p className="mt-[2pt]">{snapshotLine({ sample, checkedAt, applied: applied.length, published: Boolean(published) })}</p>
       {stale ? <p className="mt-[2pt] font-semibold">{BRIEF_STALE}</p> : null}
+      {skipped ? (
+        <p data-brief-skipped="" className="mt-[2pt] font-semibold break-words">
+          {skipped}
+        </p>
+      ) : null}
+      {unchecked.map((line) => (
+        <p key={line} className="mt-[2pt] break-words">
+          {line}
+        </p>
+      ))}
       <p className="mt-[4pt]">
         Read {sets.length} {sets.length === 1 ? "set" : "sets"} on {stages.length} {stages.length === 1 ? "stage" : "stages"}.
         Rule breaks: {breaks.length}. Sets that share time: {pairCountLabel(shared.length)}.
@@ -169,7 +182,7 @@ export function CheckBrief({
       <section className="mt-[6pt]">
         <h2 className="text-[11pt] font-semibold">Rule breaks ({breaks.length})</h2>
         {breaks.length === 0 ? (
-          <p className="mt-[2pt]">{CHECK_COPY.noBreaks}</p>
+          <p className="mt-[2pt]">{noBreaksLine(report)}</p>
         ) : (
           <Capped items={breaks.map((item) => `${RULE_LABELS[item.rule]}: ${item.text}`)} />
         )}

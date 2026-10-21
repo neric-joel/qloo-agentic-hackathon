@@ -69,6 +69,44 @@ describe("parsePreset", () => {
     expect(evidence?.twins[0].separate.act).toBe("Cy Twombly");
   });
 
+  it("writes every act genre for display where the preset is parsed", () => {
+    const raw = rawPreset();
+    const festival = raw.festival as { acts: Record<string, unknown>[] };
+    festival.acts[0].genre = "70S";
+    festival.acts[1].genre = "Idm";
+    const report = raw.report as { clashes: Record<string, Record<string, unknown>>[] };
+    report.clashes[0].a.genre = "70S";
+    report.clashes[0].b.genre = "Rhythm Blues";
+    const preset = parsePreset(raw);
+    expect(preset.festival.acts.map((act) => act.genre)).toEqual(["70s", "IDM", null]);
+    expect(preset.report.clashes[0].a.genre).toBe("70s");
+    expect(preset.report.clashes[0].b.genre).toBe("R&B");
+  });
+
+  it("writes plain genre names in a hidden pair for display and keeps tag ids as sent", () => {
+    const raw = rawPreset();
+    const wall = (raw.evidence as { hidden_wall: Record<string, unknown>[] }).hidden_wall;
+    wall[0].genres = [["urn:tag:genre:rhythm_blues", "Lo Fi"], ["Singer Songwriter", "urn:tag:genre:music:idm"]];
+    expect(parsePreset(raw).evidence?.hidden_wall[0].genres).toEqual([
+      ["urn:tag:genre:rhythm_blues", "Lo-Fi"],
+      ["Singer-Songwriter", "urn:tag:genre:music:idm"],
+    ]);
+    // The fixture's own tag ids are untouched.
+    expect(parsePreset(rawPreset()).evidence?.hidden_wall[0].genres).toEqual([["urn:tag:genre:indie"], ["urn:tag:genre:punk"]]);
+  });
+
+  it("reads the location the reading was asked for, and anything but a string as none", () => {
+    const withLocation = (location: unknown) => parsePreset({ ...rawPreset(), location }).location;
+    expect(withLocation(null)).toBeNull();
+    expect(parsePreset(rawPreset()).location).toBeNull();
+    expect("location" in rawPreset()).toBe(false);
+    expect(withLocation("London")).toBe("London");
+    expect(withLocation(42)).toBeNull();
+    expect(withLocation({ city: "London" })).toBeNull();
+    // Nothing else changes with it.
+    expect({ ...parsePreset({ ...rawPreset(), location: "London" }), location: null }).toEqual(parsePreset(rawPreset()));
+  });
+
   it("treats missing evidence as none", () => {
     const raw = rawPreset();
     raw.evidence = null;

@@ -38,7 +38,7 @@ import { ClashDrawer } from "./clash-drawer";
 import { ClashList, liveClashRow } from "./clash-list";
 import { CoverageMeter } from "./coverage-meter";
 import { DayGraph, DayGraphKey } from "./day-graph";
-import { builtDate, DecisionDetails } from "./decision-card";
+import { builtDate, DecisionDetails, isHiddenDecision } from "./decision-card";
 import { HeroDecision, HeroDecisionSkeleton } from "./hero-decision";
 import { HiddenWall, type HiddenDay } from "./hidden-wall";
 import { MoreDetails } from "./more-details";
@@ -72,6 +72,21 @@ const HERO_BUTTON: Record<HeroClash["kind"], string> = {
   costliest: "Open the costliest clash",
 };
 
+/**
+ * What the index card's clash action opens, and what it says. When the card's own pair carries the Hidden label,
+ * the card describes that pair in its hidden-clash line and the action closes that line, so it opens that same
+ * pair ("Open a hidden clash"). Otherwise the action is a line of its own and opens the day's hero clash
+ * (`heroClash`), named for its kind. Null when there is neither.
+ */
+export function cardClashAction(
+  hero: HeroClash | null,
+  cardPair: PairClash | null,
+  cardHidden: boolean,
+): { clash: PairClash; label: string } | null {
+  if (cardPair && cardHidden) return { clash: cardPair, label: HERO_BUTTON.hidden };
+  return hero ? { clash: hero.clash, label: HERO_BUTTON[hero.kind] } : null;
+}
+
 const PROOF_LINE = "Neither festival uses Clash Control.";
 export const SYNTHETIC_PROOF_LINE =
   "Shown here on an invented day: the server has no built festival day, so the acts, times and readings are made up and no Qloo request was made.";
@@ -92,18 +107,47 @@ export function festivalLabel(title: string): string {
 }
 
 /**
- * The line under the festival picker: the day, the kind of timetable and when its saved reading was built,
- * then the proof line ("Sunday. Published timetable; saved Qloo reading built 3 Oct 2026. Neither festival uses
- * Clash Control."). The invented day says so and that no Qloo request was made. Without a drawn day (no
- * server summary yet) the proof line stands alone.
+ * The server's summary of the day the page opens on, with the location its saved Qloo reading was asked for
+ * (`Preset.location`, read from the same preset response the summary is built from): null when the reading was
+ * asked for no location, so it is global; undefined when the server could not say.
  */
-function HeroDateline({ model, synthetic = false }: { model: DayGraphModel | null; synthetic?: boolean }) {
-  const date = model?.builtAt ? builtDate(model.builtAt) : null;
-  const lead = !model
-    ? null
-    : synthetic
-      ? "Invented timetable."
-      : `${model.dayName ? `${model.dayName}. ` : ""}Published timetable${date ? `; saved Qloo reading built ${date}` : ""}.`;
+export type HomeSummary = ServerSummary & { location?: string | null };
+
+/**
+ * The dateline's lead: the day, the kind of timetable and when its saved reading was built. The reading is
+ * called global only where the preset sent no location (`location` null: it was asked for none); a location it
+ * was asked for, or none known (undefined), prints no claim about place. The invented day says it is invented.
+ * Null without a drawn day.
+ */
+export function datelineLead(
+  model: Pick<DayGraphModel, "dayName" | "builtAt"> | null,
+  synthetic: boolean,
+  location: string | null | undefined,
+): string | null {
+  if (!model) return null;
+  if (synthetic) return "Invented timetable.";
+  const date = model.builtAt ? builtDate(model.builtAt) : null;
+  const reading = location === null ? "saved global Qloo reading" : "saved Qloo reading";
+  return `${model.dayName ? `${model.dayName}. ` : ""}Published timetable${date ? `; ${reading} built ${date}` : ""}.`;
+}
+
+/**
+ * The line under the festival picker: the lead (`datelineLead`), then the proof line ("Sunday. Published
+ * timetable; saved global Qloo reading built 3 Oct 2026. Neither festival uses Clash Control."). The invented day
+ * says so and that no Qloo request was made. Without a drawn day (no server summary yet) the proof line stands
+ * alone.
+ */
+function HeroDateline({
+  model,
+  synthetic = false,
+  location,
+}: {
+  model: DayGraphModel | null;
+  synthetic?: boolean;
+  /** Where the day's saved reading was asked for: null for none (global), undefined when not known. */
+  location: string | null | undefined;
+}) {
+  const lead = datelineLead(model, synthetic, location);
   return (
     <p
       data-dateline=""
@@ -266,6 +310,29 @@ export function jumpLinks({ agent, wall, qloo = null }: { agent: JumpLink; wall:
 }
 
 /**
+ * The nav's entry for the agent section, which both labels land on (its heading: the recorded runs sit level
+ * with it from 1024 px, and the list itself has no top padding, so a jump to it would land its label under the
+ * sticky bar). "Agent runs" once the live agent is known to be off and the day has recorded runs, so the word
+ * "agent" is in the first screen; while either answer is still coming it holds the label it will most likely
+ * settle on (the agent off, the runs on their way), so the nav does not reflow; "Agent" otherwise.
+ */
+export function agentJump(
+  agentStatus: AgentStatus,
+  recordings: { status: "loading" | "ready" | "error"; runs: readonly unknown[] },
+): JumpLink {
+  const settled = agentStatus !== "checking" && recordings.status !== "loading";
+  const recordedRuns = settled
+    ? agentStatus === "off" && recordings.runs.length > 0
+    : agentStatus !== "on" && (recordings.status === "loading" || recordings.runs.length > 0);
+  return { href: "#agent", label: recordedRuns ? "Agent runs" : "Agent" };
+}
+
+/** The server's published festival days, in its order, for the agent section: never the invented day. */
+export function publishedDays(presets: readonly PresetSummary[]): { id: string; title: string }[] {
+  return presets.filter((item) => item.synthetic !== true).map((item) => ({ id: item.id, title: item.title }));
+}
+
+/**
  * The entry the nav marks current: the last section whose top is above 40% of the viewport, none at the
  * very top of the page before the first has reached that line; and the last entry once the page is
  * scrolled to its end (within 2 px), since a short last section can never reach that line.
@@ -321,10 +388,10 @@ function JumpNav({ agent, wall, qloo = null }: { agent: JumpLink; wall: boolean;
     };
   }, [hrefs]);
 
-  // One marker under the current item, on the bar's hairline: it slides to the new item over 180 ms
-  // (ease-out, transform only; its width takes the new label's at once) and jumps at once under reduced
-  // motion. Drawn from the measured label, so it spans the word at any font size; hidden when no section is
-  // current.
+  // One marker under the current item, on the bar's hairline. The current item changes as the page scrolls, and
+  // nothing on this page moves on scroll, so the marker takes the new item's place at once, with no slide, in
+  // every motion setting. Drawn from the measured label, so it spans the word at any font size; hidden when no
+  // section is current.
   const listRef = useRef<HTMLUListElement | null>(null);
   const markerRef = useRef<HTMLLIElement | null>(null);
   useEffect(() => {
@@ -338,16 +405,9 @@ function JumpNav({ agent, wall, qloo = null }: { agent: JumpLink; wall: boolean;
         marker.style.visibility = "hidden";
         return;
       }
-      const wasHidden = marker.style.visibility !== "visible";
-      // From hidden it appears in place, with no slide in from the left edge.
-      if (wasHidden) marker.style.transition = "none";
       marker.style.width = `${label.offsetWidth}px`;
       marker.style.transform = `translateX(${label.offsetLeft}px)`;
       marker.style.visibility = "visible";
-      if (wasHidden) {
-        void marker.offsetWidth;
-        marker.style.transition = "";
-      }
     }
     place();
     window.addEventListener("resize", place);
@@ -391,7 +451,7 @@ function JumpNav({ agent, wall, qloo = null }: { agent: JumpLink; wall: boolean;
           ref={markerRef}
           aria-hidden="true"
           style={{ visibility: "hidden" }}
-          className="pointer-events-none absolute bottom-0 left-0 h-[3px] list-none rounded-bar bg-foreground motion-safe:transition-[transform] motion-safe:duration-(--dur-state) motion-safe:ease-(--ease-out) print:hidden"
+          className="pointer-events-none absolute bottom-0 left-0 h-[3px] list-none rounded-bar bg-foreground print:hidden"
         />
       </ul>
     </nav>
@@ -412,7 +472,7 @@ function LoadingView({
   status,
 }: {
   intro: ReactNode;
-  summary: ServerSummary | null;
+  summary: HomeSummary | null;
   picker?: ReactNode;
   status?: ReactNode;
 }) {
@@ -425,7 +485,7 @@ function LoadingView({
         day={
           <>
             {picker}
-            <HeroDateline model={model} synthetic={synthetic} />
+            <HeroDateline model={model} synthetic={synthetic} location={summary?.location} />
           </>
         }
         toggle={model ? <ViewToggle model={model} view="moved" /> : null}
@@ -459,7 +519,7 @@ export function ClashControlFallback({
   summary = null,
 }: {
   intro: ReactNode;
-  summary?: ServerSummary | null;
+  summary?: HomeSummary | null;
 }) {
   return (
     <LoadingView
@@ -531,7 +591,7 @@ export function ClashControl({
   summary = null,
 }: {
   intro: ReactNode;
-  summary?: ServerSummary | null;
+  summary?: HomeSummary | null;
 }) {
   // The loading line is for a visitor waiting in the browser. Left out of the server HTML, it cannot
   // linger in the hidden streaming fallback and read as stale once the day has loaded.
@@ -677,7 +737,7 @@ export function ClashControl({
         group={
           <AbstainState
             title="No festival days to show yet"
-            reason="This server has no scored festival days. A day appears here once its published timetable has been priced against Qloo audience data."
+            reason="This server has no scored festival days. A day appears here once its published timetable has been scored against Qloo audience data."
           />
         }
       />
@@ -943,15 +1003,10 @@ function PresetView({
   );
   const lensRank = useMemo(() => drawerRank(lenses), [lenses]);
   const actName = (id: string) => festival.acts.find((act) => act.id === id)?.name ?? id;
-  // Both land on the agent section's heading: the recorded runs sit level with it from 1024 px, and the list
-  // itself has no top padding, so a jump to it would land its label under the sticky bar. "Recorded runs" once
-  // the live agent is known to be off and the day has runs; while either answer is still coming it holds the
-  // label it will most likely settle on (the agent off, the runs on their way), so the nav does not reflow.
-  const agentSettled = agentStatus !== "checking" && recordings.status !== "loading";
-  const recordedRuns = agentSettled
-    ? agentStatus === "off" && recordings.runs.length > 0
-    : agentStatus !== "on" && (recordings.status === "loading" || recordings.runs.length > 0);
-  const agentJump: JumpLink = recordedRuns ? { href: "#agent", label: "Recorded runs" } : { href: "#agent", label: "Agent" };
+  const agentLink = agentJump(agentStatus, recordings);
+  // The published days, for the agent section's pointer to the run that asked Qloo, from the list this page
+  // already holds (no second fetch of the list).
+  const published = useMemo(() => publishedDays(presets), [presets]);
 
   const { activeSetIds, activeClashKeys } = useMemo(() => {
     const setIds = new Set<string>();
@@ -991,6 +1046,9 @@ function PresetView({
   const cardGenres = decisionClash
     ? [decisionClash.aId, decisionClash.bId].map((id) => festival.acts.find((act) => act.id === id)?.genre ?? null)
     : null;
+  // The card's clash action: the pair its hidden-clash line describes when it has that line, else the day's hero
+  // clash (`cardClashAction`).
+  const cardAction = cardClashAction(hero, decisionPair, decisionCopy !== null && isHiddenDecision(decisionCopy));
 
   // The decision's buttons, in the hero and in the index card under it: each hands "Try a move" a seed, so
   // Keep, Add and Replace write the real plan.
@@ -1037,7 +1095,7 @@ function PresetView({
         day={
           <>
             {picker}
-            <HeroDateline model={model} synthetic={synthetic} />
+            <HeroDateline model={model} synthetic={synthetic} location={preset.location} />
           </>
         }
         toggle={
@@ -1066,7 +1124,7 @@ function PresetView({
       />
 
       <JumpNav
-        agent={agentJump}
+        agent={agentLink}
         wall={hasWall}
         // The section is always on the page (its failed test needs no lens data), so its entry is there from the
         // first frame: an entry that waited for the readings would push the others along when they came.
@@ -1106,8 +1164,8 @@ function PresetView({
                   kept={cardKept}
                   onTryRule={tryRule}
                   onKeepChange={keepChange}
-                  onOpenHidden={hero ? (trigger) => openClash(hero.clash, trigger) : undefined}
-                  hiddenLabel={hero ? HERO_BUTTON[hero.kind] : undefined}
+                  onOpenHidden={cardAction ? (trigger) => openClash(cardAction.clash, trigger) : undefined}
+                  hiddenLabel={cardAction?.label}
                   saved={
                     preset.synthetic || preset.built_at === null
                       ? null
@@ -1307,6 +1365,7 @@ function PresetView({
             agentStatus={agentStatus}
             keptSteps={keptSteps}
             cardActId={decisionCopy?.seedMove?.actId ?? null}
+            publishedDays={published}
             onKeepPlace={(move, choice) => {
               // The agent proposes, the programmer keeps: the same seed path as the card's Keep this move.
               // Add (checked whole by /whatif in the panel first) keeps the plan's steps; Replace replaces

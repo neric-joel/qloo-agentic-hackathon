@@ -6,6 +6,7 @@
  * JSON so a contract change shows a clear error instead of a broken page.
  */
 
+import { genreLabel } from "./clashes";
 import { isRecord, type QlooRequestRecord } from "./events";
 
 export type Coverage = "strong" | "weak" | "none";
@@ -172,6 +173,11 @@ export type Preset = {
   title: string;
   built_at: string | null;
   /**
+   * The location the saved Qloo reading was asked for, as the server sent it. Null when none was sent (a
+   * global reading); `parsePreset` always sets it, and also reads a missing or malformed field as null.
+   */
+  location?: string | null;
+  /**
    * True for the invented day the server serves when it has no built preset: invented acts, no Qloo
    * data. Missing or false for a real day.
    */
@@ -276,6 +282,17 @@ function parseStage(raw: unknown, at: string): Stage {
   };
 }
 
+/** An act's main genre, written for display (`genreLabel`: "70S" -> "70s", "Idm" -> "IDM"). */
+function optGenre(source: Obj, at: string): string | null {
+  const genre = optStr(source, "genre", at);
+  return genre === null ? null : genreLabel(genre);
+}
+
+/** A genre list entry: a plain name is written for display; a tag id ("urn:tag:genre:punk") is kept as sent. */
+function genreEntry(name: string): string {
+  return name.includes(":") ? name : genreLabel(name);
+}
+
 function parseAct(raw: unknown, at: string): Act {
   const o = obj(raw, at);
   return {
@@ -283,7 +300,7 @@ function parseAct(raw: unknown, at: string): Act {
     name: str(o, "name", at),
     qloo_id: optStr(o, "qloo_id", at),
     popularity: optNum(o, "popularity", at),
-    genre: optStr(o, "genre", at),
+    genre: optGenre(o, at),
     billing_tier: optNum(o, "billing_tier", at) ?? 3,
   };
 }
@@ -367,7 +384,7 @@ function parseClashAct(raw: unknown, at: string): ClashAct {
     act_id: str(o, "act_id", at),
     name: str(o, "name", at),
     stage_id: str(o, "stage_id", at),
-    genre: optStr(o, "genre", at),
+    genre: optGenre(o, at),
   };
 }
 
@@ -481,7 +498,10 @@ function parseWallItem(raw: unknown, at: string): HiddenWallItem {
       if (typeof item !== "string") throw new PresetFormatError(`${where} must be a string`);
       return item;
     }),
-    genres: [strList(genres[0], `${at}.genres[0]`), strList(genres[1], `${at}.genres[1]`)],
+    genres: [
+      strList(genres[0], `${at}.genres[0]`).map(genreEntry),
+      strList(genres[1], `${at}.genres[1]`).map(genreEntry),
+    ],
     overlap_pct: num(o, "overlap_pct", at),
     draw_pct: optNum(o, "draw_pct", at),
     overlap_min: optNum(o, "overlap_min", at),
@@ -581,6 +601,7 @@ export function parsePreset(raw: unknown): Preset {
     id: str(o, "id", "preset"),
     title: str(o, "title", "preset"),
     built_at: optStr(o, "built_at", "preset"),
+    location: typeof o.location === "string" ? o.location : null,
     synthetic: bool(o, "synthetic"),
     festival: parseFestival(o.festival),
     report: parseReport(o.report),

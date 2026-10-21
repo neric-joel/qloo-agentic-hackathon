@@ -20,7 +20,7 @@ export function popularityName(synthetic: boolean): string {
 
 /** The legend and set-block label for a set with no usable signal, "No Qloo signal". */
 export function noSignalLabel(synthetic: boolean): string {
-  return synthetic ? "No priced signal" : "No Qloo signal";
+  return synthetic ? "No taste signal" : "No Qloo signal";
 }
 
 /** The same label inside a sentence: "weak signal" is neutral; a missing one is "no usable signal". */
@@ -111,8 +111,8 @@ export function coverageAll(synthetic: boolean): string {
 /** The try-a-move card's line for a set that has no signal. */
 export function noSignalMove(synthetic: boolean, act: string): string {
   return synthetic
-    ? `${act} has no usable signal on this day, so its clashes are not priced and no place changes the Clash Budget Index.`
-    : `Qloo has no usable signal for ${act}, so its clashes are not priced and no place changes the Clash Budget Index.`;
+    ? `${act} has no usable signal on this day, so its clashes are not scored and no place changes the Clash Budget Index.`
+    : `Qloo has no usable signal for ${act}, so its clashes are not scored and no place changes the Clash Budget Index.`;
 }
 
 /** The agent panel's first suggested question. */

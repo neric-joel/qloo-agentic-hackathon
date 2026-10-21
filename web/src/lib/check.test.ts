@@ -5,12 +5,20 @@ import {
   CHECK_LIMITS,
   TEMPLATE_CSV,
   announcement,
+  checkTimeLine,
   clip,
   formatClock,
   isCloseName,
+  noBreaksLine,
+  pairNotChecked,
+  parseGrid,
+  pastedLine,
   removePairLine,
   replacePairName,
   runCheck,
+  separatorHint,
+  skippedMessages,
+  skippedSentence,
   suggestName,
   type CheckInput,
   type CheckReport,
@@ -52,6 +60,11 @@ function errors(grid: string, extra: Partial<CheckInput> = {}): string[] {
   const outcome = runCheck(input(grid, extra));
   if (outcome.ok) throw new Error("expected the check to refuse");
   return outcome.errors;
+}
+
+/** The messages of the lines a partial check skipped (it read the rest). */
+function skippedOf(r: CheckReport): string[] {
+  return (r.skipped ?? []).map((item) => item.message);
 }
 
 function count(r: CheckReport, rule: number): number {
@@ -154,9 +167,10 @@ describe("parser", () => {
     expect(errors('"Smith,Main,18:00,19:00')[0]).toMatch(/Line 1: a quote is not closed/);
   });
 
-  it("refuses duplicate rows and says which line it repeats", () => {
-    const e = errors("A,Main,18:00,19:00\nB,Side,18:00,19:00\n a ,main,18:00,19:00");
-    expect(e).toEqual(["Line 3: the same set as line 1 (same act, stage and times)."]);
+  it("skips a duplicate row, checks the rest and says which line it repeats", () => {
+    const r = report("A,Main,18:00,19:00\nB,Side,18:00,19:00\n a ,main,18:00,19:00");
+    expect(skippedOf(r)).toEqual(["Line 3: the same set as line 1 (same act, stage and times)."]);
+    expect(r.sets.map((s) => s.row)).toEqual([1, 2]);
   });
 
   it("accepts the same act twice at different times and flags nothing", () => {
@@ -179,8 +193,8 @@ describe("parser", () => {
       expect(errors("A,Main,20:00,06:00")[0]).toMatch(/ends before it starts/);
     });
 
-    it("refuses a start before 06:00 when other sets start in the afternoon, rather than guess", () => {
-      const e = errors("A,Main,18:00,19:00\nB,Main,00:30,01:15");
+    it("skips a start before 06:00 when other sets start in the afternoon, rather than guess", () => {
+      const e = skippedOf(report("A,Main,18:00,19:00\nB,Main,00:30,01:15"));
       expect(e[0]).toMatch(/Line 2: starts before 06:00/);
       expect(e[0]).toMatch(/24:30/);
     });
@@ -558,8 +572,8 @@ describe("pastes from spreadsheets and other tools", () => {
     expect(r.sets[1]).toMatchObject({ start: 1470, end: 1530 });
     expect(r.settings.curfew).toBe(1500);
     expect(r.breaks.map((b) => b.text)).toEqual(["B ends at 01:30, after the 01:00 curfew."]);
-    // A 24-hour 00:30 in an evening grid is still refused: it has 24:30 to write instead.
-    expect(errors("A,Main,22:00,23:30\nB,Main,00:30,01:30")[0]).toMatch(/Write after-midnight times as 24:30/);
+    // A 24-hour 00:30 in an evening grid is still not read (its line is skipped): it has 24:30 to write instead.
+    expect(skippedOf(report("A,Main,22:00,23:30\nB,Main,00:30,01:30"))[0]).toMatch(/Write after-midnight times as 24:30/);
   });
 
   it("moves each endpoint past midnight once: a 12:30 AM start with a 24:45 end reads 24:30 to 24:45", () => {
@@ -569,8 +583,8 @@ describe("pastes from spreadsheets and other tools", () => {
     expect(r.shared).toHaveLength(0);
     // Both written in 12-hour time still move together.
     expect(report("Evening,Main,22:00,23:30\nNight,Other,12:30 AM,1:15 AM").sets[1]).toMatchObject({ start: 1470, end: 1515 });
-    // An end at or before the moved start is refused, never stretched into a second day.
-    expect(errors("Evening,Main,22:00,23:30\nNight,Other,12:30 AM,24:15")[0]).toMatch(/Line 2: the set ends before it starts/);
+    // An end at or before the moved start is not read (its line is skipped), never stretched into a second day.
+    expect(skippedOf(report("Evening,Main,22:00,23:30\nNight,Other,12:30 AM,24:15"))[0]).toMatch(/Line 2: the set ends before it starts/);
   });
 
   it("reads columns by their header in any order, ignores the ones it does not know and says so", () => {
@@ -661,5 +675,207 @@ describe("round 31: a pair rule's fixes never swap in an unrelated act", () => {
     expect(removePairLine("A | B", 1)).toBe("");
     expect(removePairLine(pairs, 0)).toBe(pairs);
     expect(removePairLine(pairs, 9)).toBe(pairs);
+  });
+});
+
+// Round 35: one bad line no longer stops the check. Faults of one line skip that line (listed by its line in
+// the paste, counting the header and blank lines); faults of the whole input still stop it.
+
+/** A 12-line paste like a programmer's: line 4's start is 25:70, one stage is written "Main   Stage". */
+const MESSY_LINES = [
+  "Tidal Fields,Main Stage,14:00,15:00",
+  "Cobalt Rows,Side Stage,14:15,15:15",
+  "Paper Lanterns,Tent,14:30,15:15",
+  "Glass Harbour,Tent,25:70,19:30",
+  "Saltmarsh,Main Stage,15:30,16:30",
+  "Quiet Engine,Side Stage,15:45,16:45",
+  "Nobody Has Heard Of Us,Tent,16:00,16:45",
+  "Velvet Static,Main   Stage,17:00,18:00",
+  "Orbit Choir,Side Stage,17:15,18:15",
+  "Lowland Kites,Tent,17:30,18:15",
+  "Amber Kite,Main Stage,18:30,19:30",
+  "Ember Coast,Side Stage,18:45,19:45",
+];
+
+describe("round 35: a bad line is skipped and listed, and the rest is checked", () => {
+  const LINE_4 = "Line 4: the start time is not a time such as 18:00, 24:30, 6:00 PM or 6pm (hours up to 47).";
+
+  it("checks the 11 readable sets of the messy paste and lists line 4 with its message", () => {
+    for (const delimiter of [",", "\t"]) {
+      const grid = MESSY_LINES.map((line) => line.split(",").join(delimiter)).join("\n");
+      const r = report(grid);
+      expect(r.sets).toHaveLength(11);
+      expect(r.sets.map((s) => s.row)).not.toContain(4);
+      expect(r.skipped?.map((item) => item.line)).toEqual([4]);
+      expect(skippedOf(r)).toEqual([LINE_4]);
+      expect(skippedSentence(r.skipped ?? [], r.sets.length)).toBe(
+        "1 line skipped and not checked: line 4. The other 11 sets were checked.",
+      );
+      // "Main   Stage" folds into Main Stage; nothing on the 11 lines breaks a rule.
+      expect(r.stages).toEqual(["Main Stage", "Side Stage", "Tent"]);
+      expect(r.breaks).toEqual([]);
+      expect(noBreaksLine(r)).toBe("No rule breaks found among the 11 sets checked, against the settings above.");
+      // No pair and no rule touches the skipped act.
+      expect(r.shared.some((pair) => pair.a.act === "Glass Harbour" || pair.b.act === "Glass Harbour")).toBe(false);
+      expect(announcement({ ok: true, report: r })).toBe(
+        `1 line skipped and not checked: line 4. The other 11 sets were checked. Rule breaks: 0. Sets that share time: ${r.shared.length} pairs.`,
+      );
+    }
+  });
+
+  it("keeps the physical line number, counting the header and blank lines", () => {
+    const r = report("act,stage,start,end\n\nA,Main,18:00,19:00\n\nB,Side,25:70,20:00\nC,Tent,18:00,19:00\nA,Main,18:00,19:00");
+    expect(r.sets.map((s) => s.row)).toEqual([3, 6]);
+    expect(r.skipped?.map((item) => item.line)).toEqual([5, 7]);
+    expect(skippedOf(r)).toEqual([
+      "Line 5: the start time is not a time such as 18:00, 24:30, 6:00 PM or 6pm (hours up to 47).",
+      "Line 7: the same set as line 3 (same act, stage and times).",
+    ]);
+    expect(skippedSentence(r.skipped ?? [], r.sets.length)).toBe(
+      "2 lines skipped and not checked: line 5, line 7. The other 2 sets were checked.",
+    );
+  });
+
+  it("skips each kind of line fault on its own line and keeps today's line-numbered message", () => {
+    const good = "Good,Main,12:00,13:00";
+    const cases: [string, RegExp][] = [
+      ['"Open,Side,18:00,19:00', /^Line 2: a quote is not closed/],
+      ["Short,Side,18:00", /^Line 2: expected act, stage, start, end \(and locked\), but found 3 fields\.$/],
+      [",Side,18:00,19:00", /^Line 2: the act and the stage cannot be blank\.$/],
+      [`${"x".repeat(300)},Side,18:00,19:00`, /^Line 2: a name is longer than 80 characters\.$/],
+      ["Late,Side,18:00,48:00", /^Line 2: the end time is not a time/],
+      ["Back,Side,20:00,19:00", /^Line 2: the set ends before it starts/],
+      ["Zero,Side,18:00,18:00", /^Line 2: the set must end after it starts\.$/],
+      ["Lock,Side,18:00,19:00,maybe", /^Line 2: the locked column should be yes, no or blank\.$/],
+    ];
+    for (const [line, message] of cases) {
+      const r = report(`${good}\n${line}`);
+      expect(r.sets.map((s) => s.act)).toEqual(["Good"]);
+      expect(skippedOf(r)).toHaveLength(1);
+      expect(skippedOf(r)[0]).toMatch(message);
+      // A 300-character name is still never echoed.
+      expect(skippedOf(r)[0].length).toBeLessThan(140);
+    }
+  });
+
+  it("lists five messages and counts the rest, while the sentence names every skipped line", () => {
+    const grid = ["Good,Main,12:00,13:00", ...Array.from({ length: 7 }, (_, i) => `Bad${i},Main,xx,19:00`)].join("\n");
+    const r = report(grid);
+    expect(skippedMessages(r.skipped ?? [])).toHaveLength(6);
+    expect(skippedMessages(r.skipped ?? [])[5]).toBe("And 2 more problems.");
+    expect(skippedSentence(r.skipped ?? [], 1)).toBe(
+      "7 lines skipped and not checked: line 2, line 3, line 4, line 5, line 6, line 7, line 8. The other 1 set was checked.",
+    );
+  });
+
+  it("does not check a grid with no readable line: every line's message is listed and nothing reads", () => {
+    const outcome = runCheck(input("A,Main,25:70,19:00\nOnly,two"));
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.errors).toEqual([
+      "Line 1: the start time is not a time such as 18:00, 24:30, 6:00 PM or 6pm (hours up to 47).",
+      "Line 2: expected act, stage, start, end (and locked), but found 2 fields.",
+    ]);
+    expect(outcome.errors.join(" ")).not.toMatch(/No sets found/);
+    expect(announcement(outcome)).toBe("The grid was not checked. 2 problems listed.");
+  });
+
+  it("still refuses the whole grid for a fault of the whole input, whatever lines read", () => {
+    const readable = "A,Main,18:00,19:00\nB,Side,18:30,19:30\nC,Tent,xx,20:00";
+    // A header that does not read.
+    expect(errors(`name,place,start,end\n${readable}`)[0]).toMatch(/header should read/);
+    // Over 8 KB.
+    expect(errors(`${readable}\n${"a,Main,18:00,19:00\n".repeat(500)}`)[0]).toMatch(/up to 8 KB/);
+    // An unreadable character anywhere.
+    expect(errors(`${readable}\nD,Tent​,18:00,19:00`)[0]).toMatch(/^Line 4 contains a control or invisible character/);
+    // More than one day among the lines that read.
+    expect(errors("day,act,stage,start,end\nFri,A,Main,18:00,19:00\nSat,B,Side,18:30,19:30\nSat,C,Tent,xx,20:00")).toContain(
+      "This grid has more than one day (Fri, Sat). Paste one day at a time.",
+    );
+    // Over the set limit, counted over readable lines: 61 readable sets stop it, 60 and a repeat do not.
+    const hour = (i: number) => String(10 + (i % 12)).padStart(2, "0");
+    const sixty = Array.from({ length: 60 }, (_, i) => `S${i},St ${i % 5},${hour(i)}:00,${hour(i)}:30`);
+    expect(errors([...sixty, "S60,St 0,22:00,22:30", "Bad,St 1,xx,20:00"].join("\n")).join(" ")).toMatch(/That is 61 sets/);
+    const repeat = report([...sixty, sixty[0]].join("\n"));
+    expect(repeat.sets).toHaveLength(60);
+    expect(repeat.skipped?.map((item) => item.line)).toEqual([61]);
+    // Over the stage limit among the lines that read.
+    const eleven = Array.from({ length: 11 }, (_, i) => `Act ${i},Stage ${i},18:00,19:00`);
+    expect(errors([...eleven, "Bad,Stage 0,xx,20:00"].join("\n")).join(" ")).toMatch(/11 stages/);
+    // A settings problem: a bad changeover, a curfew that is not a time, a pair rule that does not parse.
+    const changeover = errors(readable, { changeover: "abc" });
+    expect(changeover).toContain("Changeover should be a whole number of minutes from 0 to 240.");
+    // The line that would be skipped is named with it.
+    expect(changeover[0]).toMatch(/^Line 3: the start time/);
+    expect(errors(readable, { curfew: "late" })).toContain("Curfew should be a time as H:MM or HH:MM, or blank for none.");
+    expect(errors(readable, { pairs: "A and B" })).toContain("Pair line 1: write two names with a bar between them, as Act A | Act B.");
+  });
+
+  it("lists a pair rule that names an act found only on a skipped line as not checked, never passing it", () => {
+    const grid = "A,Main,18:00,19:00\nB,Side,18:30,19:30\nC,Tent,xx,20:00";
+    const r = report(grid, { pairs: "A | C\nA | B" });
+    expect(r.uncheckedPairs).toEqual(["Pair line 1 not checked: C is on a skipped line."]);
+    expect(pairNotChecked(1, "C")).toBe("Pair line 1 not checked: C is on a skipped line.");
+    // The other rule is checked as before.
+    expect(r.settings.pairs.map((pair) => pair.line)).toEqual([2]);
+    expect(r.breaks.filter((item) => item.rule === 5)).toHaveLength(1);
+    // A quote left open still gives its act to the rule, read loosely, and never checks it.
+    const quoted = report('A,Main,18:00,19:00\n"Smith,Side,18:30,19:30', { pairs: "smith | a" });
+    expect(quoted.uncheckedPairs).toEqual(["Pair line 1 not checked: Smith is on a skipped line."]);
+    expect(quoted.settings.pairs).toEqual([]);
+    // With no skipped line, the list is empty.
+    expect(report("A,Main,18:00,19:00\nB,Side,18:30,19:30", { pairs: "A | B" }).uncheckedPairs).toEqual([]);
+  });
+
+  it("still refuses a pair rule that names an act on no line at all", () => {
+    const grid = "A,Main,18:00,19:00\nB,Side,18:30,19:30\nC,Tent,xx,20:00";
+    const outcome = runCheck(input(grid, { pairs: "A | Zed" }));
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.errors.some((error) => error.startsWith("Pair line 1: “Zed” matches no set in the grid."))).toBe(true);
+    expect(outcome.errors.join(" ")).not.toMatch(/not checked/);
+  });
+
+  it("words no rule breaks with the count checked only while a line is skipped", () => {
+    const clean = report("A,Main,18:00,19:00\nB,Side,19:30,20:30");
+    expect(noBreaksLine(clean)).toBe("No rule breaks found against the settings above.");
+    expect(noBreaksLine(clean)).toBe(CHECK_COPY.noBreaks);
+    const partial = report("A,Main,18:00,19:00\nB,Side,19:30,20:30\nC,Tent,xx,20:00");
+    expect(noBreaksLine(partial)).toBe("No rule breaks found among the 2 sets checked, against the settings above.");
+    expect(noBreaksLine({ sets: partial.sets.slice(0, 1), skipped: partial.skipped })).toBe(
+      "No rule breaks found among the 1 set checked, against the settings above.",
+    );
+  });
+
+  it("hints at semicolons only when two or more unreadable lines read as one field holding one", () => {
+    const semicolon = MESSY_LINES.map((line) => line.split(",").join(";")).join("\n");
+    const outcome = runCheck(input(semicolon));
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(separatorHint(outcome.skipped)).toBe(
+      "These lines look separated by semicolons. Use commas or tabs between act, stage, start and end.",
+    );
+    expect(outcome.errors).toHaveLength(6);
+    expect(outcome.errors[0]).toBe("Line 1: expected act, stage, start, end (and locked), but found 1 field.");
+    // One such line among readable ones is not enough; a semicolon inside a readable name is not one.
+    const one = report(`${MESSY_LINES.slice(0, 3).join("\n")}\nGlass;Tent;19:00;19:30`);
+    expect(separatorHint(one.skipped)).toBeNull();
+    const two = report(`${MESSY_LINES.slice(0, 3).join("\n")}\nGlass;Tent;19:00;19:30\nWren;Tent;20:00;20:30`);
+    expect(separatorHint(two.skipped)).toBe(CHECK_COPY.separatorHint);
+    expect(separatorHint(report("Rock; Roll,Main,18:00,19:00").skipped)).toBeNull();
+    // A line of one field with no semicolon is not counted.
+    expect(separatorHint(parseGrid("A\nB\nC,Main,18:00,19:00").skipped)).toBeNull();
+  });
+
+  it("words the measured time of one run and the paste announcement exactly", () => {
+    const line = checkTimeLine(25, 4, 1.6);
+    expect(line).toBe("Checked 25 sets on 4 stages in 2 ms, in this browser.");
+    expect(line).toMatch(/^Checked \d+ sets on \d+ stages in \d+ ms, in this browser\.$/);
+    // Rounded to a whole number, and at least 1.
+    expect(checkTimeLine(39, 5, 0.2)).toBe("Checked 39 sets on 5 stages in 1 ms, in this browser.");
+    expect(checkTimeLine(1, 1, 3.4)).toBe("Checked 1 set on 1 stage in 3 ms, in this browser.");
+    expect(line).not.toMatch(/saved|faster|instead of/i);
+    expect(pastedLine(`${MESSY_LINES.join("\n")}\n`)).toBe("Pasted 12 lines into the CSV editor. Press Check the grid.");
+    expect(pastedLine("one line")).toBe("Pasted 1 line into the CSV editor. Press Check the grid.");
   });
 });

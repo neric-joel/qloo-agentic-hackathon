@@ -533,6 +533,9 @@ export function TasteRing({
 }) {
   const pairs = items;
   const [selected, setSelected] = useState(0);
+  // Set once the visitor changes the pair. The panel fades in only then (`.cc-ring-lens[data-picked]` in
+  // globals.css), so the first paint and every mount show it at rest, with no motion.
+  const [picked, setPicked] = useState(false);
   const labelId = `ring-label-${useId().replace(/:/g, "")}`;
   const count = pairs.length;
   const index = Math.min(selected, Math.max(count - 1, 0));
@@ -545,18 +548,25 @@ export function TasteRing({
   const flat = groups.flatMap((g) => g.tags);
   const last = count - 1;
 
+  /** Show pair `to`, marking the panel as the visitor's choice when the pair changes, so the new pair fades in. */
+  function pick(to: number) {
+    if (to === index) return;
+    setPicked(true);
+    setSelected(to);
+  }
+
   function onKey(event: KeyboardEvent) {
     const to = pairKeyTarget(event.key, index, last);
     if (to < 0) return;
     event.preventDefault();
-    setSelected(to);
+    pick(to);
   }
 
   /** Previous and Next stop at the ends; there the button says so (aria-disabled) and keeps focus. */
   function step(by: -1 | 1) {
     const to = index + by;
     if (to < 0 || to > last) return;
-    setSelected(to);
+    pick(to);
   }
 
   const where = `${festivalLabel(pair.festival)}${pair.day ? `, ${dayName(pair.day)}` : ""}`;
@@ -634,6 +644,7 @@ export function TasteRing({
           <div
             key={`pair-${index}`}
             data-ring-body
+            data-picked={picked ? "" : undefined}
             className="cc-ring-lens mt-2 min-w-0 sm:mt-0 lg:mt-1 lg:flex lg:flex-row lg:flex-wrap lg:items-center"
           >
             {/* The comparison: the bridge (the names, the connectors, the label and the tags in common), then each

@@ -1,15 +1,16 @@
 /**
- * The human what-if, "Try a move": every legal place one set could go, priced by the timetable
+ * The human what-if, "Try a move": every legal place one set could go, scored by the timetable
  * engine with no language model (`GET /api/presets/{id}/moves?act=<act_id>&limit=8`). The server
  * computes every figure; this module only validates its answer and works out, from the published
- * timetable, which sets the page offers and which clashes a place ends or adds. Pure functions, so
- * they are unit tested.
+ * timetable, which sets the page offers, which listed clashes a place ends or adds, and which
+ * overlaps outside those lists it starts or lengthens. Pure functions, so they are unit tested.
  */
 
 import type { MoveOption, MoveOptions } from "./agent-session";
 import { isFixedByLocks } from "./clashes";
 import { isRecord } from "./events";
-import type { PairClash, Preset, SetSlot } from "./preset";
+import { growthClauses, lowerFirst, type GrowingOverlap } from "./overlap-words";
+import type { Act, PairClash, Preset, SetSlot } from "./preset";
 import { formatClock, overlapWindow, type TimeRange } from "./timetable";
 
 /** One of a set's clashes, in Clash Budget Index points (one decimal, as the server sends them). */
@@ -284,6 +285,68 @@ export function clashChanges(
         : [];
     }),
   };
+}
+
+/**
+ * The overlaps a place starts or lengthens with sets its lists do not show (`listed`, by name: the clashes it
+ * ends, adds and keeps). Every other set on `timetable` is read with the minutes it shares with the moved set
+ * at `home` (where it plays now) and at `after` (the place): the two sets' shared window on the same day, as
+ * the hero's side-effect line reads it. A set is kept when it shares more after. The order is the hero's too,
+ * the largest change first and then by name, so `growthClauses` words them as the hero does. Empty when a
+ * placement is unknown. No request is made.
+ */
+export function outsideGrowth(
+  acts: readonly Pick<Act, "id" | "name">[],
+  timetable: readonly SetSlot[],
+  actId: string,
+  home: Placement | null,
+  after: Placement | null,
+  listed: ReadonlySet<string>,
+): GrowingOverlap[] {
+  if (!home || !after) return [];
+  const names = new Map(acts.map((act) => [act.id, act.name]));
+  const shared = (place: Placement, slot: SetSlot) => {
+    if (slot.day !== place.day) return 0;
+    const window = overlapWindow(place, slot);
+    return window ? window.end - window.start : 0;
+  };
+  const grows: GrowingOverlap[] = [];
+  for (const slot of timetable) {
+    if (slot.act_id === actId) continue;
+    const name = names.get(slot.act_id) ?? slot.act_id;
+    if (listed.has(name)) continue;
+    const before = shared(home, slot);
+    const later = shared(after, slot);
+    if (later > before) grows.push({ name, before, after: later });
+  }
+  return grows.sort((p, q) => q.after - q.before - (p.after - p.before) || p.name.localeCompare(q.name));
+}
+
+/** What the outside line starts with, before its clauses. */
+export const OUTSIDE_LEAD = "Outside the listed clashes:";
+
+/**
+ * The outside line's clauses: the hero's own `growthClauses`, each continued in lower case ("new 15 min
+ * overlap with Joy Crookes.", "lengthens the overlap with X from 10 to 25 min.", "2 more overlaps get
+ * longer."). None for none.
+ */
+export function outsideClauses(grows: readonly GrowingOverlap[]): string[] {
+  return growthClauses(grows).map(lowerFirst);
+}
+
+/** "Outside the listed clashes: new 15 min overlap with Joy Crookes.", or null when nothing outside grows. */
+export function outsideLine(grows: readonly GrowingOverlap[]): string | null {
+  const clauses = outsideClauses(grows);
+  return clauses.length > 0 ? `${OUTSIDE_LEAD} ${clauses.join(" ")}` : null;
+}
+
+/**
+ * The summary's last sentence when the outside line shows: "Outside the list, 1 overlap starts or grows." or
+ * "Outside the list, 3 overlaps start or grow.", counting every one (the line names two). Null for none.
+ */
+export function outsideCount(count: number): string | null {
+  if (count <= 0) return null;
+  return count === 1 ? "Outside the list, 1 overlap starts or grows." : `Outside the list, ${count} overlaps start or grow.`;
 }
 
 /**

@@ -18,7 +18,7 @@ import {
   type DayGraphModel,
   type GraphView,
 } from "@/lib/day-graph";
-import { lineColor, lineKeyAction, lineTransform, planDrawing, stepLine, trackPct } from "@/lib/day-graph-motion";
+import { BANDS, lineColor, lineKeyAction, lineTransform, planDrawing, stepLine, trackPct } from "@/lib/day-graph-motion";
 import { parseDecision, type Decision } from "@/lib/decision";
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
 import { parsePreset, type Preset } from "@/lib/preset";
@@ -153,11 +153,20 @@ function model({ move = LATER, synthetic = false }: { move?: Raw | null; synthet
 
 const render = (m: DayGraphModel, view: GraphView) => renderToStaticMarkup(createElement(DayGraph, { model: m, view, onSettled: () => {} }));
 
-/** One layout's markup: from its opening tag to the next layout's (or the live region after the last). */
+/** One layout's markup, every band of it: from its opening tag to the next layout's (or the live region after the last). */
 function layoutOf(html: string, layout: "desktop" | "phone" | "short"): string {
-  const start = html.indexOf(`data-layout="${layout}"`);
+  const start = html.indexOf(`data-layout="${layout}" class="relative`);
   const rest = html.slice(start + 1);
-  const next = rest.search(/data-layout="|aria-live="polite"/);
+  const next = rest.search(/data-layout="[a-z]+" class="relative|aria-live="polite"/);
+  return next < 0 ? rest : rest.slice(0, next);
+}
+
+/** One band's drawing inside a layout: the one placed for a `track` px time track. */
+function bandOf(html: string, layout: "desktop" | "phone" | "short", track: number): string {
+  const markup = layoutOf(html, layout);
+  const start = markup.indexOf(`data-band="${track}"`);
+  const rest = markup.slice(start + 1);
+  const next = rest.search(/data-band="/);
   return next < 0 ? rest : rest.slice(0, next);
 }
 
@@ -172,11 +181,21 @@ const decode = (text: string) => text.replace(/&#x27;/g, "'").replace(/&amp;/g, 
 describe("DayGraph: the server frame", () => {
   const moved = model();
 
-  it("renders all three layouts, each exactly as tall as drawingHeight, and picks one by CSS alone", () => {
+  it("renders all three layouts, each exactly as tall as drawingHeight, and picks one by CSS alone, then one drawing per band of widths", () => {
     const html = render(moved, "moved");
     for (const layout of ["desktop", "phone", "short"] as const) {
       expect(html).toMatch(new RegExp(`data-layout="${layout}" class="[^"]*" style="height:${drawingHeight(moved, layout)}px"`));
+      // Every band of the layout is in the markup, placed at its own track; CSS shows the one for the screen.
+      const bands = [...layoutOf(html, layout).matchAll(/data-band="(\d+)" data-layout="[a-z]+" class="absolute inset-0 ([^"]*)"/g)];
+      expect(bands.map((match) => Number(match[1]))).toEqual(BANDS[layout].map((band) => band.track));
+      for (const [, , classes] of bands) expect(classes).toMatch(/\bhidden\b|\bblock\b/);
     }
+    expect(html).toContain('data-band="848" data-layout="desktop" class="absolute inset-0 hidden lg:max-[1120px]:block"');
+    expect(html).toContain('data-band="944" data-layout="desktop" class="absolute inset-0 hidden min-[1120px]:max-xl:block"');
+    expect(html).toContain('data-band="1104" data-layout="desktop" class="absolute inset-0 hidden xl:block"');
+    expect(html).toContain('data-band="224" data-layout="phone" class="absolute inset-0 block min-[360px]:hidden"');
+    expect(html).toContain('data-band="264" data-layout="phone" class="absolute inset-0 hidden min-[360px]:max-[390px]:block"');
+    expect(html).toContain('data-band="294" data-layout="phone" class="absolute inset-0 hidden min-[390px]:block"');
     expect(html).toContain('data-layout="desktop" class="relative hidden lg:block"');
     expect(html).toContain('data-layout="phone" class="relative lg:hidden [@media(max-height:699px)]:hidden"');
     expect(html).toContain('data-layout="short" class="relative hidden max-lg:[@media(max-height:699px)]:block"');
@@ -202,11 +221,14 @@ describe("DayGraph: the server frame", () => {
   });
 
   it("draws every line that touches the mover at its moved window, and drops the one the move ends", () => {
-    const desktop = (view: GraphView) => layoutOf(render(moved, view), "desktop");
-    const plan = planDrawing(moved, "desktop");
-    // Alder x Birch: 14:00-14:45 as published, 14:15-14:45 with the move.
-    expect(desktop("published")).toContain(`transform:${lineTransform(plan.track, (840 + 885) / 2, plan.views.published.lines.find((l) => l.key === "alder~birch")?.off ?? 0)}`);
-    expect(desktop("moved")).toContain(`transform:${lineTransform(plan.track, (855 + 885) / 2, plan.views.moved.lines.find((l) => l.key === "alder~birch")?.off ?? 0)}`);
+    const desktop = (view: GraphView) => bandOf(render(moved, view), "desktop", 848);
+    const plan = planDrawing(moved, "desktop", 848);
+    // Alder x Birch: 14:00-14:45 as published, 14:15-14:45 with the move, standing where the plan stands it in that window.
+    const at = (view: GraphView) => plan.views[view].lines.find((l) => l.key === "alder~birch");
+    expect(at("published")?.window).toEqual({ start: 840, end: 885 });
+    expect(at("moved")?.window).toEqual({ start: 855, end: 885 });
+    expect(desktop("published")).toContain(`transform:${lineTransform(plan.track, at("published")?.mid ?? 0, at("published")?.off ?? 0)}`);
+    expect(desktop("moved")).toContain(`transform:${lineTransform(plan.track, at("moved")?.mid ?? 0, at("moved")?.off ?? 0)}`);
     // Elm x Alder (rank 8) ends with the move: drawn as published, gone with the move.
     expect(desktop("published")).toContain('data-thread="8"');
     expect(desktop("moved")).not.toContain('data-thread="8"');
@@ -253,17 +275,19 @@ describe("DayGraph: the server frame", () => {
 
   it("gives every mark its corner: 6px bars, ghost, windows and bracket; 10px hit areas; round dots", () => {
     const html = render(moved, "moved");
-    const sets = [...html.matchAll(/<div data-set="[^"]+" class="([^"]*)"/g)].map((match) => match[1]);
+    const sets = [...html.matchAll(/<div data-set="[^"]+"[^>]*? class="([^"]*)"/g)].map((match) => match[1]);
     expect(sets.length).toBeGreaterThan(20);
     for (const classes of sets) expect(classes).toMatch(/\brounded-xs\b/);
     expect(html).toMatch(/data-ghost="" class="[^"]*\brounded-xs\b[^"]*border-dashed/);
     const windows = [...html.matchAll(/<rect (data-shared-window=""|data-created="[^"]+")[^>]*>/g)].map((match) => match[0]);
-    // The hatch and both grown windows on a desktop; a phone draws only the windows between its three rows.
+    // The hatch and both grown windows on a desktop; a phone draws only the windows between its three rows; once per band.
     const expected = (["desktop", "phone", "short"] as const).reduce((sum, layout) => {
-      const plan = planDrawing(moved, layout).views.moved;
-      return sum + (plan.hatch ? 1 : 0) + plan.created.length;
+      return BANDS[layout].reduce((inner, band) => {
+        const plan = planDrawing(moved, layout, band.track).views.moved;
+        return inner + (plan.hatch ? 1 : 0) + plan.created.length;
+      }, sum);
     }, 0);
-    expect(expected).toBe(3 + 2 + 2);
+    expect(expected).toBe(3 * 3 + 3 * 2 + 3 * 2);
     expect(windows.length).toBe(expected);
     for (const rect of windows) expect(rect).toContain('rx="6"');
     for (const rect of windows.filter((item) => item.includes("data-created"))) expect(rect).toContain('stroke-dasharray="4 3"');
@@ -299,39 +323,53 @@ describe("DayGraph: the server frame", () => {
     expect(html).not.toMatch(/\btext-(xs|2xs)\b/);
   });
 
-  it("names each featured set in full outside its bar and every other inside its bar", () => {
-    const html = layoutOf(render(moved, "moved"), "desktop");
-    for (const set of moved.sets.filter((item) => item.featured)) expect(html).toContain(`data-label="${set.actId}"`);
-    // A featured set carries no name inside its bar; an unfeatured one does, cut with an ellipsis.
-    expect(html).toMatch(/data-set="fir"[^>]*>.*?<span class="min-w-0 truncate font-medium">Fir<\/span>/);
-    expect(html).not.toMatch(/data-set="birch"[^>]*>[^]*?truncate font-medium">Birch</);
+  it("names each featured set in full outside its bar and every other in the first place that fits, inside its bar when it fits", () => {
+    const html = render(moved, "moved");
+    for (const track of BANDS.desktop.map((band) => band.track)) {
+      const band = bandOf(html, "desktop", track);
+      for (const set of moved.sets.filter((item) => item.featured)) {
+        // Whole, at weight 600, beside its bar or on a plate above or below it; never inside it.
+        expect(decode(band)).toMatch(new RegExp(`<span data-label="${set.actId}" data-slot="[bc]" class="[^"]*font-semibold[^"]*"[^>]*>${set.name}</span>`));
+      }
+      // An unfeatured name that fits sits inside its bar, whole, at weight 500.
+      expect(band).toMatch(/<span data-label="fir" data-slot="a" class="[^"]*font-medium[^"]*"[^>]*>Fir<\/span>/);
+      expect(band).not.toMatch(/data-label="birch" data-slot="[ade]"/);
+    }
+    // A set whose name is cut or not drawn keeps its whole name as its bar's title.
+    for (const [, id, title] of html.matchAll(/<div data-set="([^"]+)" data-slot="[de]" title="([^"]*)"/g)) {
+      expect(decode(title)).toBe(moved.sets.find((set) => set.actId === id)?.name);
+    }
+    expect(html).not.toMatch(/data-set="[^"]+" data-slot="[abc]" title=/);
   });
 
-  it("draws the names inside bars over the lines, each glyph ringed in its bar's fill, under the lines' hit areas", () => {
-    const html = layoutOf(render(moved, "moved"), "desktop");
-    // Lines come first in paint order; a name's box is lifted over them and rings its text in the bar's fill.
-    expect(html.indexOf("data-thread=")).toBeGreaterThan(0);
-    const names = [...html.matchAll(/<span class="([^"]*)"><span class="min-w-0 truncate font-medium">/g)].map((match) => match[1]);
-    expect(names.length).toBeGreaterThan(5);
-    for (const classes of names) {
-      expect(classes).toMatch(/\bz-\[1\]/);
-      expect(classes).toContain("[paint-order:stroke_fill]");
-      expect(classes).toContain("[-webkit-text-stroke:4px_var(--halo)]");
+  it("draws the names over the lines and never rings a glyph with a halo: a line that cannot clear a name passes beneath its bar; all under the lines' hit areas", () => {
+    for (const track of BANDS.desktop.map((band) => band.track)) {
+      const html = bandOf(render(moved, "moved"), "desktop", track);
+      // Paint order: the lines beneath the bars, the bars, the lines over them, their end dots, then every name.
+      const first = (pattern: RegExp) => html.search(pattern);
+      const last = (pattern: RegExp) => Math.max(...[...html.matchAll(new RegExp(pattern, "g"))].map((match) => match.index ?? -1));
+      expect(first(/data-thread=/)).toBeGreaterThan(0);
+      expect(first(/data-label=/)).toBeGreaterThan(last(/data-thread=/));
+      expect(first(/data-label=/)).toBeGreaterThan(last(/data-end-dot=/));
+      expect([...html.matchAll(/<span data-label=/g)].length).toBeGreaterThan(5);
+      const overs = [...html.matchAll(/<div data-thread="\d+"(?: data-lit="")?(?: data-unranked="")?( data-under="")?/g)];
+      for (const match of overs) {
+        if (match[1]) expect(match.index ?? 0).toBeLessThan(first(/data-set=/));
+        else expect(match.index ?? 0).toBeGreaterThan(last(/data-set=/));
+      }
+      // No halo is knocked out of any letter, and a name inside a bar takes the bar's text colour.
+      expect(html).not.toMatch(/text-stroke|--halo|paint-order/);
+      // The hit areas sit over the names, so a focus ring is never hidden behind one.
+      expect(html).toMatch(/<div class="pointer-events-none absolute inset-0 z-\[2\]"><div data-anim="line:/);
+      expect(html.indexOf("z-[2]")).toBeGreaterThan(last(/data-label=/));
     }
-    // The ring is the bar's own fill: card on a scored set, muted on an unscored one.
-    expect(html).toMatch(/data-set="fir" class="[^"]*\bbg-card \[--halo:var\(--card\)\]/);
-    expect(html).toMatch(/data-set="kauri" class="[^"]*\bbg-muted\b[^"]*\[--halo:var\(--muted\)\]/);
-    // A lock is ringed the same way: a filled copy in the bar's fill under the glyph.
-    expect(html).toMatch(/data-set="larch"[^>]*>.*?<svg[^>]*class="lucide[^"]*absolute inset-0 size-3 fill-\(--halo\) text-\(--halo\)"/);
-    // The hit areas sit over the names, so a focus ring is never hidden behind one.
-    expect(html).toMatch(/<div class="pointer-events-none absolute inset-0 z-\[2\]"><div data-anim="line:/);
   });
 
   it("marks a locked set with its lock and an unscored one with a muted fill and no edge", () => {
     const html = layoutOf(render(moved, "published"), "desktop");
     expect(html).toMatch(/data-set="larch"[^>]*>.*?title="Locked: this set stays put"/);
-    expect(html).toMatch(/data-set="kauri" class="[^"]*\bbg-muted\b/);
-    expect(html).not.toMatch(/data-set="kauri" class="[^"]*\bborder-border-strong\b/);
+    expect(html).toMatch(/data-set="kauri"[^>]*? class="[^"]*\bbg-muted\b/);
+    expect(html).not.toMatch(/data-set="kauri"[^>]*? class="[^"]*\bborder-border-strong\b/);
   });
 
   it("draws a mover that changes stage on its own row in each view", () => {
@@ -403,15 +441,17 @@ describe("DayGraph: the invented day", () => {
 describe("DayGraph: keyboard", () => {
   const moved = model();
 
-  it("makes the drawn lines one tab stop per layout, starting on the chosen clash", () => {
+  it("makes the drawn lines one tab stop per band (CSS shows one band), starting on the chosen clash", () => {
     const html = render(moved, "moved");
     for (const layout of ["desktop", "phone", "short"] as const) {
-      const stops = [...layoutOf(html, layout).matchAll(/data-hit="([^"]+)" tabindex="0"/g)].map((match) => match[1]);
-      expect(stops).toEqual(["alder~birch"]);
+      for (const band of BANDS[layout]) {
+        const stops = [...bandOf(html, layout, band.track).matchAll(/data-hit="([^"]+)" tabindex="0"/g)].map((match) => match[1]);
+        expect(stops).toEqual(["alder~birch"]);
+      }
     }
-    const hits = [...layoutOf(html, "desktop").matchAll(/data-hit="([^"]+)" tabindex="(-?\d)" aria-label="([^"]*)"/g)];
+    const hits = [...bandOf(html, "desktop", 848).matchAll(/data-hit="([^"]+)" tabindex="(-?\d)" aria-label="([^"]*)"/g)];
     // Every drawn line, in rank order, named by its note.
-    expect(hits.map((match) => match[1]).length).toBe(planDrawing(moved, "desktop").views.moved.lines.length);
+    expect(hits.map((match) => match[1]).length).toBe(planDrawing(moved, "desktop", 848).views.moved.lines.length);
     expect(decode(hits[0][3])).toMatch(/^#1 of 9 clashes as published: Alder × Birch, 45 min shared as published, 30 with the move/);
   });
 

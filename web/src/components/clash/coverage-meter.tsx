@@ -39,7 +39,7 @@ export const TEXT_TOGGLE_CLASS =
 
 /**
  * How much of the lineup Qloo could speak for, as one sentence over the board: the label, then
- * "36 of 39 acts priced · 3 left out, not scored as zero", where the second part is the one link, an
+ * "36 of 39 acts scored · 3 left out, not scored as zero", where the second part is the one link, an
  * underlined toggle. They are left out of every price
  * and never counted as zero taste overlap; the toggle's panel names them and gives the strong, weak
  * and no-signal breakdown. The panel is in the HTML either way (and prints), so it never depends on
@@ -66,7 +66,7 @@ export function CoverageMeter({ coverage, metrics, synthetic = false, legend, cl
           <h3 id="coverage-heading" className="text-[0.8125rem] leading-5 font-semibold">
             {coverageHeading(synthetic)}
           </h3>
-          {/* The share priced, as a 64 x 6px meter: teal on a published day (the coverage is Qloo's), ink
+          {/* The share scored, as a 64 x 6px meter: teal on a published day (the coverage is Qloo's), ink
               on the invented day, on a muted track. The sentence beside it carries the figures. */}
           <span aria-hidden="true" className="relative block h-1.5 w-16 shrink-0 overflow-hidden rounded-bar bg-muted">
             <span
@@ -77,7 +77,7 @@ export function CoverageMeter({ coverage, metrics, synthetic = false, legend, cl
           </span>
           <p className="text-sm">
             <span className="font-mono tabular-nums">{coverage.scored_acts}</span> of{" "}
-            <span className="font-mono tabular-nums">{total}</span> acts priced
+            <span className="font-mono tabular-nums">{total}</span> acts scored
             {unscored.length > 0 ? (
               <>
                 {" "}
@@ -112,7 +112,7 @@ export function CoverageMeter({ coverage, metrics, synthetic = false, legend, cl
         >
           {joinNames(unscored)} ({unscoredNote(synthetic)})
           {metrics.unscored_concurrent_pairs > 0
-            ? `. ${pluralize(metrics.unscored_concurrent_pairs, "overlapping pair")} could not be priced`
+            ? `. ${pluralize(metrics.unscored_concurrent_pairs, "overlapping pair")} could not be scored`
             : ""}
           {coverage.weak > 0 ? `. ${pluralize(coverage.weak, "act")} with a weak signal` : ""}. Of the{" "}
           {total} acts: {breakdown}.

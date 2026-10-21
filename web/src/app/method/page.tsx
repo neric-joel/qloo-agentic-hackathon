@@ -8,6 +8,7 @@ import { BacktestBars, FIGURE_DOMAIN, along } from "@/components/clash/why-this-
 import { ProvenanceChip } from "@/components/kernel/provenance-chip";
 import { BySyntheticDay } from "@/components/site/synthetic-context";
 import { artSlot } from "@/lib/art";
+import { CONTROL_ACTS, CONTROL_RANK_LIMIT } from "@/lib/control-acts";
 import { BUILT_FROM_REAL, BUILT_FROM_SYNTHETIC, COUNTS_ONLY_NEUTRAL, formulaNote } from "@/lib/credit";
 import { DO_NOT_USE } from "@/lib/demand";
 import type { Provenance } from "@/lib/events";
@@ -722,7 +723,7 @@ function TasteInPrice() {
       {/* Its paragraphs keep the running text's measure from 1280px, as a section body's do; the table spans the column. */}
       <div className="mt-2 space-y-3 xl:[&>p]:max-w-[76ch]">
         <p>
-          Run after the failed test above, on the same {backtest.scoredPairs} scored pairs, so it is exploratory. The
+          Run after the failed test above, on the same {backtest.scoredPairs} complained-about pairs, so it is exploratory. The
           full price (the index&rsquo;s pair score: taste overlap &times; shared time &times; Qloo popularity) scored
           AUC {formatAuc(fullPrice.auc)} (interval {formatInterval(fullPrice.auc95)}); popularity alone scored{" "}
           {formatAuc(pop)}. The difference is {formatDiff(pairedVsPopularity.diff)} (interval{" "}
@@ -915,6 +916,18 @@ function Sources() {
   );
 }
 
+/** The anchor of the block on why the app reads Qloo, not a similar-artists list or ticket data. */
+const WHY_QLOO_ID = "why-qloo";
+
+/** The anchor of the block on the build's control acts; the home page's "How Qloo was used" links its control rows here. */
+const CONTROLS_ID = "controls";
+
+/** "A, B, C and D": names in running text, with "and" before the last. */
+function nameList(names: readonly string[]): string {
+  if (names.length < 2) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
 /** The page's sections, in order, for its running order. */
 const CONTENTS: readonly { id: string; title: string }[] = [
   { id: "price", title: "What the score is" },
@@ -927,7 +940,7 @@ const LABELS: readonly { provenance: Provenance; meaning: string }[] = [
   { provenance: "recorded", meaning: "A saved Qloo response." },
   { provenance: "derived", meaning: "Calculated by this app from saved responses." },
   { provenance: "qloo", meaning: "Returned by Qloo in a live request." },
-  { provenance: "llm", meaning: "Written by the language model." },
+  { provenance: "llm", meaning: "Written by a language model. Not Qloo data." },
 ];
 
 export default function MethodPage() {
@@ -1025,7 +1038,7 @@ export default function MethodPage() {
         <p>
           We collected clashes that the press or fans publicly complained about at{" "}
           {numberWord(backtest.festivals)} festivals, then looked at where each one ranks among all
-          concurrent pairs on its festival day: {backtest.scoredPairs} scored pairs from{" "}
+          concurrent pairs on its festival day: {backtest.scoredPairs} complained-about pairs from{" "}
           {backtest.clusters} complaints (one complaint can name more than two acts), across{" "}
           {backtest.festivalDays} festival days.
         </p>
@@ -1075,6 +1088,10 @@ export default function MethodPage() {
         {/* Hairline rows, like the lines of a running order, instead of bullets. */}
         <ul className="[&>li]:border-t [&>li]:border-border [&>li]:py-2">
           <li>It is not attendance, and this app estimates no attendance or money figure anywhere.</li>
+          <li>
+            It is a global reading: no location was sent, so it says how close two audiences are in general, not at
+            this festival.
+          </li>
           <li>
             Hidden clashes are examples, not detections. Of {backtest.hidden.pairs} pairs with
             top-quarter taste overlap and no shared genre tag, {backtest.hidden.complained} were
@@ -1133,6 +1150,26 @@ export default function MethodPage() {
             pause when the monthly Qloo allowance runs low. The agent&rsquo;s general explore tools, where switched
             on, can also send other entity types and signals to the same endpoints.
             The pair re-check sends exactly three requests and never reads a saved answer as live.
+          </p>
+        </SubBlock>
+
+        <SubBlock id={WHY_QLOO_ID} title="Why Qloo, not a similar-artists list or ticket data">
+          <p>
+            A similar-artists list names an act&rsquo;s nearest neighbours. This app needs a reading for every
+            clashing pair on a bill, so it asks Qloo to rank all of a day&rsquo;s acts against each act&rsquo;s audience
+            (<code className="font-mono">filter.results.entities</code>). That works before tickets go on sale and for acts with no ticket
+            history at the festival; acts Qloo has no signal for are left out, not scored as zero. It reads taste, not
+            attendance, and this app estimates no attendance.
+          </p>
+        </SubBlock>
+
+        <SubBlock id={CONTROLS_ID} title={`${numberWord(CONTROL_ACTS.length, { capitalize: true })} control acts`}>
+          <p>
+            Each build also looks up {numberWord(CONTROL_ACTS.length)} acts chosen to be unrelated to a festival bill:{" "}
+            {nameList(CONTROL_ACTS)}. If their audiences do not rank near the bottom of the bill (a mean percentile
+            of {CONTROL_RANK_LIMIT} or lower), the build says the signal does not separate audiences on that bill. On
+            both saved days their mean percentile was {CONTROL_RANK_LIMIT} or lower. This does not test whether the
+            clash rankings are useful. Their lookups are marked as control acts in How Qloo was used.
           </p>
         </SubBlock>
 

@@ -89,15 +89,48 @@ export function popularitySpread(acts: readonly Act[], cutoff = 0.9): { atLeast:
   };
 }
 
-/** "urn:tag:genre:music:dream_pop" or "dream_pop" -> "Dream Pop". Plain names pass through. */
+/** Words a title-cased genre spells wrongly, as they are written. */
+const GENRE_WORDS = new Map([
+  ["Idm", "IDM"],
+  ["Edm", "EDM"],
+  ["Uk", "UK"],
+  ["Us", "US"],
+  ["Dj", "DJ"],
+]);
+
+/** Whole genre labels with their usual punctuation. */
+const GENRE_LABELS = new Map([
+  ["Lo Fi", "Lo-Fi"],
+  ["Singer Songwriter", "Singer-Songwriter"],
+  ["Rhythm Blues", "R&B"],
+  ["K Pop", "K-Pop"],
+  ["J Pop", "J-Pop"],
+]);
+
+/**
+ * A genre as a reader writes it, for display only: "70S" -> "70s", "Idm" -> "IDM", "Lo Fi" -> "Lo-Fi",
+ * "Rhythm Blues" -> "R&B". The saved presets title-case every word, which breaks decades, initialisms and a
+ * few compound names; every other label passes through unchanged ("Post Punk", "2 Tone").
+ */
+export function genreLabel(text: string): string {
+  const words = text
+    .split(/(\s+)/)
+    .map((word) => (/^\d+S$/.test(word) ? `${word.slice(0, -1)}s` : (GENRE_WORDS.get(word) ?? word)))
+    .join("");
+  return GENRE_LABELS.get(words) ?? words;
+}
+
+/** "urn:tag:genre:music:dream_pop" or "dream_pop" -> "Dream Pop". Plain names pass through, as `genreLabel` writes them. */
 export function tagLabel(tag: string): string {
   const raw = tag.includes(":") ? (tag.split(":").pop() ?? tag) : tag;
-  if (!/[_-]/.test(raw) && raw !== raw.toLowerCase()) return raw;
-  return raw
-    .split(/[_-]+/)
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
+  if (!/[_-]/.test(raw) && raw !== raw.toLowerCase()) return genreLabel(raw);
+  return genreLabel(
+    raw
+      .split(/[_-]+/)
+      .filter(Boolean)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" "),
+  );
 }
 
 /** "outside-lands-2026" -> "Outside Lands 2026"; "coachella-2026-w1" -> "Coachella 2026 W1". */

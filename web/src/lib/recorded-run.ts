@@ -3,10 +3,19 @@
  * time since the run started (`GET /api/presets/{id}/recordings`). Replaying one goes through the
  * same reducer as a live run, so the panel renders it the same way, but it is labelled recorded
  * throughout: the run's mode, every Qloo request and every Qloo-sourced step. Request ids, latencies
- * and parameters are kept exactly as recorded. Pure functions; parsing never throws.
+ * and parameters are kept exactly as recorded, and each replayed request keeps how it was served when
+ * the run was recorded (`captured`). Pure functions; parsing never throws.
  */
 
-import { isRecord, parseAgentEvent, type AgentEvent, type Provenance } from "./events";
+import {
+  isRecord,
+  liveWhenRecorded,
+  parseAgentEvent,
+  type AgentEvent,
+  type CapturedProvenance,
+  type Provenance,
+  type QlooRequestRecord,
+} from "./events";
 import type { ReplayBeat } from "./replay";
 import { reduceEvents, type RunState } from "./run-state";
 
@@ -60,6 +69,7 @@ function parseRun(raw: unknown): RecordedRun | null {
   const question = text(raw.question);
   if (!id || !title || !question) return null;
 
+  const capturedAt = typeof raw.captured_at === "string" ? raw.captured_at : "";
   const events: RecordedEvent[] = [];
   for (const item of raw.events) {
     if (!isRecord(item)) return null;
@@ -69,7 +79,7 @@ function parseRun(raw: unknown): RecordedRun | null {
     // An event type this client does not know is skipped, as the live stream skips it.
     if (parsed.kind === "unknown") continue;
     if (parsed.kind === "invalid") return null;
-    events.push({ t, event: parsed.event });
+    events.push({ t, event: withCapture(parsed.event, item.event, capturedAt) });
   }
 
   // A complete, clean run only: it starts and finishes, answers with a clash result, and never
@@ -83,7 +93,7 @@ function parseRun(raw: unknown): RecordedRun | null {
     id,
     title,
     question,
-    capturedAt: typeof raw.captured_at === "string" ? raw.captured_at : "",
+    capturedAt,
     model: typeof raw.model === "string" ? raw.model : "",
     events,
   };
@@ -117,8 +127,40 @@ function replayed(provenance: Provenance): Provenance {
   return provenance === "qloo" ? "recorded" : provenance;
 }
 
-/** The event as the replay shows it: labelled recorded, everything else exactly as saved. */
-function asRecorded(event: AgentEvent): AgentEvent {
+/** A flag as the saved event states it; null where it does not say. */
+function stated(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+/**
+ * How a saved request was served when its run was recorded: the saved event's own `cached` and `recorded`
+ * flags, each null where the event does not state it, and the run's recorded date (null when the file has
+ * none). Read from the raw event, since parsing reads a missing `cached` as false. A request saved with its
+ * own capture provenance keeps it.
+ */
+export function capturedProvenance(raw: unknown, capturedAt: string): CapturedProvenance {
+  const source = isRecord(raw) ? raw : {};
+  return { cached: stated(source.cached), recorded: stated(source.recorded), at: capturedAt.trim() ? capturedAt : null };
+}
+
+/** A parsed tool result whose requests each carry their capture provenance (`capturedProvenance`). */
+function withCapture(event: AgentEvent, raw: unknown, capturedAt: string): AgentEvent {
+  if (event.type !== "tool_result" || !event.requests || event.requests.length === 0) return event;
+  const sent = isRecord(raw) && Array.isArray(raw.requests) ? raw.requests : [];
+  return {
+    ...event,
+    requests: event.requests.map((request, i) =>
+      request.captured ? request : { ...request, captured: capturedProvenance(sent[i], capturedAt) },
+    ),
+  };
+}
+
+/**
+ * The event as the replay shows it: labelled recorded, everything else exactly as saved. Each replayed request
+ * keeps how it was served when the run was recorded (`captured`, set when the run was read), so the trace can
+ * say a request that reached Qloo live then was live when recorded, while it is replayed now.
+ */
+function asRecorded(event: AgentEvent, capturedAt: string): AgentEvent {
   switch (event.type) {
     case "run_started":
       return { ...event, mode: "recorded" };
@@ -129,12 +171,31 @@ function asRecorded(event: AgentEvent): AgentEvent {
         ...event,
         provenance: replayed(event.provenance),
         ...(event.requests
-          ? { requests: event.requests.map((request) => ({ ...request, recorded: true })) }
+          ? {
+              requests: event.requests.map((request) => ({
+                ...request,
+                recorded: true,
+                captured: request.captured ?? capturedProvenance(request, capturedAt),
+              })),
+            }
           : {}),
       };
     default:
       return event;
   }
+}
+
+/** Every Qloo request record in a run's saved stream, as saved, in order. */
+export function savedRequests(run: RecordedRun): QlooRequestRecord[] {
+  return run.events.flatMap(({ event }) => (event.type === "tool_result" ? (event.requests ?? []) : []));
+}
+
+/**
+ * True when the run holds at least one request that reached Qloo live while it was recorded: neither cached nor
+ * served from a saved fixture, both stated by the saved event (`liveWhenRecorded`). Unknown never counts.
+ */
+export function askedQlooWhenRecorded(run: RecordedRun): boolean {
+  return savedRequests(run).some((request) => liveWhenRecorded(request) === true);
 }
 
 type Paced = { after: number; step: boolean };
@@ -205,7 +266,7 @@ function stretchSteps(paced: Paced[]): Paced[] {
  */
 export function toReplayBeats(run: RecordedRun): ReplayBeat[] {
   const paced = stretchSteps(paceByKind(run.events));
-  const beats = run.events.map(({ event }, i) => ({ after: paced[i].after, event: asRecorded(event) }));
+  const beats = run.events.map(({ event }, i) => ({ after: paced[i].after, event: asRecorded(event, run.capturedAt) }));
   const total = beats.reduce((sum, beat) => sum + beat.after, 0);
   if (total <= MAX_REPLAY_MS) return beats;
   const scale = MAX_REPLAY_MS / total;

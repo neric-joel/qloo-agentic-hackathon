@@ -6,6 +6,7 @@ import { TraceDrawer } from "@/components/kernel";
 import { NO_QLOO_NOTE, SAVED_READING_NOTE, noRequestsNote, runStatusText } from "@/components/kernel/trace-drawer";
 import { RequestItem } from "@/components/kernel/trace-parts";
 import { readClashReply } from "@/lib/agent-session";
+import { CONTROL_ACTS } from "@/lib/control-acts";
 import { qlooCredits } from "@/lib/credit";
 import { parseAgentEvent, type AgentEvent, type QlooRequestRecord } from "@/lib/events";
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
@@ -36,26 +37,42 @@ import {
   keepNote,
   keepPress,
   keepableMove,
-  otherDayPointer,
+  mayPointElsewhere,
   placeToKeep,
   planHolds,
+  pointerDay,
+  pointerLine,
   pricedEveryPlace,
   recordedQloo,
   recordingsQlooLine,
   requestsLabel,
   runVersusCard,
+  SEE_THAT_RUN,
+  agentSectionHref,
+  askedElsewhereSentence,
   type AgentPlace,
+  type PublishedDay,
 } from "./agent-panel";
 import { runQlooLine } from "./recorded-runs";
 import { ScratchPlan } from "./scratch-plan";
 import { seededPlan } from "./try-a-move";
-import type { LoadedDay } from "./use-recordings";
 
-/** The recorded runs the mocked hook serves, and the other days it says the page already loaded, set per test. */
-const served: { runs: RecordedRun[]; others?: LoadedDay[] } = { runs: [] };
+/**
+ * The recorded runs the mocked hook serves, the other days' runs it answers with when the panel asks for them, and
+ * each time the panel decided whether to ask for other days at all, set per test.
+ */
+const served: { runs: RecordedRun[]; otherDays: Map<string, RecordedRun[]>; asks: boolean[] } = {
+  runs: [],
+  otherDays: new Map(),
+  asks: [],
+};
 
 vi.mock("./use-recordings", () => ({
-  useRecordings: () => ({ status: "ready", runs: served.runs, others: served.others }),
+  useRecordings: () => ({ status: "ready", runs: served.runs }),
+  useOtherDaysRecordings: (_shown: string, _ids: readonly string[], enabled: boolean) => {
+    served.asks.push(enabled);
+    return enabled ? served.otherDays : new Map();
+  },
 }));
 
 /** The visible words. */
@@ -109,6 +126,32 @@ function streamOf(toolData: ToolData, words: string, qlooCalls = 0): Record<stri
 function recorded(id: string, toolData: ToolData, words = "Here is what I found.", qlooCalls = 0): RecordedRun {
   const events = streamOf(toolData, words, qlooCalls).map((event, i) => ({ t: i * 100, event }));
   const [run] = parseRecordings({ runs: [{ id, title: `Run ${id}`, question: "Where could Bo go?", captured_at: "2026-10-01T10:00:00Z", model: "m", events }] });
+  return run;
+}
+
+/**
+ * A recorded run that made one Qloo request, saved with the event's own flags (`flags`: by default neither cached
+ * nor from a saved fixture, so live when it was recorded), through the replay's own parser.
+ */
+function asking(id: string, flags: Record<string, unknown> = { cached: false, recorded: false }): RecordedRun {
+  const events = [
+    { type: "run_started", run_id: "run_invented", mode: "live" },
+    { type: "tool_call", id: "call_explain", tool: "explain_clash", input: {}, provenance: "qloo" },
+    {
+      type: "tool_result",
+      id: "call_explain",
+      tool: "explain_clash",
+      ok: true,
+      summary: "done",
+      latency_ms: 310,
+      provenance: "qloo",
+      requests: [{ path: "/v2/analysis/compare", params: {}, status: 200, latency_ms: 300, ...flags }],
+    },
+    { type: "text_delta", text: "Here." },
+    { type: "result", kind: "clash", data: { text: "Here.", tool_data: {} } },
+    { type: "run_finished", run_id: "run_invented", qloo_calls: 1, elapsed_ms: 1200 },
+  ].map((event, i) => ({ t: i * 100, event }));
+  const [run] = parseRecordings({ runs: [{ id, title: `Run ${id}`, question: "Why do they clash?", captured_at: "2026-10-01T10:00:00Z", model: "m", events }] });
   return run;
 }
 
@@ -197,11 +240,12 @@ describe("Keep this place takes the move only from the run's own tool result", (
 describe("the agent section while the live agent is off", () => {
   beforeEach(() => {
     served.runs = [recorded("a", FIND_MOVES), recorded("b", {}), recorded("c", FIND_MOVES)];
-    served.others = undefined;
+    served.otherDays = new Map();
+    served.asks = [];
   });
 
-  function panel(preset: Preset = tiny, agentStatus: "off" | "on" = "off") {
-    return renderToStaticMarkup(createElement(AgentPanel, { preset, day: 0, agentStatus }));
+  function panel(preset: Preset = tiny, agentStatus: "off" | "on" = "off", publishedDays?: PublishedDay[]) {
+    return renderToStaticMarkup(createElement(AgentPanel, { preset, day: 0, agentStatus, publishedDays }));
   }
 
   it("says it holds recorded runs, with no invitation to type", () => {
@@ -243,32 +287,73 @@ describe("the agent section while the live agent is off", () => {
     );
     // One line under the list, followed by the section's own closing sentence: no second paragraph.
     expect(text(panel())).toContain(`${line} It never changes the real festival, which does not use Clash Control.`);
-    // With no other day loaded on this page, there is no pointer to one.
-    expect(text(panel())).not.toContain("switch the day");
+    // With no other published day passed to the panel, there is no pointer to one, and nothing is asked for.
+    expect(text(panel())).not.toContain("asked Qloo while it was recorded");
+    expect(served.asks.every((asked) => !asked)).toBe(true);
   });
 
-  it("points at another day's recorded run that asked Qloo, only from recordings the page already loaded", () => {
-    const riot: LoadedDay = { presetId: "other-sun", title: "Other Fest 2026, Sunday", runs: [recorded("asks", FIND_MOVES, "Here.", 1)] };
-    const pointer = "Other Fest 2026, Sunday has a recorded run that sent 1 Qloo request; switch the day to see it.";
-    expect(otherDayPointer([riot])).toBe(pointer);
-    // The count is the recording's own: two requests say two.
-    expect(otherDayPointer([{ ...riot, runs: [recorded("twice", FIND_MOVES, "Here.", 2)] }])).toBe(
-      "Other Fest 2026, Sunday has a recorded run that sent 2 Qloo requests; switch the day to see it.",
-    );
-    expect(
-      otherDayPointer([{ ...riot, runs: [recorded("x", FIND_MOVES, "Here.", 1), recorded("y", FIND_MOVES, "Here.", 3)] }]),
-    ).toBe("Other Fest 2026, Sunday has 2 recorded runs that sent Qloo requests; switch the day to see them.");
-    // Nothing loaded, nothing that asked Qloo, or the invented day: no pointer at all.
-    expect(otherDayPointer(undefined)).toBeNull();
-    expect(otherDayPointer([])).toBeNull();
-    expect(otherDayPointer([{ ...riot, runs: [recorded("none", FIND_MOVES)] }])).toBeNull();
-    expect(otherDayPointer([riot], true)).toBeNull();
-    // On the page: after this day's own line, in the same paragraph.
-    served.others = [riot];
-    expect(text(panel())).toContain(
-      `These runs send no new Qloo request; they test moves with this day’s saved reading. ${pointer} It never changes the real festival`,
-    );
-    expect(text(panel({ ...tiny, synthetic: true }))).not.toContain("switch the day");
+  /** This day (the tiny fixture's) and another published day, as the page's day list names them. */
+  const DAYS: PublishedDay[] = [
+    { id: tiny.id, title: tiny.title },
+    { id: "other-sun", title: "Other Fest 2026, Sunday" },
+  ];
+
+  it("points at another published day's recorded run that asked Qloo while it was recorded, in place of the runs line alone", () => {
+    const line = "These runs send no new Qloo request; they test moves with this day’s saved reading.";
+    const pointed = `${line} A run on Other Fest 2026, Sunday asked Qloo while it was recorded.`;
+    const other = DAYS[1];
+    expect(askedElsewhereSentence(other.title)).toBe("A run on Other Fest 2026, Sunday asked Qloo while it was recorded.");
+    expect(pointerLine(line, other)).toBe(pointed);
+    expect(pointerLine(line, null)).toBe(line);
+    // The day it names holds a run with a request that reached Qloo live when it was recorded.
+    expect(pointerDay(DAYS, tiny.id, new Map([["other-sun", [asking("asks")]]]))).toEqual(other);
+    // Two such requests, or several runs that asked, still name the day once, in the same words.
+    expect(pointerDay(DAYS, tiny.id, new Map([["other-sun", [asking("x"), asking("y")]]]))).toEqual(other);
+    // Nothing loaded, runs that sent no request, a request served from the cache or a saved fixture when it was
+    // recorded, or one whose saved event does not say: no pointer at all. The shown day never points at itself.
+    expect(pointerDay(DAYS, tiny.id, new Map())).toBeNull();
+    expect(pointerDay(DAYS, tiny.id, new Map([["other-sun", [recorded("none", FIND_MOVES)]]]))).toBeNull();
+    expect(pointerDay(DAYS, tiny.id, new Map([["other-sun", [asking("cache", { cached: true, recorded: false })]]]))).toBeNull();
+    expect(pointerDay(DAYS, tiny.id, new Map([["other-sun", [asking("fixture", { cached: false, recorded: true })]]]))).toBeNull();
+    expect(pointerDay(DAYS, tiny.id, new Map([["other-sun", [asking("unsaid", { cached: false })]]]))).toBeNull();
+    expect(pointerDay(DAYS, tiny.id, new Map([[tiny.id, [asking("self")]]]))).toBeNull();
+    // On the page: the runs line, then the pointer, then its one link to that day's agent section; the section's
+    // closing sentence starts its own line after the link.
+    served.otherDays = new Map([["other-sun", [asking("asks")]]]);
+    const html = panel(tiny, "off", DAYS);
+    expect(text(html)).toContain(`${pointed} ${SEE_THAT_RUN} It never changes the real festival`);
+    expect(SEE_THAT_RUN).toBe("See that run");
+    expect(agentSectionHref("other-sun")).toBe("/?preset=other-sun#agent");
+    expect(html).toMatch(/<a href="\/\?preset=other-sun#agent"[^>]*>See that run<\/a><span class="block">It never changes/);
+    // The only new control: one link, no button.
+    expect(html.match(/data-agent-pointer/g)).toHaveLength(1);
+    // The live panel says the same line, with the same link.
+    expect(text(panel(tiny, "on", DAYS))).toContain(`${pointed} ${SEE_THAT_RUN}`);
+  });
+
+  it("asks for other days' runs only on a published day whose own runs hold no Qloo request, and never on the invented day", () => {
+    served.otherDays = new Map([["other-sun", [asking("asks")]]]);
+    // A published day whose runs hold no request: it asks, and points.
+    expect(mayPointElsewhere(tiny.id, false, DAYS, served.runs)).toBe(true);
+    expect(text(panel(tiny, "off", DAYS))).toContain("asked Qloo while it was recorded");
+    expect(served.asks.at(-1)).toBe(true);
+    // The day's own runs hold a request: the pointer goes away by itself, and nothing is asked for.
+    served.runs = [recorded("a", FIND_MOVES), asking("own")];
+    expect(mayPointElsewhere(tiny.id, false, DAYS, served.runs)).toBe(false);
+    served.asks = [];
+    const own = text(panel(tiny, "off", DAYS));
+    expect(own).not.toContain("asked Qloo while it was recorded");
+    expect(own).not.toContain(SEE_THAT_RUN);
+    expect(served.asks.every((asked) => !asked)).toBe(true);
+    // The invented day, or a day the day list does not name: no pointer and nothing asked for.
+    served.runs = [recorded("a", FIND_MOVES), recorded("b", {})];
+    expect(mayPointElsewhere(tiny.id, true, DAYS, served.runs)).toBe(false);
+    expect(mayPointElsewhere("invented-day", false, DAYS, served.runs)).toBe(false);
+    expect(mayPointElsewhere(tiny.id, false, DAYS, [])).toBe(false);
+    served.asks = [];
+    expect(text(panel({ ...tiny, synthetic: true }, "off", DAYS))).not.toContain("asked Qloo while it was recorded");
+    expect(text(panel({ ...tiny, id: "invented-day" }, "off", DAYS))).not.toContain("asked Qloo while it was recorded");
+    expect(served.asks.every((asked) => !asked)).toBe(true);
   });
 
   it("gives each run its own Qloo count when one of them asked Qloo, and no summary line", () => {
@@ -452,12 +537,14 @@ describe("the agent run's Qloo label (A2)", () => {
   });
 });
 
-describe("the run against the decision card (A3)", () => {
+describe("the run against the move at the top of the page (A3)", () => {
   it("says why their index changes differ when the run moved another set", () => {
     const place = keepableMove(liveResults(FIND_MOVES), tiny.festival, 0);
     expect(runVersusCard(place, "ann")).toBe(
-      "This run looked for a lower-index place for Bo Diddly Squat; the decision card works on the day’s costliest clash that a move can lower, so their index changes differ.",
+      "This run looked for a place for Bo Diddly Squat that lowers the index; the move at the top of the page works on the day’s costliest clash that a move can lower, so their index changes differ.",
     );
+    // It names no UI the page no longer has.
+    expect(runVersusCard(place, "ann")).not.toMatch(/decision card/i);
     expect(runVersusCard(place, "bo")).toBeNull();
     expect(runVersusCard(place, null)).toBeNull();
     expect(runVersusCard(null, "ann")).toBeNull();
@@ -654,6 +741,35 @@ describe("the trace ledger's missing request ids (A8)", () => {
   it("says why a saved, cached response has no request id", () => {
     expect(row({ recorded: true, cached: true })).toContain("No request id: this response was saved before request ids were kept.");
     expect(row({ recorded: true, cached: true })).not.toContain("Request ID not saved");
+  });
+
+  it("marks a control act's search with a plain 'control act' label that links to the controls on /method", () => {
+    const html = (record: Partial<QlooRequestRecord>, synthetic = false) =>
+      renderToStaticMarkup(
+        createElement(RequestItem, {
+          item: {
+            record: { path: "/search", params: {}, status: 200, latency_ms: Number.NaN, cached: true, ...record },
+            toolId: "t",
+            tool: "build",
+            ordinal: 1,
+          },
+          synthetic,
+        }),
+      );
+    const label = /<a [^>]*href="\/method#controls"[^>]*>control act<\/a>/;
+    for (const query of CONTROL_ACTS) {
+      const row = html({ params: { query, types: "urn:entity:artist", take: "3" } });
+      expect(row).toMatch(label);
+      expect(row).toContain('href="/method#controls"');
+      expect(row).toContain('title="Looked up to check that unrelated audiences rank near the bottom."');
+      // After the query, in its own cell.
+      expect(text(row)).toContain(`query ${query} control act`);
+      expect(row.match(/control act/g)).toHaveLength(1);
+    }
+    // Any other act's search, another endpoint with the same query, or the invented day: no label.
+    expect(html({ params: { query: "Act One" } })).not.toContain("control act");
+    expect(html({ path: "/v2/insights", params: { query: "Raffi" } })).not.toContain("control act");
+    expect(html({ params: { query: "Raffi" } }, true)).not.toContain("control act");
   });
 
   it("keeps a saved id, and gives the reason nowhere else (never on the invented day)", () => {

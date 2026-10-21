@@ -12,6 +12,7 @@ import { buildSetViews, formatOverlap, topClashes } from "./clashes";
 import { NO_OTHER_LONGER, type Decision } from "./decision";
 import { pluralize } from "./format";
 import { clockMinutes } from "./moves";
+import { growthClauses } from "./overlap-words";
 import type { PairClash, Preset } from "./preset";
 import { formatClock, formatRange, overlapWindow, timeDomain } from "./timetable";
 
@@ -28,7 +29,7 @@ export type DayGraphSet = {
   end: number;
   locked: boolean;
   unscored: boolean;
-  /** The mover, its partner and every set whose overlap grows: their names sit whole above the bar. */
+  /** The mover, its partner and every set whose overlap grows: their names sit whole outside the bar at every width. */
   featured: boolean;
 };
 
@@ -117,10 +118,15 @@ export type DayGraphModel = {
 
 export type DrawingLayout = "desktop" | "phone" | "short";
 
+/**
+ * Each layout's heights (px). A phone and a short phone keep a `foot` under their last row, a label lane where a
+ * featured name sits whole under the bottom bar; the phone pays for it with a thinner overview strip and gap, the
+ * short phone with thinner bars, so both drawings stay as tall as before.
+ */
 export const LAYOUT = {
   desktop: { axis: 22, row: 64, bar: 26 },
-  phone: { overview: 24, gap: 8, axis: 14, row: 42, bar: 24 },
-  short: { axis: 14, row: 42, bar: 24 },
+  phone: { overview: 14, gap: 3, axis: 14, row: 42, bar: 24, foot: 15 },
+  short: { axis: 14, row: 37, bar: 19, foot: 15 },
 } as const;
 
 export const MOVE_MS = 450;
@@ -142,8 +148,8 @@ const FOCUS_MIN = 150;
 export function drawingHeight(model: DayGraphModel, layout: DrawingLayout): number {
   if (layout === "desktop") return LAYOUT.desktop.axis + LAYOUT.desktop.row * model.stages.length;
   const rows = model.phoneRows.length;
-  if (layout === "phone") return LAYOUT.phone.overview + LAYOUT.phone.gap + LAYOUT.phone.axis + LAYOUT.phone.row * rows;
-  return LAYOUT.short.axis + LAYOUT.short.row * rows;
+  if (layout === "phone") return LAYOUT.phone.overview + LAYOUT.phone.gap + LAYOUT.phone.axis + LAYOUT.phone.row * rows + LAYOUT.phone.foot;
+  return LAYOUT.short.axis + LAYOUT.short.row * rows + LAYOUT.short.foot;
 }
 
 /** A line's stroke in px: 1.25 at taste rank 0 to 4.75 at 100, linear. */
@@ -453,19 +459,11 @@ export function buildDayGraph(preset: Preset, decision: Decision | null, day: nu
 /**
  * What else the move changes, every clause naming the overlap: up to two growing overlaps ("New 15 min
  * overlap with Joy Crookes." or "Lengthens the overlap with X from 10 to 25 min.") and a count of the rest,
- * then the shrinking ones (one named; several counted, with their step when they share one and none ends),
- * then `NO_OTHER_LONGER` when nothing grows.
+ * built by `growthClauses`, the words Try a move shares; then the shrinking ones (one named; several counted,
+ * with their step when they share one and none ends), then `NO_OTHER_LONGER` when nothing grows.
  */
 export function sideEffectText(move: DayGraphMove): string {
-  const parts = move.grows
-    .slice(0, 2)
-    .map((item) =>
-      item.before === 0
-        ? `New ${item.after} min overlap with ${item.name}.`
-        : `Lengthens the overlap with ${item.name} from ${item.before} to ${item.after} min.`,
-    );
-  const more = move.grows.length - 2;
-  if (more > 0) parts.push(more === 1 ? "1 more overlap gets longer." : `${more} more overlaps get longer.`);
+  const parts = growthClauses(move.grows);
   const { shrinks } = move;
   if (shrinks.length === 1) {
     const [only] = shrinks;

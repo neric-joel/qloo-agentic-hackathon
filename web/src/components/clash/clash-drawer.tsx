@@ -324,7 +324,7 @@ export function ClashDetails({
           <Figure
             label="Share of day's cost"
             value={formatShare(shown.regret_share)}
-            note="This clash's price over the sum of every priced clash today."
+            note="This clash's price over the sum of every scored clash today."
             chip={<ProvenanceChip provenance="derived" size="sm" synthetic={synthetic} />}
           />
         </dl>
@@ -473,7 +473,9 @@ export function ClashDrawer({
   return (
     <Sheet open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
       <SheetContent
-        className="gap-0 p-0 data-[side=bottom]:rounded-t-lg data-[side=right]:rounded-l-lg data-[side=right]:lg:max-w-2xl"
+        // The sheet sets the corners: square where it meets a screen edge (it fills a phone's screen), 14 px
+        // on every corner from 640 px, where it floats inside the window.
+        className="gap-0 p-0 data-[side=right]:lg:max-w-2xl"
         onCloseAutoFocus={(event) => {
           if (returnFocusTo && document.contains(returnFocusTo)) {
             event.preventDefault();
@@ -509,7 +511,8 @@ export function ClashDrawer({
           tabIndex={0}
           role="region"
           aria-label="Clash details"
-          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-6 sm:px-6"
+          // Its focus ring sits just inside its edges, so the sheet's clip never cuts it.
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-6 focus-visible:-outline-offset-2 sm:px-6"
         >
           <ClashDetails
             key={checkKey}

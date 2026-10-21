@@ -1,10 +1,11 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { FIGURE_DOMAIN } from "@/components/clash/why-this-matters";
+import { CONTROL_ACTS, CONTROL_RANK_LIMIT } from "@/lib/control-acts";
 import { METHOD_FIGURES, methodRow } from "@/lib/method-figures";
 
 import MethodPage from "./page";
@@ -84,7 +85,7 @@ describe("the reading column and its folds (round 10)", () => {
     expect(visible).toContain("It is not attendance, and this app estimates no attendance or money figure anywhere.");
     expect(visible).toContain("It is not a share of fans and not attendance.");
     expect(visible).toContain(
-      `${backtest.scoredPairs} scored pairs from ${backtest.clusters} complaints (one complaint can name more than two acts), across ${backtest.festivalDays} festival days.`,
+      `${backtest.scoredPairs} complained-about pairs from ${backtest.clusters} complaints (one complaint can name more than two acts), across ${backtest.festivalDays} festival days.`,
     );
     expect(visible).toContain("The bar we wrote down before building was 60% and 10 points ahead.");
     expect(visible).toContain("It missed the bar.");
@@ -516,9 +517,10 @@ describe("hanging heads from 1280px (round 26)", () => {
       "mt-3 min-w-0 max-w-[76ch] text-[0.9375rem] sm:text-base",
       "mt-5 max-w-[76ch] text-[0.9375rem] leading-[1.55] sm:text-base",
     ]);
-    // Each section and sub-block body measures its paragraphs, lists and folds from xl.
+    // Each section and sub-block body measures its paragraphs, lists and folds from xl (round 35: two more sub-blocks,
+    // why Qloo and the control acts).
     const bodies = bare.filter((cls) => cls.includes("xl:max-w-none"));
-    expect(bodies).toHaveLength(9);
+    expect(bodies).toHaveLength(11);
     for (const cls of bodies) {
       for (const child of ["p", "ul", "ol", "details"]) expect(cls).toContain(`xl:[&amp;&gt;${child}]:max-w-[76ch]`);
     }
@@ -538,7 +540,7 @@ describe("hanging heads from 1280px (round 26)", () => {
     expect(html).not.toMatch(/\bsticky\b/);
     const source = readFileSync(join(process.cwd(), "src", "app", "method", "page.tsx"), "utf-8");
     expect(source).not.toMatch(/\bsticky\b/);
-    for (const id of ["price", "tested", "limits", "the-rest", "qloo-calls", "moving-sets", "labels", "live-check", "brief"]) {
+    for (const id of ["price", "tested", "limits", "the-rest", "qloo-calls", "why-qloo", "controls", "moving-sets", "labels", "live-check", "brief"]) {
       expect(html).toContain(`id="${id}"`);
     }
   });
@@ -921,7 +923,7 @@ describe("taste inside the full price, the second exploratory follow-up (round 3
   it("prints every figure from METHOD_FIGURES and says it did not establish an advantage over popularity", () => {
     // "Full price" is the backtest's name for the index's pair score, defined once in its own clause (round 33, E1).
     expect(blockText).toContain(
-      "Run after the failed test above, on the same 68 scored pairs, so it is exploratory. The full price (the index's pair score: taste overlap × shared time × Qloo popularity) scored AUC 0.746 (interval 0.675 to 0.812); popularity alone scored 0.722. The difference is +0.024 (interval -0.074 to +0.136), so the full price did not establish an advantage over popularity.",
+      "Run after the failed test above, on the same 68 complained-about pairs, so it is exploratory. The full price (the index's pair score: taste overlap × shared time × Qloo popularity) scored AUC 0.746 (interval 0.675 to 0.812); popularity alone scored 0.722. The difference is +0.024 (interval -0.074 to +0.136), so the full price did not establish an advantage over popularity.",
     );
     expect(blockText.match(/the index's pair score/g)).toHaveLength(1);
     expect(blockText).toContain(
@@ -1052,5 +1054,107 @@ describe("the complaint median stays on /method (round 34, guardian S2)", () => 
     const tested = html.indexOf('<section id="tested"');
     expect(html.indexOf(sources)).toBeGreaterThan(tested);
     expect(html.indexOf(sources)).toBeLessThan(html.indexOf("</section>", tested));
+  });
+});
+
+describe("why Qloo, the control acts, the backtest's pairs, the legend and the global reading (round 35)", () => {
+  const html = renderToStaticMarkup(createElement(MethodPage));
+  /** What a reader sees with no click: the page with every closed disclosure taken out. */
+  const visible = text(html.replace(/<details(?![^>]*\bopen\b)[^>]*>[\s\S]*?<\/details>/g, " "));
+  const restStart = html.indexOf('<section id="the-rest"');
+  const rest = html.slice(restStart, html.indexOf("</section>", restStart));
+  /** A sub-block of "How the rest works", from its id to the next sub-block. */
+  const block = (id: string) => {
+    const start = rest.indexOf(`<div id="${id}"`);
+    const next = rest.indexOf('<div id="', start + 1);
+    return rest.slice(start, next < 0 ? undefined : next);
+  };
+
+  it("answers why Qloo and not a similar-artists list or ticket data, under How the rest works, in the open", () => {
+    const why = block("why-qloo");
+    expect(why).toMatch(
+      /^<div id="why-qloo" class="scroll-mt-24 pt-8 first:pt-0"><h3 id="why-qloo-heading" class="text-lg leading-snug font-semibold break-words">Why Qloo, not a similar-artists list or ticket data<\/h3>/,
+    );
+    const said =
+      "A similar-artists list names an act's nearest neighbours. This app needs a reading for every clashing pair on a bill, so it asks Qloo to rank all of a day's acts against each act's audience (filter.results.entities). That works before tickets go on sale and for acts with no ticket history at the festival; acts Qloo has no signal for are left out, not scored as zero. It reads taste, not attendance, and this app estimates no attendance.";
+    // The inline code token adds no space around itself in the rendered text.
+    const inline = (part: string) => text(part.replace(/<\/?code[^>]*>/g, ""));
+    expect(inline(why)).toBe(`Why Qloo, not a similar-artists list or ticket data ${said}`);
+    expect(inline(html.replace(/<details(?![^>]*\bopen\b)[^>]*>[\s\S]*?<\/details>/g, " "))).toContain(said);
+    // The parameter is marked as code at the sentence's own size; nothing says streaming data shows attendance.
+    expect(why).toContain('(<code class="font-mono">filter.results.entities</code>)');
+    expect(text(why)).not.toMatch(/streaming/i);
+    // After the Qloo requests it explains, before Moving sets.
+    expect(rest.indexOf('id="why-qloo"')).toBeGreaterThan(rest.indexOf('id="qloo-calls"'));
+    expect(rest.indexOf('id="why-qloo"')).toBeLessThan(rest.indexOf('id="moving-sets"'));
+  });
+
+  it("names the four control acts and their limit from the shared contract, says what the result does not test, and says nothing passed act by act", () => {
+    const controls = block("controls");
+    expect(CONTROL_ACTS).toEqual(["Vienna Philharmonic", "Raffi", "Frankie Yankovic", "Mormon Tabernacle Choir"]);
+    expect(CONTROL_RANK_LIMIT).toBe(0.35);
+    expect(controls).toMatch(
+      /^<div id="controls" class="scroll-mt-24 pt-8 first:pt-0"><h3 id="controls-heading" class="text-lg leading-snug font-semibold break-words">Four control acts<\/h3>/,
+    );
+    const said =
+      "Each build also looks up four acts chosen to be unrelated to a festival bill: Vienna Philharmonic, Raffi, Frankie Yankovic and Mormon Tabernacle Choir. If their audiences do not rank near the bottom of the bill (a mean percentile of 0.35 or lower), the build says the signal does not separate audiences on that bill. On both saved days their mean percentile was 0.35 or lower. This does not test whether the clash rankings are useful. Their lookups are marked as control acts in How Qloo was used.";
+    expect(text(controls)).toBe(`Four control acts ${said}`);
+    expect(visible).toContain(said);
+    // The build tests the mean, so no line says an act passed.
+    expect(text(controls)).not.toMatch(/each (act )?passed|every act passed|all four passed/i);
+    // The names and the limit come from the contract: none is typed in the page's source.
+    const source = readFileSync(join(process.cwd(), "src", "app", "method", "page.tsx"), "utf-8");
+    for (const name of CONTROL_ACTS) expect(source).not.toContain(name);
+    expect(source).not.toContain("0.35");
+    expect(rest.indexOf('id="controls"')).toBeGreaterThan(rest.indexOf('id="why-qloo"'));
+    expect(rest.indexOf('id="controls"')).toBeLessThan(rest.indexOf('id="moving-sets"'));
+  });
+
+  /** The published days from the backend's built presets, when this checkout has them (they are not committed). */
+  type SavedDay = { discriminates?: boolean; report?: { discriminates?: boolean }; requests: { path: string; params: Record<string, string> }[] };
+  const saved: SavedDay[] = ["glastonbury-2025-sun.json", "riot-fest-2026-sun.json"]
+    .map((file) => join(process.cwd(), "..", "backend", "presets", file))
+    .filter((path) => existsSync(path))
+    .map((path) => JSON.parse(readFileSync(path, "utf8")) as SavedDay);
+
+  it.skipIf(saved.length < 2)("says both saved days met the control limit only because both saved days' builds say so", () => {
+    for (const preset of saved) {
+      // Each build looked up all four control acts by name.
+      const searched = preset.requests.filter((request) => request.path === "/search").map((request) => request.params.query);
+      for (const name of CONTROL_ACTS) expect(searched).toContain(name);
+      // backend/app/qloo/overlap.py: discriminates is true when the mean control rank was CONTROL_RANK_LIMIT or lower.
+      expect(preset.discriminates ?? preset.report?.discriminates).toBe(true);
+    }
+  });
+
+  it("calls the backtest's pairs complained-about pairs, with the sample size in the open, so they are not read as a day's scored clashes", () => {
+    const { backtest } = METHOD_FIGURES;
+    expect(visible).toContain(`${backtest.scoredPairs} complained-about pairs from ${backtest.clusters} complaints`);
+    expect(text(html)).toContain(`on the same ${backtest.scoredPairs} complained-about pairs, so it is exploratory`);
+    // No "scored pairs" is left for the backtest's 68, on the page or in the two sources.
+    expect(text(html)).not.toMatch(/scored pairs/);
+    const source = readFileSync(join(process.cwd(), "src", "app", "method", "page.tsx"), "utf-8");
+    expect(source).not.toMatch(/scored pairs/);
+    const figures = readFileSync(join(process.cwd(), "src", "lib", "method-figures.ts"), "utf-8");
+    expect(figures).not.toMatch(/scored pairs?\b/);
+  });
+
+  it("describes the LLM label in the chip's own words", () => {
+    const labels = rest.slice(rest.indexOf('<div id="labels"'), rest.indexOf('<div id="live-check"'));
+    expect(text(labels)).toContain("LLM Written by a language model. Not Qloo data.");
+    expect(text(labels)).not.toContain("Written by the language model.");
+    expect(visible).toContain("Written by a language model. Not Qloo data.");
+  });
+
+  it("says under its limits, once, that the reading is global", () => {
+    const start = html.indexOf('<section id="limits"');
+    const limits = html.slice(start, html.indexOf("</section>", start));
+    const line = "It is a global reading: no location was sent, so it says how close two audiences are in general, not at this festival.";
+    const items = [...limits.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => text(m[1]));
+    expect(items).toContain(line);
+    expect(items.indexOf(line)).toBe(items.indexOf("It is not attendance, and this app estimates no attendance or money figure anywhere.") + 1);
+    expect(text(html).split(line).length - 1).toBe(1);
+    // The location cost is said once, in the evidence text, not repeated here.
+    expect(text(limits)).not.toContain("347");
   });
 });

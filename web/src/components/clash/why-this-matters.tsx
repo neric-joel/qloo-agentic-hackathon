@@ -174,6 +174,13 @@ function PilotOffer({ contact, terms }: { contact: string | null; terms: string 
  */
 export const COMPLAINTS_ELSEWHERE = "Most of these complaints are about other festivals and days, not the days this app shows.";
 
+/**
+ * What is at stake when two sets clash, and when Clash Control is used: the section's first line, under its heading.
+ * No number and no count of people.
+ */
+export const WHY_STAKE =
+  "When two sets clash, anyone who wants to see both has to choose. Clash Control is for the time after acts are booked and before set times go out.";
+
 /** The published day the zero-request pilot walks through: its brief exists and costs no Qloo request. */
 export const PILOT_DAY = "Glastonbury 2025 Sunday";
 
@@ -450,7 +457,8 @@ export function FailedTestNote({
 
 /**
  * What is public about the problem and what is not known, right after the taste section and before the board,
- * open on the paper with no rule above it and no card around it. From 1024px it is a 12-column composition: on
+ * open on the paper with no rule above it and no card around it. Under its heading, first, the stake and the moment
+ * of use (`WHY_STAKE`), one paragraph at body size in ink across the container. From 1024px it is a 12-column composition: on
  * the left (5 columns) the problem, its finding set large at 20px as the column's heading; on the right (7
  * columns) what is not known, then the pilot offer, an unboxed block under a top rule set 24px below it (24px of
  * paper on each side of the rule), so the offer is read right after "Who would pay is not known.". Below 1024px it
@@ -481,7 +489,11 @@ export function WhyThisMatters({
         <h2 id="why-this-matters-heading" className="type-title">
           Who has complained, and what nobody has tested
         </h2>
-        <div className="mt-8 grid items-start gap-y-10 text-[0.9375rem] leading-[1.55] lg:grid-cols-12 lg:gap-x-12 lg:gap-y-6">
+        {/* The stake and the moment of use, first, at body size in ink across the container's full measure. */}
+        <p data-why-stake className="mt-2 text-base leading-normal text-foreground">
+          {WHY_STAKE}
+        </p>
+        <div className="mt-6 grid items-start gap-y-10 text-[0.9375rem] leading-[1.55] lg:grid-cols-12 lg:gap-x-12 lg:gap-y-6">
           <div data-why-col="problem" className="min-w-0 lg:col-span-5 lg:row-span-2 lg:row-start-1">
             {/* The finding is the column's heading: the conclusion itself, set at 20px, 500 weight, in ink. */}
             <h3 data-why-finding className="text-xl leading-snug font-medium text-foreground">

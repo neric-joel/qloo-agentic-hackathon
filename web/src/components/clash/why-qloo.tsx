@@ -1,10 +1,11 @@
-import type { CSSProperties, ReactNode } from "react";
+import { cloneElement, isValidElement, type CSSProperties, type ReactElement, type ReactNode } from "react";
 
 import { formatOverlap, pairKey } from "@/lib/clashes";
 import type { Lenses } from "@/lib/lenses";
 import type { Act, PairClash, Preset, Twin } from "@/lib/preset";
 import { cn } from "@/lib/utils";
 
+import { DecisionDetails, type DecisionDetailsProps } from "./decision-card";
 import { MoreDetails } from "./more-details";
 import { otherHalfLine, otherHalfPair, TasteLens } from "./taste-lens";
 import { TwinCards } from "./twin-cards";
@@ -456,15 +457,32 @@ export function WhatQlooChanges({
 export type TasteSectionClash = { aId: string; bId: string; aName: string; bName: string };
 
 /**
+ * The aside in the places the section gives it. When it is the index card (`DecisionDetails`), its two parts: the
+ * card, and the lines that sit beside it from 1024px (the hidden-clash line and the change line, with their
+ * actions), each drawn by the card itself so both read the same copy. Any other aside is the card alone.
+ */
+export function asideParts(aside: ReactNode, besideClassName?: string): { card: ReactNode; beside: ReactNode } {
+  if (isValidElement(aside) && aside.type === DecisionDetails) {
+    const element = aside as ReactElement<DecisionDetailsProps>;
+    return {
+      card: cloneElement(element, { part: "card" }),
+      beside: cloneElement(element, { part: "beside", className: besideClassName }),
+    };
+  }
+  return { card: aside ?? null, beside: null };
+}
+
+/**
  * The taste section, right after the hero: what adding Qloo taste overlap changes, with its limit and the
  * failed test in the same place. With the decision's clash and the lens data the heading says what taste
  * did to that clash's place ("Adding taste moves this pair from #18 to #1", or "Adding taste leaves this
  * pair at #1"), and the figure ranks it three ways (minutes alone, adding popularity, adding taste overlap:
  * the index used here) with the limit directly under it. The failed test is never inside a disclosure.
  * Reading order, which is also the phone's: heading, pair line, figure, limit, failed test, the aside (the
- * hero's index card), the clash taste lowers, then the folds. From 1024px the heading, the pair line, the
- * failed test and the aside stack in the left column, beside the figure, its limit, the clash taste lowers
- * and the folds on the right. It renders with no clash, no lens data, no twins and on the invented day.
+ * hero's index card), the clash taste lowers, then the folds. From 1024px two columns run on their own: on the
+ * left (five of twelve) the heading, the pair line, the failed test and the index card; on the right (seven) the
+ * figure, its limit, the clash taste lowers, the card's hidden-clash and change lines (`asideParts`; below 1024px
+ * they stay in the card) and the folds. It renders with no clash, no lens data, no twins and on the invented day.
  */
 export function TasteSection({
   clash,
@@ -501,21 +519,15 @@ export function TasteSection({
   const otherHalf = fallen
     ? otherHalfLine(fallen, fallenClash ? formatOverlap(fallenClash.audience_overlap) : null, synthetic)
     : null;
-  // From 1024px the folds share a row with the aside, in five of twelve columns: there the pair cards stack, since
-  // their two-up grid is sized for the full width and would squeeze each card's draw and taste columns.
-  const narrowFolds = !!(clash && parts && aside);
+  // The card's two lines, 16px under whatever precedes them in the right column (they draw nothing when the card
+  // has neither line).
+  const { card, beside } = asideParts(aside, "lg:not-first:mt-4");
   const folds =
     twins.length > 0 || lenses ? (
       <div className="space-y-3">
         {twins.length > 0 ? (
           <MoreDetails summary={`Equal-popularity pairs (${twins.length})`}>
-            <TwinCards
-              twins={twins}
-              acts={acts}
-              synthetic={synthetic}
-              embedded
-              className={cn("mt-4 mb-3", narrowFolds && "lg:[&_ul]:grid-cols-1")}
-            />
+            <TwinCards twins={twins} acts={acts} synthetic={synthetic} embedded className="mt-4 mb-3" />
           </MoreDetails>
         ) : null}
         {lenses ? (
@@ -539,12 +551,13 @@ export function TasteSection({
       <div className="container-page pt-16 pb-8 lg:pt-20 lg:pb-12">
         {clash && parts ? (
           // One DOM order, the phone's: heading and pair line, figure and limit, failed test, aside, the clash
-          // taste lowers and the folds. From 1024px, three rows on twelve columns, the second row mirroring the
-          // first: the heading (row 1) and the failed test (row 2) in five columns beside the figure and its
-          // limit (rows 1 and 2) in seven; then the aside in seven, where the index card runs shorter than in
-          // five, beside the clash taste lowers and the folds in five (row 3). Without an aside those keep the
-          // figure's seven. 24px between blocks at every width, as in the section on why this matters.
-          <div className="grid gap-y-6 lg:grid-cols-12 lg:gap-x-12">
+          // taste lowers and the folds. From 1024px, two columns on twelve that each run on their own: on the left
+          // (five) the heading (row 1), the failed test (rows 2 and 3) and the index card (row 4); on the right
+          // (seven) the figure and its limit (rows 1 and 2), then the clash taste lowers, the card's two lines and
+          // the folds (rows 3 and 4). Row 3 is 0px tall: the right column's second block starts 24px under the
+          // figure or level with the failed test's end, whichever is lower, and the card 24px under that, so
+          // neither column waits for the other's row. 24px between blocks at every width.
+          <div className="grid gap-y-6 lg:grid-cols-12 lg:grid-rows-[auto_auto_0px_auto] lg:gap-x-12">
             <div className="min-w-0 lg:col-span-5 lg:col-start-1 lg:row-start-1">
               <h2 id="what-qloo-heading" className="type-headline">
                 {parts.heading}
@@ -568,21 +581,23 @@ export function TasteSection({
                 </p>
               ) : null}
             </div>
-            <FailedTestNote className="min-w-0 lg:col-span-5 lg:col-start-1 lg:row-start-2" synthetic={synthetic} />
-            {aside ? <div className="min-w-0 lg:col-span-7 lg:col-start-1 lg:row-start-3">{aside}</div> : null}
-            {otherHalf || folds ? (
-              <div
-                className={cn(
-                  "min-w-0 lg:row-start-3",
-                  aside ? "lg:col-span-5 lg:col-start-8" : "lg:col-span-7 lg:col-start-6",
-                )}
-              >
+            <FailedTestNote
+              className="min-w-0 lg:col-span-5 lg:col-start-1 lg:row-span-2 lg:row-start-2"
+              synthetic={synthetic}
+            />
+            {card ? <div className="min-w-0 lg:col-span-5 lg:col-start-1 lg:row-start-4">{card}</div> : null}
+            {otherHalf || folds || beside ? (
+              <div data-taste-side="" className="min-w-0 lg:col-span-7 lg:col-start-6 lg:row-span-2 lg:row-start-3">
                 {otherHalf ? (
-                  <p data-other-half="" className="max-w-prose text-[0.9375rem] leading-relaxed">
+                  <p data-other-half="" className="max-w-prose text-[0.9375rem] leading-relaxed lg:max-w-none">
                     {otherHalf}
                   </p>
                 ) : null}
-                {folds ? <div className={otherHalf ? "mt-4 lg:mt-6" : undefined}>{folds}</div> : null}
+                {/* The card's hidden-clash and change lines, from 1024px only (below it they stay in the card), 16px
+                    under the clash taste lowers: the change line's top stays above the card's foot, so the index
+                    figure it names is read beside the card's scale. */}
+                {beside}
+                {folds ? <div className={cn(otherHalf && "mt-4", "lg:mt-0 lg:not-first:mt-6")}>{folds}</div> : null}
               </div>
             ) : null}
           </div>

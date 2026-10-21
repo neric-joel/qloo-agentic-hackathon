@@ -20,6 +20,7 @@ import {
   FailedTestNote,
   WHY_THIS_MATTERS_ID,
   PRESS_OUTLETS,
+  WHY_STAKE,
   WhyThisMatters,
   along,
   isForumThread,
@@ -432,9 +433,10 @@ describe("WhyThisMatters", () => {
   it("composes the findings on a 12-column grid from 1024px: the problem on the left (5), what is not known then the pilot on the right (7), one column below 1024px", () => {
     const html = renderToStaticMarkup(createElement(WhyThisMatters));
     // Round 34: with the statements gone, two rows from 1024px: the problem spans both on the left; what is not known
-    // (row 1) then the pilot (row 2) on the right, 40px under it. 40px between blocks below 1024px.
+    // (row 1) then the pilot (row 2) on the right, 40px under it. 40px between blocks below 1024px. Round 35: 24px
+    // under the stake line, which opens the section.
     expect(html).toMatch(
-      /class="mt-8 grid items-start gap-y-10 text-\[0\.9375rem\] leading-\[1\.55\] lg:grid-cols-12 lg:gap-x-12 lg:gap-y-6"/,
+      /class="mt-6 grid items-start gap-y-10 text-\[0\.9375rem\] leading-\[1\.55\] lg:grid-cols-12 lg:gap-x-12 lg:gap-y-6"/,
     );
     // One column below 1024px, md included: no md placement.
     expect(html).not.toMatch(/\bmd:(grid-cols|col-span|row-start)/);
@@ -465,6 +467,26 @@ describe("WhyThisMatters", () => {
     // The question the pilot's success line already answers is said once.
     expect(text(html)).not.toContain("The first test: does a programmer move a set");
     expect(text(html)).not.toContain("smaller than a sale");
+  });
+
+  it("opens on the stake and the moment of use, in words: one paragraph at body size in ink under the heading, above the findings, with no number and no count of people", () => {
+    expect(WHY_STAKE).toBe(
+      "When two sets clash, anyone who wants to see both has to choose. Clash Control is for the time after acts are booked and before set times go out.",
+    );
+    const html = renderToStaticMarkup(createElement(WhyThisMatters));
+    // Directly under the heading, before the grid of findings.
+    expect(html).toContain(
+      `Who has complained, and what nobody has tested</h2><p data-why-stake="true" class="mt-2 text-base leading-normal text-foreground">${WHY_STAKE}</p><div class="mt-6 grid`,
+    );
+    const plain = text(html);
+    expect(plain.indexOf(WHY_STAKE)).toBeLessThan(plain.indexOf("45 clashes that fans or the press complained about"));
+    // Visible with no click, and at the container's full measure: no width cap of its own.
+    expect(text(withoutDisclosures(html))).toContain(WHY_STAKE);
+    const cls = /<p data-why-stake="true" class="([^"]*)">/.exec(html)?.[1] ?? "";
+    expect(cls).not.toMatch(/max-w|hidden|muted|primary|prov-qloo/);
+    // No figure, no fan count, no Qloo credit.
+    expect(WHY_STAKE).not.toMatch(/\d|fans?\b|people|crowd|qloo/i);
+    expect(qlooCredits(WHY_STAKE)).toEqual([]);
   });
 
   it("orders the blocks problem, then what is not known, with the pilot last (the one-column order below 1024px)", () => {

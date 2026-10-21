@@ -11,9 +11,9 @@ const CTA =
 const OUTLINE =
   "border-[1.5px] border-foreground bg-transparent text-foreground hover:bg-accent aria-expanded:bg-accent motion-safe:active:translate-y-px [&>svg:last-child]:motion-safe:transition-transform [&>svg:last-child]:motion-safe:duration-150 hover:[&>svg:last-child]:motion-safe:translate-x-0.5"
 
-/** Tertiary: a ruled line of type. */
+/** Tertiary: a ruled line of type, on the 10px control corner every button takes, so its focus ring follows it. */
 const RULED =
-  "min-h-11 rounded-sm text-foreground underline decoration-1 underline-offset-4 decoration-border-strong hover:decoration-foreground [&>svg:last-child]:motion-safe:transition-transform hover:[&>svg:last-child]:motion-safe:translate-x-0.5"
+  "min-h-11 rounded-md text-foreground underline decoration-1 underline-offset-4 decoration-border-strong hover:decoration-foreground [&>svg:last-child]:motion-safe:transition-transform hover:[&>svg:last-child]:motion-safe:translate-x-0.5"
 
 const buttonVariants = cva(
   "group/button inline-flex shrink-0 items-center justify-center gap-2 rounded-md border border-transparent text-sm font-semibold whitespace-nowrap transition-[color,background-color,border-color] select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
@@ -36,7 +36,7 @@ const buttonVariants = cva(
         ruled: RULED,
       },
       size: {
-        // Every size takes the 12px control corner (rounded-md). 44px minimum height keeps every
+        // Every size takes the 10px control corner (rounded-md). 44px minimum height keeps every
         // control comfortable to tap. Primary, outline and ghost share one height and one side
         // padding per size; the 36px sizes reach 44px with an invisible extension of the hit area
         // above and below (and at the sides for the square icon button).

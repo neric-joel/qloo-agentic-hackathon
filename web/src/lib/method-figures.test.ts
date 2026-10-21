@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import MethodPage, { metadata } from "@/app/method/page";
 import { FIGURE_TICKS } from "@/components/clash/why-this-matters";
 import { SyntheticContext } from "@/components/site/synthetic-context";
+import { CONTROL_RANK_LIMIT } from "@/lib/control-acts";
 
 import {
   METHOD_FIGURES,
@@ -74,6 +75,8 @@ function allowedNumerals(): Set<string> {
   walk(METHOD_FIGURES);
   // The backtest figure's axis labels are scale ticks, not findings (round 24: one 0 to 75 axis).
   FIGURE_TICKS.forEach(add);
+  // Round 35: the control acts' limit is the build's own, from the shared control-acts module, never typed on the page.
+  add(CONTROL_RANK_LIMIT);
   return allowed;
 }
 
@@ -457,7 +460,7 @@ describe("/method page", () => {
     expect(text).toContain("The test we set before building failed.");
     expect(text).toContain("The bar we wrote down before building was 60% and 10 points ahead. It missed the bar.");
     expect(text).toContain("the check failed as written.");
-    expect(text).toContain("68 scored pairs from 42 complaints");
+    expect(text).toContain("68 complained-about pairs from 42 complaints");
     expect(text).toContain("Sixteen more could not be scored");
     expect(text).toContain("Two more involve a set on a minor stage that the test leaves out, which makes the 86 verified pairs.");
     expect(text).toContain("36 of 39 sets (92%) and 31 of 34 sets (91%)");
@@ -476,7 +479,7 @@ describe("/method page", () => {
     expect(body).toContain("0.500");
   });
 
-  it("prints no number that is not in the figures module", () => {
+  it("prints no number that is not in the figures module or the control acts' limit", () => {
     const allowed = allowedNumerals();
     const printed = pageText().match(NUMERAL) ?? [];
     expect(printed.length).toBeGreaterThan(30);

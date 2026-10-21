@@ -172,15 +172,19 @@ describe("a tile with no Qloo signal", () => {
     expect(open).not.toContain("bg-transparent");
     // The "No Qloo signal" label stays muted (12px, medium); the name and the time take the tile's ink.
     expect(inner).toMatch(/<span data-no-signal="" class="mt-auto block text-xs leading-4 font-medium whitespace-nowrap text-muted-foreground/);
+    // A screen reader hears that the set is left out of the scores, in the board's word.
+    expect(inner).toContain('<span class="sr-only">, not scored. </span>');
+    expect(inner).not.toContain("priced");
     expect(inner).toMatch(/<span class="block font-mono text-xs leading-4 whitespace-nowrap tabular-nums text-foreground">/);
     expect(/<span data-set-name="cy" class="([^"]*)"/.exec(inner)?.[1] ?? "").not.toContain("text-muted-foreground");
     expect(inner).not.toContain("<svg");
     expect(inner).not.toContain("<circle");
   });
 
-  it("says 'No priced signal' on the invented day", () => {
+  it("says 'No taste signal' on the invented day", () => {
     const { inner } = tile(board(90, 60, true), "cy");
-    expect(inner).toContain("No priced signal");
+    expect(inner).toContain("No taste signal");
+    expect(inner).not.toContain("No priced signal");
     expect(inner).not.toContain("No Qloo signal");
   });
 });
@@ -224,6 +228,14 @@ describe("the board's shading", () => {
     expect(source).not.toMatch(/useReveal|data-reveal|cc-link-draw|cc-link-wipe|--reveal-delay|pathLength/);
     // The rank badges keep their hover and focus lift, and stay discs.
     expect(source).toMatch(/"cc-link-badge [^"]*rounded-full[^"]*hover:scale-110 focus-visible:scale-110/);
+  });
+
+  it("numbers a hidden clash's disc in ink and a seen clash's in paper, never raspberry type on the card", () => {
+    // The badges are laid out only once the board is measured, so the source says it for them.
+    const source = readFileSync(join(__dirname, "timetable-grid.tsx"), "utf8");
+    expect(source).toContain('<ClashDisc hidden={hidden} className="absolute top-0.5 left-0.5" />');
+    expect(source).toContain('hidden ? "text-foreground" : "text-primary-foreground"');
+    expect(source).not.toMatch(/hidden \? "text-primary"/);
   });
 
   it("draws priced tiles as the sheet in a hairline, with the stronger edge for a costed clash", () => {

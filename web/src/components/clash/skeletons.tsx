@@ -1,8 +1,11 @@
 import { cn } from "@/lib/utils";
 
-/** A placeholder: the muted step of the ladder, a capsule like every bar and track, or a 12px tile. */
+/**
+ * A placeholder: the muted step of the ladder, a 6px-cornered bar like every bar and track, or a 10px tile. It
+ * holds still: nothing on the page moves before a visitor does something.
+ */
 function Bone({ className, tile = false }: { className?: string; tile?: boolean }) {
-  return <span aria-hidden="true" className={cn("block animate-pulse bg-muted", tile ? "rounded-md" : "rounded-bar", className)} />;
+  return <span aria-hidden="true" className={cn("block bg-muted", tile ? "rounded-md" : "rounded-bar", className)} />;
 }
 
 /** Placeholder for the Clash Budget Index card while a festival day loads: the card's own surface. */

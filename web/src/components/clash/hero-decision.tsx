@@ -56,6 +56,21 @@ export function tasteLineText(taste: number, synthetic: boolean): string {
     : `Taste overlap: ${taste} of 100 on this bill (a rank, not attendance)`;
 }
 
+/**
+ * Which part of the Add / Replace offer to bring into view so that the whole offer shows, its words in the
+ * confirmation's room included: the lowest part when the offer runs past the foot of the viewport, the highest
+ * when it starts above the top (each by the least scroll, "nearest"), none when it is all in view. The offer is
+ * never taller than the viewport (at most three short rows), so bringing one end in brings the whole.
+ */
+export function offerPartToShow<T>(parts: readonly { part: T; top: number; bottom: number }[], viewportHeight: number): T | null {
+  if (parts.length === 0) return null;
+  const lowest = parts.reduce((low, item) => (item.bottom > low.bottom ? item : low));
+  const highest = parts.reduce((high, item) => (item.top < high.top ? item : high));
+  if (lowest.bottom > viewportHeight) return lowest.part;
+  if (highest.top < 0) return highest.part;
+  return null;
+}
+
 /** The pair a hero without a move names in its heading: the decision's clash, else the day's costliest. */
 function namedPair(model: DayGraphModel) {
   return model.threads.find((thread) => thread.lit) ?? model.threads[0] ?? null;
@@ -186,19 +201,24 @@ export function HeroDecision({ model, copy, view, onOpenMove, plan, kept, check,
     return () => window.clearTimeout(timer);
   }, [sentKey]);
   // Focus follows the offer: to Add when it opens, to Replace when an Add is refused (the way still open). The
-  // offer takes the actions' own places, so below 380 px Replace sits where the paste was, which can be under the
-  // fold: the whole offer then comes into view by the least scroll ("nearest").
+  // offer takes the actions' own places (below 380 px Replace sits where the paste was, under the confirmation's
+  // room), which on a short phone can run under the fold: the whole offer, Add, Replace and the words in that
+  // room, then comes into view by the least scroll ("nearest"), at once under reduced motion.
+  const groupRef = useRef<HTMLDivElement | null>(null);
   const offerFocus = offerShown && (offerShown.state === "open" || offerShown.state === "rejected") ? `${offer?.key}:${offerShown.state}` : null;
   useEffect(() => {
     if (!offerFocus) return;
     const refused = offerFocus.endsWith(":rejected");
     const target = refused ? replaceRef.current : (addRef.current ?? replaceRef.current);
     target?.focus({ preventScroll: true });
-    const last = replaceRef.current;
-    if (!last) return;
-    const box = last.getBoundingClientRect();
-    if (box.top >= 0 && box.bottom <= window.innerHeight) return;
-    last.scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" });
+    const words = groupRef.current?.querySelector<HTMLElement>("[data-keep-offer-status]") ?? null;
+    const parts = [addRef.current, replaceRef.current, words].flatMap((element) => {
+      if (!element) return [];
+      const box = element.getBoundingClientRect();
+      return [{ part: element, top: box.top, bottom: box.bottom }];
+    });
+    const part = offerPartToShow(parts, window.innerHeight);
+    part?.scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" });
   }, [offerFocus]);
   // Escape puts the offer away and hands focus back to Keep, which is drawn again in its place.
   const keepRef = useRef<HTMLButtonElement | null>(null);
@@ -282,7 +302,7 @@ export function HeroDecision({ model, copy, view, onOpenMove, plan, kept, check,
   const drawn = view === "published" && move ? (synthetic ? "invented" : "published") : null;
 
   return (
-    <div id={DECISION_ID} data-hero-group="" className={cn("min-w-0", className)}>
+    <div ref={groupRef} id={DECISION_ID} data-hero-group="" className={cn("min-w-0", className)}>
       {/* The move lead: 20 px from 1024 px; below it the drawing's toggle names the move, so it is read only.
           scratch-plan.tsx scrolls to and focuses this heading. */}
       <h2

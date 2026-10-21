@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useRef, useState, type ReactNode, type Ref } from "react";
+import { TriangleAlert } from "lucide-react";
 
 import {
   CHECK_COPY,
@@ -8,7 +9,11 @@ import {
   clockWindow,
   formatClock,
   minutesLabel,
+  noBreaksLine,
   pairCountLabel,
+  separatorHint,
+  skippedMessages,
+  skippedSentence,
   type CheckReport,
   type RuleBreak,
   type SharedPair,
@@ -222,6 +227,43 @@ const JUMP =
   "inline-flex min-h-10 items-center gap-2 rounded-md border border-border px-3 text-[0.8125rem] font-semibold text-muted-foreground hover:border-border-strong hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 
 /**
+ * What a partial check left out, first in its results: the skipped sentence ("1 line skipped and not
+ * checked: line 4. The other 11 sets were checked."), each skipped line's own message (five, then "And n
+ * more problems."), the separator hint when the lines look separated by semicolons, and every pair rule
+ * that names an act found only on a skipped line. An inset note in ink on the 10px corner: a line that
+ * was not read is neither shared time nor a rule break. Not a live region: the page's polite region says
+ * the sentence once with the counts.
+ */
+export function SkippedLines({ report }: { report: Pick<CheckReport, "sets" | "skipped" | "uncheckedPairs"> }) {
+  const skipped = report.skipped ?? [];
+  const sentence = skippedSentence(skipped, report.sets.length);
+  if (!sentence) return null;
+  const hint = separatorHint(skipped);
+  const pairs = report.uncheckedPairs ?? [];
+  return (
+    <div data-skipped="" className="rounded-md border border-border-strong bg-card p-4 text-sm leading-relaxed print:hidden">
+      <p className="flex items-start gap-2 text-[0.9375rem] leading-snug font-semibold break-words">
+        <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+        <span>{sentence}</span>
+      </p>
+      <ul className="mt-2 list-disc space-y-1 pl-5 break-words">
+        {skippedMessages(skipped).map((message, index) => (
+          <li key={index}>{message}</li>
+        ))}
+      </ul>
+      {hint ? <p className="mt-2 break-words">{hint}</p> : null}
+      {pairs.length > 0 ? (
+        <ul className="mt-2 space-y-1 break-words">
+          {pairs.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * The check's state as one plain 13px muted label: "Preview" before a check (or once the text has
  * changed since it), "Checked" after it. The word carries the state; no glyph repeats it.
  */
@@ -407,7 +449,8 @@ export function CheckResults({
           Rule breaks ({breaks.length})
         </h2>
         {breaks.length === 0 ? (
-          <p className="mt-3">{CHECK_COPY.noBreaks}</p>
+          // While a line is skipped, the sentence says how many sets were checked; it never stands alone.
+          <p className="mt-3">{noBreaksLine(report)}</p>
         ) : (
           <ol className="mt-3 divide-y divide-border border-t border-border print:mt-[4pt] print:divide-y-0 print:border-0">
             {breaks.map((item, index) => {

@@ -9,6 +9,19 @@
 /** Where a value shown in the UI came from. */
 export type Provenance = "qloo" | "derived" | "llm" | "recorded";
 
+/**
+ * How a replayed request was served when its run was recorded, from the saved event's own flags. Each
+ * field is null where the saved event did not say.
+ */
+export type CapturedProvenance = {
+  /** Served from the server's cache when the run was recorded. */
+  cached: boolean | null;
+  /** Served from a saved fixture when the run was recorded, not from Qloo. */
+  recorded: boolean | null;
+  /** When the run was recorded (ISO 8601). */
+  at: string | null;
+};
+
 export type QlooRequestRecord = {
   path: string; // e.g. "/v2/insights"
   params: Record<string, string>; // never includes the key
@@ -16,9 +29,29 @@ export type QlooRequestRecord = {
   latency_ms: number;
   cached: boolean;
   request_id?: string; // x-qloo-request-id
-  /** Served from a saved fixture instead of a live Qloo call (the backend flags these). */
+  /**
+   * Served from a saved fixture instead of a live Qloo call (the backend flags these). Kept as the event
+   * states it; missing when the event does not say.
+   */
   recorded?: boolean;
+  /** On a replayed request, how it was served when its run was recorded. */
+  captured?: CapturedProvenance;
 };
+
+/**
+ * Whether a request reached Qloo live when it was recorded: not served from the cache and not from a saved
+ * fixture, both stated. Reads `captured` when present (a replayed request), else the record's own flags.
+ * True only when both are stated false; false when either is true; null when either is missing, which is
+ * unknown and never shown as live.
+ */
+export function liveWhenRecorded(
+  record: Pick<QlooRequestRecord, "cached" | "recorded" | "captured">,
+): boolean | null {
+  const { cached, recorded } = record.captured ?? record;
+  if (cached === true || recorded === true) return false;
+  if (cached === false && recorded === false) return true;
+  return null;
+}
 
 export type RunMode = "live" | "recorded";
 export type StepStatus = "running" | "done" | "error" | "skipped";
@@ -173,8 +206,28 @@ function parseRequestRecord(raw: unknown, at: string): QlooRequestRecord {
   };
   const requestId = optString(raw, "request_id", at);
   if (requestId) record.request_id = requestId;
-  if (raw.recorded === true) record.recorded = true;
+  if (typeof raw.recorded === "boolean") record.recorded = raw.recorded;
+  const captured = parseCaptured(raw.captured);
+  if (captured) record.captured = captured;
   return record;
+}
+
+/**
+ * A request's capture provenance, or undefined when it is missing or malformed (dropped, never thrown).
+ * A field that is missing or null reads as null: the saved event did not say.
+ */
+function parseCaptured(raw: unknown): CapturedProvenance | undefined {
+  if (!isRecord(raw)) return undefined;
+  const unsaid = (value: unknown) => value === undefined || value === null;
+  const { cached, recorded, at } = raw;
+  if (!unsaid(cached) && typeof cached !== "boolean") return undefined;
+  if (!unsaid(recorded) && typeof recorded !== "boolean") return undefined;
+  if (!unsaid(at) && typeof at !== "string") return undefined;
+  return {
+    cached: typeof cached === "boolean" ? cached : null,
+    recorded: typeof recorded === "boolean" ? recorded : null,
+    at: typeof at === "string" ? at : null,
+  };
 }
 
 /** A question needs at least one way to answer it, and each answer needs its own id. */

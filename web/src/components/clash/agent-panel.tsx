@@ -1,6 +1,17 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import { ArrowRight, Check, CornerDownLeft, History, LoaderCircle, RotateCcw, SkipForward, X } from "lucide-react";
 
 import { ErrorState, MockBadge, ProvenanceChip, TraceDrawer, useAgentRun } from "@/components/kernel";
@@ -30,7 +41,7 @@ import { isRecord } from "@/lib/events";
 import { formatLatency, humanizeIdentifier, pluralize } from "@/lib/format";
 import { clockMinutes, fromRecordedRun } from "@/lib/moves";
 import type { Festival, Preset } from "@/lib/preset";
-import { orderRecordings, replayFinalState, type RecordedRun } from "@/lib/recorded-run";
+import { askedQlooWhenRecorded, orderRecordings, replayFinalState, savedRequests, type RecordedRun } from "@/lib/recorded-run";
 import type { RunResult, ToolCallState } from "@/lib/run-state";
 import {
   checkAdd,
@@ -53,7 +64,7 @@ import { RecordedNotice, RecordedRuns, recordedQlooCalls } from "./recorded-runs
 import { AgentSkeleton } from "./skeletons";
 import type { SeedMode } from "./try-a-move";
 import { checkPlan } from "./use-moves";
-import { useRecordings } from "./use-recordings";
+import { useOtherDaysRecordings, useRecordings } from "./use-recordings";
 
 const TOOL_LABELS: Record<string, string> = {
   list_timetable: "Read the timetable",
@@ -137,27 +148,71 @@ export function recordingsQlooLine(runs: readonly RecordedRun[], synthetic = fal
     : "These runs send no new Qloo request; they test moves with this day’s saved reading.";
 }
 
+/** A published festival day, as the page's day list names it. */
+export type PublishedDay = { id: string; title: string };
+
 /**
- * A pointer to another published day whose recorded runs asked Qloo, read only from recordings this page has
- * already loaded (a day the visitor opened before): "Riot Fest 2026, Sunday has a recorded run that sent 1 Qloo
- * request; switch the day to see it." Null when no loaded day has such a run, so nothing is fetched for it and
- * nothing is said without the count. Never on the invented day.
+ * Whether the shown day may point to another day's run that asked Qloo: a published day (one the page's day list
+ * names, never the invented one) whose recorded runs are loaded and hold no Qloo request record at all, so its
+ * runs line says they send no new Qloo request. Only then is another day's recordings asked for.
  */
-export function otherDayPointer(
-  others: readonly { title: string; runs: readonly RecordedRun[] }[] | undefined,
-  synthetic = false,
-): string | null {
-  if (synthetic || !others) return null;
-  for (const day of others) {
-    const asking = day.runs.map(recordedQlooCalls).filter((calls) => calls > 0);
-    if (asking.length === 0) continue;
-    if (asking.length === 1) {
-      return `${day.title} has a recorded run that sent ${pluralize(asking[0], "Qloo request")}; switch the day to see it.`;
-    }
-    return `${day.title} has ${asking.length} recorded runs that sent Qloo requests; switch the day to see them.`;
+export function mayPointElsewhere(
+  presetId: string,
+  synthetic: boolean,
+  publishedDays: readonly PublishedDay[],
+  runs: readonly RecordedRun[],
+): boolean {
+  if (synthetic || !publishedDays.some((day) => day.id === presetId)) return false;
+  if (recordingsQlooLine(runs) === null) return false;
+  return runs.every((run) => savedRequests(run).length === 0);
+}
+
+/**
+ * The other published day the pointer names: the first, in the page's day list, whose loaded recordings hold a
+ * run with at least one request that reached Qloo live while it was recorded (`askedQlooWhenRecorded`, read from
+ * the saved events; a cached, fixture-served or unstated request never counts). Null when none does.
+ */
+export function pointerDay(
+  publishedDays: readonly PublishedDay[],
+  shownId: string,
+  loaded: ReadonlyMap<string, readonly RecordedRun[]>,
+): PublishedDay | null {
+  for (const day of publishedDays) {
+    if (day.id === shownId) continue;
+    if ((loaded.get(day.id) ?? []).some(askedQlooWhenRecorded)) return day;
   }
   return null;
 }
+
+/** The pointer's sentence after the runs line: "A run on Riot Fest 2026, Sunday asked Qloo while it was recorded." */
+export function askedElsewhereSentence(title: string): string {
+  return `A run on ${title} asked Qloo while it was recorded.`;
+}
+
+/** The pointer's one control, which opens that day's agent section. */
+export const SEE_THAT_RUN = "See that run";
+
+/** Where "See that run" goes: the named day, at its agent section. */
+export function agentSectionHref(presetId: string): string {
+  return `/?preset=${encodeURIComponent(presetId)}#agent`;
+}
+
+/**
+ * The runs line as it reads with the pointer: the recordings' own sentence unchanged, then the pointer's
+ * ("These runs send no new Qloo request; they test moves with this day’s saved reading. A run on Riot Fest 2026,
+ * Sunday asked Qloo while it was recorded."); "See that run" follows it. The runs line alone without a pointer.
+ */
+export function pointerLine(runsLine: string, pointer: PublishedDay | null): string {
+  return pointer ? `${runsLine} ${askedElsewhereSentence(pointer.title)}` : runsLine;
+}
+
+/** No published days passed: no pointer. */
+const NO_DAYS: readonly PublishedDay[] = [];
+
+/** The day "See that run" opened, so its agent section is brought into view once that day is on screen. */
+let openedFromPointer: string | null = null;
+/** Whether this page load's address asked for the agent section (`#agent`) has been answered. */
+let initialHashAnswered = false;
 
 /** The trace trigger of a recorded run: its Qloo request count is the label, read from the recording. */
 export function requestsLabel(count: number): string {
@@ -207,13 +262,14 @@ export function recordedQloo(
 }
 
 /**
- * Under a run whose tested place moves another set than the decision card's: why their index changes differ.
- * The card works on the day's costliest clash a move can lower (backend/app/decision.py:1-4); a run looks for
- * the lowest-index place for the set it was asked about. Null when the run tested no place, or the same set.
+ * Under a run whose tested place moves another set than the move at the top of the page (internally the decision
+ * card's): why their index changes differ. That move works on the day's costliest clash a move can lower
+ * (backend/app/decision.py:1-4); a run looks for a place that lowers the index for the set it was asked about.
+ * Null when the run tested no place, or the same set.
  */
 export function runVersusCard(place: Pick<AgentPlace, "act" | "move"> | null, cardActId: string | null): string | null {
   if (!place || !cardActId || place.move.actId === cardActId) return null;
-  return `This run looked for a lower-index place for ${place.act}; the decision card works on the day’s costliest clash that a move can lower, so their index changes differ.`;
+  return `This run looked for a place for ${place.act} that lowers the index; the move at the top of the page works on the day’s costliest clash that a move can lower, so their index changes differ.`;
 }
 
 /** A place an agent run tested and the engine found legal, as the plan keeps it, with what to print. */
@@ -347,49 +403,100 @@ function AgentText({ text }: { text: string }) {
 /**
  * What the agent did, one line per tool call, so the answer can be checked against its steps. M10: the
  * exchange's left rule fills beside the steps one step at a time as each finishes, so it follows the
- * stream (live or replayed) rather than a timer, and each step's dot pops in as the step appears.
+ * stream (live or replayed) rather than a timer.
+ *
+ * `reserve` (a replay): the run's steps as it ends. Every step's line is laid out from the first beat, at its
+ * final size, and shown in place when its step arrives (a step not there yet keeps its place, hidden; a running
+ * step keeps its summary's room), so nothing under the steps moves while the replay plays. `still` (a run shown
+ * before anything is pressed, or a measure of one): the rail is drawn full with no transition, so nothing moves
+ * on first paint.
  */
-function ToolTrail({ calls }: { calls: readonly ToolCallState[] }) {
-  if (calls.length === 0) return null;
+function ToolTrail({
+  calls,
+  reserve,
+  still = false,
+  waiting = null,
+}: {
+  calls: readonly ToolCallState[];
+  reserve?: readonly ToolCallState[];
+  still?: boolean;
+  /** While a replay waits for its next step: what it is doing, said in that step's place until the step arrives. */
+  waiting?: string | null;
+}) {
+  const rows = useMemo(() => {
+    if (!reserve) return calls.map((call) => ({ call, final: undefined as ToolCallState | undefined }));
+    const live = new Map(calls.map((call) => [call.id, call]));
+    const planned = new Set(reserve.map((final) => final.id));
+    return [
+      ...reserve.map((final) => ({ call: live.get(final.id), final })),
+      ...calls.filter((call) => !planned.has(call.id)).map((call) => ({ call, final: undefined })),
+    ];
+  }, [calls, reserve]);
+  if (rows.length === 0) return null;
+  const arrived = rows.filter((row) => row.call !== undefined).length;
+  const next = rows.findIndex((row) => row.call === undefined);
   return (
     <ol aria-label="What the agent did" className="space-y-1.5">
-      {calls.map((call, i) => (
-        <li key={call.id} className="relative flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm">
-          <span
-            aria-hidden="true"
-            data-done={call.status === "running" ? undefined : ""}
-            className={cn(
-              // Over the exchange's own left rule (`border-l-2` with `pl-4`), which it fills as steps finish.
-              "cc-rail absolute top-0 -left-[1.125rem] w-0.5 bg-border-strong",
-              i < calls.length - 1 ? "-bottom-1.5" : "bottom-0",
-            )}
-          />
-          <span
-            aria-hidden="true"
-            className={cn(
-              "grid size-5 shrink-0 place-items-center rounded-full border",
-              call.status === "running" && "border-foreground text-foreground",
-              call.status === "done" && "border-success bg-success text-background",
-              call.status === "error" && "border-destructive bg-destructive text-primary-foreground",
-            )}
+      {rows.map(({ call, final }, i) => {
+        // A step not there yet keeps its final line, hidden: the same words, so the same size.
+        const view = (call ?? final) as ToolCallState;
+        const pending = call === undefined;
+        const summary = view.summary ?? null;
+        const roomFor = !summary && final?.summary ? final.summary : null;
+        return (
+          <li
+            key={view.id}
+            className={cn("relative flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm", pending && "invisible")}
           >
-            {call.status === "running" ? (
-              <LoaderCircle className="size-3 motion-safe:animate-spin" />
-            ) : call.status === "done" ? (
-              <Check className="size-3" />
-            ) : (
-              <X className="size-3" />
-            )}
-          </span>
-          <span className="font-semibold">{toolLabel(call.tool)}</span>
-          {/* The step's label, right after its name, so a long summary wraps under both rather than pushing it to a line of its own. */}
-          <ProvenanceChip provenance={call.provenance} size="sm" />
-          {call.summary ? <span className="min-w-0 text-muted-foreground">{call.summary}</span> : null}
-          <span className="sr-only">
-            {call.status === "running" ? "(running)" : call.status === "error" ? "(failed)" : ""}
-          </span>
-        </li>
-      ))}
+            {pending && i === next && waiting ? (
+              // Shown over the next step's hidden line, so it takes no room of its own and nothing moves when it goes.
+              <span aria-hidden="true" className="visible absolute inset-x-0 top-0 flex h-5 items-center gap-2 text-muted-foreground">
+                <LoaderCircle className="size-4 shrink-0 motion-safe:animate-spin" />
+                {waiting}
+              </span>
+            ) : null}
+            <span
+              aria-hidden="true"
+              data-done={still || (!pending && view.status !== "running") ? "" : undefined}
+              className={cn(
+                // Over the exchange's own left rule (`border-l-2` with `pl-4`), which it fills as steps finish.
+                "absolute top-0 -left-[1.125rem] w-0.5 bg-border-strong",
+                !still && "cc-rail",
+                i < (still ? rows.length : arrived) - 1 ? "-bottom-1.5" : "bottom-0",
+              )}
+            />
+            <span
+              aria-hidden="true"
+              className={cn(
+                "grid size-5 shrink-0 place-items-center rounded-full border",
+                view.status === "running" && "border-foreground text-foreground",
+                view.status === "done" && "border-success bg-success text-background",
+                view.status === "error" && "border-destructive bg-destructive text-primary-foreground",
+              )}
+            >
+              {view.status === "running" ? (
+                <LoaderCircle className="size-3 motion-safe:animate-spin" />
+              ) : view.status === "done" ? (
+                <Check className="size-3" />
+              ) : (
+                <X className="size-3" />
+              )}
+            </span>
+            <span className="font-semibold">{toolLabel(view.tool)}</span>
+            {/* The step's label, right after its name, so a long summary wraps under both rather than pushing it to a line of its own. */}
+            <ProvenanceChip provenance={view.provenance} size="sm" />
+            {summary ? <span className="min-w-0 text-muted-foreground">{summary}</span> : null}
+            {roomFor ? (
+              <span aria-hidden="true" className="invisible min-w-0 text-muted-foreground">
+                {roomFor}
+              </span>
+            ) : null}
+            <span className="sr-only">
+              {view.status === "running" ? "(running)" : view.status === "error" ? "(failed)" : ""}
+            </span>
+          </li>
+        );
+      })}
     </ol>
   );
 }
@@ -806,6 +913,226 @@ const checkNothing = (): Promise<PlanAnswer> => Promise.resolve({ status: "error
 /** An exchange in the panel: a replayed one keeps the recorded run it plays. */
 type PanelExchange = Exchange & { recording?: RecordedRun };
 
+/** A press that does nothing: the measured copy of a finished replay draws Start over without acting on it. */
+const noop = () => {};
+
+/** What an exchange's answer shows, below its question; shared by the exchange on screen and its measured copy. */
+type ExchangeBodyProps = {
+  exchange: PanelExchange;
+  /** The run as it stands (the exchange on screen), or as it ends (the measured copy of a replay). */
+  state: PanelExchange["state"];
+  latest: boolean;
+  range: ScaleRange;
+  festival: Festival;
+  day: number;
+  kept: readonly StackStep[];
+  onKeepPlace?: KeepPlace;
+  check: (steps: readonly StackStep[]) => Promise<PlanAnswer>;
+  cardActId: string | null;
+  synthetic: boolean;
+  onRetry: () => void;
+  onWatchRecorded?: () => void;
+  onStartOver?: () => void;
+  /** A replay: the steps as the run ends, so each step's line keeps its place until it arrives (`ToolTrail`). */
+  reserveSteps?: readonly ToolCallState[];
+  /** The measured copy: rails drawn full with no transition. */
+  still?: boolean;
+};
+
+function ExchangeBody({
+  exchange,
+  state,
+  latest,
+  range,
+  festival,
+  day,
+  kept,
+  onKeepPlace,
+  check,
+  cardActId,
+  synthetic,
+  onRetry,
+  onWatchRecorded,
+  onStartOver,
+  reserveSteps,
+  still = false,
+}: ExchangeBodyProps) {
+  const { recording } = exchange;
+  const reply = useMemo(() => readClashReply(state.results), [state.results]);
+  // The place to keep comes only from the finished run's own tool results, never from its text.
+  const tested = useMemo(
+    () => (state.status === "done" ? keepableMove(state.results, festival, day) : null),
+    [state.status, state.results, festival, day],
+  );
+  // A place a recorded run tested carries that source into the plan, so the plan list can say where it came from.
+  const place = useMemo(
+    () => (onKeepPlace ? placeToKeep(tested, recording !== undefined) : null),
+    [onKeepPlace, tested, recording],
+  );
+  const running = state.status === "running";
+  const text = reply?.text || state.text;
+  const qlooCalls = state.summary?.qlooCalls ?? state.toolCalls.reduce((sum, call) => sum + call.requests.length, 0);
+  // A recorded run's Qloo use, read from its own recording: "Qloo requests in this run: 0" and, when it priced
+  // every place it tested, where that taste came from. A run with requests keeps the drawer's label and count.
+  const qloo = state.status === "done" ? recordedQloo(recording, reply, synthetic) : { label: null, savedReading: false };
+  const versus = runVersusCard(tested, cardActId);
+  // What the run is doing while it waits: said in the next step's place while a replay has steps still to come
+  // (so the words never move), else under the steps, as for a live run.
+  const waitingLabel = state.toolCalls.length === 0 ? "Reading the timetable" : "Working";
+  const trailWaiting =
+    running &&
+    !text &&
+    reserveSteps !== undefined &&
+    reserveSteps.some((step) => !state.toolCalls.some((call) => call.id === step.id));
+
+  return (
+    <div className="space-y-4 border-l-2 border-border pl-4">
+      {recording ? <RecordedNotice capturedAt={recording.capturedAt} /> : null}
+
+      <ToolTrail
+        calls={state.toolCalls}
+        reserve={reserveSteps}
+        still={still}
+        waiting={trailWaiting ? waitingLabel : null}
+      />
+
+      {running && !text && !trailWaiting ? (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <LoaderCircle aria-hidden="true" className="size-4 motion-safe:animate-spin" />
+          {waitingLabel}
+        </p>
+      ) : null}
+
+      {text ? (
+        <div>
+          <div className="mb-1.5 flex items-center gap-2">
+            <span className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Agent</span>
+            <ProvenanceChip provenance="llm" size="sm" />
+          </div>
+          <AgentText text={text} />
+        </div>
+      ) : null}
+
+      {reply && reply.whatIfs.length + reply.explains.length + reply.reslots.length + reply.moveOptions.length > 0 ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {reply.explains.map((explain, i) => (
+            <ExplainCard
+              key={`e${i}`}
+              explain={explain}
+              recorded={exchange.recording !== undefined || exchange.recorded === true}
+            />
+          ))}
+          {reply.moveOptions.map((options, i) => (
+            <MoveOptionsCard key={`m${i}`} options={options} range={range} />
+          ))}
+          {reply.whatIfs
+            .filter((whatIf) => whatIf.allowed)
+            .map((whatIf, i) => (
+              <WhatIfCard key={`w${i}`} whatIf={whatIf} range={range} />
+            ))}
+          {reply.whatIfs.some((whatIf) => !whatIf.allowed) ? (
+            <RuledOutCard whatIfs={reply.whatIfs.filter((whatIf) => !whatIf.allowed)} festival={festival} />
+          ) : null}
+          {reply.reslots.map((reslot, i) => (
+            <ReslotCard key={`r${i}`} reslot={reslot} range={range} />
+          ))}
+        </div>
+      ) : null}
+
+      {versus ? <p className="max-w-prose text-sm text-muted-foreground">{versus}</p> : null}
+
+      {place && onKeepPlace ? <KeepThisPlace place={place} kept={kept} onKeep={onKeepPlace} check={check} /> : null}
+
+      {state.status === "error" && state.error ? (
+        <div>
+          <ErrorState
+            title="The agent could not answer"
+            message={state.error.message}
+            retryable={latest && state.error.retryable}
+            onRetry={onRetry}
+          />
+          {latest && onWatchRecorded ? (
+            <Button
+              type="button"
+              variant="ruled"
+              size="sm"
+              className="mt-2 h-auto px-0 py-1"
+              onClick={onWatchRecorded}
+            >
+              <History aria-hidden="true" />
+              Watch a recorded run instead
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {state.status === "cancelled" ? <p className="text-sm text-muted-foreground">Stopped.</p> : null}
+
+      {qloo.savedReading ? <p className="max-w-prose text-sm text-muted-foreground">{SAVED_READING_LINE}</p> : null}
+
+      {state.status !== "running" && (state.toolCalls.length > 0 || state.summary) ? (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+          {state.summary ? (
+            <span>
+              {pluralize(state.toolCalls.length, "step")} · {formatLatency(state.summary.elapsedMs)}
+            </span>
+          ) : null}
+          <TraceDrawer
+            toolCalls={state.toolCalls}
+            runId={state.runId}
+            mode={state.mode}
+            qlooCalls={qlooCalls}
+            triggerVariant="ghost"
+            triggerClassName="h-8 px-2 text-xs"
+            triggerLabel={qloo.label ?? usedTitle(synthetic)}
+            countInLabel={qloo.label !== null}
+            title={usedTitle(synthetic)}
+            synthetic={synthetic}
+            savedReading={qloo.savedReading}
+            description={
+              recording
+                ? "The Qloo requests this run made when it was recorded. They are listed from the saved stream; none were made just now."
+                : "The Qloo requests this answer made. Scores and what-ifs reuse the day's saved Qloo data; explaining a clash asks Qloo live for the taste both audiences share."
+            }
+          />
+          {latest && onStartOver ? (
+            <Button type="button" variant="ghost" size="sm" onClick={onStartOver}>
+              <RotateCcw aria-hidden="true" /> Start over
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Holds a replay's answer at the size it ends at from its first beat, so nothing under it moves while it plays:
+ * `measure` (the answer as the run ends) is laid out once, hidden and in the answer's own column, its height read
+ * before the browser paints, and then removed; the answer keeps that height as its least while it is the exchange
+ * on show. Without `measure` the answer takes its own height, as a live run's does.
+ */
+function HeldHeight({ measure, children }: { measure: ReactNode | null; children: ReactNode }) {
+  const [height, setHeight] = useState<number | null>(null);
+  const measureRef = useRef<HTMLDivElement | null>(null);
+  const measuring = measure !== null && height === null;
+  useLayoutEffect(() => {
+    if (measuring && measureRef.current) setHeight(measureRef.current.offsetHeight);
+  }, [measuring]);
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)]">
+      <div className="col-start-1 row-start-1" style={measure !== null && height !== null ? { minHeight: height } : undefined}>
+        {children}
+      </div>
+      {measuring ? (
+        <div ref={measureRef} aria-hidden="true" inert className="invisible col-start-1 row-start-1 self-start">
+          {measure}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ExchangeView({
   exchange,
   latest,
@@ -835,7 +1162,7 @@ function ExchangeView({
   onKeepPlace?: KeepPlace;
   /** Prices a whole plan before Add keeps anything (the page's /whatif). */
   check?: (steps: readonly StackStep[]) => Promise<PlanAnswer>;
-  /** The set the decision card moves, so a run that moved another set can say why the two differ. */
+  /** The set the move at the top of the page moves, so a run that moved another set can say why the two differ. */
   cardActId?: string | null;
   /** The invented day: no Qloo wording. */
   synthetic?: boolean;
@@ -848,159 +1175,59 @@ function ExchangeView({
   onStartOver?: () => void;
 }) {
   const { state, recording } = exchange;
-  const reply = useMemo(() => readClashReply(state.results), [state.results]);
-  // The place to keep comes only from the finished run's own tool results, never from its text.
-  const tested = useMemo(
-    () => (state.status === "done" ? keepableMove(state.results, festival, day) : null),
-    [state.status, state.results, festival, day],
-  );
-  // A place a recorded run tested carries that source into the plan, so the plan list can say where it came from.
-  const place = useMemo(
-    () => (onKeepPlace ? placeToKeep(tested, recording !== undefined) : null),
-    [onKeepPlace, tested, recording],
-  );
   const running = state.status === "running";
-  const text = reply?.text || state.text;
-  const qlooCalls = state.summary?.qlooCalls ?? state.toolCalls.reduce((sum, call) => sum + call.requests.length, 0);
-  // A recorded run's Qloo use, read from its own recording: "Qloo requests in this run: 0" and, when it priced
-  // every place it tested, where that taste came from. A run with requests keeps the drawer's label and count.
-  const qloo = state.status === "done" ? recordedQloo(recording, reply, synthetic) : { label: null, savedReading: false };
-  const versus = runVersusCard(tested, cardActId);
+  // A replay's end is known before it plays: the same saved events, through the same reducer.
+  const final = useMemo(() => (recording ? replayFinalState(recording) : null), [recording]);
+  const body: ExchangeBodyProps = {
+    exchange,
+    state,
+    latest,
+    range,
+    festival,
+    day,
+    kept,
+    onKeepPlace,
+    check,
+    cardActId,
+    synthetic,
+    onRetry,
+    onWatchRecorded,
+    onStartOver,
+  };
+  // The replay on show is held at the size it ends at: measured as it will stand once finished, Start over
+  // included (it is offered on the latest run as soon as the replay ends).
+  const measure =
+    final && latest ? (
+      <ExchangeBody {...body} state={final} onStartOver={onStartOver ?? noop} onRetry={noop} still />
+    ) : null;
 
   return (
-    <li id={`agent-${exchange.id}`} className="space-y-4">
+    // Brought to the top when it starts, below the page's own scroll padding and, from 768 px, clear of the
+    // sticky section nav, so its question and Skip are in view.
+    <li id={`agent-${exchange.id}`} className="scroll-mt-3 space-y-4 md:scroll-mt-10">
       <div>
-        <p aria-hidden="true" className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
-          {recording ? "Asked" : "You asked"}
-        </p>
+        {/* A replay's label shares its line with Skip, in a line that keeps Skip's height once it goes, so the
+            answer below never moves up when the replay ends. */}
+        <div className={cn("flex items-end justify-between gap-3", recording && "min-h-9")}>
+          <p aria-hidden="true" className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
+            {recording ? "Asked" : "You asked"}
+          </p>
+          {recording && running && latest ? (
+            <Button type="button" variant="ghost" size="sm" onClick={onSkip}>
+              <SkipForward aria-hidden="true" />
+              Skip to the answer
+            </Button>
+          ) : null}
+        </div>
         <p className="mt-1 max-w-prose border-l-2 border-foreground pl-4 text-[0.9375rem] leading-relaxed text-foreground break-words">
           <span className="sr-only">{recording ? "The recorded run was asked: " : "You asked: "}</span>
           {exchange.message}
         </p>
       </div>
 
-      <div className="space-y-4 border-l-2 border-border pl-4">
-        {recording ? (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <RecordedNotice capturedAt={recording.capturedAt} />
-            {running && latest ? (
-              <Button type="button" variant="ghost" size="sm" onClick={onSkip}>
-                <SkipForward aria-hidden="true" />
-                Skip to the answer
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-
-        <ToolTrail calls={state.toolCalls} />
-
-        {running && !text ? (
-          <p className="flex items-center gap-2 text-sm text-muted-foreground">
-            <LoaderCircle aria-hidden="true" className="size-4 motion-safe:animate-spin" />
-            {state.toolCalls.length === 0 ? "Reading the timetable" : "Working"}
-          </p>
-        ) : null}
-
-        {text ? (
-          <div>
-            <div className="mb-1.5 flex items-center gap-2">
-              <span className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Agent</span>
-              <ProvenanceChip provenance="llm" size="sm" />
-            </div>
-            <AgentText text={text} />
-          </div>
-        ) : null}
-
-        {reply && reply.whatIfs.length + reply.explains.length + reply.reslots.length + reply.moveOptions.length > 0 ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {reply.explains.map((explain, i) => (
-              <ExplainCard
-                key={`e${i}`}
-                explain={explain}
-                recorded={exchange.recording !== undefined || exchange.recorded === true}
-              />
-            ))}
-            {reply.moveOptions.map((options, i) => (
-              <MoveOptionsCard key={`m${i}`} options={options} range={range} />
-            ))}
-            {reply.whatIfs
-              .filter((whatIf) => whatIf.allowed)
-              .map((whatIf, i) => (
-                <WhatIfCard key={`w${i}`} whatIf={whatIf} range={range} />
-              ))}
-            {reply.whatIfs.some((whatIf) => !whatIf.allowed) ? (
-              <RuledOutCard whatIfs={reply.whatIfs.filter((whatIf) => !whatIf.allowed)} festival={festival} />
-            ) : null}
-            {reply.reslots.map((reslot, i) => (
-              <ReslotCard key={`r${i}`} reslot={reslot} range={range} />
-            ))}
-          </div>
-        ) : null}
-
-        {versus ? <p className="max-w-prose text-sm text-muted-foreground">{versus}</p> : null}
-
-        {place && onKeepPlace ? <KeepThisPlace place={place} kept={kept} onKeep={onKeepPlace} check={check} /> : null}
-
-        {state.status === "error" && state.error ? (
-          <div>
-            <ErrorState
-              title="The agent could not answer"
-              message={state.error.message}
-              retryable={latest && state.error.retryable}
-              onRetry={onRetry}
-            />
-            {latest && onWatchRecorded ? (
-              <Button
-                type="button"
-                variant="ruled"
-                size="sm"
-                className="mt-2 h-auto px-0 py-1"
-                onClick={onWatchRecorded}
-              >
-                <History aria-hidden="true" />
-                Watch a recorded run instead
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-
-        {state.status === "cancelled" ? <p className="text-sm text-muted-foreground">Stopped.</p> : null}
-
-        {qloo.savedReading ? <p className="max-w-prose text-sm text-muted-foreground">{SAVED_READING_LINE}</p> : null}
-
-        {state.status !== "running" && (state.toolCalls.length > 0 || state.summary) ? (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
-            {state.summary ? (
-              <span>
-                {pluralize(state.toolCalls.length, "step")} · {formatLatency(state.summary.elapsedMs)}
-              </span>
-            ) : null}
-            <TraceDrawer
-              toolCalls={state.toolCalls}
-              runId={state.runId}
-              mode={state.mode}
-              qlooCalls={qlooCalls}
-              triggerVariant="ghost"
-              triggerClassName="h-8 px-2 text-xs"
-              triggerLabel={qloo.label ?? usedTitle(synthetic)}
-              countInLabel={qloo.label !== null}
-              title={usedTitle(synthetic)}
-              synthetic={synthetic}
-              savedReading={qloo.savedReading}
-              description={
-                recording
-                  ? "The Qloo requests this run made when it was recorded. They are listed from the saved stream; none were made just now."
-                  : "The Qloo requests this answer made. Scores and what-ifs reuse the day's saved Qloo data; explaining a clash asks Qloo live for the taste both audiences share."
-              }
-            />
-            {latest && onStartOver ? (
-              <Button type="button" variant="ghost" size="sm" onClick={onStartOver}>
-                <RotateCcw aria-hidden="true" /> Start over
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
+      <HeldHeight measure={measure}>
+        <ExchangeBody {...body} reserveSteps={final?.toolCalls} />
+      </HeldHeight>
     </li>
   );
 }
@@ -1071,7 +1298,7 @@ export function AgentHeading({
             <MockBadge />
           </p>
         ) : null}
-        <h2 id="agent-heading" className={cn("type-title", isMock && "mt-1.5")}>
+        <h2 id="agent-heading" tabIndex={-1} className={cn("type-title w-fit", isMock && "mt-1.5")}>
           {off === "recorded" ? RECORDED_HEADING : "The agent"}
         </h2>
         {lede ? <p className="mt-2 max-w-prose text-[0.9375rem] leading-relaxed">{lede}</p> : null}
@@ -1083,7 +1310,7 @@ export function AgentHeading({
       <p className="flex max-w-prose flex-wrap items-center gap-2 text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
         Ask the agent {isMock ? <MockBadge /> : null}
       </p>
-      <h2 id="agent-heading" className="type-title mt-1.5">
+      <h2 id="agent-heading" tabIndex={-1} className="type-title mt-1.5 w-fit">
         Or describe the change in plain words
       </h2>
       <p className="mt-2 max-w-prose text-[0.9375rem] leading-relaxed">
@@ -1181,7 +1408,8 @@ function RecordedTranscript({
       </p>
       {calls.length > 0 ? (
         <div className="mt-4 border-l-2 border-border pl-4">
-          <ToolTrail calls={calls} />
+          {/* Shown before anything is pressed, so its rail is drawn full and still: nothing moves on first paint. */}
+          <ToolTrail calls={calls} still />
         </div>
       ) : null}
       {/* From 1024 px, beside the run list in the other column; below it the list follows at once and its first
@@ -1211,10 +1439,16 @@ export function AgentPanel({
   keptSteps = [],
   onKeepPlace,
   cardActId = null,
+  publishedDays = NO_DAYS,
 }: {
   preset: Preset;
   day: number;
   agentStatus?: AgentStatus;
+  /**
+   * The published festival days, as the page's day list already holds them (never the invented one), so the
+   * runs line can point to another day's run that asked Qloo without asking for the list again.
+   */
+  publishedDays?: readonly PublishedDay[];
   /** The steps the kept plan holds (priced), so a run's Keep this place says when its place is kept. */
   keptSteps?: readonly StackStep[];
   /**
@@ -1227,7 +1461,7 @@ export function AgentPanel({
   cardActId?: string | null;
 }) {
   const run = useAgentRun({ endpoint: "/api/runs" });
-  const recordings = useRecordings(preset.id, preset.synthetic === true ? undefined : preset.title);
+  const recordings = useRecordings(preset.id);
   const [exchanges, setExchanges] = useState<PanelExchange[]>([]);
   const [current, setCurrent] = useState<{
     id: string;
@@ -1275,6 +1509,39 @@ export function AgentPanel({
   const replaying = current?.recording !== undefined;
   const presetId = preset.id;
   const check = useMemo(() => (steps: readonly StackStep[]) => checkPlan(presetId, steps), [presetId]);
+
+  // The pointer to another published day's run that asked Qloo: only on a published day whose own loaded runs
+  // hold no Qloo request, and from the day list the page already holds (never a second fetch of it). The other
+  // day's recordings are asked for at most once per page load for this day; a failure shows nothing new.
+  const synthetic = preset.synthetic === true;
+  const pointing =
+    recordings.status === "ready" && mayPointElsewhere(presetId, synthetic, publishedDays, recordings.runs);
+  const otherIds = useMemo(() => publishedDays.map((item) => item.id), [publishedDays]);
+  const otherRuns = useOtherDaysRecordings(presetId, otherIds, pointing);
+  const pointer = pointing ? pointerDay(publishedDays, presetId, otherRuns) : null;
+
+  // "See that run" opened this day: its agent section comes into view once the day is on screen, at once (no
+  // scroll animation), and the section's heading takes focus so the keyboard carries on from there (the link
+  // itself went with the day it was on). An address that names the agent section (`#agent`) is brought into view
+  // the same way, once per page load, since the section is drawn only after the page has loaded.
+  useEffect(() => {
+    const fromPointer = openedFromPointer === presetId;
+    const fromAddress = !initialHashAnswered && window.location.hash === "#agent";
+    initialHashAnswered = true;
+    if (!fromPointer && !fromAddress) return;
+    openedFromPointer = null;
+    document.getElementById("agent")?.scrollIntoView({ block: "start", behavior: "auto" });
+    if (fromPointer) document.getElementById("agent-heading")?.focus({ preventScroll: true });
+  }, [presetId]);
+
+  /** "See that run": the named day replaces this one in place (no reload), at its agent section. */
+  function openPointedDay(event: MouseEvent<HTMLAnchorElement>, target: PublishedDay) {
+    // A new tab or window, or a modified press, follows the link as written.
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    openedFromPointer = target.id;
+    window.history.pushState(null, "", agentSectionHref(target.id));
+  }
 
   useEffect(() => {
     if (!current) return;
@@ -1360,7 +1627,6 @@ export function AgentPanel({
           ? "The agent could not answer."
           : "";
 
-  const synthetic = preset.synthetic === true;
   const conversation =
     all.length > 0 ? (
       <ol aria-label="Conversation" aria-busy={busy} className="space-y-8">
@@ -1387,10 +1653,26 @@ export function AgentPanel({
     ) : null;
 
   // The recordings' Qloo use, read from the recordings: one line when none asked Qloo, else each run's own
-  // count on its row, then a pointer to another day's run that asked Qloo, only from recordings already loaded.
-  // The invented day names no Qloo request either way.
+  // count on its row. When the line says no new request and another published day holds a run that asked Qloo
+  // while it was recorded, the line goes on to say so and "See that run" opens that day's agent section. The
+  // invented day names no Qloo request either way.
   const runsLine = recordingsQlooLine(runs, synthetic);
-  const qlooLine = [runsLine, otherDayPointer(recordings.others, synthetic)].filter(Boolean).join(" ") || null;
+  const qlooLine: ReactNode =
+    runsLine === null ? null : pointer ? (
+      <>
+        {pointerLine(runsLine, pointer)}{" "}
+        <a
+          href={agentSectionHref(pointer.id)}
+          onClick={(event) => openPointedDay(event, pointer)}
+          data-agent-pointer=""
+          className="font-semibold text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground"
+        >
+          {SEE_THAT_RUN}
+        </a>
+      </>
+    ) : (
+      runsLine
+    );
   const recorded = <RecordedRuns runs={runs} onPlay={play} disabled={busy} qlooCounts={!synthetic && runsLine === null} />;
   // While the agent is off, the heading already says saved runs replay with no live call, so the list
   // keeps its kicker and drops the line under it.
@@ -1411,12 +1693,14 @@ export function AgentPanel({
       <div data-agent-picker data-beside-run={playing ? "" : undefined} className={layout.picker}>
         <div className={layout.pickerInner}>
           {mode === "live" ? recorded : recordedOff}
+          {/* From 1024 px the line takes the column's full measure, so the pointer adds at most one line. */}
           {mode === "live" ? (
-            qlooLine ? <p className="mt-3 max-w-prose text-sm text-muted-foreground">{qlooLine}</p> : null
+            qlooLine ? <p className="mt-3 max-w-prose text-sm text-muted-foreground lg:max-w-none">{qlooLine}</p> : null
           ) : (
-            <p className="mt-3 max-w-prose text-sm text-muted-foreground">
-              {qlooLine ? `${qlooLine} ` : ""}
-              {NEVER_CHANGES}
+            <p className="mt-3 max-w-prose text-sm text-muted-foreground lg:max-w-none">
+              {qlooLine}
+              {/* After the pointer's link, the closing sentence starts its own line, so the link ends the line it closes. */}
+              {pointer ? <span className="block">{NEVER_CHANGES}</span> : `${qlooLine ? " " : ""}${NEVER_CHANGES}`}
             </p>
           )}
         </div>

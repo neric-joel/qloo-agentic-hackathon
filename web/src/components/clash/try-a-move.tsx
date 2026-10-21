@@ -10,12 +10,17 @@ import { dayName } from "@/lib/clashes";
 import { noSignalMove } from "@/lib/credit";
 import { pluralize } from "@/lib/format";
 import type { RulePreview } from "@/lib/rule-fix";
+import type { GrowingOverlap } from "@/lib/overlap-words";
 import {
+  OUTSIDE_LEAD,
   clashChanges,
   clockMinutes,
   concurrentActs,
   currentPlacement,
   movableSets,
+  outsideClauses,
+  outsideCount,
+  outsideGrowth,
   placementOf,
   nextRankedPair,
   startingSets,
@@ -115,6 +120,59 @@ export function seededPlan(
 /** No step held: shared so its identity never changes. */
 const NO_STEPS: readonly StackStep[] = [];
 
+/**
+ * What a legal place was checked against, said after "Adds no rule break.": the rules the timetable engine
+ * tests every listed place on (stage hours, curfew, changeover gap, locks and pairs that must never overlap).
+ */
+export const RULES_CHECKED =
+  "Checked against the stage’s hours, the curfew, the changeover gap, locked sets and pairs that must never overlap.";
+
+/**
+ * The rule status of a legal place and the rules it was checked against, in one line: the status in ink, the
+ * rules muted beside it. Every place the engine lists passed them, so the tested place and each place in the
+ * full list say the same words.
+ */
+function RulesLine({ className }: { className?: string }) {
+  return (
+    <p data-rules-line className={className}>
+      Adds no rule break. <span className="text-muted-foreground">{RULES_CHECKED}</span>
+    </p>
+  );
+}
+
+/** Where "listed" is defined: the endpoint keeps each set's three costliest clashes before and after a place. */
+export function listedLead(act: string): string {
+  return `Listed clashes of ${act} (its three costliest, as scored): `;
+}
+
+/**
+ * The line under a place's listed clashes when the place starts or lengthens an overlap that none of its lists
+ * shows: "Outside the listed clashes: new 15 min overlap with Joy Crookes.", worded by the hero's own
+ * `growthClauses`. Nothing when there is none.
+ */
+function OutsideLine({ grows, className }: { grows: readonly GrowingOverlap[] | undefined; className?: string }) {
+  const clauses = outsideClauses(grows ?? []);
+  if (clauses.length === 0) return null;
+  return (
+    <p data-outside-line className={cn("text-sm leading-snug break-words text-pretty", className)}>
+      <span className="text-muted-foreground">{OUTSIDE_LEAD}</span> {clauses.join(" ")}
+    </p>
+  );
+}
+
+/** A sentence with its count and noun ("1 overlap") kept on one line, as the counts before it are. Same words. */
+function CountTogether({ sentence }: { sentence: string }) {
+  const match = /^(.*?)(\d+ overlaps?)(.*)$/.exec(sentence);
+  if (!match) return <>{sentence}</>;
+  return (
+    <>
+      {match[1]}
+      <span className="whitespace-nowrap">{match[2]}</span>
+      {match[3]}
+    </>
+  );
+}
+
 /** "15:45-16:30" -> "15:45–16:30", as the rest of the page prints a time range. */
 function dashRanges(text: string): string {
   return text.replace(/(\d{1,2}:\d{2})-(\d{1,2}:\d{2})/g, "$1–$2");
@@ -189,11 +247,14 @@ function ClashChangeList({
   );
 }
 
-/** Clashes a move keeps, each with its index points before and after (both from the server). */
+/**
+ * Listed clashes a move keeps (in the set's list before the place and after it), each with its index points
+ * before and after (both from the server).
+ */
 function KeptClashList({ items }: { items: readonly KeptClash[] }) {
   return (
     <div className="min-w-0 sm:col-span-2">
-      <h4 className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Clashes it keeps</h4>
+      <h4 className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Listed clashes it keeps</h4>
       <ul className="mt-1.5 space-y-1 text-sm">
         {items.map((item) => {
           const Icon = item.after < item.now ? ArrowDown : item.after > item.now ? ArrowUp : Equal;
@@ -288,7 +349,7 @@ type KeepControl = { full: boolean; onKeep: (option: PlacedOption) => void };
  * `timetable` is the published one with those moves made, so the clashes a place ends and adds are
  * read against where every set plays in the plan.
  */
-function MovesCard({
+export function MovesCard({
   result,
   preset,
   timetable,
@@ -414,11 +475,15 @@ function MovesCard({
                 range={range}
                 stamp={`${chosen.day}-${chosen.stageId}-${chosen.start}`}
               />
+              {/* Every place in this list is one the engine found legal, so each says which rules it passed,
+                  in the tested place's words, above the clashes it changes. */}
+              <RulesLine className="mt-4 text-sm leading-snug break-words text-pretty" />
               {changes ? (
                 <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                  <ClashChangeList title="Clashes it ends" items={changes.ends} tone="ends" />
-                  <ClashChangeList title="Clashes it adds" items={changes.adds} tone="adds" />
+                  <ClashChangeList title="Listed clashes it ends" items={changes.ends} tone="ends" />
+                  <ClashChangeList title="Listed clashes it adds" items={changes.adds} tone="adds" />
                   {changes.keeps.length > 0 ? <KeptClashList items={changes.keeps} /> : null}
+                  <OutsideLine grows={changes.outside} className="sm:col-span-2" />
                 </div>
               ) : null}
               {/* The result's one inner separator: a 1px hairline above the action. */}
@@ -590,12 +655,16 @@ function IndexValue({ before, after }: { before: number; after: number }) {
   );
 }
 
-/** A place's clash changes, with the minutes each kept clash shares before and after (when they read). */
-export type PlaceChanges = ClashChanges & { shared?: SharedByName };
+/**
+ * A place's clash changes, with the minutes each kept clash shares before and after (when they read), and the
+ * overlaps it starts or lengthens with sets none of its lists shows (`outside`, the hero's order).
+ */
+export type PlaceChanges = ClashChanges & { shared?: SharedByName; outside?: GrowingOverlap[] };
 
 /**
  * The clashes a place ends, adds and keeps, read from the timetable engine's lists for that set, with
- * the minutes each kept clash shares before and after, read from the timetable already in memory.
+ * the minutes each kept clash shares before and after, and the overlaps outside those lists that it starts
+ * or lengthens, both read from the timetable already in memory.
  */
 export function placeChanges(
   festival: Preset["festival"],
@@ -620,7 +689,9 @@ export function placeChanges(
     after,
     changes.keeps.map((keep) => keep.name),
   );
-  return { ...changes, shared };
+  const listed = new Set([...changes.ends, ...changes.adds, ...changes.keeps].map((item) => item.name));
+  const outside = outsideGrowth(festival.acts, timetable, result.actId, home, after, listed);
+  return { ...changes, shared, outside };
 }
 
 /**
@@ -678,6 +749,8 @@ export function TestedPlace({
   const minutesAfter = typeof card.minutesAfter === "number" ? card.minutesAfter : (minutes?.after ?? null);
   const hasMinutes = minutesBefore !== null && minutesAfter !== null;
   const listedName = mover ?? strip?.moverName ?? null;
+  // The summary's last sentence when the outside line shows: "Outside the list, 1 overlap starts or grows."
+  const outsideSentence = changes ? outsideCount(changes.outside?.length ?? 0) : null;
   return (
     // A result, not a control group: it sits open on paper under one 1px decorative top rule, as the
     // hero receipt does, with no other edge, no fill and no side padding.
@@ -714,52 +787,63 @@ export function TestedPlace({
           ) : checking ? (
             <span className="text-muted-foreground">checking…</span>
           ) : (
-            <span className="text-muted-foreground">not priced here</span>
+            <span className="text-muted-foreground">not scored here</span>
           )}
         </p>
-        {/* The rule status and the clashes it changes, in one 14px line, counted as before. */}
-        <p aria-live="polite" className="mt-1.5 text-sm leading-snug break-words">
+        {/* The rule status with the rules it was checked against; then the listed clashes it changes, counted as
+            before, with "listed" defined where it appears; then, when the place starts or lengthens an overlap
+            none of the lists shows, the outside line in the hero's words. One 14px block, read out together. */}
+        <div aria-live="polite" data-place-verdict className="mt-1.5 space-y-1 text-sm leading-snug break-words text-pretty">
           {checking ? (
-            <span className="text-muted-foreground">Checking rules…</span>
+            <p className="text-muted-foreground">Checking rules…</p>
           ) : ready ? (
             <>
-              Adds no rule break.{" "}
+              <RulesLine />
               {changes ? (
                 <>
-                  {/* The endpoint lists at most three of the set's clashes before and after, so the counts are
-                      of the listed clashes, and the line says so. */}
-                  {listedName ? <span className="text-muted-foreground">Listed clashes of {listedName}: </span> : null}
-                  {clashParts(changes, changes.shared).map((part, i) => (
-                    <span key={part.word}>
-                      {i > 0 ? ", " : null}
-                      {/* A count stays on the line of its word. */}
-                      <span className="whitespace-nowrap">
-                        <span className="font-mono tabular-nums">{part.count}</span> {part.word}
-                      </span>
-                      {part.minutes ? (
-                        <span className="text-muted-foreground">
-                          {" "}
-                          (
-                          <span className="font-mono tabular-nums">
-                            {part.minutes.before} → {part.minutes.after}
-                          </span>{" "}
-                          min)
+                  <p data-listed-line>
+                    {/* The endpoint lists at most three of the set's clashes before and after, so the counts are
+                        of the listed clashes, and the line says what listed means. */}
+                    {listedName ? <span className="text-muted-foreground">{listedLead(listedName)}</span> : null}
+                    {clashParts(changes, changes.shared).map((part, i) => (
+                      <span key={part.word}>
+                        {i > 0 ? ", " : null}
+                        {/* A count stays on the line of its word. */}
+                        <span className="whitespace-nowrap">
+                          <span className="font-mono tabular-nums">{part.count}</span> {part.word}
                         </span>
-                      ) : null}
-                    </span>
-                  ))}
-                  .
+                        {part.minutes ? (
+                          <span className="text-muted-foreground">
+                            {" "}
+                            (
+                            <span className="font-mono tabular-nums">
+                              {part.minutes.before} → {part.minutes.after}
+                            </span>{" "}
+                            min)
+                          </span>
+                        ) : null}
+                      </span>
+                    ))}
+                    .
+                    {outsideSentence ? (
+                      <>
+                        {" "}
+                        <CountTogether sentence={outsideSentence} />
+                      </>
+                    ) : null}
+                  </p>
+                  <OutsideLine grows={changes.outside} />
                 </>
               ) : (
-                <span className="text-muted-foreground">Clashes not checked for this place.</span>
+                <p className="text-muted-foreground">Clashes not checked for this place.</p>
               )}
             </>
           ) : check?.status === "error" ? (
-            <span className="text-muted-foreground">Not checked: the legal places did not load.</span>
+            <p className="text-muted-foreground">Not checked: the legal places did not load.</p>
           ) : (
-            <span className="text-muted-foreground">Rules and clashes not checked for this place.</span>
+            <p className="text-muted-foreground">Rules and clashes not checked for this place.</p>
           )}
-        </p>
+        </div>
         {strip ? <MoveStrip data={strip} /> : null}
       </div>
       {/* The receipt says the minutes in words; it shows only when the fact list has no minutes row. */}
@@ -870,7 +954,7 @@ export function BestPlaceColumn({
       {status === "loading" ? (
         <p className="flex min-h-32 items-start gap-2 border-t border-border pt-5 text-sm text-muted-foreground sm:pt-6">
           <LoaderCircle aria-hidden="true" className="mt-0.5 size-4 motion-safe:animate-spin" />
-          Pricing every legal place for {pickedName ?? "this set"}
+          Scoring every legal place for {pickedName ?? "this set"}
         </p>
       ) : result && best ? (
         <>
@@ -996,7 +1080,7 @@ function PlanError({ onRetry, onStartOver }: { onRetry: () => void; onStartOver:
     <div role="alert" className="rounded-md border border-destructive bg-card p-5">
       <p className="flex items-center gap-2 text-[0.9375rem] font-semibold text-destructive">
         <TriangleAlert aria-hidden="true" className="size-4 shrink-0" />
-        Could not price this plan.
+        Could not score this plan.
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
         <Button type="button" variant="outline" onClick={onRetry}>
@@ -1484,7 +1568,7 @@ export function TryAMove({
         : `${result.act} cannot move.`
       : state.status === "error"
         ? planned
-          ? "Could not price this plan."
+          ? "Could not score this plan."
           : "Could not load the places for this set."
         : state.status === "invalid"
           ? "That plan is no longer possible."
@@ -1503,7 +1587,7 @@ export function TryAMove({
             Move a set and see what it costs
           </h2>
           <p className="mt-2 max-w-prose text-[0.9375rem] leading-relaxed">
-            Pick a set to see every legal place on the 5-minute grid, priced. Keep a move to stack the next one.
+            Pick a set to see every legal place on the 5-minute grid, scored. Keep a move to stack the next one.
             Locked sets stay put.
           </p>
         </div>
@@ -1641,7 +1725,7 @@ export function TryAMove({
                         : set.locked
                           ? " (locked)"
                           : unpriced.has(set.actId)
-                            ? " (not priced)"
+                            ? " (not scored)"
                             : ""}
                     </option>
                   ))}
@@ -1702,7 +1786,7 @@ export function TryAMove({
             {state.status === "loading" ? (
               <div className="mt-6 flex min-h-32 items-center gap-2 rounded-md border border-border bg-card p-6 text-sm text-muted-foreground lg:hidden">
                 <LoaderCircle aria-hidden="true" className="size-4 motion-safe:animate-spin" />
-                Pricing every legal place for {pickedName ?? "this set"}
+                Scoring every legal place for {pickedName ?? "this set"}
               </div>
             ) : state.status === "error" ? (
               <div className="mt-6">
@@ -1788,7 +1872,7 @@ export function TryAMove({
             ) : state.status === "loading" ? (
               <div className="flex min-h-32 items-center gap-2 rounded-md border border-border bg-card p-6 text-sm text-muted-foreground">
                 <LoaderCircle aria-hidden="true" className="size-4 motion-safe:animate-spin" />
-                Pricing your tested moves
+                Scoring your tested moves
               </div>
             ) : null}
           </div>

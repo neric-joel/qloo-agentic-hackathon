@@ -16,9 +16,9 @@ export function useOverlapPatternId(): string {
 }
 
 /**
- * Shared time, defined once. One 1.5px vermilion line every 16px at 45 degrees, at full opacity,
+ * Shared time, defined once. One 1.5px raspberry line every 16px at 45 degrees, at full opacity,
  * inside a card-coloured window cut into the open bar of a pair; the window keeps a 2px card gap
- * inside the bar's edge. Vermilion appears only on shared time and never touches ink: there is no
+ * inside the bar's edge. Raspberry appears only on shared time and never touches ink: there is no
  * wash, no opacity and no second hatch.
  */
 export const OVERLAP = { period: 16, stroke: 1.5, gap: 2 } as const;
@@ -28,7 +28,7 @@ type Len = number | string;
 
 /**
  * The shared-time hatch: 16px user-space tiles turned 45 degrees, each holding one 1.5px
- * `var(--primary)` line at full opacity (one 1.5px vermilion line every 16px). Put it in the SVG's `<defs>`; fill only through
+ * `var(--primary)` line at full opacity (one 1.5px raspberry line every 16px). Put it in the SVG's `<defs>`; fill only through
  * `OverlapWindow`.
  */
 export function OverlapPattern({ id }: { id: string }) {
@@ -167,19 +167,20 @@ export function OverlapSwatch({ className }: { className?: string }) {
 }
 
 /**
- * The hidden-clash mark: a vermilion ring on the card in a 12px box, the same outlined disc the
- * board puts on a hidden-clash link, so it differs from a seen clash (a filled disc) by fill as well
- * as by name. The name is kept for the callers that already import it.
+ * The hidden-clash mark beside the word Hidden: an ink ring on the card in a 12px box, so it differs
+ * from a seen clash (a filled disc) by fill as well as by name. Hidden is a label of the board, not
+ * shared time, so it is ink: raspberry is kept for shared minutes and their cost. The name is kept
+ * for the callers that already import it.
  */
 export function DiamondGlyph({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false" className={cn("size-3 shrink-0", className)}>
-      <circle data-mark="hidden" cx={6} cy={6} r={4.75} fill="var(--card)" stroke="var(--primary)" strokeWidth="2" />
+      <circle data-mark="hidden" cx={6} cy={6} r={4.75} fill="var(--card)" stroke="var(--foreground)" strokeWidth="2" />
     </svg>
   );
 }
 
-/** The seen-clash mark: a filled vermilion disc in a 12px box, the board's filled clash disc. */
+/** The seen-clash mark: a filled raspberry disc in a 12px box, the board's filled clash disc. */
 export function SeenDiscGlyph({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false" className={cn("size-3 shrink-0", className)}>
@@ -189,9 +190,10 @@ export function SeenDiscGlyph({ className }: { className?: string }) {
 }
 
 /**
- * The board's clash disc at its real 22px: filled vermilion for a seen clash, outlined in vermilion
- * on the card for a hidden one. Round, never turned. The board lays its rank numeral over it; the
- * legend shows it bare.
+ * The board's clash disc at its real 22px: filled raspberry for a seen clash, an ink ring on the card
+ * for a hidden one. Hidden is a label of the board, not shared time, so its ring is ink, as it is in
+ * the list and the drawer; the raspberry link the disc sits on still marks the shared time. Round,
+ * never turned. The board lays its rank numeral over it (paper on the filled disc, ink in the ring).
  */
 export function ClashDisc({ hidden, className }: { hidden: boolean; className?: string }) {
   return (
@@ -200,7 +202,7 @@ export function ClashDisc({ hidden, className }: { hidden: boolean; className?: 
       data-clash-disc={hidden ? "hidden" : "seen"}
       className={cn(
         "block size-5.5 shrink-0 rounded-full",
-        hidden ? "border-2 border-primary bg-card" : "bg-primary",
+        hidden ? "border-2 border-foreground bg-card" : "bg-primary",
         className,
       )}
     />
@@ -221,12 +223,12 @@ export function clashMarkLabel(clash: {
   return `${clash.label === "hidden" ? "Hidden clash" : "Clash"} ${clash.rank}: ${clash.a.name} and ${clash.b.name}`;
 }
 
-/** A clash's label as the board's one tag: Hidden in vermilion with its outlined disc, the others in ink. */
+/** A clash's label as the board's one tag, in ink: Hidden with its outlined ink disc, the others as words alone. */
 export function LabelBadge({ label, className }: { label: ClashLabel; className?: string }) {
   const meta = LABEL_META[label];
   return (
     <span
-      className={cn("tag shrink-0", label === "hidden" ? "tag-primary" : "tag-ink", className)}
+      className={cn("tag tag-ink shrink-0", className)}
       title={meta.explain}
     >
       {label === "hidden" ? <DiamondGlyph /> : null}
@@ -237,7 +239,7 @@ export function LabelBadge({ label, className }: { label: ClashLabel; className?
 
 /**
  * A labelled 0..1 bar, a capsule (rounded-bar) on the muted track; the fill is clipped inside it:
- * ink, vermilion only for a cost, or teal for a value from Qloo. The figure is always printed next to it, so the
+ * ink, raspberry only for a cost, or teal for a value from Qloo. The figure is always printed next to it, so the
  * bar is never the only cue. The fill is drawn at its width, with no entrance motion.
  */
 export function Meter({

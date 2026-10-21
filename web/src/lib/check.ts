@@ -6,8 +6,14 @@
  * Guards that keep the page honest about what it read:
  * - one day, 60 sets, 10 stages and 8 KB; anything else is refused with a plain message;
  * - quoted fields with commas are read as one field; comma or tab, decided by the first line;
- * - duplicate rows, ambiguous after-midnight times and pair rules naming no set or several are
- *   rejected visibly, never guessed;
+ * - two kinds of failure. A fault of the whole input (empty, too big, an unreadable character, a header
+ *   that does not read, more than one day, no readable set, over a limit, any settings problem) stops the
+ *   check. A fault of one line (a quote left open, the wrong number of fields, a blank or overlong name,
+ *   a time that does not read or runs backwards, a locked value, an after-midnight time out of order, a
+ *   repeat of an earlier line) skips that line alone: the other lines are checked and the skipped ones
+ *   are listed by their line number in the paste, never guessed and never checked;
+ * - pair rules naming no set, or several, are rejected visibly; one naming an act found only on a
+ *   skipped line is listed as not checked;
  * - names longer than 80 characters are refused and never echoed; anything echoed is clipped.
  *
  * Times are minutes from 00:00 of the day. Hours of 24 or more are after midnight. One day boundary
@@ -110,6 +116,20 @@ export type CheckSettings = {
   pairs: { a: CheckSet; b: CheckSet; line: number }[];
 };
 
+/**
+ * A pasted line the check could not read. It is left out of every rule, every pair and anything sent,
+ * and listed by its line in the paste (counting the header and blank lines, from 1).
+ */
+export type SkippedLine = {
+  line: number;
+  /** Why, as the page says it: "Line 4: the start time is not a time such as …". */
+  message: string;
+  /** The act as written on the line, when it can be told; a pair rule that names it is listed as not checked. */
+  act: string | null;
+  /** The line read as one field and holds a semicolon: it looks separated by semicolons. */
+  semicolons: boolean;
+};
+
 export type CheckReport = {
   sets: CheckSet[];
   stages: string[];
@@ -119,6 +139,10 @@ export type CheckReport = {
   shared: SharedPair[];
   /** What the page read but did not use, such as columns it ignores. Never a rule break. */
   notes: string[];
+  /** Lines left out because they could not be read; the rules ran on the other lines. Empty or absent for none. */
+  skipped?: SkippedLine[];
+  /** "Pair line 2 not checked: Aurora is on a skipped line.", one per pair rule that names a skipped act. */
+  uncheckedPairs?: string[];
 };
 
 /**
@@ -136,7 +160,13 @@ export type PairSuggestion = {
 
 export type CheckOutcome =
   | { ok: true; report: CheckReport }
-  | { ok: false; errors: string[]; suggestions: PairSuggestion[] };
+  | {
+      ok: false;
+      errors: string[];
+      suggestions: PairSuggestion[];
+      /** The lines that could not be read, when the paste was read that far (for the separator hint). */
+      skipped?: SkippedLine[];
+    };
 
 /** The page's set wording. */
 export const CHECK_COPY = {
@@ -149,7 +179,70 @@ export const CHECK_COPY = {
   noBreaks: "No rule breaks found against the settings above.",
   elsewhere:
     "Rule checks like these also exist in scheduling software. What this app adds is the audience reading: on this page it is the optional Compare audience overlap step, read from a saved day or, if you ask, from Qloo.",
+  /** In the preview column, in place of its outline, while the text on show does not read as a grid. */
+  previewUnavailable: "Preview unavailable: fix the lines listed and check again.",
+  /** After the line messages, when two or more unreadable lines look separated by semicolons. */
+  separatorHint: "These lines look separated by semicolons. Use commas or tabs between act, stage, start and end.",
 } as const;
+
+/** "set" or "sets" with its count. */
+function setsLabel(count: number): string {
+  return `${count} ${count === 1 ? "set" : "sets"}`;
+}
+
+/**
+ * The no-breaks sentence. While any line is skipped it never stands alone: it says how many sets were
+ * checked, so a clean result on part of a grid is never read as a clean grid.
+ */
+export function noBreaksLine(report: Pick<CheckReport, "sets" | "skipped">): string {
+  if ((report.skipped ?? []).length === 0) return CHECK_COPY.noBreaks;
+  return `No rule breaks found among the ${setsLabel(report.sets.length)} checked, against the settings above.`;
+}
+
+/**
+ * What a partial check says first: "1 line skipped and not checked: line 4. The other 11 sets were checked."
+ * Null when nothing was skipped.
+ */
+export function skippedSentence(skipped: readonly Pick<SkippedLine, "line">[], checked: number): string | null {
+  if (skipped.length === 0) return null;
+  const lines = skipped.map((item) => `line ${item.line}`).join(", ");
+  const head = skipped.length === 1 ? "1 line skipped" : `${skipped.length} lines skipped`;
+  const rest = checked === 1 ? "The other 1 set was checked." : `The other ${checked} sets were checked.`;
+  return `${head} and not checked: ${lines}. ${rest}`;
+}
+
+/** The skipped lines' own messages, five at most and then "And n more problems.", as the refusal lists them. */
+export function skippedMessages(skipped: readonly Pick<SkippedLine, "message">[]): string[] {
+  const { errorsShown } = CHECK_LIMITS;
+  const all = skipped.map((item) => item.message);
+  if (all.length <= errorsShown) return all;
+  return [...all.slice(0, errorsShown), `And ${plural(all.length - errorsShown, "more problem")}.`];
+}
+
+/** The separator hint, when two or more unreadable lines read as one field holding a semicolon; else null. */
+export function separatorHint(skipped: readonly Pick<SkippedLine, "semicolons">[] | undefined): string | null {
+  return (skipped ?? []).filter((item) => item.semicolons).length >= 2 ? CHECK_COPY.separatorHint : null;
+}
+
+/** The line a pair rule gets when one of its acts is only on a skipped line. */
+export function pairNotChecked(line: number, act: string): string {
+  return `Pair line ${line} not checked: ${clip(act)} is on a skipped line.`;
+}
+
+/**
+ * The results header after a check: what the rule check read and how long it took in this browser, a
+ * measurement of that one run (never stored, never sent, never a time saved). `ms` is at least 1.
+ */
+export function checkTimeLine(setCount: number, stageCount: number, ms: number): string {
+  const stages = `${stageCount} ${stageCount === 1 ? "stage" : "stages"}`;
+  return `Checked ${setsLabel(setCount)} on ${stages} in ${Math.max(1, Math.round(ms))} ms, in this browser.`;
+}
+
+/** What the polite live region says once after a paste on the Table view lands in the CSV editor. */
+export function pastedLine(text: string): string {
+  const count = text.replace(/(\r\n|\r|\n)$/, "").split(/\r\n|\r|\n/).length;
+  return `Pasted ${count} ${count === 1 ? "line" : "lines"} into the CSV editor. Press Check the grid.`;
+}
 
 /** The file "Download a template" gives: a header and two invented rows. */
 export const TEMPLATE_CSV = [
@@ -366,12 +459,36 @@ function textProblem(text: string, linePrefix: string): string | null {
   return null;
 }
 
-/** The grid text into rows, or the problems that stop it. Header row optional. */
-export function parseGrid(
-  raw: string,
-): { ok: true; sets: CheckSet[]; notes: string[] } | { ok: false; errors: string[] } {
+/** What `parseGrid` read: the readable sets and the skipped lines, or the problems that stop the whole check. */
+export type GridResult =
+  | { ok: true; sets: CheckSet[]; notes: string[]; skipped: SkippedLine[] }
+  | { ok: false; errors: string[]; skipped?: SkippedLine[] };
+
+/** An act name fit to compare with a pair rule: tidied, not blank and within the length limit; else null. */
+function actName(value: string | undefined): string | null {
+  const act = tidy(value ?? "");
+  return act === "" || Array.from(act).length > CHECK_LIMITS.nameChars ? null : act;
+}
+
+/**
+ * The act field of a line that would not split, read loosely (its quotes dropped). It is only ever compared
+ * with a pair rule's names, so a rule that names it is listed as not checked; it is never checked itself.
+ */
+function looseAct(line: string, delimiter: string, at: number): string | null {
+  return actName((line.split(delimiter)[at] ?? "").trim().replace(/^"+|"+$/g, ""));
+}
+
+/**
+ * The grid text into rows. Header row optional. A fault of one line skips that line, listed by its line
+ * number in the paste (counting the header and blank lines); the other lines are read. A fault of the whole
+ * input, or no readable line at all, stops the check with every problem listed.
+ */
+export function parseGrid(raw: string): GridResult {
   const problems = new Problems();
   const notes: string[] = [];
+  const skipped: SkippedLine[] = [];
+  // A fault of the whole input: nothing is checked, however many lines read.
+  let whole = false;
   const text = stripSoftHyphens(raw.startsWith("﻿") ? raw.slice(1) : raw);
   if (text.trim() === "") return { ok: false, errors: ["Paste a grid first: one set per line."] };
   const size = utf8Length(text);
@@ -388,19 +505,23 @@ export function parseGrid(
 
   const lines = text.split(/\r\n|\r|\n/);
   const delimiter = delimiterOf(lines);
-  const drafts: Draft[] = [];
-  // Distinct day values in the order first seen, keyed by their compared form.
-  const days = new Map<string, string>();
+  const drafts: (Draft & { day: string })[] = [];
   let headerChecked = false;
   let layout: Layout = POSITIONAL;
   let headed = false;
+
+  /** One line left out: its message is listed, and nothing on it is checked. */
+  const skip = (row: number, message: string, act: string | null, semicolons = false) => {
+    problems.add(message);
+    skipped.push({ line: row, message, act, semicolons });
+  };
 
   lines.forEach((line, index) => {
     if (line.trim() === "") return;
     const row = index + 1;
     const split = splitLine(line, delimiter);
     if (!split.ok) {
-      problems.add(`Line ${row}: a quote is not closed or has text after it.`);
+      skip(row, `Line ${row}: a quote is not closed or has text after it.`, looseAct(line, delimiter, layout.act));
       return;
     }
     const fields = split.fields;
@@ -422,6 +543,8 @@ export function parseGrid(
         });
         const required: Column[] = ["act", "stage", "start", "end"];
         if (repeated || required.some((column) => !found.has(column))) {
+          // Without its columns no line can be read with confidence: the whole grid waits for the header.
+          whole = true;
           problems.add(
             `Line ${row}: the header should read act, stage, start, end (locked and day are optional; other columns are ignored).`,
           );
@@ -451,31 +574,34 @@ export function parseGrid(
       ? fields.length >= needed && fields.length <= layout.width
       : fields.length >= 4 && fields.length <= 5;
     if (!fits) {
-      problems.add(
+      skip(
+        row,
         headed
           ? `Line ${row}: the header has ${plural(layout.width, "column")}, but this line has ${plural(fields.length, "field")}.`
           : `Line ${row}: expected act, stage, start, end (and locked), but found ${plural(fields.length, "field")}.`,
+        actName(fields[layout.act]),
+        fields.length === 1 && line.includes(";"),
       );
       return;
     }
     const act = tidy(fields[layout.act]);
     const stage = tidy(fields[layout.stage]);
     if (act === "" || stage === "") {
-      problems.add(`Line ${row}: the act and the stage cannot be blank.`);
+      skip(row, `Line ${row}: the act and the stage cannot be blank.`, actName(act));
       return;
     }
     if (Array.from(act).length > CHECK_LIMITS.nameChars || Array.from(stage).length > CHECK_LIMITS.nameChars) {
-      problems.add(`Line ${row}: a name is longer than ${CHECK_LIMITS.nameChars} characters.`);
+      skip(row, `Line ${row}: a name is longer than ${CHECK_LIMITS.nameChars} characters.`, actName(act));
       return;
     }
     const startClock = readClock(fields[layout.start]);
     const endClock = readClock(fields[layout.end]);
     if (startClock === null) {
-      problems.add(`Line ${row}: the start time is not a time such as ${TIME_FORMS} (hours up to 47).`);
+      skip(row, `Line ${row}: the start time is not a time such as ${TIME_FORMS} (hours up to 47).`, act);
       return;
     }
     if (endClock === null) {
-      problems.add(`Line ${row}: the end time is not a time such as ${TIME_FORMS} (hours up to 47).`);
+      skip(row, `Line ${row}: the end time is not a time such as ${TIME_FORMS} (hours up to 47).`, act);
       return;
     }
     const start = startClock.minutes;
@@ -485,24 +611,18 @@ export function parseGrid(
       // that starts after midnight and ends earlier could mean anything.
       if (end < CHECK_LIMITS.dayStartsAt && start >= CHECK_LIMITS.dayStartsAt) end += MINUTES_PER_DAY;
       else {
-        problems.add(
-          `Line ${row}: the set ends before it starts. For after midnight, write the end as 24:30 or later.`,
-        );
+        skip(row, `Line ${row}: the set ends before it starts. For after midnight, write the end as 24:30 or later.`, act);
         return;
       }
     }
     if (end <= start) {
-      problems.add(`Line ${row}: the set must end after it starts.`);
+      skip(row, `Line ${row}: the set must end after it starts.`, act);
       return;
     }
     const flag = (layout.locked === null ? "" : (fields[layout.locked] ?? "")).trim().toLowerCase();
     if (!LOCKED_YES.has(flag) && !LOCKED_NO.has(flag)) {
-      problems.add(`Line ${row}: the locked column should be yes, no or blank.`);
+      skip(row, `Line ${row}: the locked column should be yes, no or blank.`, act);
       return;
-    }
-    if (layout.day !== null) {
-      const day = tidy(fields[layout.day] ?? "");
-      if (day !== "" && !days.has(normalizeName(day))) days.set(normalizeName(day), clip(day, 20));
     }
     drafts.push({
       row,
@@ -512,29 +632,17 @@ export function parseGrid(
       end,
       locked: LOCKED_YES.has(flag),
       earlyTwelve: startClock.twelveHour && start < CHECK_LIMITS.dayStartsAt,
+      day: layout.day === null ? "" : tidy(fields[layout.day] ?? ""),
     });
   });
 
-  if (days.size > 1) {
-    const named = [...days.values()];
-    const listed = named.length > DAYS_SHOWN ? [...named.slice(0, DAYS_SHOWN), "…"] : named;
-    problems.add(`This grid has more than one day (${listed.join(", ")}). Paste one day at a time.`);
-  }
-
-  if (drafts.length === 0 && !problems.any) {
-    problems.add("No sets found. Put one set on each line: act, stage, start, end.");
-  }
-  if (drafts.length > CHECK_LIMITS.sets) {
-    problems.add(`That is ${drafts.length} sets. This page reads up to ${CHECK_LIMITS.sets} sets, one day at a time.`);
-  }
-
-  const stageKeys = new Set(drafts.map((d) => normalizeName(d.stage)));
-  if (stageKeys.size > CHECK_LIMITS.stages) {
-    problems.add(`That is ${stageKeys.size} stages. This page reads up to ${CHECK_LIMITS.stages}.`);
-  }
-
+  // The day's order and repeats, over the lines that read. A line that fails either is skipped (a repeat:
+  // the later line), and its message is listed after the whole-input problems, as it always was.
   const lateStart = drafts.some((d) => d.start >= 720);
   const seen = new Map<string, number>();
+  const readable: typeof drafts = [];
+  const later: SkippedLine[] = [];
+  const skipLater = (d: Draft, message: string) => later.push({ line: d.row, message, act: d.act, semicolons: false });
   for (const d of drafts) {
     if (lateStart && d.start < CHECK_LIMITS.dayStartsAt) {
       if (d.earlyTwelve) {
@@ -543,27 +651,65 @@ export function parseGrid(
         d.start += MINUTES_PER_DAY;
         if (d.end < MINUTES_PER_DAY) d.end += MINUTES_PER_DAY;
         if (d.end <= d.start || d.end > CHECK_LIMITS.maxMinutes) {
-          problems.add(
-            `Line ${d.row}: the set ends before it starts. For after midnight, write the end as 24:30 or later.`,
-          );
+          skipLater(d, `Line ${d.row}: the set ends before it starts. For after midnight, write the end as 24:30 or later.`);
+          continue;
         }
       } else {
-        problems.add(
+        skipLater(
+          d,
           `Line ${d.row}: starts before 06:00 while other sets start in the afternoon or evening. Write after-midnight times as 24:30 or later so the day reads in order.`,
         );
+        continue;
       }
     }
     const key = lengthPrefixed(normalizeName(d.act), normalizeName(d.stage), String(d.start), String(d.end));
     const first = seen.get(key);
-    if (first === undefined) seen.set(key, d.row);
-    else problems.add(`Line ${d.row}: the same set as line ${first} (same act, stage and times).`);
+    if (first !== undefined) {
+      skipLater(d, `Line ${d.row}: the same set as line ${first} (same act, stage and times).`);
+      continue;
+    }
+    seen.set(key, d.row);
+    readable.push(d);
   }
 
-  if (problems.any) return { ok: false, errors: problems.shown() };
+  // Distinct day values among the lines that read, in the order first seen, keyed by their compared form.
+  const days = new Map<string, string>();
+  for (const d of readable) {
+    if (d.day !== "" && !days.has(normalizeName(d.day))) days.set(normalizeName(d.day), clip(d.day, 20));
+  }
+  if (days.size > 1) {
+    whole = true;
+    const named = [...days.values()];
+    const listed = named.length > DAYS_SHOWN ? [...named.slice(0, DAYS_SHOWN), "…"] : named;
+    problems.add(`This grid has more than one day (${listed.join(", ")}). Paste one day at a time.`);
+  }
+
+  if (readable.length === 0 && !problems.any && later.length === 0) {
+    problems.add("No sets found. Put one set on each line: act, stage, start, end.");
+  }
+  if (readable.length > CHECK_LIMITS.sets) {
+    whole = true;
+    problems.add(`That is ${readable.length} sets. This page reads up to ${CHECK_LIMITS.sets} sets, one day at a time.`);
+  }
+
+  const stageKeys = new Set(readable.map((d) => normalizeName(d.stage)));
+  if (stageKeys.size > CHECK_LIMITS.stages) {
+    whole = true;
+    problems.add(`That is ${stageKeys.size} stages. This page reads up to ${CHECK_LIMITS.stages}.`);
+  }
+
+  for (const item of later) {
+    problems.add(item.message);
+    skipped.push(item);
+  }
+  skipped.sort((a, b) => a.line - b.line);
+
+  if (whole || readable.length === 0) return { ok: false, errors: problems.shown(), skipped };
   return {
     ok: true,
     notes,
-    sets: drafts.map((d) => ({
+    skipped,
+    sets: readable.map((d) => ({
       row: d.row,
       act: d.act,
       stage: d.stage,
@@ -577,7 +723,8 @@ export function parseGrid(
 }
 
 type SettingsResult =
-  | { ok: true; settings: CheckSettings }
+  /** `unchecked`: one line per pair rule that names an act found only on a skipped line. */
+  | { ok: true; settings: CheckSettings; unchecked: string[] }
   | { ok: false; errors: string[]; suggestions: PairSuggestion[] };
 
 /** Edit distance between two compared names (insert, delete, substitute), for "nearest" only. */
@@ -653,9 +800,18 @@ export function removePairLine(pairs: string, line: number): string {
   return next.trim() === "" ? "" : next;
 }
 
-/** Changeover, curfew and pair rules, checked against the sets they name. */
-export function parseSettings(input: Omit<CheckInput, "grid">, sets: readonly CheckSet[]): SettingsResult {
+/**
+ * Changeover, curfew and pair rules, checked against the sets they name. A pair rule that names an act found
+ * only on a skipped line (`skipped`) is not checked and is listed in `unchecked`; one that names no line at
+ * all is a problem, as before.
+ */
+export function parseSettings(
+  input: Omit<CheckInput, "grid">,
+  sets: readonly CheckSet[],
+  skipped: readonly SkippedLine[] = [],
+): SettingsResult {
   const problems = new Problems();
+  const unchecked: string[] = [];
 
   let changeover: number = CHECK_LIMITS.defaultChangeover;
   const rawChange = input.changeover.trim();
@@ -725,9 +881,14 @@ export function parseSettings(input: Omit<CheckInput, "grid">, sets: readonly Ch
       }
       const found: CheckSet[] = [];
       let broken = false;
+      // The first act of the rule that is only on a skipped line, as written there.
+      let onSkipped: string | null = null;
       parts.forEach((part, side) => {
         const matches = byKey.get(keys[side]) ?? [];
-        if (matches.length === 0) {
+        const hidden = matches.length === 0 ? skipped.find((item) => item.act !== null && normalizeName(item.act) === keys[side]) : undefined;
+        if (hidden?.act) {
+          onSkipped ??= hidden.act;
+        } else if (matches.length === 0) {
           const named = clip(tidy(part));
           const acts = new Map(sets.map((set) => [set.actKey, set.act]));
           const { match, nearest } = suggestName(part, acts);
@@ -755,7 +916,9 @@ export function parseSettings(input: Omit<CheckInput, "grid">, sets: readonly Ch
       const unordered = [keys[0], keys[1]].sort().join("|");
       if (written.has(unordered)) return;
       written.add(unordered);
-      pairs.push({ a: found[0], b: found[1], line: lineNo });
+      // Listed, never passed silently: the skipped line holds one of its sets, so the rule cannot be checked.
+      if (onSkipped !== null) unchecked.push(pairNotChecked(lineNo, onSkipped));
+      else pairs.push({ a: found[0], b: found[1], line: lineNo });
     });
   }
 
@@ -763,7 +926,7 @@ export function parseSettings(input: Omit<CheckInput, "grid">, sets: readonly Ch
     const shown = problems.shown();
     return { ok: false, errors: shown, suggestions: suggestions.filter((item) => shown.includes(item.message)) };
   }
-  return { ok: true, settings: { changeover, curfew, pairs } };
+  return { ok: true, settings: { changeover, curfew, pairs }, unchecked };
 }
 
 function overlap(a: CheckSet, b: CheckSet): number {
@@ -895,21 +1058,23 @@ export function findShared(sets: readonly CheckSet[]): SharedPair[] {
   );
 }
 
-/** Read the paste and the settings, then run the five rules. Pure: the same input gives the same answer. */
+/**
+ * Read the paste and the settings, then run the five rules on the lines that read. Pure: the same input
+ * gives the same answer. A skipped line is in no rule, no pair and nothing sent; the report lists it.
+ */
 export function runCheck(input: CheckInput): CheckOutcome {
   const grid = parseGrid(input.grid);
-  const errors: string[] = [];
-  let suggestions: PairSuggestion[] = [];
-  if (!grid.ok) errors.push(...grid.errors);
-  const settings = parseSettings(input, grid.ok ? grid.sets : []);
-  if (!settings.ok && grid.ok) {
-    errors.push(...settings.errors);
-    suggestions = settings.suggestions;
-  } else if (!settings.ok) {
+  const skipped = grid.skipped ?? [];
+  const settings = parseSettings(input, grid.ok ? grid.sets : [], grid.ok ? grid.skipped : []);
+  if (!grid.ok) {
     // Settings that do not depend on the grid (changeover, curfew, size) are still worth naming.
-    errors.push(...settings.errors.filter((e) => !e.startsWith("Pair line")));
+    const rest = settings.ok ? [] : settings.errors.filter((e) => !e.startsWith("Pair line"));
+    return { ok: false, errors: [...grid.errors, ...rest], suggestions: [], skipped };
   }
-  if (errors.length > 0 || !grid.ok || !settings.ok) return { ok: false, errors, suggestions };
+  if (!settings.ok) {
+    // A settings problem stops the whole check; the lines that would be skipped are named with it.
+    return { ok: false, errors: [...skippedMessages(skipped), ...settings.errors], suggestions: settings.suggestions, skipped };
+  }
 
   const sets = grid.sets;
   return {
@@ -922,6 +1087,8 @@ export function runCheck(input: CheckInput): CheckOutcome {
       breaks: findBreaks(sets, settings.settings),
       shared: findShared(sets),
       notes: grid.notes,
+      skipped,
+      uncheckedPairs: settings.unchecked,
     },
   };
 }
@@ -947,7 +1114,9 @@ export function announcement(outcome: CheckOutcome): string {
     return `The grid was not checked. ${plural(outcome.errors.length, "problem")} listed.`;
   }
   const { breaks, shared } = outcome.report;
-  return `Rule breaks: ${breaks.length}. Sets that share time: ${plural(shared.length, "pair")}.`;
+  // A partial check says what it left out before its counts.
+  const lead = skippedSentence(outcome.report.skipped ?? [], outcome.report.sets.length);
+  return `${lead ? `${lead} ` : ""}Rule breaks: ${breaks.length}. Sets that share time: ${plural(shared.length, "pair")}.`;
 }
 
 export function pairCountLabel(count: number): string {

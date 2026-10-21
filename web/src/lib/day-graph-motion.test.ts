@@ -1,35 +1,52 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
-import { buildDayGraph, MOVE_MS, threadWidth, type DayGraphModel } from "./day-graph";
+import { buildDayGraph, LAYOUT, MOVE_MS, threadWidth, type DayGraphModel } from "./day-graph";
 import {
+  BANDS,
+  BAR_STUB,
   barBottomOf,
   barTopOf,
+  boxGap,
   CASING,
+  CLEAR,
   clearPlace,
+  ELLIPSIS,
   flightKeyframes,
   flightStops,
+  LABEL_GAP,
+  LINE_CLEAR,
   LINE_GAP,
   LINE_SHIFT,
   lineTransform,
+  LOCK_INSET,
   moveBreakpoints,
   moverAt,
   moverTransform,
   NAME_INSET,
-  nameInk,
+  namePrefix,
   NARROW_TRACK,
   NOTE_GAP,
   noteSide,
+  overlapX,
   planDrawing,
+  PREFIX_MIN,
   retarget,
   spotBox,
   spreadLines,
+  TAG_BAR_CLEAR,
   textWidth,
   trackOf,
+  twoLines,
   viewP,
   WINDOW_INSET,
   windowAt,
+  type Box,
   type LayoutPlan,
   type LineSlot,
+  type PlanLine,
 } from "./day-graph-motion";
 import { parseDecision, type Decision } from "./decision";
 import { rawTinyPreset } from "./fixtures/tiny-preset";
@@ -48,7 +65,7 @@ const STAGES: [string, string][] = [
   ["wood", "Wood"],
   ["lake", "Lake"],
 ];
-const idOf = (name: string) => name.toLowerCase();
+const idOf = (name: string) => name.toLowerCase().replace(/\s+/g, "-");
 
 /**
  * Alder (Wood 14:00-15:00) and Birch (Lake 14:00-14:45) share 45 minutes. Moving Alder 15 minutes later starts
@@ -69,17 +86,17 @@ const SETS: SetSpec[] = [
   { name: "Hazel", stage: "lake", start: "16:00", end: "17:00" },
 ];
 
-function side(name: string): Raw {
-  const spec = SETS.find((item) => item.name === name);
+function side(name: string, sets: readonly SetSpec[] = SETS): Raw {
+  const spec = sets.find((item) => item.name === name);
   if (!spec) throw new Error(`no set ${name} in the fixture`);
   return { act_id: idOf(name), name, stage_id: spec.stage, genre: null };
 }
 
-function pair(rank: number, a: string, b: string, minutes: number, overlap: number): Raw {
+function pair(rank: number, a: string, b: string, minutes: number, overlap: number, sets: readonly SetSpec[] = SETS): Raw {
   return {
     rank,
-    a: side(a),
-    b: side(b),
+    a: side(a, sets),
+    b: side(b, sets),
     day: 0,
     overlap_minutes: minutes,
     concurrency: 1,
@@ -103,17 +120,18 @@ const CLASHES: Raw[] = [
   pair(8, "Elm", "Alder", 10, 0.25),
 ];
 
-function makeDay(synthetic = false, extra: SetSpec[] = []): Preset {
-  const sets = [...SETS, ...extra];
+/** The day: the fixture's sets plus `extra`, or another invented day's `stages`, `sets` and `clashes`. */
+function makeDay(synthetic = false, extra: SetSpec[] = [], base: { stages?: [string, string][]; sets?: SetSpec[]; clashes?: Raw[] } = {}): Preset {
+  const sets = [...(base.sets ?? SETS), ...extra];
   const raw = rawTinyPreset() as Raw;
   raw.id = "mini-fest-sun";
   raw.title = "Mini Fest 2026, Sunday";
   raw.synthetic = synthetic;
   raw.festival.days = ["Sun"];
-  raw.festival.stages = STAGES.map(([id, name], index) => ({ id, name, tier: index + 1, hours: [] }));
+  raw.festival.stages = (base.stages ?? STAGES).map(([id, name], index) => ({ id, name, tier: index + 1, hours: [] }));
   raw.festival.acts = sets.map((spec) => ({ id: idOf(spec.name), name: spec.name, qloo_id: null, popularity: spec.unscored ? null : 0.5, genre: null, billing_tier: 2 }));
   raw.festival.timetable = sets.map((spec) => ({ act_id: idOf(spec.name), day: 0, stage_id: spec.stage, start: spec.start, end: spec.end, locked: spec.locked === true }));
-  raw.report.clashes = CLASHES;
+  raw.report.clashes = base.clashes ?? CLASHES;
   raw.report.metrics = { ...raw.report.metrics, scored_concurrent_pairs: 9, unscored_concurrent_pairs: 2 };
   raw.report.coverage = {
     ...raw.report.coverage,
@@ -140,13 +158,13 @@ const LATER: Raw = {
   same_index_alternative: null,
 };
 
-function decide(move: Raw | null): Decision {
+function decide(move: Raw | null, clash: Raw = { a_id: "alder", b_id: "birch", rank: 1, minutes: 45 }): Decision {
   const decision = parseDecision({
     kind: "decision",
     day: 0,
     skipped_locked: 0,
     skipped_no_place: 0,
-    clash: { a_id: "alder", b_id: "birch", rank: 1, minutes: 45 },
+    clash,
     published_budget: 108.4,
     move,
     rule: null,
@@ -325,12 +343,11 @@ describe("textWidth", () => {
 });
 
 /** Every label box in a view, with its text, at the plan's reference scale or `stretch` times wider. */
-function boxes(plan: LayoutPlan, m: DayGraphModel, view: "published" | "moved", stretch = 1) {
-  const names = new Map(m.sets.map((set) => [set.actId, set.name]));
+function boxes(plan: LayoutPlan, view: "published" | "moved", stretch = 1) {
   const stretched = { track: plan.track, scale: plan.scale * stretch };
   return [
-    ...Object.entries(plan.views[view].labels).map(([id, spot]) => ({ id, box: spotBox(stretched, spot, names.get(id) ?? "") })),
-    ...plan.views[view].tags.map((tag) => ({ id: `tag:${tag.key}`, box: spotBox(stretched, tag.spot, tag.text) })),
+    ...Object.entries(plan.views[view].labels).map(([id, spot]) => ({ id, box: spotBox(stretched, spot) })),
+    ...plan.views[view].tags.map((tag) => ({ id: `tag:${tag.key}`, box: spotBox(stretched, tag.spot) })),
   ];
 }
 
@@ -408,8 +425,8 @@ describe("planDrawing", () => {
           const scale = plan.scale * stretch;
           const x = (minute: number) => (minute - plan.track.start) * scale;
           const vp = plan.views[view];
-          const labels = boxes(plan, m, view, stretch);
-          const bar = { desktop: 26, phone: 24, short: 24 }[layout];
+          const labels = boxes(plan, view, stretch);
+          const bar = LAYOUT[layout].bar;
           const obstacles = [
             ...vp.bars.map((item) => ({ id: item.set.actId, box: { x0: x(item.span.start), x1: x(item.span.end), y0: item.top, y1: item.top + bar } })),
             ...[vp.hatch, ...vp.created].flatMap((w) => (w ? [{ id: "window", box: { x0: x(w.window.start), x1: x(w.window.end), y0: w.top, y1: w.bottom } }] : [])),
@@ -429,29 +446,89 @@ describe("planDrawing", () => {
   });
 });
 
+/** Three half-hour sets with long names packed end to end on Barn after Cedar: too short for their names on a narrow track. */
+const CROWDED: SetSpec[] = [
+  { name: "Cottonwood Collective", stage: "barn", start: "16:00", end: "16:30" },
+  { name: "Dogwood Brass Quartet", stage: "barn", start: "16:30", end: "17:00" },
+  { name: "Eucalyptus Revival", stage: "barn", start: "17:00", end: "17:30" },
+];
+/** A ten-minute set on Main with an empty stretch of the row after it, before Fir. */
+const YARROW: SetSpec = { name: "Yarrow Ensemble", stage: "main", start: "13:00", end: "13:10" };
+/** A set on Barn between Elm and Cedar whose name is more than twice as wide as its bar on a narrow track. */
+const LONG: SetSpec = { name: "Sassafras Night Choir Orchestra", stage: "barn", start: "14:10", end: "15:00" };
+
 describe("planDrawing: a name with no whole place", () => {
-  it("runs from its bar's start to just before the next bar in its band, and no further", () => {
-    // On ever narrower tracks some featured name finds no whole place above, inside or beside its bar.
-    const m = model();
+  const m = model(LATER, false, [...CROWDED, LONG]);
+
+  it("is cut to a prefix of at least 8 characters from its bar's start, ending in an ellipsis inside its bar, never running on to the next bar", () => {
+    // On ever narrower tracks some name finds no whole place inside, beside, above or below its bar.
     let cuts = 0;
-    for (const reference of [60, 90, 120, 150]) {
-      const plan = planDrawing(m, "phone", reference);
-      for (const view of ["published", "moved"] as const) {
-        const bars = plan.views[view].bars;
-        for (const [id, spot] of Object.entries(plan.views[view].labels)) {
-          if (spot.kind !== "inside" || !spot.cut) continue;
-          cuts += 1;
-          const own = bars.find((item) => item.set.actId === id);
-          expect(spot.cut.start).toBe(own?.span.start);
-          const next = bars
-            .filter((item) => item.set.actId !== id && item.top === own?.top && item.span.start >= (own?.span.end ?? 0))
-            .reduce((nearest, item) => Math.min(nearest, item.span.start), Number.POSITIVE_INFINITY);
-          expect(spot.cut.end).toBeGreaterThanOrEqual(own?.span.end ?? 0);
-          expect(spot.cut.end).toBeLessThan(next);
+    for (const layout of ["desktop", "phone"] as const) {
+      for (const reference of layout === "desktop" ? [400, 500, 600, 700] : [60, 90, 120, 150]) {
+        const plan = planDrawing(m, layout, reference);
+        const x = (minute: number) => (minute - plan.track.start) * plan.scale;
+        for (const view of ["published", "moved"] as const) {
+          const bars = plan.views[view].bars;
+          for (const [id, spot] of Object.entries(plan.views[view].labels)) {
+            if (spot.kind !== "prefix") continue;
+            cuts += 1;
+            const own = bars.find((item) => item.set.actId === id);
+            if (!own) throw new Error(`no bar for ${id}`);
+            const text = spot.lines[0];
+            expect(spot.slot).toBe("d");
+            expect(text.endsWith(ELLIPSIS)).toBe(true);
+            expect([...text.slice(0, -1)].length).toBeGreaterThanOrEqual(PREFIX_MIN);
+            expect(own.set.name.startsWith(text.slice(0, -1))).toBe(true);
+            expect(own.set.featured).toBe(false);
+            // From its bar's start (or the start of what a phone shows of it), ending inside its bar.
+            const box = spotBox(plan, spot);
+            const from = layout === "desktop" ? own.span.start : Math.max(own.span.start, m.focus.start);
+            expect(box.x0).toBeGreaterThanOrEqual(x(from) - 1e-6);
+            expect(box.x1).toBeLessThanOrEqual(x(own.span.end) + 1e-6);
+            const next = bars
+              .filter((item) => item.set.actId !== id && item.top === own.top && item.span.start >= own.span.end)
+              .reduce((nearest, item) => Math.min(nearest, item.span.start), Number.POSITIVE_INFINITY);
+            expect(box.x1).toBeLessThan(x(next));
+          }
         }
       }
     }
     expect(cuts).toBeGreaterThan(0);
+  });
+
+  it("keeps at least 8 characters before the ellipsis, drops a trailing space or ampersand, and cuts nothing that fits", () => {
+    const name = "Abel Selaocoe & the Bantu Ensemble";
+    expect(namePrefix(name, textWidth(name, 12.5, 500), 500)).toBeNull();
+    const cut = namePrefix(name, 80, 500);
+    expect(cut).toMatch(new RegExp(`^Abel Sel[a-z]*${ELLIPSIS}$`));
+    expect(textWidth(cut ?? "", 12.5, 500)).toBeLessThanOrEqual(80);
+    // At the room of "Abel Selaocoe &" plus an ellipsis, the ampersand and the space before it go.
+    expect(namePrefix(name, textWidth(`Abel Selaocoe &${ELLIPSIS}`, 12.5, 500), 500)).toBe(`Abel Selaocoe${ELLIPSIS}`);
+    // Too little room for 8 characters: no prefix at all.
+    expect(namePrefix(name, textWidth(`Abel Se${ELLIPSIS}`, 12.5, 500), 500)).toBeNull();
+    expect(namePrefix("Cottonwood Collective", textWidth(`Cottonwoo${ELLIPSIS}`, 12.5, 500), 500)).toBe(`Cottonwoo${ELLIPSIS}`);
+  });
+
+  it("is left out only when nothing else fits, and only on a phone or at the narrowest desktop band, its bar still in the drawing", () => {
+    const m = model(LATER, false, CROWDED);
+    for (const layout of ["desktop", "phone"] as const) {
+      for (const reference of layout === "desktop" ? [400, 600, ...BANDS.desktop.map((band) => band.track)] : [60, 120, ...BANDS.phone.map((band) => band.track)]) {
+        const plan = planDrawing(m, layout, reference);
+        for (const view of ["published", "moved"] as const) {
+          const vp = plan.views[view];
+          for (const [id, slot] of Object.entries(vp.slots)) {
+            if (slot !== "e") continue;
+            expect(vp.labels[id]).toBeUndefined();
+            expect(vp.bars.some((item) => item.set.actId === id)).toBe(true);
+            if (layout === "desktop") expect(reference).toBeLessThanOrEqual(BANDS.desktop[0].track);
+          }
+        }
+      }
+    }
+    // At every desktop band above the narrowest every set of the fixture is named.
+    for (const band of BANDS.desktop.slice(1)) {
+      for (const view of ["published", "moved"] as const) expect(Object.values(planDrawing(m, "desktop", band.track).views[view].slots)).not.toContain("e");
+    }
   });
 });
 
@@ -460,32 +537,42 @@ describe("planDrawing: lines clear of the names they cross", () => {
   // line moves left of Yew's name; nothing else about the day changes.
   const m = model(LATER, false, [{ name: "Yew", stage: "barn", start: "14:20", end: "14:50" }]);
 
-  it("stands a quiet line that stays put clear of the names in the rows it crosses (or of all it can), at the narrowest track and wider", () => {
+  /**
+   * The bars a line crosses whose name (or lock) its stroke and casing come within reach of at `scale`: a name
+   * inside a bar keeps its px width at any scale; a lock takes the bar's first NAME_INSET + LOCK_INSET px.
+   */
+  function crossedNames(plan: LayoutPlan, day: DayGraphModel, view: "published" | "moved", key: string, scale: number) {
+    const vp = plan.views[view];
+    const line = vp.lines.find((item) => item.key === key);
+    if (!line) return [];
+    const x = (line.mid - plan.track.start) * scale + line.off;
+    const reach = line.width / 2 + CASING;
+    return vp.bars
+      .filter((item) => item.row > line.upper && item.row < line.lower)
+      .filter((item) => {
+        const spot = vp.labels[item.set.actId];
+        const name = spot && (spot.kind === "inside" || spot.kind === "prefix") ? spotBox({ track: plan.track, scale }, spot) : null;
+        const start = plan.layout === "desktop" ? item.span.start : Math.max(item.span.start, day.focus.start);
+        const from = (start - plan.track.start) * scale;
+        const lock = item.set.locked ? { x0: from, x1: from + NAME_INSET + LOCK_INSET } : null;
+        return [name, lock].some((box) => box !== null && !(x + reach <= box.x0 || x - reach >= box.x1));
+      })
+      .map((item) => item.set.name);
+  }
+
+  it("stands every line clear of the names inside the bars it crosses, or beneath those bars, at the narrowest track and wider", () => {
     let moved = 0;
     for (const layout of ["desktop", "phone", "short"] as const) {
       for (const reference of layout === "desktop" ? [undefined] : [undefined, NARROW_TRACK]) {
         const plan = planDrawing(m, layout, reference);
         for (const view of ["published", "moved"] as const) {
-          const vp = plan.views[view];
-          for (const line of vp.lines) {
-            if (line.moving || line.thread.lit) continue;
-            const crossed = vp.bars.filter((item) => item.row > line.upper && item.row < line.lower);
+          for (const line of plan.views[view].lines) {
             const middle = (line.window.start + line.window.end) / 2;
             if (line.mid !== middle) moved += 1;
-            const fewest = clearPlace(line.window, line.width / 2, crossed.flatMap((bar) => nameInk(bar.set, bar.span, plan.scale) ?? []), plan.scale)?.crosses ?? 0;
             for (const stretch of [1, 1.4, 2]) {
-              const scale = plan.scale * stretch;
-              const x = (line.mid - plan.track.start) * scale + line.off;
-              const reach = line.width / 2 + CASING;
-              const through = crossed.filter((item) => {
-                const ink = nameInk(item.set, item.span, plan.scale);
-                if (!ink) return false;
-                // The text starts NAME_INSET (and a lock) in from the bar and keeps its px width at any scale.
-                const from = (item.span.start - plan.track.start) * scale;
-                const to = Math.min((item.span.end - plan.track.start) * scale, from + (ink.end - ink.start) * plan.scale);
-                return !(x + reach <= from + NAME_INSET || x - reach >= to);
-              });
-              expect(through.length, `${layout} ${view} x${stretch}: ${line.key} through ${through.map((item) => item.set.name)}`).toBeLessThanOrEqual(fewest);
+              const through = crossedNames(plan, m, view, line.key, plan.scale * stretch);
+              // A line that cannot clear a name passes beneath that bar, which hides it there.
+              if (!line.under) expect(through, `${layout} ${view} x${stretch}: ${line.key} through ${through.join(", ")}`).toEqual([]);
             }
             // It never leaves its window.
             const x = (line.mid - plan.track.start) * plan.scale + line.off;
@@ -502,25 +589,48 @@ describe("planDrawing: lines clear of the names they cross", () => {
     expect(moved).toBeGreaterThan(0);
   });
 
-  it("keeps the mover's lines and the chosen clash at the middle of their windows", () => {
+  it("routes the mover's lines and the chosen clash like every other line, each a fixed share of the way across its window", () => {
     const plan = planDrawing(m, "desktop");
     for (const view of ["published", "moved"] as const) {
       for (const line of plan.views[view].lines.filter((item) => item.moving || item.thread.lit)) {
-        expect(line.mid).toBe((line.window.start + line.window.end) / 2);
+        expect(line.frac).toBeGreaterThanOrEqual(0);
+        expect(line.frac).toBeLessThanOrEqual(1);
+        expect(line.mid).toBeCloseTo(line.window.start + line.frac * (line.window.end - line.window.start), 9);
       }
+    }
+    // The chosen clash has nothing in its way here and stands at the middle of its window in both views.
+    for (const view of ["published", "moved"] as const) {
+      const lit = plan.views[view].lines.find((line) => line.thread.lit);
+      expect(lit?.mid).toBe(((lit?.window.start ?? 0) + (lit?.window.end ?? 0)) / 2);
     }
   });
 
-  it("counts a featured set's lock but not its name, which sits outside the bar", () => {
-    const larch = m.sets.find((set) => set.actId === "larch");
-    const birch = m.sets.find((set) => set.actId === "birch");
-    if (!larch || !birch) throw new Error("the fixture has Larch and Birch");
-    const ink = nameInk(larch, { start: larch.start, end: larch.end }, 2);
-    expect(ink?.start).toBe(larch.start);
-    expect(ink?.end).toBeLessThanOrEqual(larch.end);
-    expect(birch.featured).toBe(true);
-    expect(nameInk(birch, { start: birch.start, end: birch.end }, 2)).toBeNull();
-    expect(nameInk({ ...birch, locked: true }, { start: birch.start, end: birch.end }, 2)).toEqual({ start: birch.start, end: birch.start + (NAME_INSET + 16) / 2 });
+  it("clears a lock at the start of a bar it crosses, and never meets a featured name inside a bar: those sit outside it", () => {
+    const locked = model(LATER, false, [{ name: "Yew", stage: "barn", start: "14:20", end: "14:50", locked: true }]);
+    let checked = 0;
+    for (const layout of ["desktop", "phone", "short"] as const) {
+      const plan = planDrawing(locked, layout);
+      for (const view of ["published", "moved"] as const) {
+        for (const line of plan.views[view].lines) {
+          checked += 1;
+          if (!line.under) expect(crossedNames(plan, locked, view, line.key, plan.scale), `${layout} ${view}: ${line.key}`).toEqual([]);
+        }
+        for (const set of locked.sets.filter((item) => item.featured)) {
+          const bar = plan.views[view].bars.find((item) => item.set.actId === set.actId);
+          if (!bar || (layout !== "desktop" && (bar.span.end <= locked.focus.start || bar.span.start >= locked.focus.end))) continue;
+          expect(["above", "below", "beside"], `${layout} ${view}: ${set.name}`).toContain(plan.views[view].labels[set.actId]?.kind);
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+    // Fir x Birch crosses Barn over Yew's lock at its middle, so it stands left of the lock (or beneath Yew's bar).
+    const plan = planDrawing(locked, "desktop");
+    const fir = plan.views.published.lines.find((line) => line.key === "fir~birch");
+    const yew = plan.views.published.bars.find((item) => item.set.actId === "yew");
+    if (!fir || !yew) throw new Error("the fixture draws Fir x Birch and Yew");
+    const x = (fir.mid - plan.track.start) * plan.scale + fir.off;
+    const lockFrom = (yew.span.start - plan.track.start) * plan.scale;
+    expect(fir.under || x + fir.width / 2 + CASING <= lockFrom || x - fir.width / 2 - CASING >= lockFrom + NAME_INSET + LOCK_INSET).toBe(true);
   });
 });
 
@@ -589,5 +699,540 @@ describe("flightKeyframes", () => {
     expect(flightKeyframes(m, plan, 1, 1)).toEqual({});
     expect(viewP(still, "moved")).toBe(0);
     expect(viewP(m, "moved")).toBe(1);
+  });
+});
+
+// ------------------------------------------------------------------------------------ the drawing's rules on any plan
+
+type View = "published" | "moved";
+
+/** The two bars a tag belongs to: those of the window it names. */
+function tagOwners(m: DayGraphModel, key: string): string[] {
+  if (!m.move) {
+    const lit = m.threads.find((thread) => thread.lit);
+    return lit ? [lit.aId, lit.bId] : [];
+  }
+  return key === "hatch" ? [m.move.actId, m.move.partnerId] : [m.move.actId, key.replace(/^created:/, "")];
+}
+
+/**
+ * Every way a plan breaks the drawing's rules at `stretch` times its track, as readable lines; none when it keeps
+ * them all. Featured names whole and outside their bars (slot b or c); every name and tag on the paper 2px clear of
+ * every other set's bar, window and label (a tag 1px from another set's bar on a phone) and 1px or more from its own
+ * bars without touching them; every name nearer its own bar than any other; a plate at least half over its own bar;
+ * a name beside its bar starting within 8px of its end and stopping 6px short of the next bar; a prefix of at least
+ * 8 characters; every label on the drawing (a phone's inside its detail window); no line's painted stroke inside a
+ * label's box inset 1px (sampled every 1px down the line, less what a bar drawn over a line beneath it hides); and
+ * every line inside its own window.
+ */
+function problemsOf(m: DayGraphModel, plan: LayoutPlan, stretch = 1): string[] {
+  const out: string[] = [];
+  const { layout } = plan;
+  const desktop = layout === "desktop";
+  const bar = LAYOUT[layout].bar;
+  const scale = plan.scale * stretch;
+  const at = { track: plan.track, scale };
+  const x = (minute: number) => (minute - plan.track.start) * scale;
+  const lo = x(desktop ? plan.track.start : Math.max(plan.track.start, m.focus.start));
+  const hi = x(desktop ? plan.track.end : Math.min(plan.track.end, m.focus.end));
+  const ceiling = LAYOUT[layout].axis;
+  const floor = LAYOUT[layout].axis + plan.rows.length * LAYOUT[layout].row + (layout === "desktop" ? 0 : LAYOUT[layout].foot);
+  const name = (id: string) => m.sets.find((set) => set.actId === id)?.name ?? id;
+  const seen = (box: Box): Box => ({ ...box, x0: Math.max(box.x0, lo), x1: Math.min(box.x1, hi) });
+  for (const view of m.move ? (["published", "moved"] as View[]) : (["published"] as View[])) {
+    const vp = plan.views[view];
+    const marks = [
+      ...vp.bars.map((item) => ({ id: item.set.actId, row: item.row, box: { x0: x(item.span.start), x1: x(item.span.end), y0: item.top, y1: item.top + bar } })),
+      ...(vp.ghost
+        ? [{ id: vp.ghost.set.actId, row: vp.ghost.row, box: { x0: x(vp.ghost.span.start), x1: x(vp.ghost.span.end), y0: vp.ghost.top, y1: vp.ghost.top + bar } }]
+        : []),
+    ];
+    const windows = [vp.hatch, ...vp.created].flatMap((w) => (w ? [{ x0: x(w.window.start), x1: x(w.window.end), y0: w.top, y1: w.bottom }] : []));
+    const labels = [
+      ...Object.entries(vp.labels).map(([id, spot]) => ({ id, who: name(id), tag: false, spot, box: spotBox(at, spot), owners: [id] })),
+      ...vp.tags.map((tag) => ({ id: tag.key, who: `tag "${tag.text}"`, tag: true, spot: tag.spot, box: spotBox(at, tag.spot), owners: tagOwners(m, tag.key) })),
+    ];
+    for (const set of m.sets.filter((item) => item.featured)) {
+      const own = vp.bars.find((item) => item.set.actId === set.actId);
+      if (!own || Math.min(x(own.span.end), hi) - Math.max(x(own.span.start), lo) <= 0) continue;
+      const slot = vp.slots[set.actId];
+      if (slot !== "b" && slot !== "c") out.push(`${view}: featured ${set.name} in slot ${slot ?? "none"}`);
+      const text = vp.labels[set.actId]?.lines.join(" ");
+      if (text !== set.name) out.push(`${view}: featured ${set.name} reads "${text ?? ""}"`);
+    }
+    for (const [id, slot] of Object.entries(vp.slots)) {
+      if (slot === "e" && desktop && plan.reference > BANDS.desktop[0].track) out.push(`${view}: ${name(id)} left out above the narrowest desktop band`);
+    }
+    for (const label of labels) {
+      const { box, spot, who } = label;
+      if (box.x0 < lo - 0.01 || box.x1 > hi + 0.01 || box.y0 < ceiling - 0.01 || box.y1 > floor + 0.01) out.push(`${view}: ${who} off the drawing`);
+      const inBar = spot.kind === "inside" || spot.kind === "prefix";
+      if (!inBar) {
+        for (const mark of marks) {
+          const own = label.owners.includes(mark.id);
+          const need = own ? LABEL_GAP[layout] : label.tag ? TAG_BAR_CLEAR[layout] : CLEAR[layout];
+          const gap = boxGap(box, mark.box);
+          if (hit(box, mark.box) || gap < need - 1e-6) out.push(`${view}: ${who} ${gap.toFixed(2)}px from ${own ? "its own bar" : name(mark.id)}`);
+        }
+        for (const window of windows) if (hit(box, window) || boxGap(box, window) < CLEAR[layout] - 1e-6) out.push(`${view}: ${who} within ${CLEAR[layout]}px of a window`);
+      }
+      for (const other of labels) {
+        if (other !== label && (hit(box, other.box) || boxGap(box, other.box) < CLEAR[layout] - 1e-6)) out.push(`${view}: ${who} within ${CLEAR[layout]}px of ${other.who}`);
+      }
+      if (label.tag) continue;
+      const own = marks.find((mark) => mark.id === label.id && vp.bars.some((item) => item.set.actId === mark.id && item.top === mark.box.y0 && x(item.span.start) === mark.box.x0));
+      if (!own) {
+        out.push(`${view}: ${who} has no bar`);
+        continue;
+      }
+      const ownBox = seen(own.box);
+      const mine = boxGap(box, ownBox);
+      for (const mark of marks) {
+        if (mark.id === label.id) continue;
+        const other = seen(mark.box);
+        if (other.x1 > other.x0 && boxGap(box, other) <= mine + 1e-6) out.push(`${view}: ${who} (${spot.slot}) as near ${name(mark.id)} as its own bar`);
+      }
+      if (spot.slot === "c" && overlapX(box, ownBox) < (box.x1 - box.x0) / 2 - 1e-6) out.push(`${view}: ${who} on a plate less than half over its bar`);
+      if (spot.slot === "b") {
+        if (box.x0 < own.box.x1 || box.x0 - own.box.x1 > 8 + 1e-6) out.push(`${view}: ${who} beside its bar but not within 8px of its end`);
+        const next = marks.filter((mark) => mark.row === own.row && mark.box.x0 >= own.box.x1 && mark.box !== own.box).reduce((nearest, mark) => Math.min(nearest, mark.box.x0), hi + 6);
+        if (next - box.x1 < 6 - 1e-6) out.push(`${view}: ${who} beside its bar runs within 6px of the next`);
+      }
+      if (spot.slot === "d") {
+        const text = spot.lines[0];
+        if (!text.endsWith(ELLIPSIS) || [...text.slice(0, -1)].length < PREFIX_MIN || !who.startsWith(text.slice(0, -1))) out.push(`${view}: ${who} cut to "${text}"`);
+      }
+      if (spot.slot !== "d" && spot.lines.join(" ") !== who) out.push(`${view}: ${who} reads "${spot.lines.join(" / ")}"`);
+      if (inBar && (box.x0 < ownBox.x0 - 1e-6 || box.x1 > ownBox.x1 + 1e-6)) out.push(`${view}: ${who} runs out of its bar`);
+    }
+    for (const line of vp.lines) {
+      const cx = x(line.mid) + line.off;
+      const half = line.width / 2;
+      if (cx - half < x(line.window.start) - 1e-6 || cx + half > x(line.window.end) + 1e-6) out.push(`${view}: line ${line.key} leaves its window`);
+      if (cx < lo || cx > hi) continue;
+      let samples = 0;
+      for (let y = line.top; y <= line.bottom; y += 1) {
+        const hidden =
+          line.under &&
+          vp.bars.some(
+            (item) =>
+              item.set.actId !== line.thread.aId &&
+              item.set.actId !== line.thread.bId &&
+              cx >= x(item.span.start) &&
+              cx <= x(item.span.end) &&
+              y >= item.top &&
+              y <= item.top + bar,
+          );
+        if (hidden) continue;
+        for (const label of labels) {
+          const b = label.box;
+          if (y > b.y0 + 1 && y < b.y1 - 1 && cx + half > b.x0 + 1 && cx - half < b.x1 - 1) samples += 1;
+        }
+      }
+      if (samples > 0) out.push(`${view}: line ${line.key} paints ${samples} samples through a name or tag`);
+    }
+  }
+  return out;
+}
+
+/**
+ * How the lines of one view stand against the bars they cross and against each other, at the plan's track. A line
+ * "hugs" a bar when its middle is less than 8px inside another set's bar it crosses, or its stroke less than 2px
+ * clear of it; two lines "stack" when their middles are under 6px apart over more than 4px of the same rows. For
+ * each line, `free` lists the places (sampled every 0.25px) its middle could take inside its window that hug no bar
+ * and keep its stroke 2px, and its end dots 1px, clear of every name, tag and plate on the paper.
+ */
+function lineCrowding(m: DayGraphModel, plan: LayoutPlan, view: View) {
+  const vp = plan.views[view];
+  const bar = LAYOUT[plan.layout].bar;
+  const x = (minute: number) => (minute - plan.track.start) * plan.scale;
+  const marks = [...vp.bars, ...(vp.ghost ? [vp.ghost] : [])];
+  const paper = [
+    ...Object.values(vp.labels).filter((spot) => spot.kind !== "inside" && spot.kind !== "prefix"),
+    ...vp.tags.map((tag) => tag.spot),
+  ].map((spot) => spotBox(plan, spot));
+  const crossed = (line: PlanLine) =>
+    marks.filter(
+      (item) =>
+        item.set.actId !== line.thread.aId &&
+        item.set.actId !== line.thread.bId &&
+        Math.min(line.bottom, item.top + bar) - Math.max(line.top, item.top) >= 4,
+    );
+  const hugsAt = (line: PlanLine, cx: number) =>
+    crossed(line).filter((item) => {
+      const dl = cx - x(item.span.start);
+      const dr = x(item.span.end) - cx;
+      return (dl > -line.width / 2 - 2 && dl < 8) || (dr > -line.width / 2 - 2 && dr < 8);
+    });
+  const freeOf = (line: PlanLine): number[] => {
+    const half = line.width / 2;
+    const dot = (line.thread.lit ? 4 : 3) + 1;
+    const out: number[] = [];
+    for (let p = x(line.window.start) + half; p <= x(line.window.end) - half + 1e-9; p += 0.25) {
+      if (hugsAt(line, p).length > 0) continue;
+      const blocked = paper.some((box) => {
+        if (box.y0 < line.bottom && line.top < box.y1 && p + half + LINE_CLEAR > box.x0 && p - half - LINE_CLEAR < box.x1) return true;
+        return [line.top, line.bottom].some((y) => Math.hypot(Math.max(0, box.x0 - p, p - box.x1), Math.max(0, box.y0 - y, y - box.y1)) < dot);
+      });
+      if (!blocked) out.push(p);
+    }
+    return out;
+  };
+  const lines = vp.lines.map((line) => ({ line, cx: x(line.mid) + line.off }));
+  const hugs = lines.flatMap(({ line, cx }) => hugsAt(line, cx).map((item) => ({ line, bar: item.set.name, free: freeOf(line) })));
+  const stacked = lines.flatMap((a, i) =>
+    lines
+      .slice(i + 1)
+      .filter((b) => Math.abs(a.cx - b.cx) < 6 && Math.min(a.line.bottom, b.line.bottom) - Math.max(a.line.top, b.line.top) > 4)
+      .map((b) => {
+        const fa = freeOf(a.line);
+        const fb = freeOf(b.line);
+        const apart = fa.length > 0 && fb.length > 0 && (Math.max(...fa) - Math.min(...fb) >= 6 || Math.max(...fb) - Math.min(...fa) >= 6);
+        return { keys: `${a.line.key} | ${b.line.key}`, apart };
+      }),
+  );
+  return { hugs, stacked };
+}
+
+/** Each slot's count in one view of a plan. */
+function slotCounts(plan: LayoutPlan, view: View): Record<string, number> {
+  const counts: Record<string, number> = { a: 0, b: 0, c: 0, d: 0, e: 0 };
+  for (const slot of Object.values(plan.views[view].slots)) counts[slot] += 1;
+  return counts;
+}
+
+// ------------------------------------------------------------------------------------ days shaped like the saved ones
+
+/** Glastonbury's shape, invented: the partner on the bottom row, wider than its bar, under the chosen clash's window, a set 30 minutes after it. */
+const UNDER_THE_HATCH: SetSpec[] = [
+  { name: "Nadirwood", stage: "upper", start: "12:30", end: "13:15" },
+  { name: "Shagbark Hollow", stage: "upper", start: "13:45", end: "14:30" },
+  { name: "Joyweed Crookes", stage: "upper", start: "15:00", end: "15:45" },
+  { name: "Gurneyfield", stage: "middle", start: "12:30", end: "13:30" },
+  { name: "Quillwort", stage: "middle", start: "14:00", end: "15:00" },
+  { name: "Djembe", stage: "middle", start: "15:30", end: "16:30" },
+  { name: "Geode Greep", stage: "lower", start: "12:45", end: "13:30" },
+  { name: "Wren T Hollowell", stage: "lower", start: "14:00", end: "14:45" },
+  { name: "Rowanberry Otis", stage: "lower", start: "15:15", end: "16:00" },
+];
+
+function underTheHatch(): DayGraphModel {
+  const sets = UNDER_THE_HATCH;
+  const stages: [string, string][] = [
+    ["upper", "Upper"],
+    ["middle", "Middle"],
+    ["lower", "Lower"],
+  ];
+  const clashes = [
+    pair(1, "Quillwort", "Wren T Hollowell", 45, 0.91, sets),
+    pair(2, "Shagbark Hollow", "Wren T Hollowell", 30, 0.6, sets),
+    pair(3, "Rowanberry Otis", "Djembe", 30, 0.5, sets),
+    pair(4, "Nadirwood", "Gurneyfield", 45, 0.4, sets),
+    pair(5, "Gurneyfield", "Geode Greep", 45, 0.3, sets),
+  ];
+  const move = { ...LATER, act_id: "quillwort", act: "Quillwort", from: "Middle 14:00-15:00", stage_id: "middle", stage: "Middle" };
+  const built = buildDayGraph(makeDay(false, [], { stages, sets, clashes }), decide(move, { a_id: "quillwort", b_id: "wren-t-hollowell", rank: 1, minutes: 45 }), 0);
+  if (!built) throw new Error("no model for the invented day");
+  return built;
+}
+
+/** Riot Fest's shape, invented: the mover on the bottom row, its published slot on its left in the moved view and a set 30 minutes after it. */
+const BESIDE_THE_GHOST: SetSpec[] = [
+  { name: "The Formats", stage: "roots", start: "17:10", end: "18:10" },
+  { name: "Amaryllis Morrow", stage: "roots", start: "19:20", end: "20:20", locked: true },
+  { name: "William Shadbush", stage: "rebel", start: "17:25", end: "18:00" },
+  { name: "Twin Pines", stage: "rebel", start: "18:30", end: "19:30" },
+  { name: "Good Riddle", stage: "radical", start: "18:15", end: "18:55" },
+  { name: "Bowls for Supper", stage: "radical", start: "19:25", end: "20:05" },
+  { name: "Inkcap Clown Posse", stage: "radical", start: "20:55", end: "21:55" },
+];
+
+function besideTheGhost(): DayGraphModel {
+  const sets = BESIDE_THE_GHOST;
+  const stages: [string, string][] = [
+    ["roots", "Roots"],
+    ["rebel", "Rebel"],
+    ["radical", "Radical"],
+  ];
+  const clashes = [
+    pair(1, "Amaryllis Morrow", "Bowls for Supper", 40, 0.88, sets),
+    pair(2, "Twin Pines", "Good Riddle", 25, 0.5, sets),
+    pair(3, "The Formats", "William Shadbush", 35, 0.4, sets),
+  ];
+  const move = {
+    ...LATER,
+    act_id: "bowls-for-supper",
+    act: "Bowls for Supper",
+    from: "Radical 19:25-20:05",
+    stage_id: "radical",
+    stage: "Radical",
+    start: "19:45",
+    end: "20:25",
+    minutes_moved: 20,
+    minutes_shared_after: 35,
+  };
+  const built = buildDayGraph(
+    makeDay(false, [], { stages, sets, clashes }),
+    decide(move, { a_id: "amaryllis-morrow", b_id: "bowls-for-supper", rank: 1, minutes: 40 }),
+    0,
+  );
+  if (!built) throw new Error("no model for the invented day");
+  return built;
+}
+
+/**
+ * A published day from the backend's built presets, when this checkout has it (they are not committed), drawn with
+ * the move the decision route sends for it (GET /api/presets/{id}/decision).
+ */
+function savedDay(file: string, clash: Raw, move: Raw): DayGraphModel | null {
+  const path = join(process.cwd(), "..", "backend", "presets", file);
+  if (!existsSync(path)) return null;
+  const decision = parseDecision({ kind: "decision", day: 0, skipped_locked: 0, skipped_no_place: 0, clash, published_budget: 100, move, rule: null });
+  return buildDayGraph(parsePreset(JSON.parse(readFileSync(path, "utf8"))), decision, 0);
+}
+
+const SAVED: [string, DayGraphModel | null][] = [
+  [
+    "Glastonbury 2025, Sunday",
+    savedDay(
+      "glastonbury-2025-sun.json",
+      { a_id: "sprints", b_id: "katy-j-pearson", rank: 1, minutes: 45 },
+      { ...LATER, act_id: "sprints", act: "Sprints", from: "Woodsies 14:00-15:00", stage_id: "woodsies", stage: "Woodsies", legal_places: 6, budget_after: 114.26 },
+    ),
+  ],
+  [
+    "Riot Fest 2026, Sunday",
+    savedDay(
+      "riot-fest-2026-sun.json",
+      { a_id: "alanis-morissette", b_id: "bowling-for-soup", rank: 1, minutes: 40 },
+      {
+        ...LATER,
+        act_id: "bowling-for-soup",
+        act: "Bowling for Soup",
+        from: "Radical 19:25-20:05",
+        stage_id: "radical",
+        stage: "Radical",
+        start: "19:45",
+        end: "20:25",
+        minutes_moved: 20,
+        legal_places: 13,
+        budget_after: 85.48,
+        minutes_shared_after: 35,
+      },
+    ),
+  ],
+];
+
+const DAYS: [string, DayGraphModel | null][] = [
+  ...SAVED,
+  ["an invented day with the partner under the chosen clash's window", underTheHatch()],
+  ["an invented day with the mover between its published slot and the next set", besideTheGhost()],
+];
+
+describe("planDrawing: featured names are always whole", () => {
+  for (const [day, m] of DAYS) {
+    it.skipIf(m === null)(`on ${day}, at 320, 360 and 390px wide, in both views, on a tall and a short phone, never cuts or leaves out a featured name`, () => {
+      const model = m as DayGraphModel;
+      expect(model.sets.filter((set) => set.featured).length).toBeGreaterThanOrEqual(2);
+      for (const layout of ["phone", "short"] as const) {
+        BANDS[layout].forEach((band, i) => {
+          expect(band.track).toBe(band.from - 32 - 64);
+          const plan = planDrawing(model, layout, band.track);
+          for (const view of ["published", "moved"] as const) {
+            for (const set of model.sets.filter((item) => item.featured)) {
+              const spot = plan.views[view].labels[set.actId];
+              expect(plan.views[view].slots[set.actId], `${layout} at ${band.from}px, ${view}: ${set.name}`).toMatch(/^[bc]$/);
+              expect(spot?.lines.join(" ")).toBe(set.name);
+              expect(["above", "below", "beside"]).toContain(spot?.kind);
+            }
+          }
+          // Clear of every other bar, window and label by 2px, 1px from its own bar, at the band's track and up to the next band's.
+          const wider = (BANDS[layout][i + 1]?.track ?? band.track + 80) / band.track;
+          expect(problemsOf(model, plan)).toEqual([]);
+          expect(problemsOf(model, plan, wider)).toEqual([]);
+        });
+      }
+    });
+  }
+
+  it("keeps a tall phone's drawing and a short phone's as tall as before, with a label lane under the last row", () => {
+    const m = underTheHatch();
+    expect(m.phoneRows.length).toBe(3);
+    expect(LAYOUT.phone.overview + LAYOUT.phone.gap + LAYOUT.phone.axis + 3 * LAYOUT.phone.row + LAYOUT.phone.foot).toBe(172);
+    expect(LAYOUT.short.axis + 3 * LAYOUT.short.row + LAYOUT.short.foot).toBe(140);
+    // A name under the bottom bar sits 1px under it and ends at the drawing's foot.
+    for (const layout of ["phone", "short"] as const) {
+      const plan = planDrawing(m, layout, BANDS[layout][0].track);
+      const spot = plan.views.moved.labels["wren-t-hollowell"];
+      expect(spot?.kind).toBe("below");
+      expect(spot?.top).toBe(barBottomOf(layout, 2) + LABEL_GAP[layout]);
+      expect((spot?.top ?? 0) + (spot?.height ?? 0)).toBe(LAYOUT[layout].axis + 3 * LAYOUT[layout].row + LAYOUT[layout].foot);
+    }
+    // A short phone's row gap still holds a one-line plate: 1px to its own bar, 2px to the bar across the gap.
+    expect(LAYOUT.short.row - LAYOUT.short.bar).toBe(1 + 15 + 2);
+    expect(LAYOUT.phone.row - LAYOUT.phone.bar).toBe(1 + 15 + 2);
+  });
+});
+
+describe("planDrawing: each name in the first slot that fits", () => {
+  const m = model(LATER, false, [...CROWDED, YARROW, LONG]);
+
+  it("puts a name inside its bar when it fits, beside it on an empty stretch of its row, on a plate when it is crowded, and cuts it or leaves it out only when nothing else fits", () => {
+    const narrow = planDrawing(m, "desktop", BANDS.desktop[0].track);
+    const wide = planDrawing(m, "desktop", BANDS.desktop[BANDS.desktop.length - 1].track);
+    const pub = narrow.views.published;
+    // (a) Fir fits inside its hour.
+    expect(pub.slots.fir).toBe("a");
+    expect(pub.labels.fir?.kind).toBe("inside");
+    // (b) Yarrow Ensemble's ten minutes cannot hold it, but the row is empty until Fir.
+    expect(pub.slots["yarrow-ensemble"]).toBe("b");
+    expect(pub.labels["yarrow-ensemble"]?.kind).toBe("beside");
+    // (c) The three packed sets have no room inside or beside their bars: plates above and below them, at 1280px.
+    for (const spec of CROWDED) expect(wide.views.published.slots[idOf(spec.name)], spec.name).toBe("c");
+    // (e) At 1024px the middle one of them finds no place clear of its neighbours' plates, and is left out.
+    expect(pub.slots["dogwood-brass-quartet"]).toBe("e");
+    // (d) On a 390px phone the long name has no plate at least half over its bar and no room beside it: a prefix,
+    // its ellipsis 3px short of the bar's end.
+    const phone = planDrawing(m, "phone", BANDS.phone[2].track);
+    expect(phone.views.published.slots["sassafras-night-choir-orchestra"]).toBe("d");
+    expect(phone.views.published.labels["sassafras-night-choir-orchestra"]?.lines).toEqual([`Sassafras${ELLIPSIS}`]);
+    for (const plan of [narrow, wide, phone]) expect(problemsOf(m, plan)).toEqual([]);
+  });
+
+  it("keeps a name beside its bar within 8px of the bar's end and 6px short of the next bar, and a plate at least half over its own bar and nearer it than any other", () => {
+    const counts = { b: 0, c: 0 };
+    const plans = [
+      ...[600, ...BANDS.desktop.map((band) => band.track)].map((reference) => planDrawing(m, "desktop", reference)),
+      ...BANDS.phone.map((band) => planDrawing(m, "phone", band.track)),
+      ...BANDS.short.map((band) => planDrawing(m, "short", band.track)),
+    ];
+    for (const plan of plans) {
+      for (const view of ["published", "moved"] as const) {
+        const slots = slotCounts(plan, view);
+        counts.b += slots.b;
+        counts.c += slots.c;
+      }
+      expect(problemsOf(m, plan), `${plan.layout} at ${plan.reference}px`).toEqual([]);
+    }
+    expect(counts.b).toBeGreaterThan(0);
+    expect(counts.c).toBeGreaterThan(0);
+  });
+
+  it("sets a name on two lines at the word break that makes the wider line narrowest", () => {
+    expect(twoLines("Cottonwood Collective", 500)).toEqual(["Cottonwood", "Collective"]);
+    expect(twoLines("Dogwood Brass Quartet", 500)).toEqual(["Dogwood", "Brass Quartet"]);
+    expect(twoLines("Quillwort", 500)).toBeNull();
+  });
+});
+
+describe("planDrawing: at each band's own track", () => {
+  const days: [string, DayGraphModel | null][] = [["the fixture day", model(LATER, false, [...CROWDED, YARROW, LONG])], ...DAYS];
+
+  for (const [day, m] of days) {
+    it.skipIf(m === null)(`on ${day}, places names and lines at each desktop band's track, where they hold up to the next band`, () => {
+      const model = m as DayGraphModel;
+      BANDS.desktop.forEach((band, i) => {
+        // The track a band draws: the page's column (40px gutters, at most 1200px) less the 96px stage names.
+        expect(band.track).toBe(Math.min(band.from, 1280) - 80 - 96);
+        const plan = planDrawing(model, "desktop", band.track);
+        expect(plan.reference).toBe(band.track);
+        expect(plan.scale).toBeCloseTo(band.track / (plan.track.end - plan.track.start), 9);
+        const next = BANDS.desktop[i + 1];
+        const widest = next ? Math.min(next.from - 1, 1280) - 80 - 96 : band.track;
+        expect(problemsOf(model, plan)).toEqual([]);
+        expect(problemsOf(model, plan, widest / band.track)).toEqual([]);
+        // From 1120px every name is drawn.
+        if (i > 0) for (const view of ["published", "moved"] as const) expect(slotCounts(plan, view).e).toBe(0);
+      });
+    });
+  }
+});
+
+describe("planDrawing: lines clear of other bars' edges and of each other", () => {
+  for (const [day, m] of DAYS) {
+    it.skipIf(m === null)(`on ${day}, at every desktop band, stands each line 8px inside or 2px clear of every other set's bar it crosses (8px of bar beside its casing when drawn over it), and 6px from every line over the same rows, wherever the names leave it such a place`, () => {
+      const model = m as DayGraphModel;
+      for (const band of BANDS.desktop) {
+        const plan = planDrawing(model, "desktop", band.track);
+        for (const view of ["published", "moved"] as const) {
+          const { hugs, stacked } = lineCrowding(model, plan, view);
+          // A line runs by a bar's edge only when no place in its window is clear of every edge and every name.
+          for (const hug of hugs) expect(hug.free, `${band.from}px, ${view}: ${hug.line.key} by ${hug.bar}`).toEqual([]);
+          // Two lines stand closer than 6px only when no two such places 6px apart are left to them.
+          for (const pair of stacked) expect(pair.apart, `${band.from}px, ${view}: ${pair.keys}`).toBe(false);
+          // From 1280px no line runs by another set's bar edge.
+          if (band === BANDS.desktop[BANDS.desktop.length - 1]) expect(hugs.map((hug) => `${hug.line.key} by ${hug.bar}`)).toEqual([]);
+          // A line drawn over another set's bar leaves 8px of the bar each side of its casing; nearer an end it passes beneath.
+          const vp = plan.views[view];
+          const x = (minute: number) => (minute - plan.track.start) * plan.scale;
+          for (const line of vp.lines.filter((item) => !item.under)) {
+            const cx = x(line.mid) + line.off;
+            for (const item of [...vp.bars, ...(vp.ghost ? [vp.ghost] : [])]) {
+              if (item.row <= line.upper || item.row >= line.lower || item.set.actId === line.thread.aId || item.set.actId === line.thread.bId) continue;
+              if (cx <= x(item.span.start) || cx >= x(item.span.end)) continue;
+              const stub = Math.min(cx - x(item.span.start), x(item.span.end) - cx) - line.width / 2 - CASING;
+              expect(stub, `${band.from}px, ${view}: ${line.key} over ${item.set.name}`).toBeGreaterThanOrEqual(BAR_STUB - 1e-6);
+            }
+          }
+        }
+      }
+    });
+  }
+
+  it("draws every name of both saved days from 1120px, and at 1024px leaves out no more than the drawing can hold", () => {
+    for (const [day, m] of SAVED) {
+      if (!m) continue;
+      for (const band of BANDS.desktop) {
+        const plan = planDrawing(m, "desktop", band.track);
+        for (const view of ["published", "moved"] as const) {
+          const left = slotCounts(plan, view).e;
+          // At 1024px Riot Fest's 30-minute sets leave two names no place clear of their own lines (an exhaustive search
+          // of every place finds none), and the moved view's tag takes a third; from 1120px every name is drawn.
+          expect(left, `${day} at ${band.from}px, ${view}`).toBeLessThanOrEqual(band === BANDS.desktop[0] ? (view === "moved" ? 3 : 2) : 0);
+        }
+      }
+    }
+  });
+});
+
+describe("planDrawing: names first, featured first, then the lines", () => {
+  it("places the featured names and their tags before every other name, which take the places left, and routes the lines last, round every name", () => {
+    const m = underTheHatch();
+    // The same day with every other set's name far longer: the featured names and the tags must not move.
+    const longer: DayGraphModel = { ...m, sets: m.sets.map((set) => (set.featured ? set : { ...set, name: `${set.name} and the Longest Name on the Bill` })) };
+    const featured = m.sets.filter((set) => set.featured).map((set) => set.actId);
+    expect(featured).toEqual(expect.arrayContaining(["quillwort", "wren-t-hollowell", "joyweed-crookes"]));
+    for (const layout of ["desktop", "phone", "short"] as const) {
+      for (const band of BANDS[layout]) {
+        const plan = planDrawing(m, layout, band.track);
+        const crowded = planDrawing(longer, layout, band.track);
+        for (const view of ["published", "moved"] as const) {
+          for (const id of featured) expect(crowded.views[view].labels[id], `${layout} at ${band.from}px, ${view}: ${id}`).toEqual(plan.views[view].labels[id]);
+          expect(crowded.views[view].tags).toEqual(plan.views[view].tags);
+          // Shagbark Hollow's name never takes the mover's place, nor comes within 2px of it.
+          const mover = plan.views[view].labels.quillwort;
+          const shagbark = plan.views[view].labels["shagbark-hollow"];
+          if (mover && shagbark) expect(boxGap(spotBox(plan, shagbark), spotBox(plan, mover))).toBeGreaterThanOrEqual(CLEAR[layout] - 1e-6);
+        }
+        // Every other name finds what room is left, and every line stands clear of every name.
+        expect(problemsOf(m, plan)).toEqual([]);
+        expect(problemsOf(longer, crowded)).toEqual([]);
+      }
+    }
+  });
+
+  it("nudges a line inside its own window and never out of it", () => {
+    for (const [, m] of DAYS) {
+      if (!m) continue;
+      for (const plan of [...BANDS.desktop.map((band) => planDrawing(m, "desktop", band.track)), ...BANDS.phone.map((band) => planDrawing(m, "phone", band.track))]) {
+        for (const view of ["published", "moved"] as const) {
+          for (const line of plan.views[view].lines) {
+            const x = (line.mid - plan.track.start) * plan.scale + line.off;
+            expect(x - line.width / 2).toBeGreaterThanOrEqual((line.window.start - plan.track.start) * plan.scale - 1e-6);
+            expect(x + line.width / 2).toBeLessThanOrEqual((line.window.end - plan.track.start) * plan.scale + 1e-6);
+          }
+        }
+      }
+    }
   });
 });

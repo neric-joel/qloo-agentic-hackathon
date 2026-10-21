@@ -16,10 +16,13 @@ import { formatClock } from "@/lib/timetable";
 
 import {
   BestPlaceColumn,
+  MovesCard,
+  RULES_CHECKED,
   START_WITH,
   TestedPlace,
   TryAMove,
   bestPlace,
+  listedLead,
   nextLabel,
   placeChanges,
   starterPairsOf,
@@ -28,6 +31,7 @@ import {
   type MoveStripData,
   type PlaceChanges,
 } from "./try-a-move";
+import { scaleRange } from "./budget-move";
 import { clashParts, clashWords, listedPlace, moveCheck, sharedMinutesByName, splitKept, type MoveCheck } from "./use-moves";
 import { ChangeCard, SAME_STAGE_FIRST, STAGE_SIGN_OFF, sameStageFirst } from "./keep-apart";
 import { ScratchPlan } from "./scratch-plan";
@@ -100,13 +104,16 @@ describe("the tested place's verdict before Keep this move", () => {
     expect(words).toContain("Index 41.2 → 38.8 (−2.4, lower is better)");
     // Both readings are ink: the from-value is not muted, so it never reads as disabled.
     expect(html).toMatch(/<span class="font-mono tabular-nums"><span>41\.2<\/span> →/);
-    // (b) and (c) in one 14px line: the rule status, then, after a muted "Listed clashes of {mover}:" (the
-    // endpoint's lists stop at three), the clashes it keeps (their minutes unread here), adds and removes,
-    // added and removed always. A kept part still prints.
-    expect(words).toContain(`Adds no rule break. Listed clashes of ${result.act}: 1 kept, 0 added, 1 removed.`);
+    // (b) and (c) in one 14px block: the rule status with the rules it was checked against, then, after a muted
+    // "Listed clashes of {mover} (its three costliest, as scored):" (the endpoint's lists stop at three, and the
+    // line says so), the clashes it keeps (their minutes unread here), adds and removes, added and removed
+    // always. A kept part still prints.
+    expect(words).toContain(`Adds no rule break. ${RULES_CHECKED}`);
+    expect(words).toContain(`Listed clashes of ${result.act} (its three costliest, as scored): 1 kept, 0 added, 1 removed.`);
+    expect(words.indexOf("Adds no rule break.")).toBeLessThan(words.indexOf("Listed clashes of"));
     // The prefix is muted; the counts after it are not.
     const prefix = /<span class="text-muted-foreground">(Listed clashes of [^]*?)<\/span>/.exec(html)?.[1] ?? "";
-    expect(text(prefix)).toBe(`Listed clashes of ${result.act}:`);
+    expect(text(prefix)).toBe(`Listed clashes of ${result.act} (its three costliest, as scored):`);
     // The minutes shared lead, in one line of the condensed face, at one weight: no lighter "45".
     expect(words).toContain("45 → 30 min shared with Katy J Pearson");
     expect(html).toMatch(/<p class="type-numeral text-2xl[^"]*">45 → 30 min shared/);
@@ -155,7 +162,8 @@ describe("the tested place's verdict before Keep this move", () => {
       { status: "ready", result, option },
       { ends: [], adds: [], keeps: [] },
     );
-    expect(text(html)).toContain(`Adds no rule break. Listed clashes of ${result.act}: 0 added, 0 removed.`);
+    expect(text(html)).toContain(`Adds no rule break. ${RULES_CHECKED}`);
+    expect(text(html)).toContain(`Listed clashes of ${result.act} (its three costliest, as scored): 0 added, 0 removed.`);
     const withCard = renderToStaticMarkup(
       createElement(TestedPlace, {
         card: { ...card, indexBefore: "41.2", indexAfter: "38.8" },
@@ -477,10 +485,13 @@ describe("the clashes line tells a shorter clash from an unchanged one", () => {
 
   it("prints the row on the tested place in that order", () => {
     const html = render({ status: "ready", result, option }, { ...changes, shared });
+    expect(text(html)).toContain(`Adds no rule break. ${RULES_CHECKED}`);
     expect(text(html)).toContain(
-      `Adds no rule break. Listed clashes of ${result.act}: ${clashWords(clashParts(changes, shared))}.`,
+      `Listed clashes of ${result.act} (its three costliest, as scored): ${clashWords(clashParts(changes, shared))}.`,
     );
-    expect(text(html)).toContain("Listed clashes of Sprints: 1 shortened (45 → 30 min), 2 unchanged, 0 added, 0 removed.");
+    expect(text(html)).toContain(
+      "Listed clashes of Sprints (its three costliest, as scored): 1 shortened (45 → 30 min), 2 unchanged, 0 added, 0 removed.",
+    );
   });
 
   it("still prints a lengthened part after the listed prefix, in clashParts' order", () => {
@@ -488,7 +499,207 @@ describe("the clashes line tells a shorter clash from an unchanged one", () => {
     const html = render({ status: "ready", result, option }, { ...changes, shared: longer });
     const counts = clashWords(clashParts(changes, longer));
     expect(counts).toContain("1 lengthened (20 → 35 min)");
-    expect(text(html)).toContain(`Adds no rule break. Listed clashes of ${result.act}: ${counts}.`);
+    expect(text(html)).toContain(`Adds no rule break. ${RULES_CHECKED}`);
+    expect(text(html)).toContain(`Listed clashes of ${result.act} (its three costliest, as scored): ${counts}.`);
+  });
+});
+
+describe("Try a move says what 'listed' means, what grows outside the list and what a legal place was checked against", () => {
+  // Invented names and figures (the card's move above, and the tiny fixture festival).
+  const verdict = (html: string) => /<div aria-live="polite" data-place-verdict="true"[^>]*>([\s\S]*?)<\/div>/.exec(html)?.[1] ?? "";
+  const paragraph = (html: string, hook: string) =>
+    text(new RegExp(`<p ${hook}="true"[^>]*>([\\s\\S]*?)</p>`).exec(html)?.[1] ?? "");
+  const kept = { ends: [], adds: [], keeps: [{ name: "Katy J Pearson", now: 3.4, after: 2.1 }], shared: new Map([["Katy J Pearson", { before: 45, after: 30 }]]) };
+
+  it("pins the rules sentence and the inline definition of 'listed'", () => {
+    expect(RULES_CHECKED).toBe(
+      "Checked against the stage’s hours, the curfew, the changeover gap, locked sets and pairs that must never overlap.",
+    );
+    expect(listedLead("Sprints")).toBe("Listed clashes of Sprints (its three costliest, as scored): ");
+  });
+
+  it("prints the rules sentence after 'Adds no rule break.' for every legal place, and never before the rules are in", () => {
+    const places = ["14:05", "14:10", "14:15"].map((start, i): PlacedOption => ({ ...option, start, end: `15:${String(5 * (i + 1)).padStart(2, "0")}` }));
+    const all: MovesResult = { ...result, options: places };
+    for (const place of places) {
+      const html = render({ status: "ready", result: all, option: place });
+      // The rule status and its rules in one line: ink status, the rules muted beside it.
+      expect(paragraph(html, "data-rules-line")).toBe(`Adds no rule break. ${RULES_CHECKED}`);
+      expect(html).toContain(`<p data-rules-line="true">Adds no rule break. <span class="text-muted-foreground">${RULES_CHECKED}</span></p>`);
+      // Under it, the listed clashes.
+      expect(verdict(html).indexOf("data-rules-line")).toBeLessThan(verdict(html).indexOf("data-listed-line"));
+    }
+    // The picked set's best place says it too.
+    const tiny = parsePreset(rawTinyPreset())!;
+    const picked: MovesResult = { ...result, act: "Bo Diddly Squat", actId: "bo", options: [{ ...option, stageId: "side", stage: "Side", start: "22:05", end: "23:35" }] };
+    const column = renderToStaticMarkup(
+      createElement(BestPlaceColumn, {
+        status: "ready",
+        result: picked,
+        best: bestPlace(picked, tiny, tiny.festival.timetable, [{ aId: "ann", bId: "bo" }]),
+        pickedName: "Bo Diddly Squat",
+        synthetic: false,
+        keepFull: false,
+        onKeep: () => {},
+        open: false,
+        controls: "every-place",
+        onToggle: () => {},
+      }),
+    );
+    expect(text(column)).toContain(`Adds no rule break. ${RULES_CHECKED}`);
+    // Not while checking, not for a place the list does not hold, not when the list failed.
+    for (const check of [
+      moveCheck({ status: "loading", options: null }, move),
+      moveCheck({ status: "ready", options: result }, { ...move, start: "16:40" }),
+      moveCheck({ status: "error", options: null }, move),
+    ]) {
+      expect(render(check)).not.toContain(RULES_CHECKED);
+    }
+  });
+
+  it("ends the summary with the outside sentence and adds the outside line only when an unlisted overlap starts or grows", () => {
+    const one = render({ status: "ready", result, option }, { ...kept, outside: [{ name: "Joy Crookes", before: 0, after: 15 }] });
+    expect(paragraph(one, "data-listed-line")).toBe(
+      "Listed clashes of Sprints (its three costliest, as scored): 1 shortened (45 → 30 min), 0 added, 0 removed. Outside the list, 1 overlap starts or grows.",
+    );
+    expect(paragraph(one, "data-outside-line")).toBe("Outside the listed clashes: new 15 min overlap with Joy Crookes.");
+    // The lead is muted; the clauses after it are ink.
+    expect(one).toContain(
+      '<p data-outside-line="true" class="text-sm leading-snug break-words text-pretty"><span class="text-muted-foreground">Outside the listed clashes:</span> new 15 min overlap with Joy Crookes.</p>',
+    );
+    // The line sits under the listed clashes, inside the one block read out together.
+    expect(verdict(one).indexOf("data-listed-line")).toBeLessThan(verdict(one).indexOf("data-outside-line"));
+
+    const four = render(
+      { status: "ready", result, option },
+      {
+        ...kept,
+        outside: [
+          { name: "Wet Leg", before: 10, after: 25 },
+          { name: "Joy Crookes", before: 0, after: 15 },
+          { name: "Fontaines D.C.", before: 5, after: 15 },
+          { name: "Cymande", before: 0, after: 5 },
+        ],
+      },
+    );
+    expect(paragraph(four, "data-listed-line")).toMatch(/0 removed\. Outside the list, 4 overlaps start or grow\.$/);
+    expect(paragraph(four, "data-outside-line")).toBe(
+      "Outside the listed clashes: lengthens the overlap with Wet Leg from 10 to 25 min. new 15 min overlap with Joy Crookes. 2 more overlaps get longer.",
+    );
+
+    for (const none of [{ ...kept, outside: [] }, kept]) {
+      const html = render({ status: "ready", result, option }, none);
+      expect(paragraph(html, "data-listed-line")).toBe(
+        "Listed clashes of Sprints (its three costliest, as scored): 1 shortened (45 → 30 min), 0 added, 0 removed.",
+      );
+      expect(html).not.toContain("data-outside-line");
+      expect(text(html)).not.toContain("Outside the list");
+    }
+  });
+
+  it("titles the full list's lists 'Listed clashes it ends', 'Listed clashes it adds' and 'Listed clashes it keeps', with the outside line under them", () => {
+    const tiny = parsePreset(rawTinyPreset())!;
+    const place: PlacedOption = { ...option, stageId: "side", stage: "Side", start: "21:00", end: "22:30", clashesAfter: [{ name: "Ann Arbor", points: 2 }] };
+    const picked: MovesResult = { ...result, act: "Bo Diddly Squat", actId: "bo", from: "Side 20:30-22:00", clashesNow: [{ name: "Ann Arbor", points: 3 }], options: [place] };
+    const card = (timetable = tiny.festival.timetable) =>
+      renderToStaticMarkup(
+        createElement(MovesCard, {
+          result: picked,
+          preset: tiny,
+          timetable,
+          kept: 0,
+          range: scaleRange(tiny.report.baseline),
+          chosen: place,
+          keep: { full: false, onKeep: () => {} },
+          onChoose: () => {},
+        }),
+      );
+    const plain = card();
+    const headings = [...plain.matchAll(/<h4[^>]*>([^<]*)<\/h4>/g)].map((match) => match[1]);
+    expect(headings).toEqual(["Listed clashes it ends", "Listed clashes it adds", "Listed clashes it keeps"]);
+    expect(plain).not.toMatch(/>Clashes it (ends|adds|keeps)</);
+    expect(plain).not.toContain("data-outside-line");
+    // Cy Twombly moved to 22:15-23:15 on the timetable: Bo at 21:00-22:30 now starts 15 minutes with it.
+    const withCy = tiny.festival.timetable.map((slot) => (slot.act_id === "cy" ? { ...slot, start: 1335, end: 1395 } : slot));
+    const outside = card(withCy);
+    expect(text(outside)).toContain("Outside the listed clashes: new 15 min overlap with Cy Twombly.");
+    expect(outside).toMatch(/<p data-outside-line="true" class="text-sm leading-snug break-words text-pretty sm:col-span-2">/);
+  });
+
+  it("says which rules a place passed for every place in the full list, above its listed clashes, and only for a legal place", () => {
+    const tiny = parsePreset(rawTinyPreset())!;
+    const places = ["21:00", "21:05", "21:10"].map(
+      (start, i): PlacedOption => ({
+        ...option,
+        stageId: "side",
+        stage: "Side",
+        start,
+        end: `22:${String(30 + 5 * i)}`,
+        after: 38.8 + i / 10,
+        clashesAfter: [{ name: "Ann Arbor", points: 2 }],
+      }),
+    );
+    const picked: MovesResult = { ...result, act: "Bo Diddly Squat", actId: "bo", from: "Side 20:30-22:00", clashesNow: [{ name: "Ann Arbor", points: 3 }], options: places };
+    const card = (answer: MovesResult, chosen: PlacedOption | null) =>
+      renderToStaticMarkup(
+        createElement(MovesCard, {
+          result: answer,
+          preset: tiny,
+          timetable: tiny.festival.timetable,
+          kept: 0,
+          range: scaleRange(tiny.report.baseline),
+          chosen,
+          keep: { full: false, onKeep: () => {} },
+          onChoose: () => {},
+        }),
+      );
+    const rules = (html: string) => [...html.matchAll(/<p data-rules-line="true"[^>]*>([\s\S]*?)<\/p>/g)].map((match) => text(match[1]));
+    for (const place of places) {
+      const html = card(picked, place);
+      // One line per chosen place, in the tested place's words: the status in ink, the rules muted beside it.
+      expect(rules(html)).toEqual([`Adds no rule break. ${RULES_CHECKED}`]);
+      expect(html).toContain(
+        `<p data-rules-line="true" class="mt-4 text-sm leading-snug break-words text-pretty">Adds no rule break. <span class="text-muted-foreground">${RULES_CHECKED}</span></p>`,
+      );
+      // Under the place's Clash Budget move, above the lists of the clashes it changes.
+      expect(html.indexOf("data-rules-line")).toBeLessThan(html.indexOf("Listed clashes it ends"));
+    }
+    // A set that cannot move, or has no legal place, claims no rule status.
+    expect(card({ ...picked, movable: false, why: "it is locked", options: [] }, null)).not.toContain("Adds no rule break");
+    expect(card({ ...picked, options: [] }, null)).not.toContain("Adds no rule break");
+  });
+
+  it("says scored, never priced, in its visible and spoken words", () => {
+    const tiny = parsePreset(rawTinyPreset())!;
+    const ranked = topClashes(tiny.report.clashes, 0, Number.POSITIVE_INFINITY);
+    const html = renderToStaticMarkup(createElement(TryAMove, { preset: tiny, day: 0, ranked, isLocked: () => false }));
+    expect(text(html)).toContain("Pick a set to see every legal place on the 5-minute grid, scored.");
+    // Cy Twombly has no usable signal: the select says so in the same word.
+    expect(html).toMatch(/<option value="cy"[^>]*>[^<]*Cy Twombly \(not scored\)<\/option>/);
+    expect(text(html)).not.toMatch(/pric/i);
+    const unread = renderToStaticMarkup(
+      createElement(TestedPlace, {
+        card,
+        mover: "Sprints",
+        stage: "Woodsies",
+        end: "15:15",
+        minutes: null,
+        strip: null,
+        check: { status: "error" },
+        changes: null,
+        keepFull: false,
+        onKeep: () => {},
+        onShowAll: () => {},
+      }),
+    );
+    expect(text(unread)).toContain("Index not scored here");
+    expect(text(unread)).not.toMatch(/pric/i);
+    // The plan's error box and the status line it speaks.
+    const source = readFileSync(join(__dirname, "try-a-move.tsx"), "utf8");
+    expect(source.match(/Could not score this plan\./g)).toHaveLength(2);
+    expect(source).not.toContain("Could not price");
+    expect(source.match(/Scoring every legal place for/g)).toHaveLength(2);
+    expect(source).toContain("Scoring your tested moves");
   });
 });
 
@@ -639,7 +850,7 @@ describe("Start with names the partner of every row, from the one map the card r
   );
 
   it.skipIf(glastonbury === null)(
-    "on the Glastonbury Sunday default, the counts line reads 'Listed clashes of Sprints:' then clashWords' counts",
+    "on the Glastonbury Sunday default, the counts line reads 'Listed clashes of Sprints (its three costliest, as scored):' then clashWords' counts",
     () => {
       const preset = glastonbury!;
       const ranked = topClashes(preset.report.clashes, 0, Number.POSITIVE_INFINITY);
@@ -684,7 +895,93 @@ describe("Start with names the partner of every row, from the one map the card r
           onShowAll: () => {},
         }),
       );
-      expect(text(html)).toContain(`Adds no rule break. Listed clashes of Sprints: ${counts}.`);
+      expect(text(html)).toContain(`Adds no rule break. ${RULES_CHECKED}`);
+      expect(text(html)).toContain(`Listed clashes of Sprints (its three costliest, as scored): ${counts}.`);
+    },
+  );
+
+  it.skipIf(glastonbury === null)(
+    "on Glastonbury, Sprints at Woodsies 14:15 says 'Listed clashes it adds', ends its summary with the outside sentence and names Joy Crookes",
+    () => {
+      const preset = glastonbury!;
+      const sprints = preset.festival.acts.find((act) => act.name === "Sprints")!;
+      // The moves route's answer for Sprints on the saved day (GET /api/presets/glastonbury-2025-sun/moves?act=sprints),
+      // its first legal place: the hero's move. Its lists hold Sprints' three costliest clashes before and after.
+      const place: PlacedOption = {
+        move: "Sprints: Woodsies 14:00-15:00 -> Woodsies 14:15-15:15",
+        stage: "Woodsies",
+        start: "14:15",
+        after: 114.26,
+        stageId: "woodsies",
+        end: "15:15",
+        day: 0,
+        clashesAfter: [
+          { name: "Katy J Pearson", points: 2.7 },
+          { name: "Cymande", points: 2 },
+          { name: "The Libertines", points: 1.7 },
+        ],
+      };
+      const answer: MovesResult = {
+        ...result,
+        act: "Sprints",
+        actId: sprints.id,
+        from: "Woodsies 14:00-15:00",
+        before: 116.71,
+        legalPlaces: 6,
+        clashesNow: [
+          { name: "Katy J Pearson", points: 4.1 },
+          { name: "Cymande", points: 2.6 },
+          { name: "The Libertines", points: 2.3 },
+        ],
+        options: [place],
+      };
+      const changes = placeChanges(preset.festival, preset.festival.timetable, answer, place);
+      expect(changes.outside).toEqual([{ name: "Joy Crookes", before: 0, after: 15 }]);
+      const tested = renderToStaticMarkup(
+        createElement(TestedPlace, {
+          card: { move: { actId: sprints.id, stageId: "woodsies", day: 0, start: "14:15" }, receipt: "" },
+          mover: "Sprints",
+          stage: "Woodsies",
+          end: "15:15",
+          minutes: null,
+          strip: null,
+          check: { status: "ready", result: answer, option: place },
+          changes,
+          keepFull: false,
+          onKeep: () => {},
+          onShowAll: () => {},
+        }),
+      );
+      const listed = text(/<p data-listed-line="true">([\s\S]*?)<\/p>/.exec(tested)?.[1] ?? "");
+      expect(listed).toBe(
+        "Listed clashes of Sprints (its three costliest, as scored): 3 shortened, 0 added, 0 removed. Outside the list, 1 overlap starts or grows.",
+      );
+      const outside = text(/<p data-outside-line="true"[^>]*>([\s\S]*?)<\/p>/.exec(tested)?.[1] ?? "");
+      expect(outside).toBe("Outside the listed clashes: new 15 min overlap with Joy Crookes.");
+      // No line reads "0 added" alone: the one that says it also says what grows outside the list.
+      for (const paragraph of tested.match(/<p[^>]*>[\s\S]*?<\/p>/g) ?? []) {
+        if (text(paragraph).includes("0 added")) expect(text(paragraph)).toContain("Outside the list, 1 overlap starts or grows.");
+      }
+      // The full list for the same place: the lists say "Listed", and the outside line sits under them.
+      const card = renderToStaticMarkup(
+        createElement(MovesCard, {
+          result: answer,
+          preset,
+          timetable: preset.festival.timetable,
+          kept: 0,
+          range: scaleRange(preset.report.baseline),
+          chosen: place,
+          keep: { full: false, onKeep: () => {} },
+          onChoose: () => {},
+        }),
+      );
+      const headings = [...card.matchAll(/<h4[^>]*>([^<]*)<\/h4>/g)].map((match) => match[1]);
+      expect(headings).toEqual(["Listed clashes it ends", "Listed clashes it adds", "Listed clashes it keeps"]);
+      expect(card).toMatch(/>Listed clashes it adds<\/h4><p class="[^"]*">None<\/p>/);
+      expect(text(card)).toContain("Outside the listed clashes: new 15 min overlap with Joy Crookes.");
+      expect(card.indexOf("data-outside-line")).toBeGreaterThan(card.indexOf("Listed clashes it keeps"));
+      // The full list's place says which rules it passed, as the tested place does.
+      expect(text(card)).toContain(`Adds no rule break. ${RULES_CHECKED}`);
     },
   );
 
@@ -815,7 +1112,7 @@ describe("after a set is picked, the right column is never empty from 1024 px", 
 
   it("is not empty while the places load, nor for a set that cannot move", () => {
     expect(text(column({ status: "loading", result: null, best: null }))).toContain(
-      "Pricing every legal place for Bo Diddly Squat",
+      "Scoring every legal place for Bo Diddly Squat",
     );
     const locked = { ...picked, movable: false, why: "locked in place", options: [] };
     expect(text(column({ result: locked, best: null }))).toContain("It cannot move: locked in place.");

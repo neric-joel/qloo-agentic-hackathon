@@ -12,6 +12,7 @@ import {
   formatOverlap,
   formatPercent,
   formatShare,
+  genreLabel,
   heroClash,
   hiddenReason,
   hostOf,
@@ -55,6 +56,40 @@ describe("formatting", () => {
     expect(tagLabel("urn:tag:genre:music:post_punk")).toBe("Post Punk");
     expect(tagLabel("indie")).toBe("Indie");
     expect(tagLabel("Hip Hop")).toBe("Hip Hop");
+  });
+
+  it("writes genre labels as readers do, for display only", () => {
+    // The saved presets title-case every word (Python's str.title()).
+    expect(genreLabel("70S")).toBe("70s");
+    expect(genreLabel("80S")).toBe("80s");
+    expect(genreLabel("2000S")).toBe("2000s");
+    expect(genreLabel("Idm")).toBe("IDM");
+    expect(genreLabel("Edm")).toBe("EDM");
+    expect(genreLabel("Uk Garage")).toBe("UK Garage");
+    expect(genreLabel("Us Hardcore")).toBe("US Hardcore");
+    expect(genreLabel("Dj")).toBe("DJ");
+    expect(genreLabel("Lo Fi")).toBe("Lo-Fi");
+    expect(genreLabel("Singer Songwriter")).toBe("Singer-Songwriter");
+    expect(genreLabel("Rhythm Blues")).toBe("R&B");
+    expect(genreLabel("K Pop")).toBe("K-Pop");
+    expect(genreLabel("J Pop")).toBe("J-Pop");
+    // Every other label passes through unchanged, Title Case included.
+    for (const label of ["Post Punk", "Indie Pop", "2 Tone", "Hip Hop", "Dream Pop", "Hip-hop", "Rock", ""]) {
+      expect(genreLabel(label)).toBe(label);
+    }
+    // Whole-label names only: a longer label that contains one is left alone.
+    expect(genreLabel("Lo Fi House")).toBe("Lo Fi House");
+    expect(genreLabel("Alternative Rhythm Blues")).toBe("Alternative Rhythm Blues");
+  });
+
+  it("writes tag ids as genre labels", () => {
+    expect(tagLabel("urn:tag:genre:music:idm")).toBe("IDM");
+    expect(tagLabel("urn:tag:genre:rhythm_blues")).toBe("R&B");
+    expect(tagLabel("urn:tag:genre:singer_songwriter")).toBe("Singer-Songwriter");
+    expect(tagLabel("urn:tag:genre:k_pop")).toBe("K-Pop");
+    expect(tagLabel("lo_fi")).toBe("Lo-Fi");
+    expect(tagLabel("70S")).toBe("70s");
+    expect(tagLabel("Idm")).toBe("IDM");
   });
 
   it("spells out day labels and drops a trailing day from festival names", () => {

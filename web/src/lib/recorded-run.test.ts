@@ -1,6 +1,12 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
+import { traceJson, traceStats } from "@/components/kernel/trace-drawer";
+import { RequestItem, replayedRequestText } from "@/components/kernel/trace-parts";
+
 import { readClashReply } from "./agent-session";
+import type { QlooRequestRecord } from "./events";
 import {
   MAX_GAP_MS,
   MAX_REPLAY_MS,
@@ -8,10 +14,12 @@ import {
   MIN_REPLAY_MS,
   MIN_STEP_MS,
   TEXT_STEP_MS,
+  askedQlooWhenRecorded,
   orderRecordings,
   parseRecordings,
   replayFinalState,
   runEnding,
+  savedRequests,
   toReplayBeats,
   type RecordedRun,
 } from "./recorded-run";
@@ -198,6 +206,8 @@ describe("toReplayBeats", () => {
           cached: false,
           recorded: true,
           request_id: REQUEST_ID,
+          // How it was served when the run was recorded, from the saved event's own flags and the run's date.
+          captured: { cached: false, recorded: false, at: "2026-10-04T14:02:11Z" },
         },
       ],
     });
@@ -380,5 +390,119 @@ describe("how a recorded run ends, and the order the panel lists the runs in", (
     const ordered = orderRecordings(served);
     expect(orderRecordings(ordered)).toEqual(ordered);
     expect(orderRecordings([])).toEqual([]);
+  });
+});
+
+/** The visible words of some markup. */
+const words = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
+/** One request's row in the trace, as the drawer draws it. */
+function rowText(record: QlooRequestRecord): string {
+  return words(renderToStaticMarkup(createElement(RequestItem, { item: { record, toolId: "t", tool: "explain_clash", ordinal: 1 } })));
+}
+
+/**
+ * Shaped like the saved Riot Fest run: captured 2026-10-03T05:58:05Z (still 2 Oct in Arizona), one compare request
+ * that reached Qloo live when it was recorded. Ids and figures are invented; the flags and the time are the saved run's.
+ */
+function riotShaped(requestFlags: Record<string, unknown> = { cached: false, recorded: false }): RecordedRun {
+  const events = rawEvents().map((item) =>
+    item.event.type === "tool_result" && item.event.tool === "explain_clash"
+      ? {
+          ...item,
+          event: {
+            ...item.event,
+            requests: [
+              {
+                path: "/v2/analysis/compare",
+                params: { "a.signal.interests.entities": "ENTITY-A", "b.signal.interests.entities": "ENTITY-B" },
+                status: 200,
+                latency_ms: 335,
+                request_id: REQUEST_ID,
+                ...requestFlags,
+              },
+            ],
+          },
+        }
+      : item,
+  );
+  return only([rawRun({ id: "riot-fest-move", title: "Find a move on a second festival day", captured_at: "2026-10-03T05:58:05Z" }, events)]);
+}
+
+/** The run's one replayed request, as the trace holds it once the replay has played. */
+function replayedRequest(run: RecordedRun): QlooRequestRecord {
+  const [item] = selectRequests(replayFinalState(run).toolCalls);
+  return item.record;
+}
+
+describe("a replayed request keeps whether it was live when recorded (run with TZ=UTC and TZ=America/Phoenix)", () => {
+  it("keeps the saved flags as its capture, labels it Recorded, and says it was live when recorded on the UTC day", () => {
+    const request = replayedRequest(riotShaped());
+    expect(request.path).toBe("/v2/analysis/compare");
+    expect(request.recorded).toBe(true);
+    expect(request.captured).toEqual({ cached: false, recorded: false, at: "2026-10-03T05:58:05Z" });
+    // 3 Oct in every time zone: the run's date in UTC, never the browser's local day.
+    expect(replayedRequestText(request)).toBe("Live when recorded, 3 Oct 2026; replayed now, nothing fetched.");
+    const row = rowText(request);
+    expect(row).toContain("Live when recorded, 3 Oct 2026; replayed now, nothing fetched.");
+    expect(row).not.toContain("2 Oct 2026");
+    // Still labelled Recorded: nothing was fetched just now.
+    expect(row).toContain("Recorded");
+    expect(row).not.toMatch(/\bLive\b(?! when recorded)/);
+    // The saved run reads as one that asked Qloo while it was recorded.
+    expect(askedQlooWhenRecorded(riotShaped())).toBe(true);
+  });
+
+  it("copies the capture with the request in Copy JSON, and counts it in the summary", () => {
+    const request = replayedRequest(riotShaped());
+    const json = JSON.parse(traceJson([request], { runId: "run_test01", mode: "recorded", qlooCalls: 1 }));
+    expect(json.requests[0].captured).toEqual({ cached: false, recorded: false, at: "2026-10-03T05:58:05Z" });
+    expect(json.requests[0].recorded).toBe(true);
+    const summary = traceStats([request]).map((stat) => `${stat.label} ${stat.value}`).join(" · ");
+    expect(summary).toBe("Request 1 · Cached 0 · Recorded 1 · Live when recorded 1");
+    expect(summary.endsWith(" · Live when recorded 1")).toBe(true);
+  });
+
+  it("says a request served from the cache when recorded came from the cache, and counts it as no live request", () => {
+    const request = replayedRequest(riotShaped({ cached: true, recorded: false }));
+    expect(request.captured).toEqual({ cached: true, recorded: false, at: "2026-10-03T05:58:05Z" });
+    expect(replayedRequestText(request)).toBe("From the cache when recorded, 3 Oct 2026; replayed now.");
+    expect(rowText(request)).toContain("From the cache when recorded, 3 Oct 2026; replayed now.");
+    expect(rowText(request)).not.toContain("Live when recorded");
+    expect(traceStats([request]).map((stat) => stat.label)).toEqual(["Request", "Cached", "Recorded"]);
+    expect(askedQlooWhenRecorded(riotShaped({ cached: true, recorded: false }))).toBe(false);
+  });
+
+  it("shows no provenance phrase for a request whose saved event omits recorded, or was served from a saved fixture", () => {
+    for (const flags of [{ cached: false }, { cached: false, recorded: true }, {}]) {
+      const run = riotShaped(flags);
+      const request = replayedRequest(run);
+      expect(replayedRequestText(request)).toBeNull();
+      const row = rowText(request);
+      expect(row).not.toContain("when recorded");
+      // It keeps the Recorded label it has today.
+      expect(row).toContain("Recorded");
+      expect(traceStats([request]).map((stat) => stat.label)).toEqual(["Request", "Cached", "Recorded"]);
+      expect(askedQlooWhenRecorded(run)).toBe(false);
+    }
+    // Unstated flags read as unknown, never as live: a missing cached flag stays null in the capture.
+    expect(replayedRequest(riotShaped({ recorded: false })).captured).toEqual({ cached: null, recorded: false, at: "2026-10-03T05:58:05Z" });
+    expect(replayedRequestText(replayedRequest(riotShaped({ recorded: false })))).toBeNull();
+  });
+
+  it("says nothing of the kind for a live run's request, which carries no capture", () => {
+    const live: QlooRequestRecord = { path: "/v2/analysis/compare", params: {}, status: 200, latency_ms: 300, cached: false, recorded: false };
+    expect(replayedRequestText(live)).toBeNull();
+    expect(rowText(live)).not.toContain("when recorded");
+    expect(traceStats([live]).map((stat) => stat.label)).toEqual(["Request", "Cached", "Median"]);
+  });
+
+  it("reads the saved requests as saved, with their capture, and leaves a run with none empty", () => {
+    expect(savedRequests(riotShaped()).map((request) => [request.request_id, request.recorded, request.captured?.at])).toEqual([
+      [REQUEST_ID, false, "2026-10-03T05:58:05Z"],
+    ]);
+    const quiet = only([rawRun({}, rawEvents().map((item) => (item.event.type === "tool_result" ? { ...item, event: { ...item.event, requests: [] } } : item)))]);
+    expect(savedRequests(quiet)).toEqual([]);
+    expect(askedQlooWhenRecorded(quiet)).toBe(false);
   });
 });

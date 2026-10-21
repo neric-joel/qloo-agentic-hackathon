@@ -267,6 +267,29 @@ describe("the motion classes in globals.css", () => {
     expect(flight).toMatch(/opacity: 0\.72;\s*transform: translate\(var\(--dx\), var\(--dy\)\);/);
   });
 
+  it("fades the taste-ring panel only after the visitor picks a pair, never on load or mount", () => {
+    // The fade is keyed on the visitor's pick (data-picked, set by taste-ring.tsx), so the bare panel the server
+    // paints, and every mount, starts no animation.
+    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({
+      selector: selector.replace(/\/\*[\s\S]*?\*\//g, "").trim(),
+      body,
+    }));
+    const animated = rules.filter((r) => /(^|[\s,])\.cc-ring-lens\b/.test(r.selector) && /animation:\s*(?!none\b)\S/.test(r.body));
+    expect(animated.map((r) => r.selector)).toEqual([".cc-ring-lens[data-picked]"]);
+    expect(animated[0].body).toMatch(/animation: cc-ring-fade 140ms var\(--ease-out\);/);
+    // No rule animates or transitions the bare panel.
+    for (const { selector, body } of rules) {
+      for (const part of selector.split(",").map((s) => s.trim())) {
+        if (part === ".cc-ring-lens") expect(body, part).not.toMatch(/animation:\s*(?!none\b)\S|transition:/);
+      }
+    }
+    // Under reduced motion and in print the picked panel shows at once.
+    const reduced = allBlocks("@media (prefers-reduced-motion: reduce), print");
+    expect(reduced).toMatch(/\.cc-ring-lens\[data-picked\]\s*\{\s*animation: none;/);
+    // The fade itself is opacity only.
+    expect(block("@keyframes cc-ring-fade")).toMatch(/from \{\s*opacity: 0;\s*\}/);
+  });
+
   it("times every remaining animation and transition with the two house curves", () => {
     expect(css.match(/cubic-bezier\(/g)).toHaveLength(2);
     expect(css).toMatch(/--ease-out: cubic-bezier\(0\.23, 1, 0\.32, 1\);/);

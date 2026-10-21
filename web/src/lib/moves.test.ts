@@ -1,6 +1,13 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
+import { buildDayGraph } from "./day-graph";
+import { parseDecision } from "./decision";
+import { rawTinyPreset } from "./fixtures/tiny-preset";
 import {
+  OUTSIDE_LEAD,
   RECORDED_RUN_NOTE,
   clashChanges,
   clockMinutes,
@@ -10,11 +17,16 @@ import {
   isFromRecordedRun,
   movableSets,
   nextRankedPair,
+  outsideClauses,
+  outsideCount,
+  outsideGrowth,
+  outsideLine,
   parseMoves,
   placementOf,
   startingSets,
 } from "./moves";
-import type { Festival, PairClash } from "./preset";
+import { growthClauses, lowerFirst } from "./overlap-words";
+import { parsePreset, type Festival, type PairClash, type Preset, type SetSlot } from "./preset";
 
 /** A synthetic day: three stages, five acts, one of them locked. */
 const festival: Festival = {
@@ -406,4 +418,214 @@ describe("where a kept move came from", () => {
     expect(isFromRecordedRun(null)).toBe(false);
     expect(isFromRecordedRun(undefined)).toBe(false);
   });
+});
+
+describe("overlaps outside the listed clashes", () => {
+  // An invented day: the mover plays 14:00-15:00 and is tested at 14:15-15:15.
+  const acts = ["Mover", "Listed", "Starts", "Grows", "Shrinks", "Third", "Fourth", "Apart"].map((name) => ({
+    id: name.toLowerCase(),
+    name,
+  }));
+  const slot = (act_id: string, start: number, end: number, day = 0): SetSlot => ({
+    act_id,
+    day,
+    stage_id: act_id,
+    start,
+    end,
+    locked: false,
+  });
+  const home = { day: 0, start: 840, end: 900 };
+  const later = { day: 0, start: 855, end: 915 };
+
+  it("names an overlap the place starts with a set on none of its lists", () => {
+    const timetable = [slot("mover", 840, 900), slot("listed", 840, 885), slot("starts", 900, 945)];
+    const grows = outsideGrowth(acts, timetable, "mover", home, later, new Set(["Listed"]));
+    expect(grows).toEqual([{ name: "Starts", before: 0, after: 15 }]);
+    expect(outsideClauses(grows)).toEqual(["new 15 min overlap with Starts."]);
+    expect(outsideLine(grows)).toBe("Outside the listed clashes: new 15 min overlap with Starts.");
+    expect(OUTSIDE_LEAD).toBe("Outside the listed clashes:");
+    expect(outsideCount(grows.length)).toBe("Outside the list, 1 overlap starts or grows.");
+  });
+
+  it("names an overlap the place lengthens, with its minutes before and after", () => {
+    const timetable = [slot("mover", 840, 900), slot("grows", 890, 940)];
+    const grows = outsideGrowth(acts, timetable, "mover", home, later, new Set());
+    expect(grows).toEqual([{ name: "Grows", before: 10, after: 25 }]);
+    expect(outsideLine(grows)).toBe("Outside the listed clashes: lengthens the overlap with Grows from 10 to 25 min.");
+  });
+
+  it("names two and counts the rest when three or more grow, largest change first, then by name", () => {
+    const timetable = [
+      slot("mover", 840, 900),
+      slot("starts", 900, 945), // 0 -> 15
+      slot("grows", 890, 940), // 10 -> 25
+      slot("third", 895, 960), // 5 -> 20
+      slot("fourth", 905, 1000), // 0 -> 10
+    ];
+    const grows = outsideGrowth(acts, timetable, "mover", home, later, new Set());
+    expect(grows.map((item) => item.name)).toEqual(["Grows", "Starts", "Third", "Fourth"]);
+    expect(outsideClauses(grows)).toEqual([
+      "lengthens the overlap with Grows from 10 to 25 min.",
+      "new 15 min overlap with Starts.",
+      "2 more overlaps get longer.",
+    ]);
+    expect(outsideCount(grows.length)).toBe("Outside the list, 4 overlaps start or grow.");
+    const three = grows.slice(0, 3);
+    expect(outsideClauses(three).at(-1)).toBe("1 more overlap gets longer.");
+    expect(outsideCount(three.length)).toBe("Outside the list, 3 overlaps start or grow.");
+    // The clauses are the hero's own words, each continued in lower case.
+    expect(outsideClauses(grows)).toEqual(growthClauses(grows).map(lowerFirst));
+  });
+
+  it("says nothing when nothing outside the lists starts or grows", () => {
+    const timetable = [
+      slot("mover", 840, 900),
+      slot("listed", 900, 945), // grows, but a list shows it
+      slot("shrinks", 825, 870), // 30 -> 15
+      slot("apart", 1000, 1060), // never meets it
+      slot("starts", 900, 945, 1), // another day
+    ];
+    const grows = outsideGrowth(acts, timetable, "mover", home, later, new Set(["Listed"]));
+    expect(grows).toEqual([]);
+    expect(outsideClauses(grows)).toEqual([]);
+    expect(outsideLine(grows)).toBeNull();
+    expect(outsideCount(0)).toBeNull();
+    // No place, no line.
+    expect(outsideGrowth(acts, timetable, "mover", null, later, new Set())).toEqual([]);
+    expect(outsideGrowth(acts, timetable, "mover", home, null, new Set())).toEqual([]);
+  });
+
+  it("reads a place on another day against that day's sets only", () => {
+    const timetable = [slot("mover", 840, 900), slot("shrinks", 825, 870), slot("starts", 900, 945, 1)];
+    const grows = outsideGrowth(acts, timetable, "mover", home, { day: 1, start: 900, end: 960 }, new Set());
+    expect(grows).toEqual([{ name: "Starts", before: 0, after: 45 }]);
+  });
+});
+
+describe("the outside line and the hero's side effect come from one computation", () => {
+  type Raw = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+  /** The hero's drawing of a move as the decision route would send it: the mover to `start`-`end` on `stageId`. */
+  function heroDrawing(preset: Preset, moverId: string, partnerId: string, stageId: string, start: string, end: string) {
+    const stage = preset.festival.stages.find((item) => item.id === stageId)!.name;
+    const mover = preset.festival.acts.find((act) => act.id === moverId)!.name;
+    const decision = parseDecision({
+      kind: "decision",
+      day: 0,
+      skipped_locked: 0,
+      skipped_no_place: 0,
+      published_budget: 116.7,
+      clash: { a_id: moverId, b_id: partnerId, rank: 1, minutes: 45 },
+      move: {
+        act_id: moverId,
+        act: mover,
+        from: `${stage} 14:00-15:00`,
+        stage_id: stageId,
+        stage,
+        day: 0,
+        start,
+        end,
+        minutes_moved: 15,
+        legal_places: 6,
+        stage_changed: false,
+        budget_after: 114.3,
+        minutes_shared_after: 30,
+        same_index_alternative: null,
+      },
+      rule: null,
+    });
+    const drawing = buildDayGraph(preset, decision, 0);
+    expect(drawing?.move).toBeTruthy();
+    return drawing!;
+  }
+
+  /** The outside overlaps Try a move reads for the same place, given the place's lists (`listed`). */
+  function tryAMoveOutside(preset: Preset, moverId: string, start: string, end: string, listed: readonly string[]) {
+    const home = currentPlacement(preset, moverId);
+    const after = placementOf({ day: 0, start, end });
+    return outsideGrowth(preset.festival.acts, preset.festival.timetable, moverId, home, after, new Set(listed));
+  }
+
+  it("on an invented day with the published day's overlaps, the outside clauses are the hero's growth clauses", () => {
+    // Invented names and times shaped like the published Glastonbury Sunday's move: the mover goes 15 minutes
+    // later; its three listed clashes (the partner and two more) each lose 15 minutes, an unlisted overlap
+    // shrinks, and one unlisted overlap starts (0 -> 15).
+    const raw = rawTinyPreset() as Raw;
+    const sets: [string, string, string, string][] = [
+      ["Alder", "wood", "14:00", "15:00"],
+      ["Birch", "lake", "14:00", "14:45"],
+      ["Cedar", "main", "14:00", "15:00"],
+      ["Dune", "hill", "14:00", "15:00"],
+      ["Elm", "barn", "13:45", "14:30"],
+      ["Fern", "barn", "15:00", "15:45"],
+    ];
+    raw.festival.stages = ["main", "hill", "barn", "wood", "lake"].map((id, index) => ({
+      id,
+      name: id[0].toUpperCase() + id.slice(1),
+      tier: index + 1,
+      hours: [],
+    }));
+    raw.festival.acts = sets.map(([name]) => ({
+      id: name.toLowerCase(),
+      name,
+      qloo_id: null,
+      popularity: 0.5,
+      genre: null,
+      billing_tier: 2,
+    }));
+    raw.festival.timetable = sets.map(([name, stage, start, end]) => ({
+      act_id: name.toLowerCase(),
+      day: 0,
+      stage_id: stage,
+      start,
+      end,
+      locked: false,
+    }));
+    const side = (name: string) => ({ act_id: name.toLowerCase(), name, stage_id: sets.find((item) => item[0] === name)![1], genre: null });
+    raw.report.clashes = [
+      {
+        rank: 1,
+        a: side("Alder"),
+        b: side("Birch"),
+        day: 0,
+        overlap_minutes: 45,
+        concurrency: 1,
+        audience_overlap: 0.9,
+        draw: 0.5,
+        regret: 0.4,
+        regret_share: 0.4,
+        label: null,
+        confidence: "strong",
+      },
+    ];
+    raw.report.coverage = { ...raw.report.coverage, unscored: [], weak_act_ids: [] };
+    const preset = parsePreset(raw);
+    const drawing = heroDrawing(preset, "alder", "birch", "wood", "14:15", "15:15");
+    const outside = tryAMoveOutside(preset, "alder", "14:15", "15:15", ["Birch", "Cedar", "Dune"]);
+    expect(drawing.move!.grows.map((item) => item.name)).toEqual(["Fern"]);
+    expect(outsideClauses(outside)).toEqual(growthClauses(drawing.move!.grows).map(lowerFirst));
+    expect(outsideLine(outside)).toBe("Outside the listed clashes: new 15 min overlap with Fern.");
+  });
+
+  /** The published Glastonbury Sunday from the backend's built presets, when this checkout has it (not committed). */
+  const path = join(process.cwd(), "..", "backend", "presets", "glastonbury-2025-sun.json");
+  const glastonbury = existsSync(path) ? parsePreset(JSON.parse(readFileSync(path, "utf8"))) : null;
+
+  it.skipIf(glastonbury === null)(
+    "on Glastonbury, Sprints to Woodsies 14:15-15:15 reads 'new 15 min overlap with Joy Crookes.' in both panels",
+    () => {
+      const preset = glastonbury!;
+      const idOf = (name: string) => preset.festival.acts.find((act) => act.name === name)!.id;
+      const drawing = heroDrawing(preset, idOf("Sprints"), idOf("Katy J Pearson"), "woodsies", "14:15", "15:15");
+      // The moves route's lists for this place on the saved day: Sprints' three costliest clashes, before and
+      // after (GET /api/presets/glastonbury-2025-sun/moves?act=sprints).
+      const listed = ["Katy J Pearson", "Cymande", "The Libertines"];
+      const outside = tryAMoveOutside(preset, idOf("Sprints"), "14:15", "15:15", listed);
+      const heroClauses = growthClauses(drawing.move!.grows);
+      expect(heroClauses).toEqual(["New 15 min overlap with Joy Crookes."]);
+      expect(outsideClauses(outside)).toEqual(heroClauses.map(lowerFirst));
+      expect(outsideLine(outside)).toBe("Outside the listed clashes: new 15 min overlap with Joy Crookes.");
+      expect(outsideCount(outside.length)).toBe("Outside the list, 1 overlap starts or grows.");
+    },
+  );
 });

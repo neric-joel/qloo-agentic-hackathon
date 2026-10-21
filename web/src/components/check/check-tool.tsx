@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ClipboardEvent,
   type ReactNode,
 } from "react";
 import { Download, Lock, TriangleAlert } from "lucide-react";
@@ -22,15 +23,19 @@ import {
   RULE_LABELS,
   TEMPLATE_CSV,
   announcement,
+  checkTimeLine,
   clockWindow,
   formatClock,
   isCloseName,
   normalizeName,
   parseGrid,
   pairCountLabel,
+  pastedLine,
   removePairLine,
   replacePairName,
   runCheck,
+  separatorHint,
+  skippedSentence,
   type CheckInput,
   type CheckOutcome,
   type CheckReport,
@@ -105,7 +110,16 @@ import { BreakStrip } from "./check-break-strip";
 import { CheckBrief } from "./check-brief";
 import { DecisionList, type DecisionPatch } from "./check-decision";
 import { CheckPrice, type PriceOrder, type PriceState } from "./check-price";
-import { BREAK_HEADING, BreakDisc, CheckResults, CheckState, breakMarks, nextStep, rowsInOrder } from "./check-results";
+import {
+  BREAK_HEADING,
+  BreakDisc,
+  CheckResults,
+  CheckState,
+  SkippedLines,
+  breakMarks,
+  nextStep,
+  rowsInOrder,
+} from "./check-results";
 import { CheckReview } from "./check-review";
 import { TEXT_ACTION, splitChanges, type TrialState, type TrialUi } from "./check-trial-panel";
 
@@ -140,6 +154,12 @@ type Run = {
   publishedLabel?: string | null;
   /** Why this page counts more overlaps than the home page ranks (`publishedPairsLine`); null when it does not add up. */
   pairsLine?: string | null;
+  /**
+   * How long the rule check of this run took in this browser (`performance.now()` around `runCheck`), in
+   * milliseconds. Held for the results header only: never stored, never sent. Absent for the sample the
+   * page opens with, which no press ran.
+   */
+  ms?: number;
 };
 
 /**
@@ -801,24 +821,30 @@ function flaggedLine(count: number): string {
  * label (Preview until the text on show is the text last checked, then Checked), the verdict as one
  * sentence, one line that says the table carries the same numbers, the rule breaks themselves (each
  * numbered rule, then its rows), then the pairs that share time, minutes first, five at a time with
- * "Show all N" opening the rest in place. Text that does not read yet shows the outline of a result with
- * no figures in it. Nothing is sent.
+ * "Show all N" opening the rest in place. With lines skipped, the skipped sentence sits under the verdict,
+ * so a clean preview of part of a grid never reads as a clean grid. An empty field shows the outline of a
+ * result with no figures in it; text that does not read as a grid shows, in that same box and at its
+ * height, that the preview is unavailable. Nothing is sent.
  */
 function WhatYouGet({
   outcome,
   checked,
+  blank,
   selectedBreak,
   onSelectBreak,
 }: {
   /** `runCheck` on the text the table shows: the same breaks, in the same order, as the table's numbers. */
   outcome: CheckOutcome;
   checked: boolean;
+  /** The grid field is empty: the outline stands in for a result, with nothing to fix. */
+  blank: boolean;
   selectedBreak?: string | null;
   onSelectBreak?: (id: string, rows: readonly number[]) => void;
 }) {
   const report = outcome.ok ? outcome.report : null;
   const [open, setOpen] = useState(false);
   const byRow = new Map(report?.sets.map((set) => [set.row, set]) ?? []);
+  const skipped = report ? skippedSentence(report.skipped ?? [], report.sets.length) : null;
   return (
     <section aria-label={checked ? "Checked" : "Preview"} className="border-t border-border pt-5 sm:pt-6">
       <CheckState checked={checked} />
@@ -834,6 +860,11 @@ function WhatYouGet({
             <span className="tabular-nums">{report.breaks.length}</span>{" "}
             {report.breaks.length === 1 ? "rule break" : "rule breaks"} found
           </p>
+          {skipped ? (
+            <p data-preview-skipped="" className="mt-1 text-sm leading-5 break-words text-muted-foreground">
+              {skipped}
+            </p>
+          ) : null}
           {report.breaks.length > 0 ? (
             <>
               <p className="mt-1 text-sm leading-5 text-muted-foreground">{flaggedLine(report.breaks.length)}</p>
@@ -866,13 +897,22 @@ function WhatYouGet({
           )}
         </div>
       ) : (
-        <div aria-hidden="true" className="mt-3 space-y-3">
-          <span className="block h-6 w-44 rounded-sm bg-muted" />
-          <span className="block h-2.5 w-32 rounded-sm bg-muted" />
-          <span className="block h-3 w-4/5 rounded-sm bg-muted" />
-          <span className="block h-2.5 w-1/2 rounded-sm bg-muted" />
-          <span className="block h-3 w-3/4 rounded-sm bg-muted" />
-          <span className="block h-2.5 w-2/5 rounded-sm bg-muted" />
+        // One box at one height for both states: the outline's bars, or (while the text does not read) the
+        // same bars kept for their height but not drawn, with the notice over them in muted ink.
+        <div data-preview-box="" className="relative mt-3">
+          <div aria-hidden="true" className={cn("space-y-3", !blank && "invisible")}>
+            <span className="block h-6 w-44 rounded-sm bg-muted" />
+            <span className="block h-2.5 w-32 rounded-sm bg-muted" />
+            <span className="block h-3 w-4/5 rounded-sm bg-muted" />
+            <span className="block h-2.5 w-1/2 rounded-sm bg-muted" />
+            <span className="block h-3 w-3/4 rounded-sm bg-muted" />
+            <span className="block h-2.5 w-2/5 rounded-sm bg-muted" />
+          </div>
+          {blank ? null : (
+            <p data-preview-unavailable="" className="absolute inset-x-0 top-0 text-sm leading-5 text-muted-foreground">
+              {CHECK_COPY.previewUnavailable}
+            </p>
+          )}
         </div>
       )}
     </section>
@@ -1000,6 +1040,9 @@ export function CheckTool({
   const [working, setWorking] = useState<Working | null>(null);
   // What the live region says after a search, a try or a price; blank means the counts of the check.
   const [note, setNote] = useState("");
+  // The note the last paste on the Table view left. While it is still the note, it has already said to
+  // check again, so the stale line below shows without being said a second time.
+  const [pasteNote, setPasteNote] = useState("");
   const [trial, setTrial] = useState<TrialState | null>(null);
   const [price, setPrice] = useState<PriceState>(IDLE);
   // The request the last press sent: the step words its answer by it, even if the pairs a new press would
@@ -1021,6 +1064,8 @@ export function CheckTool({
   const [picked, setPicked] = useState<{ id: string; selection: RowSelection } | null>(null);
   const pickCount = useRef(0);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  // The results' top (their header line), scrolled to after a check so the header and any skipped line show.
+  const resultsTopRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLTextAreaElement>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
   const trialHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -1070,7 +1115,14 @@ export function CheckTool({
 
   useEffect(() => {
     if (focusGrid === 0) return;
-    gridRef.current?.focus();
+    const area = gridRef.current;
+    if (!area) return;
+    area.focus();
+    // A grid just pasted or cleared is read from its first line: the caret and the scroll start there.
+    area.setSelectionRange(0, 0);
+    area.scrollTop = 0;
+    area.scrollLeft = 0;
+    if (gutterRef.current) gutterRef.current.scrollTop = 0;
   }, [focusGrid]);
 
   // Two reads of this app's own API, carrying nothing of the visitor's: whether live pricing is on, and
@@ -1099,13 +1151,36 @@ export function CheckTool({
   }, [wantServable, servable]);
 
   // After a check that read the grid, or a change tried on it, the first result heading takes focus.
+  const scrollPending = useRef(false);
   useEffect(() => {
     const heading = headingRef.current;
     if (!run?.outcome.ok || !heading || (run.arrival && !working)) return;
     heading.focus({ preventScroll: true });
-    // Over a working copy, the notice that says so sits just above the heading and scrolls into view with it.
-    (workingRef.current ?? heading).scrollIntoView({ block: "start" });
+    scrollPending.current = true;
   }, [run, working]);
+  // Then the results scroll into view, once the preview beside the sheet reads the same text (it follows a
+  // beat behind), so nothing above the results changes height after the scroll. Over a working copy, the
+  // notice that says so sits just above the heading and scrolls into view with it; after a check, the
+  // results' top does: what was checked, how long it took and any line it skipped.
+  useEffect(() => {
+    if (!scrollPending.current || previewInput !== input) return;
+    scrollPending.current = false;
+    (workingRef.current ?? resultsTopRef.current ?? headingRef.current)?.scrollIntoView({ block: "start" });
+  }, [run, working, previewInput, input]);
+
+  // After a check that skipped lines, the editor's own scroll brings the first one into view beside its mark.
+  useEffect(() => {
+    if (!run?.outcome.ok || run.arrival) return;
+    const first = run.outcome.report.skipped?.[0];
+    const area = gridRef.current;
+    if (!first || !area) return;
+    const line = Number.parseFloat(window.getComputedStyle(area).lineHeight) || 20;
+    const top = (first.line - 1) * line;
+    const shown = area.clientHeight - 2 * line;
+    if (top < area.scrollTop || top + line > area.scrollTop + shown) area.scrollTop = Math.max(0, top - line);
+    area.scrollLeft = 0;
+    if (gutterRef.current) gutterRef.current.scrollTop = area.scrollTop;
+  }, [run]);
 
   // When a search ends, its result heading takes focus.
   const searchDone = trial?.result ?? null;
@@ -1143,7 +1218,11 @@ export function CheckTool({
 
   const check = useCallback(
     (next: CheckInput, note = "") => {
+      // The rule check itself, measured in this browser for the results header; the figure is never kept
+      // past this tab's state and never sent.
+      const started = performance.now();
       const outcome = runCheck(next);
+      const ms = Math.max(1, Math.round(performance.now() - started));
       const removed = removedSince.current;
       removedSince.current = [];
       const publishedNow = publishedRef.current;
@@ -1167,10 +1246,13 @@ export function CheckTool({
         sample: isSampleInput(next),
         checkedAt: nowMinutes(),
         removed,
+        ...(outcome.ok ? { ms } : {}),
         ...(isPublishedInput(next, publishedNow) && publishedNow
           ? publishedRun(publishedNow, outcome)
           : { published: null, publishedLabel: null, pairsLine: null }),
       }));
+      // Skipped lines are marked beside the text, so the sheet shows the text.
+      if (outcome.ok && (outcome.report.skipped ?? []).length > 0) setView("csv");
     },
     [stopSearch, dropPrice],
   );
@@ -1199,6 +1281,24 @@ export function CheckTool({
     setTrial(null);
     const pairs = rulesAfter(field, value);
     setInput((current) => ({ ...current, [field]: value, ...(pairs === null ? {} : { pairs }) }));
+  }
+
+  /**
+   * A paste on the Table view (a paste event on its region, which Ctrl or Cmd+V sends while it has focus):
+   * the table is read-only, so the pasted text replaces the grid in the CSV editor, which takes focus.
+   * Nothing is checked yet; the polite live region says so once, and the stale line is not said again.
+   */
+  function pasteOnTable(event: ClipboardEvent<HTMLDivElement>) {
+    const text = event.clipboardData.getData("text/plain");
+    if (text.trim() === "") return;
+    event.preventDefault();
+    update("grid", text);
+    setView("csv");
+    setRowJump(null);
+    setPicked(null);
+    setNote(pastedLine(text));
+    setPasteNote(pastedLine(text));
+    setFocusGrid((count) => count + 1);
   }
 
   /** A rule break's row button: the sheet shows as a table, scrolls to the row and marks it. */
@@ -1338,6 +1438,14 @@ export function CheckTool({
       input.curfew !== run.input.curfew ||
       input.pairs !== run.input.pairs);
   const shown = working?.report ?? pasted;
+  // The lines the last check skipped, marked beside the text while it is the text that was checked; the
+  // gutter keeps the room for the marks until the next check, so the text never moves while it is typed.
+  const skippedLines = pasted?.skipped ?? [];
+  const marked = !stale && skippedLines.length > 0 ? new Set(skippedLines.map((item) => item.line)) : null;
+  // A paste's own note already said to check again: until another note replaces it, the stale line shows
+  // outside its live region, so the paste is said once.
+  const saidByPaste = note !== "" && note === pasteNote;
+  const wideGutter = skippedLines.length > 0;
   /** The text on show is the text last checked, and it read: the right column says Checked, not Preview. */
   const checkedNow = run !== null && Boolean(outcome?.ok) && !stale;
   // A published day loaded here compares its saved day's own ranked clashes; a pasted grid whose names are on
@@ -1580,12 +1688,12 @@ export function CheckTool({
             run down it, and the preview's top lines up with the sheet's top. */}
         <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:grid-rows-[auto_auto_1fr] lg:gap-x-8 lg:gap-y-0">
           {/* The sheet's name (and, while the invented rows are on show, a plain muted line that says so), then
-              the two utilities that fill the sheet, "Download a template" and "Check an invented sample": ghost
-              text actions on paper, 20px between their words. From sm they sit at the right end of the name's
-              row, their 44px hit areas pulled into its 24px line by negative block margins (10px over and
-              under: the 12px under the row keeps them 2px clear of the sheet's frame), their words on the
-              name's line. Where the name and its muted line leave too little room (the sheet's column at
-              1024, a 640 screen), the pair wraps whole to a line of its own, still set right, 10px under the
+              the actions that fill the sheet: "Check a published day" once this app's API names one, then
+              "Download a template" and "Check an invented sample", ghost text actions on paper, 20px between
+              their words. From xl they sit at the right end of the name's row, their 44px hit areas pulled
+              into its 24px line by negative block margins (10px over and under: the 12px under the row keeps
+              them 2px clear of the sheet's frame), their words on the name's line. Below xl (the sheet's
+              column at 1024, a 640 screen) they take a line of their own, still set right, 10px under the
               name so no hit area reaches its text; the muted line itself never wraps to make room. On a
               phone they sit on their own lines under the name, set left, before the sheet. */}
           <div className="min-w-0 pb-2 sm:pb-3 lg:col-span-2 lg:col-start-1 lg:row-start-1">
@@ -1600,11 +1708,34 @@ export function CheckTool({
                   <span className="text-[0.8125rem] leading-5 text-muted-foreground">Published timetable: {published.title}</span>
                 ) : null}
               </div>
-              <div className="ml-auto flex flex-wrap items-center max-sm:ml-0 sm:-my-2.5 sm:-mr-2">
+              {/* The actions' row grows to fill the line it sits on and sets them right, so its own box never
+                  moves. The published day's action, which arrives when this app's API answers, comes first: it
+                  takes room to the left of the two utilities, which stay where they were. Below xl the row has
+                  a line of its own, wide enough for all three. */}
+              <div className="flex min-w-0 flex-[1_0_auto] flex-wrap items-center justify-end max-xl:basis-full max-sm:justify-start sm:-my-2.5 sm:-mr-2">
+                {publishedDay ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className={cn(BAR_TEXT_ACTION, "max-sm:-ml-2 max-sm:h-auto max-sm:min-h-11 max-sm:justify-start max-sm:py-2.5 max-sm:text-left max-sm:whitespace-normal")}
+                    onClick={() => void loadPublished()}
+                  >
+                    Check a published day: {publishedDay.title}
+                  </Button>
+                ) : publishedDay === undefined ? (
+                  // Until the API answers, a screen too narrow for all three actions on one line (below lg) keeps
+                  // the action's line empty (its height, nothing to read or press), so the sheet under it does not
+                  // move when the action appears.
+                  <span aria-hidden="true" className="block min-h-11 w-full border border-transparent py-2.5 text-[0.9375rem] lg:hidden">
+                    {"\u00a0"}
+                  </span>
+                ) : null}
+                {/* Below lg the action keeps a line to itself, as its placeholder did: a break with no height. */}
+                {publishedDay ? <span aria-hidden="true" className="basis-full lg:hidden" /> : null}
                 <Button
                   type="button"
                   variant="ghost"
-                  className={cn(BAR_TEXT_ACTION, "max-sm:-ml-2")}
+                  className={cn(BAR_TEXT_ACTION, "ml-1 max-sm:-ml-2")}
                   onClick={() => saveFile("clash-control-grid-template.csv", TEMPLATE_CSV, "text/csv")}
                 >
                   Download a template
@@ -1613,22 +1744,6 @@ export function CheckTool({
                 <Button type="button" variant="ghost" className={cn(BAR_TEXT_ACTION, "ml-1 max-sm:-ml-2")} onClick={loadSample}>
                   Check an invented sample
                 </Button>
-                {publishedDay ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className={cn(BAR_TEXT_ACTION, "ml-1 max-sm:-ml-2 max-sm:h-auto max-sm:min-h-11 max-sm:justify-start max-sm:py-2.5 max-sm:text-left max-sm:whitespace-normal")}
-                    onClick={() => void loadPublished()}
-                  >
-                    Check a published day: {publishedDay.title}
-                  </Button>
-                ) : publishedDay === undefined ? (
-                  // Until the API answers, a phone keeps the action's line empty (its height, nothing to read or
-                  // press), so the sheet under it does not move when the action appears.
-                  <span aria-hidden="true" className="block min-h-11 w-full border border-transparent py-2.5 text-[0.9375rem] sm:hidden">
-                    {"\u00a0"}
-                  </span>
-                ) : null}
               </div>
             </div>
             {publishedNote ? (
@@ -1654,7 +1769,7 @@ export function CheckTool({
                 run along the top like the timetable's stage headers, and a line-number gutter (decorative,
                 kept in step with the scroll) sits left. As a table: the same text read by the check's parser,
                 its flagged rows numbered. */}
-            <div className="overflow-hidden rounded-lg border border-border-strong bg-card has-[textarea:focus-visible]:outline-2 has-[textarea:focus-visible]:outline-offset-2 has-[textarea:focus-visible]:outline-ring">
+            <div className="overflow-hidden rounded-lg border border-border-strong bg-card has-[textarea:focus-visible]:outline-2 has-[textarea:focus-visible]:outline-offset-2 has-[textarea:focus-visible]:outline-ring has-[[data-paste-target]:focus-visible]:outline-2 has-[[data-paste-target]:focus-visible]:outline-offset-2 has-[[data-paste-target]:focus-visible]:outline-ring">
               <div className="relative flex flex-wrap items-center justify-between gap-3 py-2 pr-4 pl-1 lg:gap-2 after:pointer-events-none after:absolute after:inset-x-4 after:bottom-0 after:h-px after:bg-border after:content-['']">
                 <SegmentedControl
                   label="Show the draft grid as"
@@ -1671,17 +1786,28 @@ export function CheckTool({
                 </Button>
               </div>
               {view === "table" ? (
-                <GridTable
-                  grid={input.grid}
-                  jump={rowJump}
-                  selection={picked?.selection ?? null}
-                  marks={marks}
-                  flagged={Boolean(run?.outcome.ok)}
-                />
+                // The table takes no typing, but it takes a paste: focused (a click or Tab), Ctrl or Cmd+V sends
+                // the pasted grid to the CSV editor. Its focus ring is the panel's, which follows the corner.
+                <div
+                  data-paste-target=""
+                  role="region"
+                  aria-label="Draft grid as a table. Paste a grid here to edit it as CSV."
+                  tabIndex={0}
+                  onPaste={pasteOnTable}
+                  className="outline-none focus-visible:outline-none"
+                >
+                  <GridTable
+                    grid={input.grid}
+                    jump={rowJump}
+                    selection={picked?.selection ?? null}
+                    marks={marks}
+                    flagged={Boolean(run?.outcome.ok)}
+                  />
+                </div>
               ) : null}
               <div hidden={view !== "csv"}>
                 <div aria-hidden="true" className="flex border-b border-border">
-                  <span className="w-10 shrink-0 border-r border-border" />
+                  <span className={cn("shrink-0 border-r border-border", wideGutter ? "w-24" : "w-10")} />
                   <p className="flex min-w-0 flex-wrap items-center gap-x-2 px-3 py-2 text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
                     {GRID_COLUMNS.map((column, index) => (
                       <span key={column} className="inline-flex items-center gap-x-2">
@@ -1695,11 +1821,25 @@ export function CheckTool({
                   <div
                     ref={gutterRef}
                     aria-hidden="true"
-                    className={`w-10 shrink-0 overflow-hidden border-r border-border pt-3 pr-2 pb-8 text-right text-muted-foreground tabular-nums select-none ${GRID_LINE}`}
+                    data-gutter=""
+                    // On a phone the field keeps its own 160px height, so the gutter takes no height of its own
+                    // (size containment) and runs exactly as tall as the field, its numbers scrolled with it.
+                    className={cn(
+                      "shrink-0 overflow-hidden border-r border-border pt-3 pr-2 pb-8 text-right text-muted-foreground tabular-nums select-none max-sm:[contain:size]",
+                      wideGutter ? "w-24" : "w-10",
+                      GRID_LINE,
+                    )}
                   >
-                    {Array.from({ length: Math.max(1, input.grid.split("\n").length) }, (_, line) => (
-                      <div key={line}>{line + 1}</div>
-                    ))}
+                    {Array.from({ length: Math.max(1, input.grid.split("\n").length) }, (_, line) =>
+                      // A line the last check skipped: its number in ink, with the word. The results say why.
+                      marked?.has(line + 1) ? (
+                        <div key={line} data-skipped-line={line + 1} className="font-semibold whitespace-nowrap text-foreground">
+                          skipped {line + 1}
+                        </div>
+                      ) : (
+                        <div key={line}>{line + 1}</div>
+                      ),
+                    )}
                   </div>
                   <textarea
                     ref={gridRef}
@@ -1782,6 +1922,11 @@ export function CheckTool({
                     );
                   })}
                 </ul>
+                {separatorHint(outcome.skipped) ? (
+                  <p data-separator-hint="" className="mt-2 break-words">
+                    {separatorHint(outcome.skipped)}
+                  </p>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -1790,6 +1935,7 @@ export function CheckTool({
             <WhatYouGet
               outcome={previewOutcome}
               checked={checkedNow}
+              blank={previewInput.grid.trim() === ""}
               selectedBreak={picked?.id ?? null}
               onSelectBreak={selectBreak}
             />
@@ -1883,17 +2029,29 @@ export function CheckTool({
         </div>
       </form>
 
+      {/* Always present, so each change is announced: the note of the last action (a paste that landed in the
+          editor, a search, a change tried), else what the last check read. */}
       <p role="status" aria-live="polite" className="sr-only">
-        {run && outcome?.ok ? note || `${run.note}${(run.removed ?? []).map((notice) => `${notice} `).join("")}${announcement(outcome)}` : ""}
+        {note || (run && outcome?.ok ? `${run.note}${(run.removed ?? []).map((notice) => `${notice} `).join("")}${announcement(outcome)}` : "")}
       </p>
 
       {run && outcome?.ok && shown ? (
         <>
           <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start lg:gap-8 xl:grid-cols-[minmax(0,1fr)_21rem]">
             <div className="min-w-0 space-y-5">
-              <div className="print:hidden">
-                <CheckState checked />
+              {/* The results' header: after a check a visitor ran, what it read and how long the rule check
+                  took in this browser (one measurement of that run); the sample the page opens with says
+                  Checked. Then, when lines were skipped, what was left out, before anything else. */}
+              <div ref={resultsTopRef} className="scroll-mt-24 print:hidden">
+                {run.ms !== undefined && pasted ? (
+                  <p data-check-time="" className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
+                    {checkTimeLine(pasted.sets.length, pasted.stages.length, run.ms)}
+                  </p>
+                ) : (
+                  <CheckState checked />
+                )}
               </div>
+              {pasted && (pasted.skipped ?? []).length > 0 ? <SkippedLines report={pasted} /> : null}
               {run.sample ? (
                 <p className="rounded-md border border-warning bg-warning-bg px-3 py-2 text-sm font-semibold text-foreground print:hidden">
                   {SAMPLE_LABEL}
@@ -1949,10 +2107,16 @@ export function CheckTool({
                   </details>
                 </section>
               ) : null}
-              {/* Always in the page, so the line is announced when it appears: the results below it are for the grid as last checked. */}
+              {/* Always in the page, so the line is announced when it appears: the results below it are for the grid as last checked.
+                  After a paste, whose own note already said so, the same line shows in the same place unannounced. */}
               <div role="status" className="empty:hidden print:hidden">
-                {stale ? <p className="text-sm font-semibold text-warning">{TRIAL_COPY.stale}</p> : null}
+                {stale && !saidByPaste ? <p className="text-sm font-semibold text-warning">{TRIAL_COPY.stale}</p> : null}
               </div>
+              {stale && saidByPaste ? (
+                <div data-stale-quiet="" className="print:hidden">
+                  <p className="text-sm font-semibold text-warning">{TRIAL_COPY.stale}</p>
+                </div>
+              ) : null}
               <CheckResults
                 report={shown}
                 decisions={decisions}
@@ -2011,7 +2175,15 @@ export function CheckTool({
                 stale={stale}
                 onPrint={() => window.print()}
                 onCopy={() => void copyLink()}
-                onDownload={() => saveFile(csvName({ sample: run.sample }), gridText(shown.sets), "text/csv")}
+                // A check that skipped lines downloads the text as pasted, so no skipped line is lost from the file;
+                // a working copy is its own sets, as before.
+                onDownload={() =>
+                  saveFile(
+                    csvName({ sample: run.sample }),
+                    !working && skippedLines.length > 0 ? run.input.grid : gridText(shown.sets),
+                    "text/csv",
+                  )
+                }
                 canShare={shareable(shareHashText)}
                 share={
                   <>

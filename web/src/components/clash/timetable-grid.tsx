@@ -174,7 +174,7 @@ type TimetableGridProps = {
   plan?: PlanPreview | null;
   /** A change from "Keep two sets apart", drawn as ghosts and never part of the plan. */
   rulePreview?: RulePreview | null;
-  /** The invented day: a set with no signal is "not priced", not "no Qloo signal". */
+  /** The invented day: a set with no signal is "No taste signal", not "No Qloo signal". */
   synthetic?: boolean;
   className?: string;
 };
@@ -758,7 +758,7 @@ export function TimetableGrid({
                               className={cn("mt-auto block text-xs leading-4 font-medium whitespace-nowrap text-muted-foreground", rows.roomy && "pt-1")}
                             >
                               {noSignalLabel(synthetic)}
-                              <span className="sr-only">, not priced. </span>
+                              <span className="sr-only">, not scored. </span>
                             </span>
                           ) : (
                             <>
@@ -925,9 +925,10 @@ export function TimetableGrid({
                   >
                     {/* Every clash is a 22px numbered disc, centred in the first gutter the line crosses,
                         clear of the sets: a seen clash is filled raspberry with a paper numeral, a hidden
-                        one is outlined in raspberry on the card with a raspberry numeral. */}
+                        one is an ink ring on the card with an ink numeral (Hidden is a label, not shared
+                        time; the raspberry link under it is the shared time). */}
                     <ClashDisc hidden={hidden} className="absolute top-0.5 left-0.5" />
-                    <span aria-hidden="true" className={cn("relative", hidden ? "text-primary" : "text-primary-foreground")}>
+                    <span aria-hidden="true" className={cn("relative", hidden ? "text-foreground" : "text-primary-foreground")}>
                       {clash.rank}
                     </span>
                   </button>

@@ -129,7 +129,9 @@ describe("ClashControlFallback", () => {
 
   it("falls back to skeletons without a summary", () => {
     const html = renderToStaticMarkup(createElement(ClashControlFallback, { intro: null, summary: null }));
-    expect(html).toContain("animate-pulse");
+    // The placeholders hold still: the static bone, with no pulse.
+    expect(html).toContain('class="block bg-muted');
+    expect(html).not.toContain("animate-pulse");
     expect(text(html)).not.toContain("Clash Budget Index");
   });
 });

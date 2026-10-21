@@ -15,7 +15,7 @@ type TimetableListProps = {
   views: readonly SetView[];
   dayLabel: string;
   onOpen: (clash: PairClash, trigger: HTMLElement) => void;
-  /** The invented day: a set with no signal is "not priced", not "no Qloo signal". */
+  /** The invented day: a set with no signal is "No taste signal", not "No Qloo signal". */
   synthetic?: boolean;
   className?: string;
 };
@@ -88,7 +88,7 @@ export function TimetableList({ views, dayLabel, onOpen, synthetic = false, clas
                     </p>
                     {meta(view) ? <p className="mt-0.5 text-xs text-muted-foreground">{meta(view)}</p> : null}
                     {none ? (
-                      <p className="mt-1.5 text-xs font-semibold text-muted-foreground">{noSignalLabel(synthetic)}, not priced</p>
+                      <p className="mt-1.5 text-xs font-semibold text-muted-foreground">{noSignalLabel(synthetic)}, not scored</p>
                     ) : null}
                     {view.clashes.length > 0 ? (
                       <div className="mt-2 flex flex-wrap gap-1.5">

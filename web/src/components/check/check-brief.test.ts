@@ -135,3 +135,37 @@ describe("the one-page brief", () => {
     expect(briefFooter(null, true)).toBe("Computed in your browser from the published timetable.");
   });
 });
+
+describe("round 35: a brief of a partial check says what it left out", () => {
+  // Line 4's start is 25:70; Glass Harbour, on that line, is named by a pair rule.
+  const grid = [
+    "Tidal Fields,Main Stage,14:00,15:00",
+    "Cobalt Rows,Side Stage,14:15,15:15",
+    "Paper Lanterns,Tent,14:30,15:15",
+    "Glass Harbour,Tent,25:70,19:30",
+    "Saltmarsh,Main Stage,15:30,16:30",
+  ].join("\n");
+  const outcome = runCheck({ grid, changeover: "", curfew: "", pairs: "Tidal Fields | Glass Harbour" });
+  if (!outcome.ok) throw new Error("refused");
+  const page = text(renderToStaticMarkup(createElement(CheckBrief, { report: outcome.report, applied: [], decisions: [], price: null })));
+
+  it("prints the skipped sentence under its heading, and the pair rule it could not check", () => {
+    expect(page).toContain(
+      "Draft check, not a verdict Snapshot: the pasted grid as checked. 1 line skipped and not checked: line 4. The other 4 sets were checked. Pair line 1 not checked: Glass Harbour is on a skipped line. Read 4 sets on 3 stages.",
+    );
+  });
+
+  it("never prints the bare no-breaks sentence while a line is skipped", () => {
+    expect(page).toContain("Rule breaks (0) No rule breaks found among the 4 sets checked, against the settings above.");
+    expect(page).not.toContain("No rule breaks found against the settings above.");
+    // The settings line lists only the rules that were checked: none here.
+    expect(page).toContain("Never overlap: none listed.");
+  });
+
+  it("prints nothing of the sort for a check that skipped no line", () => {
+    const whole = runCheck({ grid: SAMPLE_GRID, ...SAMPLE_SETTINGS });
+    if (!whole.ok) throw new Error("refused");
+    const sample = text(renderToStaticMarkup(createElement(CheckBrief, { report: whole.report, applied: [], decisions: [], price: null })));
+    expect(sample).not.toMatch(/skipped|not checked/);
+  });
+});

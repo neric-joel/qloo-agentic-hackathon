@@ -749,6 +749,129 @@ describe("the saved reading and the live re-check in the working", () => {
   });
 });
 
+describe("the card's two parts in the section on what taste changes (round 35)", () => {
+  const twoSet = () => copy({ rule: RULE_RAW });
+  const props = {
+    onTryRule: () => {},
+    onKeepChange: () => null,
+    onOpenHidden: () => {},
+    hiddenCount: 5,
+    rankedCount: 15,
+  };
+  const classOf = (html: string, pattern: RegExp) => pattern.exec(html)?.[1]?.split(/\s+/) ?? [];
+
+  it("draws the whole card by default, with nothing shown or hidden by width", () => {
+    const whole = renderToStaticMarkup(createElement(DecisionDetails, { copy: twoSet(), ...props }));
+    const named = renderToStaticMarkup(createElement(DecisionDetails, { copy: twoSet(), ...props, part: "whole" }));
+    expect(named).toBe(whole);
+    expect(whole).not.toMatch(/\blg:(hidden|block|inline-flex)\b/);
+    expect(whole).not.toContain("data-index-beside");
+  });
+
+  it("keeps the card's index block, scale, working and rule search at every width, and shows the two lines and their actions below 1024px only", () => {
+    const card = renderToStaticMarkup(createElement(DecisionDetails, { copy: twoSet(), ...props, part: "card" }));
+    const whole = renderToStaticMarkup(createElement(DecisionDetails, { copy: twoSet(), ...props }));
+    // The same words in the same order as the whole card, below 1024px.
+    const plain = text(card);
+    expect(plain.replace(/Try this rule yourself /, "")).toBe(text(whole));
+    // Below 1024px only: the hidden-clash line, the keep and open actions, the change line and the actions block.
+    expect(classOf(card, /<p data-hidden-line="" class="([^"]*)">/)).toContain("lg:hidden");
+    expect(classOf(card, /<button[^>]*class="([^"]*)"[^>]*>Keep the two-set change/)).toContain("lg:hidden");
+    expect(classOf(card, /<button[^>]*class="([^"]*)"[^>]*>Open a hidden clash/)).toContain("lg:hidden");
+    expect(classOf(card, /<p id="[^"]+" class="([^"]*)">To keep Ann Arbor/)).toContain("lg:hidden");
+    expect(card).toMatch(/<div data-decision-actions="" class="mt-1 lg:hidden">/);
+    // At every width: the index block and its one paragraph (scale, attribution, limit), and the working toggle.
+    expect(card).toMatch(/<div data-index-block="">/);
+    expect(classOf(card, /<p data-index-scale="" class="([^"]*)">/).join(" ")).not.toMatch(/hidden/);
+    expect(text(working(card).outside)).toContain(
+      `${INDEX_SCALE} Selected and scored by this app’s index. A reading, not a verdict.`,
+    );
+    // From 1024px the rule search sits on the working toggle's row, drawn once at each width.
+    expect(card).toMatch(
+      /<div class="mt-3 lg:flex lg:flex-wrap lg:items-center lg:gap-x-6"><button type="button" id="[^"]+" aria-expanded="false"[\s\S]*?<\/button><button[^>]*data-variant="ruled"[^>]*class="[^"]*\bhidden lg:inline-flex\b[^"]*"[^>]*>Try this rule yourself<svg/,
+    );
+    const tries = [...card.matchAll(/<button[^>]*class="([^"]*)"[^>]*>Try this rule yourself/g)].map((m) => m[1].split(/\s+/));
+    expect(tries).toHaveLength(2);
+    expect(tries.filter((cls) => cls.includes("lg:inline-flex") && cls.includes("hidden"))).toHaveLength(1);
+    expect(tries.filter((cls) => cls.includes("lg:hidden"))).toHaveLength(1);
+    // Still one card: the 14px panel corner, the hairline edge, and no figure moves out of it.
+    expect(classOf(card, /^<div data-decision-details="" class="([^"]*)">/)).toEqual(
+      expect.arrayContaining(["rounded-xl", "border", "border-surface-edge", "bg-card", "p-5", "lg:p-6"]),
+    );
+    expect(card).not.toContain("data-index-beside");
+  });
+
+  it("draws beside the card, from 1024px only, the hidden-clash line closed by its action and the change line closed by its keep button, and nothing else", () => {
+    const decision = twoSet();
+    const beside = renderToStaticMarkup(createElement(DecisionDetails, { copy: decision, ...props, part: "beside" }));
+    expect(beside).toMatch(/^<div data-index-beside="" class="hidden space-y-4 lg:block">/);
+    const plain = text(beside);
+    const taste = tasteOverlapOf(decision);
+    expect(plain).toContain(
+      `A hidden clash, 1 of 5 among the day’s 15 ranked clashes: main genres differ, yet their taste overlap ranks ${taste} of 100 on this bill. Open a hidden clash`,
+    );
+    expect(plain).toContain(`${decision.changeSummary} Keep the two-set change`);
+    expect(decision.changeSummary).toBe(
+      "To keep Ann Arbor and Bo Diddly Squat apart: Bo Diddly Squat to Side 21:30–23:00 and Ann Arbor to Main 19:00–20:30; index 104.2 → 98.4.",
+    );
+    // The hidden-clash line first, in ink; then the change line in muted ink, its keep button described by it.
+    expect(beside.indexOf("data-hidden-line")).toBeLessThan(beside.indexOf("data-change-line"));
+    expect(classOf(beside, /<p data-hidden-line="" class="([^"]*)">/)).toEqual(["text-sm", "leading-snug"]);
+    expect(classOf(beside, /<p data-change-line="" class="([^"]*)">/)).toEqual(["text-[0.8125rem]", "leading-snug", "text-muted-foreground"]);
+    const described = /<span id="([^"]+)">To keep Ann Arbor/.exec(beside)?.[1] ?? "never";
+    expect(beside).toMatch(new RegExp(`<button[^>]*aria-describedby="${described.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[^>]*>Keep the two-set change`));
+    // Nothing else of the card: no index, no scale, no working, no rule search, no chip.
+    expect(beside).not.toMatch(/data-index-block|data-index-scale|data-working|aria-expanded|data-provenance|data-decision-details/);
+    expect(plain).not.toMatch(/Clash Budget Index|Try this rule yourself|Show the working|Lower is better/);
+    // Each action is the ruled line of type at the end of its sentence, at the sentence's size: no height of its own
+    // past the line, and a 44px target from a hit area (14px above and below the line). Its box is the line, about
+    // 20px tall, so it takes a text link's 6px corner: the 10px control corner would be half its height, a pill.
+    // 4px of margin before it keeps its focus ring off the sentence's last word.
+    const ruled = [...beside.matchAll(/<button[^>]*data-variant="ruled"[^>]*class="([^"]*)"/g)].map((m) => m[1].split(/\s+/));
+    expect(ruled).toHaveLength(2);
+    for (const cls of ruled) {
+      expect(cls.filter((name) => /^rounded-/.test(name))).toEqual(["rounded-sm"]);
+      expect(cls).not.toContain("rounded-md");
+      expect(cls).toContain("ml-1");
+      expect(cls).toEqual(
+        expect.arrayContaining(["relative", "min-h-0", "text-[length:inherit]", "after:absolute", "after:-inset-y-3.5", "after:content-[&#x27;&#x27;]"]),
+      );
+      expect(cls).not.toContain("text-[0.9375rem]");
+      expect(cls).not.toContain("min-h-11");
+      // No padding that would grow the box past the line, and so the ring into the lines around it.
+      expect(cls.filter((name) => /^-?(p|py|pt|pb|my|mt|mb)-/.test(name))).toEqual([]);
+    }
+    // Its own polite status, for what the keep button says when pressed here.
+    expect(beside).toMatch(/<p role="status" aria-live="polite" class="sr-only"><\/p><\/div>$/);
+  });
+
+  it("keeps the kept state beside the card, and the day's clash on a line of its own when the card's pair is not hidden", () => {
+    const kept = renderToStaticMarkup(
+      createElement(DecisionDetails, { copy: twoSet(), ...props, kept: { move: false, change: true }, part: "beside" }),
+    );
+    expect(text(kept)).toMatch(/In your plan ?: the two-set change/);
+    expect(text(kept)).not.toContain("Keep the two-set change");
+    const keptButton = /<button[^>]*data-kept=""[^>]*>/.exec(kept)?.[0] ?? "";
+    expect(keptButton).toContain('data-variant="ruled"');
+    expect(keptButton).toMatch(/class="[^"]*\bno-underline\b/);
+    // Not hidden: no hidden-clash line; the day's clash closes the part as a ruled line of its own.
+    const plainCopy = copy({ rule: RULE_RAW }, tinyPreset({ label: null }));
+    const beside = renderToStaticMarkup(
+      createElement(DecisionDetails, { copy: plainCopy, ...props, hiddenLabel: "Open the costliest clash", part: "beside" }),
+    );
+    expect(beside).not.toContain("data-hidden-line");
+    expect(text(beside).indexOf("Open the costliest clash")).toBeGreaterThan(text(beside).indexOf("Keep the two-set change"));
+    expect(beside).toMatch(/<div><button[^>]*data-variant="ruled"[^>]*class="[^"]*\bmin-h-11\b[^"]*"[^>]*>Open the costliest clash<svg/);
+    // And in the card that action shows below 1024px only too.
+    const card = renderToStaticMarkup(
+      createElement(DecisionDetails, { copy: plainCopy, ...props, hiddenLabel: "Open the costliest clash", part: "card" }),
+    );
+    expect(classOf(card, /<button[^>]*class="([^"]*)"[^>]*>Open the costliest clash/)).toContain("lg:hidden");
+    // With neither line nor action, nothing is drawn beside the card.
+    expect(renderToStaticMarkup(createElement(DecisionDetails, { copy: copy({}, tinyPreset({ label: null })), part: "beside" }))).toBe("");
+  });
+});
+
 describe("the side-by-side comparison in the card", () => {
   const ONE_SET_FIX = {
     sets_moved: 1,

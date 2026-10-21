@@ -20,6 +20,7 @@ import {
   type DayGraphMove,
   type OverlapChange,
 } from "./day-graph";
+import { BANDS, HATCH_CLEAR, lineKeyAction, NOTE_GAP, notePlace, planDrawing, spotBox, strokeWidth } from "./day-graph-motion";
 import { NO_OTHER_LONGER, parseDecision, sideEffectsLine, type Decision } from "./decision";
 import { rawTinyPreset } from "./fixtures/tiny-preset";
 import { parsePreset, type Preset } from "./preset";
@@ -815,7 +816,7 @@ describe("the phone window and rows", () => {
 });
 
 describe("drawingHeight and the motion constants", () => {
-  it("adds the axis to one row per stage on a desktop and one row per phone row below", () => {
+  it("adds the axis to one row per stage on a desktop and one row per phone row below, with a phone's label lane under its last row", () => {
     const graph = moved();
     expect(drawingHeight(graph, "desktop")).toBe(LAYOUT.desktop.axis + LAYOUT.desktop.row * 5);
     expect(drawingHeight(graph, "desktop")).toBe(342);
@@ -824,18 +825,145 @@ describe("drawingHeight and the motion constants", () => {
     const tiny = buildDayGraph(parsePreset(rawTinyPreset()), null, 0)!;
     expect(tiny.phoneRows).toEqual([0, 1]);
     expect(drawingHeight(tiny, "desktop")).toBe(22 + 64 * 2);
-    expect(drawingHeight(tiny, "phone")).toBe(24 + 8 + 14 + 42 * 2);
-    expect(drawingHeight(tiny, "short")).toBe(14 + 42 * 2);
+    expect(drawingHeight(tiny, "phone")).toBe(14 + 3 + 14 + 42 * 2 + 15);
+    expect(drawingHeight(tiny, "short")).toBe(14 + 37 * 2 + 15);
   });
 
   it("keeps the layout and the motion system's values", () => {
     expect(LAYOUT).toEqual({
       desktop: { axis: 22, row: 64, bar: 26 },
-      phone: { overview: 24, gap: 8, axis: 14, row: 42, bar: 24 },
-      short: { axis: 14, row: 42, bar: 24 },
+      phone: { overview: 14, gap: 3, axis: 14, row: 42, bar: 24, foot: 15 },
+      short: { axis: 14, row: 37, bar: 19, foot: 15 },
     });
     expect([MOVE_MS, PAN_MS, TAG_MS]).toEqual([450, 300, 120]);
     expect(EASE_MOVE).toBe("cubic-bezier(0.65, 0, 0.35, 1)");
     expect(EASE_OUT).toBe("cubic-bezier(0.23, 1, 0.32, 1)");
+  });
+});
+
+describe("the overlap a move ends", () => {
+  // Riot Fest's shape, invented: Bowls for Supper (Radical) moves 20 minutes later, out of its 5 minutes with Twin
+  // Pines (Rebel), which the side-effect line names and the report does not rank; its line runs beside the chosen
+  // clash's window (Amaryllis Morrow on Roots to Bowls for Supper), whose left edge is its window's left edge.
+  const sets: SetSpec[] = [
+    { name: "The Formats", stage: "roots", start: "17:10", end: "18:10" },
+    { name: "Amaryllis Morrow", stage: "roots", start: "19:20", end: "20:20", locked: true },
+    { name: "Twin Pines", stage: "rebel", start: "18:30", end: "19:30" },
+    { name: "Good Riddle", stage: "radical", start: "18:15", end: "18:55" },
+    { name: "Bowls for Supper", stage: "radical", start: "19:25", end: "20:05" },
+    { name: "Inkcap Clown Posse", stage: "radical", start: "20:55", end: "21:55" },
+  ];
+  const stages: [string, string][] = [
+    ["roots", "Roots"],
+    ["rebel", "Rebel"],
+    ["radical", "Radical"],
+  ];
+  const clash = { a_id: "amaryllis morrow", b_id: "bowls for supper", rank: 1, minutes: 40 };
+  const later: Raw = {
+    ...LATER,
+    act_id: "bowls for supper",
+    act: "Bowls for Supper",
+    from: "Radical 19:25-20:05",
+    stage_id: "radical",
+    stage: "Radical",
+    start: "19:45",
+    end: "20:25",
+    minutes_moved: 20,
+    minutes_shared_after: 35,
+  };
+  const graph = model(
+    makeDay({ sets, stages, clashes: [pair(1, "Amaryllis Morrow", "Bowls for Supper", 40, 0.88, {}, sets), pair(2, "Twin Pines", "Good Riddle", 25, 0.5, {}, sets)] }),
+    decide(later, clash),
+  );
+  const key = "bowls for supper~twin pines";
+
+  it("draws it unranked, at least 2px wide, and only as published", () => {
+    const thread = graph.threads.find((item) => `${item.aId}~${item.bId}` === key || `${item.bId}~${item.aId}` === key);
+    expect(thread?.ranked).toBe(false);
+    expect(thread?.moved?.window).toBeNull();
+    expect(strokeWidth(thread!)).toBeGreaterThanOrEqual(2);
+    expect(strokeWidth({ taste: 0, ranked: false })).toBe(2);
+    expect(strokeWidth({ taste: 0, ranked: true })).toBe(threadWidth(0));
+  });
+
+  it("stands it 8px off the chosen clash's window where its own window allows, else as far as it allows, never outside its window", () => {
+    const plans = [
+      ...BANDS.desktop.map((band) => planDrawing(graph, "desktop", band.track)),
+      ...BANDS.phone.map((band) => planDrawing(graph, "phone", band.track)),
+      ...BANDS.short.map((band) => planDrawing(graph, "short", band.track)),
+    ];
+    for (const plan of plans) {
+      const view = plan.views.published;
+      const line = view.lines.find((item) => item.key === key || item.key === key.split("~").reverse().join("~"));
+      const hatch = view.hatch;
+      if (!line || !hatch) throw new Error(`${plan.layout} at ${plan.reference}px draws the line and the window`);
+      expect(line.width).toBeGreaterThanOrEqual(2);
+      expect(hatch.top < line.bottom && line.top < hatch.bottom).toBe(true);
+      const x = (minute: number) => (minute - plan.track.start) * plan.scale;
+      const at = x(line.mid) + line.off;
+      expect(at - line.width / 2).toBeGreaterThanOrEqual(x(line.window.start) - 1e-6);
+      expect(at + line.width / 2).toBeLessThanOrEqual(x(line.window.end) + 1e-6);
+      const off = Math.min(Math.abs(at - x(hatch.window.start)), Math.abs(at - x(hatch.window.end)));
+      const room = x(line.window.end) - x(hatch.window.start) - line.width / 2;
+      expect(off, `${plan.layout} at ${plan.reference}px`).toBeGreaterThanOrEqual(Math.min(HATCH_CLEAR, Math.floor(room / 2) * 2) - 1e-6);
+      // As far as its window allows: the far end of its own window, to within 0.02px.
+      expect(off, `${plan.layout} at ${plan.reference}px`).toBeGreaterThanOrEqual(Math.min(HATCH_CLEAR, room - 0.02) - 1e-6);
+      if (room >= HATCH_CLEAR) expect(off).toBeGreaterThanOrEqual(HATCH_CLEAR - 1e-6);
+    }
+    // At 1280px and up (a 1104px track) its 5 minutes leave room for the full 8px.
+    const wide = planDrawing(graph, "desktop", BANDS.desktop[BANDS.desktop.length - 1].track);
+    const line = wide.views.published.lines.find((item) => item.key === key || item.key === key.split("~").reverse().join("~"));
+    expect(((line?.mid ?? 0) - (wide.views.published.hatch?.window.start ?? 0)) * wide.scale + (line?.off ?? 0)).toBeGreaterThanOrEqual(HATCH_CLEAR - 1e-6);
+  });
+});
+
+describe("the keyboard note", () => {
+  it("follows focus from line to line with the arrows, with no Enter, and Escape closes it and keeps focus", () => {
+    const order = ["alder~birch", "fir~alder", "gum~birch"];
+    expect(lineKeyAction(order, "alder~birch", "ArrowRight")).toEqual({ focus: "fir~alder", unpin: false });
+    expect(lineKeyAction(order, "fir~alder", "ArrowLeft")).toEqual({ focus: "alder~birch", unpin: false });
+    expect(lineKeyAction(order, "fir~alder", "End")).toEqual({ focus: "gum~birch", unpin: false });
+    expect(lineKeyAction(order, "fir~alder", "Escape")).toEqual({ focus: null, unpin: true });
+    // Enter and Space press the line's button, which pins its note: no focus move.
+    expect(lineKeyAction(order, "fir~alder", "Enter")).toEqual({ focus: null, unpin: false });
+  });
+
+  it("never covers the two names of the line it describes", () => {
+    const graph = moved();
+    for (const band of BANDS.desktop) {
+      const plan = planDrawing(graph, "desktop", band.track);
+      for (const view of ["published", "moved"] as const) {
+        const vp = plan.views[view];
+        for (const line of vp.lines) {
+          const x = (minute: number) => (minute - plan.track.start) * plan.scale;
+          const names = [line.thread.aId, line.thread.bId].flatMap((id) => (vp.labels[id] ? [spotBox(plan, vp.labels[id])] : []));
+          const bars = [line.thread.aId, line.thread.bId].flatMap((id) => {
+            const item = vp.bars.find((entry) => entry.set.actId === id);
+            return item ? [{ x0: x(item.span.start), x1: x(item.span.end), y0: item.top, y1: item.top + LAYOUT.desktop.bar }] : [];
+          });
+          const at = x(line.mid) + line.off;
+          const parts = [{ x0: at - 4, x1: at + 4, y0: line.top, y1: line.bottom }, ...bars, ...names];
+          const marks = {
+            x0: Math.min(...parts.map((part) => part.x0)),
+            x1: Math.max(...parts.map((part) => part.x1)),
+            y0: Math.min(...parts.map((part) => part.y0)),
+            y1: Math.max(...parts.map((part) => part.y1)),
+          };
+          const height = drawingHeight(graph, "desktop");
+          const note = { width: 320, height: 72 };
+          const place = notePlace(marks, { width: plan.reference, height }, note);
+          const box =
+            place.side === "left" || place.side === "right"
+              ? { x0: place.x, x1: place.x + note.width, y0: place.y, y1: place.y + note.height }
+              : place.side === "above"
+                ? { x0: at - note.width / 2, x1: at + note.width / 2, y0: marks.y0 - NOTE_GAP - note.height, y1: marks.y0 - NOTE_GAP }
+                : { x0: at - note.width / 2, x1: at + note.width / 2, y0: marks.y1 + NOTE_GAP, y1: marks.y1 + NOTE_GAP + note.height };
+          for (const name of names) {
+            const covers = box.x0 < name.x1 && name.x0 < box.x1 && box.y0 < name.y1 && name.y0 < box.y1;
+            expect(covers, `${band.track} ${view}: the note of ${line.key} covers a name`).toBe(false);
+          }
+        }
+      }
+    }
   });
 });

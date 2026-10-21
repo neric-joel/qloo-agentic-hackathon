@@ -649,6 +649,16 @@ describe("the taste figure's drawing", () => {
     const nav = html.indexOf("data-pair-nav");
     expect(nav).toBeLessThan(html.indexOf('id="ring-panel"'));
     expect(html).not.toContain("mask-image");
+    // The panel fades in only after the visitor picks another pair: the first paint carries no data-picked, so
+    // `.cc-ring-lens[data-picked]` (globals.css) starts nothing on load or on mount.
+    expect(html).toMatch(/<div data-ring-body="true" class="cc-ring-lens /);
+    expect(html).not.toContain("data-picked");
+    const source = readFileSync(join(process.cwd(), "src", "components", "clash", "taste-ring.tsx"), "utf-8");
+    expect(source).toContain('data-picked={picked ? "" : undefined}');
+    // Set only by a pick that changes the pair (Previous, Next, the arrow keys, Home, End), never by a render.
+    expect(source.match(/setPicked\(/g)).toHaveLength(1);
+    expect(source).toMatch(/function pick\(to: number\) \{\s*if \(to === index\) return;\s*setPicked\(true\);\s*setSelected\(to\);/);
+    expect(source).not.toMatch(/useEffect[\s\S]{0,200}setPicked/);
     // No second, text pager anywhere.
     expect(html).not.toContain("Previous pair</button>");
     // One pair: the dateline and the live label, no counter and no Previous or Next.

@@ -15,10 +15,12 @@ import {
   HOME_ORDER,
   HomeSections,
   SOURCES_ID,
+  agentJump,
   borrowsWall,
   currentJump,
   dayToDraw,
   jumpLinks,
+  publishedDays,
   wallLenders,
 } from "./clash-control";
 import { KEEP_APART_ID, KEEP_APART_SUMMARY } from "./keep-apart";
@@ -37,7 +39,7 @@ const ANCHORS: Record<(typeof HOME_ORDER)[number], string> = {
   sources: SOURCES_ID,
 };
 
-const agent = { href: "#agent", label: "Recorded runs" };
+const agent = { href: "#agent", label: "Agent runs" };
 const qloo = { href: `#${WHAT_QLOO_ID}`, label: "What Qloo changes" };
 
 describe("the home page's order", () => {
@@ -70,7 +72,7 @@ describe("the home page's order", () => {
       "Why this matters",
       "Timetable",
       "Try a move",
-      "Recorded runs",
+      "Agent runs",
       "Sources",
     ]);
     expect(links.map((link) => link.href)).toEqual(HOME_ORDER.map((key) => `#${ANCHORS[key]}`));
@@ -79,9 +81,50 @@ describe("the home page's order", () => {
       "Why this matters",
       "Timetable",
       "Try a move",
-      "Recorded runs",
+      "Agent runs",
       "Sources",
     ]);
+  });
+
+  it("names the agent section 'Agent runs' while recorded runs are shown, and 'Agent' when there are none", () => {
+    const runs = [{}, {}, {}];
+    // The live agent off and the day's runs in: the word "agent" is in the first screen's nav.
+    expect(agentJump("off", { status: "ready", runs })).toEqual({ href: "#agent", label: "Agent runs" });
+    // While either answer is coming, the label it will most likely settle on, so the nav does not reflow.
+    expect(agentJump("checking", { status: "loading", runs: [] }).label).toBe("Agent runs");
+    expect(agentJump("unknown", { status: "loading", runs: [] }).label).toBe("Agent runs");
+    expect(agentJump("checking", { status: "ready", runs }).label).toBe("Agent runs");
+    // No recorded runs shown: the live agent is on, or the day has none.
+    expect(agentJump("on", { status: "ready", runs })).toEqual({ href: "#agent", label: "Agent" });
+    expect(agentJump("on", { status: "loading", runs: [] }).label).toBe("Agent");
+    expect(agentJump("off", { status: "ready", runs: [] }).label).toBe("Agent");
+    expect(agentJump("off", { status: "error", runs: [] }).label).toBe("Agent");
+    expect(agentJump("checking", { status: "ready", runs: [] }).label).toBe("Agent");
+    // The page builds the nav's entry from it, and nowhere else says "Recorded runs" in the nav.
+    const source = readFileSync(join(__dirname, "clash-control.tsx"), "utf8");
+    expect(source).toContain("const agentLink = agentJump(agentStatus, recordings);");
+    expect(source).toContain("agent={agentLink}");
+    expect(source).not.toContain('label: "Recorded runs"');
+  });
+
+  it("hands the agent section the published days from the list the page holds, never the invented day, with no second fetch", () => {
+    const presets = [
+      { id: "glasto", title: "Glasto Fest 2030, Sunday", city: null, sets: 1, stages: 1, scored_share: 1, synthetic: false },
+      { id: "invented", title: "Invented", city: null, sets: 1, stages: 1, scored_share: 1, synthetic: true },
+      { id: "riot", title: "Riot Fest 2031, Sunday", city: null, sets: 1, stages: 1, scored_share: 1, synthetic: false },
+    ] as unknown as PresetSummary[];
+    expect(publishedDays(presets)).toEqual([
+      { id: "glasto", title: "Glasto Fest 2030, Sunday" },
+      { id: "riot", title: "Riot Fest 2031, Sunday" },
+    ]);
+    expect(publishedDays([])).toEqual([]);
+    const source = readFileSync(join(__dirname, "clash-control.tsx"), "utf8");
+    const view = source.slice(source.indexOf("function PresetView("), source.indexOf("<ClashDrawer"));
+    expect(view).toContain("const published = useMemo(() => publishedDays(presets), [presets]);");
+    const panel = view.slice(view.indexOf("<AgentPanel"), view.indexOf("/>", view.indexOf("<AgentPanel")));
+    expect(panel).toContain("publishedDays={published}");
+    // The page reads the list once (usePresets); the view adds no fetch of the list.
+    expect(view).not.toMatch(/fetch\(["`]\/api\/presets["`]/);
   });
 
   it("draws the section nav with no numerals: each link is its label, with the one ink marker under the current one", () => {
@@ -94,6 +137,10 @@ describe("the home page's order", () => {
     // The same links and the same marker (its round ends: a 3 px bar, clamped by the mark corner).
     expect(nav).toContain("rounded-bar bg-foreground");
     expect(nav).toContain('aria-current={on ? "location" : undefined}');
+    // The current item changes as the page scrolls, and nothing moves on scroll: the marker takes its new place at
+    // once, in every motion setting, with no transition, duration or animation anywhere in the nav.
+    expect(nav).not.toMatch(/transition|duration-|animate|ease-/);
+    expect(nav).toContain('marker.style.transform = `translateX(${label.offsetLeft}px)`;');
   });
 
   it("passes every section through HomeSections in the page itself", () => {

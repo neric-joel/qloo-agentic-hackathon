@@ -5,11 +5,12 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { heroClash, topClashes } from "@/lib/clashes";
 import { qlooCredits } from "@/lib/credit";
 import { buildDayGraph, keyLine, sideEffectText, type DayGraphModel } from "@/lib/day-graph";
 import { buildDecisionCopy, NO_MOVE, parseDecision, type Decision } from "@/lib/decision";
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
-import { parsePreset, type PresetSummary } from "@/lib/preset";
+import { parsePreset, type PairClash, type PresetSummary } from "@/lib/preset";
 import { summarize } from "@/lib/server-summary";
 import { checkAdd, encodeMoves, type PlanAnswer, type StackMove, type StackStep } from "@/lib/stack";
 
@@ -18,6 +19,7 @@ import {
   DRAWN_AS_PUBLISHED,
   DRAWN_WITHOUT_MOVE,
   focusShown,
+  isHiddenDecision,
   KEEP_MOVE,
   KeepMoveOffer,
   keepPressKind,
@@ -29,7 +31,7 @@ import {
   SEE_YOUR_PLAN,
   seeYourPlan,
 } from "./decision-card";
-import { HeroDecision, HeroDecisionSkeleton, KEPT_LABEL, tasteLineText } from "./hero-decision";
+import { HeroDecision, HeroDecisionSkeleton, KEPT_LABEL, offerPartToShow, tasteLineText } from "./hero-decision";
 
 // Every name and figure below is invented for the test.
 
@@ -489,11 +491,13 @@ describe("Keep this move on a plan that already holds steps (P1)", () => {
     expect(source).toContain('offerShown && "invisible"');
     expect(source).toContain('showKeep && offerShown && "invisible"');
     expect(source).not.toMatch(/offerShown && "hidden"/);
-    // Escape puts the offer away and hands focus back to Keep; Replace under the fold comes into view by the
-    // least scroll, at once under reduced motion.
+    // Escape puts the offer away and hands focus back to Keep; the whole offer under the fold (Add, Replace and
+    // the words in the confirmation's room) comes into view by the least scroll, at once under reduced motion.
     expect(source).toContain("onDismiss={dismissOffer}");
     expect(source).toContain("keepRef.current?.focus({ preventScroll: true });");
-    expect(source).toContain('last.scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" });');
+    expect(source).toContain('const words = groupRef.current?.querySelector<HTMLElement>("[data-keep-offer-status]") ?? null;');
+    expect(source).toContain("const parts = [addRef.current, replaceRef.current, words].flatMap(");
+    expect(source).toContain('part?.scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" });');
     // Escape on the offer puts it away (open, or refused); other keys do nothing, and so does Escape while an Add
     // is on its way.
     const keyDown = (state: Parameters<typeof KeepMoveOffer>[0]["offer"], key: string, onDismiss: () => void) => {
@@ -511,6 +515,22 @@ describe("Keep this move on a plan that already holds steps (P1)", () => {
     keyDown({ state: "checking" }, "Escape", dismissed);
     keyDown({ state: "sent" }, "Escape", dismissed);
     expect(dismissed).toHaveBeenCalledTimes(2);
+  });
+
+  it("brings the whole offer into view by its lowest part under the fold, its highest above the top, or not at all", () => {
+    const viewport = 667;
+    // A short phone below 380 px: Add in Keep's place, the words in the room, Replace in the paste's place.
+    const add = { part: "add", top: 700, bottom: 748 };
+    const words = { part: "words", top: 752, bottom: 806 };
+    const replace = { part: "replace", top: 814, bottom: 858 };
+    expect(offerPartToShow([add, replace, words], viewport)).toBe("replace");
+    // From 380 px both buttons share Keep's row, so the words in the room are the offer's foot.
+    expect(offerPartToShow([add, { ...replace, top: 700, bottom: 748 }, words], viewport)).toBe("words");
+    // Wholly in view: no scroll at all.
+    expect(offerPartToShow([{ part: "add", top: 337, bottom: 385 }, { part: "words", top: 389, bottom: 429 }], 900)).toBeNull();
+    // Scrolled past: its top comes back by the least scroll.
+    expect(offerPartToShow([{ part: "add", top: -40, bottom: 8 }, { part: "words", top: 12, bottom: 66 }], viewport)).toBe("add");
+    expect(offerPartToShow([], viewport)).toBeNull();
   });
 
   it("adds only once the engine scored the whole plan, and leaves the plan unchanged when it refuses", async () => {
@@ -594,6 +614,35 @@ describe("the hero's layout (server fallback, the interactive hero's final frame
     expect(dateline).toBe("Saturday. Published timetable; saved Qloo reading built 1 Oct 2026. Neither festival uses Clash Control.");
   });
 
+  it("calls the saved reading global only where the preset sent no location, and makes no place claim otherwise", async () => {
+    const { ClashControlFallback, datelineLead } = await import("./clash-control");
+    const { summarize: build } = await import("@/lib/server-summary");
+    const summary = build(tinyPreset(), decisionFor(), PRESETS);
+    const dateline = (location: string | null | undefined) =>
+      /<p data-dateline=""[^>]*>([^<]*)<\/p>/.exec(
+        renderToStaticMarkup(
+          createElement(ClashControlFallback, { intro: createElement("h1", { id: "pitch-heading" }, "Pitch"), summary: { ...summary, location } }),
+        ),
+      )?.[1];
+    // None sent: the reading was asked for no place, so it is global.
+    expect(dateline(null)).toBe("Saturday. Published timetable; saved global Qloo reading built 1 Oct 2026. Neither festival uses Clash Control.");
+    // A place sent: no "global", and no city claim.
+    expect(dateline("London")).toBe("Saturday. Published timetable; saved Qloo reading built 1 Oct 2026. Neither festival uses Clash Control.");
+    // Not known (the server could not say): no claim either way.
+    expect(dateline(undefined)).toBe("Saturday. Published timetable; saved Qloo reading built 1 Oct 2026. Neither festival uses Clash Control.");
+    // The lead on its own: the invented day and a day with no build date carry no reading to call global.
+    const model = day().model;
+    expect(datelineLead(model, false, null)).toBe("Saturday. Published timetable; saved global Qloo reading built 1 Oct 2026.");
+    expect(datelineLead(model, false, "Chicago, IL")).toBe("Saturday. Published timetable; saved Qloo reading built 1 Oct 2026.");
+    expect(datelineLead(model, true, null)).toBe("Invented timetable.");
+    expect(datelineLead({ ...model, builtAt: null }, false, null)).toBe("Saturday. Published timetable.");
+    expect(datelineLead(null, false, null)).toBeNull();
+    // The interactive view reads the preset's own parsed location, the fallback the summary's.
+    const source = readFileSync(join(__dirname, "clash-control.tsx"), "utf8");
+    expect(source).toContain("<HeroDateline model={model} synthetic={synthetic} location={preset.location} />");
+    expect(source).toContain("<HeroDateline model={model} synthetic={synthetic} location={summary?.location} />");
+  });
+
   it("draws the toggle on the moved view, its first option 'As published' (on the invented day 'Invented timetable')", async () => {
     const toggle = (html: string) => /<div role="radiogroup" aria-label="Drawing shows"[\s\S]*?<\/div>/.exec(html)?.[0] ?? "";
     const published = toggle(await fallback());
@@ -654,5 +703,47 @@ describe("the hero's layout (server fallback, the interactive hero's final frame
     const summary = summarize(tinyPreset(), decisionFor(), PRESETS);
     expect(summary.dayGraph).toEqual(day().model);
     expect(summary.presets).toEqual(PRESETS);
+  });
+});
+
+describe("the index card's clash action", () => {
+  it("opens the pair its hidden-clash line describes, and the day's hero clash only when the card has no such line", async () => {
+    const { cardClashAction } = await import("./clash-control");
+    const preset = tinyPreset();
+    const ranked = topClashes(preset.report.clashes, 0, Number.POSITIVE_INFINITY);
+    const built = buildDecisionCopy(preset, decisionFor());
+    expect(built).not.toBeNull();
+    const copy = built ?? { clashLine: "" };
+    // The tiny day's card pair (Ann Arbor and Bo Diddly Squat) carries the Hidden label, so the card describes it in
+    // its hidden-clash line; the action that closes that line opens that same pair.
+    expect(isHiddenDecision(copy)).toBe(true);
+    const cardPair = ranked.find((clash) => clash.a.act_id === "ann" && clash.b.act_id === "bo") ?? null;
+    expect(cardPair).not.toBeNull();
+    // Another hidden clash, which the day's hero button would choose first.
+    const other: PairClash = {
+      ...ranked[0],
+      rank: 2,
+      a: { ...ranked[0].a, act_id: "cy", name: "Cy Twombly" },
+      b: { ...ranked[0].b, act_id: "di", name: "Di Gata" },
+    };
+    const hero = { clash: other, kind: "hidden" as const };
+    expect(cardClashAction(hero, cardPair, true)).toEqual({ clash: cardPair, label: "Open a hidden clash" });
+    // Without that line (the card's pair is not hidden), the action is a line of its own: the hero clash, named
+    // for its kind, and only rank 1 is called the costliest.
+    expect(cardClashAction(hero, cardPair, false)).toEqual({ clash: other, label: "Open a hidden clash" });
+    expect(cardClashAction({ clash: other, kind: "evidence" }, cardPair, false)).toEqual({ clash: other, label: "Open a clash and its evidence" });
+    expect(cardClashAction({ clash: ranked[0], kind: "costliest" }, null, false)).toEqual({ clash: ranked[0], label: "Open the costliest clash" });
+    // A card whose pair is not among the day's ranked clashes: the hero clash.
+    expect(cardClashAction(hero, null, true)).toEqual({ clash: other, label: "Open a hidden clash" });
+    expect(cardClashAction(null, cardPair, true)).toEqual({ clash: cardPair, label: "Open a hidden clash" });
+    expect(cardClashAction(null, null, false)).toBeNull();
+    // On the tiny day itself the hero clash is the card's pair as well.
+    expect(cardClashAction(heroClash(ranked, preset.evidence, () => false), cardPair, isHiddenDecision(copy))?.clash).toBe(cardPair);
+    // The page hands the card this action, decided by the line's own test, and opens no other clash past it.
+    const source = readFileSync(join(__dirname, "clash-control.tsx"), "utf8");
+    expect(source).toContain("const cardAction = cardClashAction(hero, decisionPair, decisionCopy !== null && isHiddenDecision(decisionCopy));");
+    expect(source).toContain("onOpenHidden={cardAction ? (trigger) => openClash(cardAction.clash, trigger) : undefined}");
+    expect(source).toContain("hiddenLabel={cardAction?.label}");
+    expect(source).not.toContain("openClash(hero.clash");
   });
 });

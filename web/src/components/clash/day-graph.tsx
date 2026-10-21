@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type FocusEvent,
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
@@ -36,24 +37,28 @@ import {
   type Span,
 } from "@/lib/day-graph";
 import {
+  BANDS,
   barTopOf,
   CASING,
   DETAIL_TOP,
   edgeTransform,
   flightKeyframes,
   GUTTER,
-  holdsName,
   LABEL_LINE,
+  lineColor,
+  lineKeyAction,
   lineTransform,
   MARK_RADIUS,
-  NARROW_TRACK,
   moverAt,
   moverTransform,
-  NAME_INSET,
-  noteSide,
+  movingLineAt,
+  NOTE_GAP,
+  notePlace,
   pct,
   planDrawing,
   retarget,
+  spotBox,
+  textWidth,
   trackPct,
   viewP,
   washTransform,
@@ -62,8 +67,6 @@ import {
   type PlanBar,
   type PlanLine,
   type PlanWindow,
-  lineColor,
-  lineKeyAction,
   type Spot,
 } from "@/lib/day-graph-motion";
 import { formatClock } from "@/lib/timetable";
@@ -75,6 +78,18 @@ const LAYOUT_CLASS: Record<DrawingLayout, string> = {
   desktop: "relative hidden lg:block",
   phone: "relative lg:hidden [@media(max-height:699px)]:hidden",
   short: "relative hidden max-lg:[@media(max-height:699px)]:block",
+};
+/**
+ * Inside each layout, one drawing per band of screen widths (`BANDS`), each placed at its band's narrowest track
+ * and shown by CSS alone, so nothing is placed again after hydration and nothing shifts.
+ */
+const BAND_CLASS: Record<number, string> = {
+  848: "hidden lg:max-[1120px]:block",
+  944: "hidden min-[1120px]:max-xl:block",
+  1104: "hidden xl:block",
+  224: "block min-[360px]:hidden",
+  264: "hidden min-[360px]:max-[390px]:block",
+  294: "hidden min-[390px]:block",
 };
 
 /**
@@ -91,10 +106,10 @@ function prefersReducedMotion(): boolean {
   return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-/** The layout box the visitor sees (the other two are display: none). */
-function visibleLayout(root: HTMLElement | null): HTMLElement | null {
+/** The band drawing the visitor sees (every other one is display: none). */
+function visibleBand(root: HTMLElement | null): HTMLElement | null {
   if (!root) return null;
-  for (const element of root.querySelectorAll<HTMLElement>("[data-layout]")) if (element.getClientRects().length > 0) return element;
+  for (const element of root.querySelectorAll<HTMLElement>("[data-band]")) if (element.getClientRects().length > 0) return element;
   return null;
 }
 
@@ -106,16 +121,28 @@ function cancelAll(list: { current: Animation[] }) {
 const spanPct = (track: Span, span: Span) => pct(((span.end - span.start) / Math.max(1, track.end - track.start)) * 100);
 
 /** What identifies a label on screen, so the drawing swaps only those that change between views. */
-function spotSignature(spot: Spot, text: string, anchor: number): string {
-  return [text, spot.kind, Math.round(anchor * 100), spot.dx, spot.top, spot.align].join("|");
+function spotSignature(spot: Spot, anchor: number): string {
+  return [spot.lines.join("/"), spot.kind, Math.round(anchor * 100), spot.dx, spot.top, spot.align].join("|");
+}
+
+/** Where a line stands at displacement `p`: a line that follows the mover keeps its share of the way across its window. */
+function lineMid(model: DayGraphModel, line: PlanLine, other: PlanLine | undefined, p: number, published: boolean): number {
+  const move = model.move;
+  if (!move || !line.moving) return line.mid;
+  const otherId = line.thread.aId === move.actId ? line.thread.bId : line.thread.aId;
+  const set = model.sets.find((item) => item.actId === otherId);
+  if (!set) return line.mid;
+  const fracPub = published ? line.frac : (other?.frac ?? line.frac);
+  const fracMoved = published ? (other?.frac ?? line.frac) : line.frac;
+  return movingLineAt(move, { start: set.start, end: set.end }, p, fracPub, fracMoved);
 }
 
 /**
- * The hero's drawing of one festival day: every set on its stage row, the day's ranked clashes as straight
- * lines between the two sets of each (thicker for a higher taste overlap rank), and the decision's move with
- * its published slot dashed, the chosen clash's shared minutes hatched and every overlap the move starts drawn
- * dashed. The server renders the final frame of `view`; changing `view` moves the set in 450ms, every window
- * and line that touches it following the same displacement, and announces the result once when it settles.
+ * The hero's drawing of one festival day: every set on its stage row with its name, the day's ranked clashes as
+ * straight lines between the two sets of each (thicker for a higher taste overlap rank), and the decision's move
+ * with its published slot dashed, the chosen clash's shared minutes hatched and every overlap the move starts
+ * drawn dashed. The server renders the final frame of `view`; changing `view` moves the set in 450ms, every
+ * window and line that touches it following the same displacement, and announces the result once when it settles.
  */
 export function DayGraph(props: {
   model: DayGraphModel;
@@ -126,13 +153,24 @@ export function DayGraph(props: {
   const { model, view, onSettled, className } = props;
   const uid = useId().replace(/[^A-Za-z0-9_-]/g, "");
   const rootRef = useRef<HTMLDivElement>(null);
-  // A phone's plan is laid out for the narrowest phone (lines spread for 320px, names placed for it); `wides`
-  // places the names and tags again for phones from 360px, and the drawing shows whichever set fits.
+  // One plan per band of each layout; a short phone has its own, with thinner bars and rows and no strip.
   const plans = useMemo(
-    () => ({ desktop: planDrawing(model, "desktop"), phone: planDrawing(model, "phone", NARROW_TRACK), short: planDrawing(model, "short", NARROW_TRACK) }),
+    () =>
+      Object.fromEntries(LAYOUTS.map((layout) => [layout, BANDS[layout].map((band) => planDrawing(model, layout, band.track))])) as Record<
+        DrawingLayout,
+        LayoutPlan[]
+      >,
     [model],
   );
-  const wides = useMemo(() => ({ phone: planDrawing(model, "phone"), short: planDrawing(model, "short") }), [model]);
+  const planOf = useCallback(
+    (band: HTMLElement | null): LayoutPlan | null => {
+      if (!band) return null;
+      const layout = band.dataset.layout as DrawingLayout | undefined;
+      const track = Number(band.dataset.band);
+      return (layout && plans[layout]?.find((plan) => plan.reference === track)) ?? null;
+    },
+    [plans],
+  );
   const modelKey = [model.presetId, model.day, model.synthetic, model.builtAt, model.move?.label ?? "", model.sets.length, model.threads.length].join("|");
 
   const [seen, setSeen] = useState(modelKey);
@@ -144,6 +182,7 @@ export function DayGraph(props: {
   const [count, setCount] = useState(0);
   const [pin, setPin] = useState<Note | null>(null);
   const [hover, setHover] = useState<Note | null>(null);
+  const [keyed, setKeyed] = useState<Note | null>(null);
   const [active, setActive] = useState<string | null>(null);
   const [pan, setPan] = useState(model.focus.start);
   if (seen !== modelKey) {
@@ -157,6 +196,7 @@ export function DayGraph(props: {
     setAnnounce("");
     setPin(null);
     setHover(null);
+    setKeyed(null);
     setActive(null);
     setPan(model.focus.start);
   } else if (view !== (flight ? flight.target : drawn)) {
@@ -215,23 +255,23 @@ export function DayGraph(props: {
 
   /** Where the move is now: read from the mover's computed transform, so a retarget starts exactly there. */
   const currentP = useCallback((): number => {
-    const layout = visibleLayout(rootRef.current);
+    const band = visibleBand(rootRef.current);
+    const plan = planOf(band);
     const move = model.move;
     const clamp = (p: number) => Math.min(1, Math.max(0, p));
-    const mover = layout?.querySelector<HTMLElement>('[data-anim="mover"]');
-    if (layout && move && mover) {
-      const plan = plans[(layout.dataset.layout as DrawingLayout) ?? "desktop"];
+    const mover = band?.querySelector<HTMLElement>('[data-anim="mover"]');
+    if (band && plan && move && mover) {
       const shift = ((move.to.start - move.from.start) / Math.max(1, plan.track.end - plan.track.start)) * mover.offsetWidth;
       if (Math.abs(shift) >= 1) return clamp(new DOMMatrixReadOnly(getComputedStyle(mover).transform).m41 / shift);
     }
-    const fading = layout?.querySelector<HTMLElement>('[data-anim="mover@1"]');
+    const fading = band?.querySelector<HTMLElement>('[data-anim="mover@1"]');
     if (fading) return clamp(Number.parseFloat(getComputedStyle(fading).opacity));
     const progress = flightAnims.current[0]?.effect?.getComputedTiming().progress;
     const last = running.current;
     return last && typeof progress === "number" ? last.fromP + (last.toP - last.fromP) * progress : 0;
-  }, [model.move, plans]);
+  }, [model.move, planOf]);
 
-  // The flight: every keyed element of the visible layout gets its keyframes, one duration, one curve. A new
+  // The flight: every keyed element of the visible band gets its keyframes, one duration, one curve. A new
   // flight first reads where the running one is, then cancels it, in the same frame, so nothing jumps.
   useLayoutEffect(() => {
     if (!flight) {
@@ -241,13 +281,13 @@ export function DayGraph(props: {
     }
     const fromP = flight.fromP ?? currentP();
     cancelAll(flightAnims);
-    const layout = visibleLayout(rootRef.current);
-    const plan = layout ? plans[(layout.dataset.layout as DrawingLayout) ?? "desktop"] : null;
+    const band = visibleBand(rootRef.current);
+    const plan = planOf(band);
     let live = true;
     const done = () => {
       if (live) settle(flight);
     };
-    if (!layout || !plan || prefersReducedMotion() || Math.abs(flight.toP - fromP) < 1e-6) {
+    if (!band || !plan || prefersReducedMotion() || Math.abs(flight.toP - fromP) < 1e-6) {
       void Promise.resolve().then(done);
       return () => {
         live = false;
@@ -256,7 +296,7 @@ export function DayGraph(props: {
     const frames = flightKeyframes(model, plan, fromP, flight.toP);
     const { duration } = retarget(fromP, flight.toP);
     const animations: Animation[] = [];
-    for (const element of layout.querySelectorAll<HTMLElement | SVGElement>("[data-anim]")) {
+    for (const element of band.querySelectorAll<HTMLElement | SVGElement>("[data-anim]")) {
       const list = frames[element.dataset.anim ?? ""];
       if (list) animations.push(element.animate(list, { duration, easing: EASE_MOVE, fill: "forwards" }));
     }
@@ -266,18 +306,18 @@ export function DayGraph(props: {
     return () => {
       live = false;
     };
-  }, [flight, model, plans, settle, currentP]);
+  }, [flight, model, planOf, settle, currentP]);
 
   // Tags and names that differ between the views swap as the drawing settles: out fades, in fades in.
   useLayoutEffect(() => {
     cancelAll(swapAnims);
     if (!swap) return;
-    const layout = visibleLayout(rootRef.current);
-    if (!layout) return;
+    const band = visibleBand(rootRef.current);
+    if (!band) return;
     const timing = { duration: TAG_MS, easing: EASE_OUT, fill: "both" as const };
     const animations = [
-      ...[...layout.querySelectorAll<HTMLElement>('[data-swap="out"]')].map((element) => element.animate([{ opacity: 1 }, { opacity: 0 }], timing)),
-      ...[...layout.querySelectorAll<HTMLElement>('[data-swap="in"]')].map((element) => element.animate([{ opacity: 0 }, { opacity: 1 }], timing)),
+      ...[...band.querySelectorAll<HTMLElement>('[data-swap="out"]')].map((element) => element.animate([{ opacity: 1 }, { opacity: 0 }], timing)),
+      ...[...band.querySelectorAll<HTMLElement>('[data-swap="in"]')].map((element) => element.animate([{ opacity: 0 }, { opacity: 1 }], timing)),
     ];
     swapAnims.current = animations;
     const id = swap.id;
@@ -317,18 +357,18 @@ export function DayGraph(props: {
 
   const panTo = useCallback(
     (minute: number) => {
-      const track = plans.phone.track;
+      const track = plans.phone[0].track;
       const length = model.focus.end - model.focus.start;
       const next = Math.min(Math.max(track.start, track.end - length), Math.max(track.start, minute));
       if (Math.abs(next - pan) < 0.01) return;
-      const layout = visibleLayout(rootRef.current);
-      const elements = layout ? [...layout.querySelectorAll<HTMLElement>("[data-pan-track], [data-bracket]")] : [];
+      const band = visibleBand(rootRef.current);
+      const elements = band ? [...band.querySelectorAll<HTMLElement>("[data-pan-track], [data-bracket]")] : [];
       const from = elements.map((element): [HTMLElement, string] => [element, getComputedStyle(element).transform]);
       cancelAll(panAnims);
       panFrom.current = prefersReducedMotion() ? null : from;
       setPan(next);
     },
-    [model.focus, pan, plans.phone.track],
+    [model.focus, pan, plans.phone],
   );
 
   // A pinned note closes on a press anywhere outside the drawing.
@@ -353,28 +393,38 @@ export function DayGraph(props: {
     flight,
     swap,
     pan,
-    note: hover ?? pin,
+    note: hover ?? pin ?? keyed,
     active,
-    onLineFocus: (layout, key) => {
+    onLineFocus: (plan, key, event) => {
       setActive(key);
-      if (layout === "desktop") return;
-      const line = plans[layout].views[shown].lines.find((item) => item.key === key);
+      // A line reached from the keyboard shows its note, as on hover, without a press.
+      if (event.currentTarget.matches(":focus-visible")) setKeyed({ kind: "line", key });
+      if (plan.layout === "desktop") return;
+      const line = plan.views[shown].lines.find((item) => item.key === key);
       const length = model.focus.end - model.focus.start;
       if (line && (line.mid < pan || line.mid > pan + length)) panTo(line.mid - length / 2);
     },
-    onLineKey: (layout, key, event) => {
-      const order = plans[layout].views[shown].lines.slice().sort((a, b) => a.thread.rank - b.thread.rank).map((line) => line.key);
+    onLineBlur: (event) => {
+      if (!rootRef.current?.contains(event.relatedTarget as Node | null)) setKeyed(null);
+    },
+    onLineKey: (plan, key, event) => {
+      const order = plan.views[shown].lines
+        .slice()
+        .sort((a, b) => a.thread.rank - b.thread.rank)
+        .map((line) => line.key);
       const { focus: next, unpin } = lineKeyAction(order, key, event.key);
       if (unpin) {
         setPin(null);
+        setKeyed(null);
         event.stopPropagation();
         return;
       }
       if (!next) return;
       event.preventDefault();
       setActive(next);
+      setKeyed({ kind: "line", key: next });
       if (pin?.kind === "line") setPin({ kind: "line", key: next });
-      const target = event.currentTarget.closest("[data-layout]")?.querySelector<HTMLElement>(`[data-hit="${next}"]`);
+      const target = event.currentTarget.closest("[data-band]")?.querySelector<HTMLElement>(`[data-hit="${next}"]`);
       target?.focus({ preventScroll: true });
     },
     onLineClick: (key) => {
@@ -383,8 +433,8 @@ export function DayGraph(props: {
     },
     onHover: (note) => setHover(note),
     onSetClick: (id) => setPin((current) => (current?.kind === "set" && current.id === id ? null : { kind: "set", id })),
-    onStripTap: (minute) => {
-      const lines = plans.phone.views[shown].lines;
+    onStripTap: (plan, minute) => {
+      const lines = plan.views[shown].lines;
       if (lines.length === 0) return;
       const nearest = lines.reduce((best, line) => (Math.abs(line.mid - minute) < Math.abs(best.mid - minute) ? line : best));
       setActive(nearest.key);
@@ -406,7 +456,10 @@ export function DayGraph(props: {
         if (!(event.target as Element).closest("[data-hit], [data-set], [data-strip]")) setPin(null);
       }}
       onKeyDown={(event) => {
-        if (event.key === "Escape" && pin) setPin(null);
+        if (event.key === "Escape" && (pin || keyed)) {
+          setPin(null);
+          setKeyed(null);
+        }
       }}
     >
       <p id={`${uid}-title`} className="sr-only">
@@ -416,7 +469,11 @@ export function DayGraph(props: {
         {description}
       </p>
       {LAYOUTS.map((layout) => (
-        <Drawing key={layout} layout={layout} plan={plans[layout]} wide={layout === "desktop" ? null : wides[layout]} ctx={ctx} />
+        <div key={layout} data-layout={layout} className={LAYOUT_CLASS[layout]} style={{ height: drawingHeight(model, layout) }}>
+          {plans[layout].map((plan) => (
+            <Drawing key={plan.reference} plan={plan} ctx={ctx} className={BAND_CLASS[plan.reference]} />
+          ))}
+        </div>
       ))}
       <p className="sr-only" aria-live="polite">
         {announce}
@@ -435,17 +492,19 @@ type Ctx = {
   pan: number;
   note: Note | null;
   active: string | null;
-  onLineFocus: (layout: DrawingLayout, key: string) => void;
-  onLineKey: (layout: DrawingLayout, key: string, event: KeyboardEvent<HTMLButtonElement>) => void;
+  onLineFocus: (plan: LayoutPlan, key: string, event: FocusEvent<HTMLButtonElement>) => void;
+  onLineBlur: (event: FocusEvent<HTMLButtonElement>) => void;
+  onLineKey: (plan: LayoutPlan, key: string, event: KeyboardEvent<HTMLButtonElement>) => void;
   onLineClick: (key: string) => void;
   onHover: (note: Note | null) => void;
   onSetClick: (id: string) => void;
-  onStripTap: (minute: number) => void;
+  onStripTap: (plan: LayoutPlan, minute: number) => void;
 };
 
-/** One layout: the stage names, the time track (panning on a phone), the overview strip and the note layer. */
-function Drawing({ layout, plan, wide, ctx }: { layout: DrawingLayout; plan: LayoutPlan; wide: LayoutPlan | null; ctx: Ctx }) {
+/** One band of one layout: the stage names, the time track (panning on a phone), the overview strip and the note layer. */
+function Drawing({ plan, ctx, className }: { plan: LayoutPlan; ctx: Ctx; className?: string }) {
   const { model } = ctx;
+  const { layout } = plan;
   const height = drawingHeight(model, layout);
   const top = layout === "phone" ? DETAIL_TOP : 0;
   const panned = layout !== "desktop";
@@ -455,7 +514,7 @@ function Drawing({ layout, plan, wide, ctx }: { layout: DrawingLayout; plan: Lay
     ? { width: pct((length / focus) * 100), transform: `translateX(-${pct(((ctx.pan - plan.track.start) / length) * 100)})` }
     : {};
   return (
-    <div data-layout={layout} className={LAYOUT_CLASS[layout]} style={{ height }}>
+    <div data-band={plan.reference} data-layout={layout} className={cn("absolute inset-0", className)}>
       <StageNames layout={layout} plan={plan} model={model} top={top} />
       <div
         className={cn("absolute right-0 bottom-0", panned ? "overflow-clip" : "[overflow-x:clip]")}
@@ -467,12 +526,12 @@ function Drawing({ layout, plan, wide, ctx }: { layout: DrawingLayout; plan: Lay
           style={trackStyle}
         >
           <Axis layout={layout} plan={plan} />
-          <Marks layout={layout} plan={plan} wide={wide} ctx={ctx} />
-          <Hits layout={layout} plan={plan} ctx={ctx} />
+          <Marks plan={plan} ctx={ctx} />
+          <Hits plan={plan} ctx={ctx} />
         </div>
       </div>
       {layout === "phone" ? <Strip plan={plan} ctx={ctx} /> : null}
-      <NoteLayer layout={layout} plan={plan} ctx={ctx} top={top} height={height} />
+      <NoteLayer plan={plan} ctx={ctx} top={top} height={height} />
     </div>
   );
 }
@@ -528,17 +587,16 @@ function Axis({ layout, plan }: { layout: DrawingLayout; plan: LayoutPlan }) {
 }
 
 /**
- * A set's bar: white with a hairline edge and 6px corners; an unscored set is muted with no edge. Its name and
- * lock are drawn over the lines that cross it, each glyph ringed in the bar's own fill, so a line passes behind a
- * name and never through it.
+ * A set's bar: white with a hairline edge and 6px corners; an unscored set is muted with no edge. A locked set
+ * carries its lock at the start. Its name is drawn by the label layer, inside the bar or beside it; a set whose
+ * name is cut or not drawn keeps its whole name as the bar's title.
  */
 function SetBar({
   set,
   span,
   track,
-  scale,
   style,
-  showName,
+  slot,
   wash,
   ctx,
   className,
@@ -546,20 +604,20 @@ function SetBar({
   set: DayGraphSet;
   span: Span;
   track: Span;
-  scale: number;
   style: CSSProperties;
-  showName: boolean;
+  slot: string | undefined;
   wash: { key?: string; transform: string } | null;
   ctx: Ctx;
   className?: string;
 }) {
-  const roomy = holdsName(set, span, scale);
   return (
     <div
       data-set={set.actId}
+      data-slot={slot}
+      title={slot === "d" || slot === "e" ? set.name : undefined}
       className={cn(
         "pointer-events-auto absolute overflow-hidden rounded-xs",
-        set.unscored ? "bg-muted text-muted-foreground [--halo:var(--muted)]" : "border border-border-strong bg-card [--halo:var(--card)]",
+        set.unscored ? "bg-muted text-muted-foreground" : "border border-border-strong bg-card",
         className,
       )}
       style={{ left: pct(trackPct(track, span.start)), width: spanPct(track, span), ...style }}
@@ -570,15 +628,9 @@ function SetBar({
       {wash ? (
         <span data-anim={wash.key} className="absolute inset-y-0 left-0 w-full origin-left bg-shared-wash" style={{ transform: wash.transform }} />
       ) : null}
-      {set.locked || (showName && roomy) ? (
-        <span className="absolute inset-y-0 right-[5px] left-[5px] z-[1] flex min-w-0 items-center gap-1 [paint-order:stroke_fill] [-webkit-text-stroke:4px_var(--halo)]">
-          {set.locked ? (
-            <span title="Locked: this set stays put" className="relative flex shrink-0">
-              <Lock aria-hidden="true" className="absolute inset-0 size-3 fill-(--halo) text-(--halo)" strokeWidth={7} />
-              <Lock aria-hidden="true" className="relative size-3" strokeWidth={2.25} />
-            </span>
-          ) : null}
-          {showName && roomy ? <span className="min-w-0 truncate font-medium">{set.name}</span> : null}
+      {set.locked ? (
+        <span title="Locked: this set stays put" className="absolute top-1/2 left-[5px] z-[1] flex -translate-y-1/2">
+          <Lock aria-hidden="true" className="size-3" strokeWidth={2.25} />
         </span>
       ) : null}
     </div>
@@ -588,38 +640,42 @@ function SetBar({
 /** A name or tag at its spot; `shift` minutes are taken off its anchor when it rides the mover's layer. */
 function SpotLabel({
   spot,
-  text,
   track,
   shift = 0,
   className,
   data,
 }: {
   spot: Spot;
-  text: string;
   track: Span;
   shift?: number;
   className?: string;
   data?: Record<string, string>;
 }) {
+  // The box is exactly as wide as the plan measured it (a hair over the text), so what the plan kept clear and
+  // over its own bar is what the page draws.
   const style: CSSProperties = {
     left: `calc(${pct(trackPct(track, spot.anchor - shift))} + ${spot.dx}px)`,
     top: spot.top,
-    transform: spot.align === "end" ? "translateX(-100%)" : undefined,
-    width: spot.cut ? `max(0px, calc(${spanPct(track, spot.cut)} - ${spot.dx + NAME_INSET}px))` : undefined,
+    width: spot.width,
+    textAlign: spot.align === "end" ? "right" : spot.align === "center" ? "center" : "left",
+    transform: spot.align === "end" ? "translateX(-100%)" : spot.align === "center" ? "translateX(-50%)" : undefined,
   };
   return (
     <span
       {...data}
-      className={cn("pointer-events-none absolute whitespace-nowrap font-semibold", spot.plate && "bg-background px-0.5", spot.cut && "truncate", className)}
+      className={cn("pointer-events-none absolute whitespace-nowrap", spot.plate && "rounded-sm bg-background px-0.5", className)}
       style={style}
     >
-      {text}
+      {spot.lines.length === 1 ? spot.lines[0] : spot.lines.map((line) => <span key={line} className="block">{line}</span>)}
     </span>
   );
 }
 
-/** A line between the two sets of a clash: its paper casing, its stroke and an end dot on each set's edge. */
-function LineMark({
+/**
+ * A line between the two sets of a clash: its paper casing and its stroke. Drawn over the bars it crosses, or,
+ * when a name inside one of them is in its way, beneath them, so the bars hide it there.
+ */
+function LineStroke({
   line,
   synthetic,
   transform,
@@ -634,13 +690,12 @@ function LineMark({
 }) {
   const height = line.bottom - line.top;
   const color = lineColor(line.thread.lit, synthetic, line.thread.ranked);
-  const dot = line.thread.lit ? 8 : 6;
-  const dotStyle: CSSProperties = { width: dot, height: dot, marginLeft: -dot / 2, marginTop: -dot / 2, borderRadius: "50%", background: color };
   return (
     <div
       data-thread={line.thread.rank}
       data-lit={line.thread.lit ? "" : undefined}
       data-unranked={line.thread.ranked ? undefined : ""}
+      data-under={line.under ? "" : undefined}
       data-anim={animKey}
       className="pointer-events-none absolute inset-x-0"
       style={{ top: line.top, height, transform, opacity }}
@@ -649,8 +704,20 @@ function LineMark({
         {line.thread.lit ? null : (
           <line data-casing="" x1={12} x2={12} y1={0} y2={height} stroke="var(--background)" strokeWidth={line.width + 2 * CASING} />
         )}
-        <line x1={12} x2={12} y1={0} y2={height} stroke={color} strokeWidth={line.width} />
+        <line data-stroke="" x1={12} x2={12} y1={0} y2={height} stroke={color} strokeWidth={line.width} />
       </svg>
+    </div>
+  );
+}
+
+/** A line's end dots, one on the edge of each of its two sets, drawn over the bars. */
+function LineDots({ line, synthetic, transform, animKey, opacity }: { line: PlanLine; synthetic: boolean; transform: string; animKey?: string; opacity?: number }) {
+  const height = line.bottom - line.top;
+  const color = lineColor(line.thread.lit, synthetic, line.thread.ranked);
+  const dot = line.thread.lit ? 8 : 6;
+  const dotStyle: CSSProperties = { width: dot, height: dot, marginLeft: -dot / 2, marginTop: -dot / 2, borderRadius: "50%", background: color };
+  return (
+    <div data-anim={animKey} className="pointer-events-none absolute inset-x-0" style={{ top: line.top, height, transform, opacity }}>
       <span data-end-dot="" className="absolute top-0 left-0" style={dotStyle} />
       <span data-end-dot="" className="absolute left-0" style={{ ...dotStyle, top: height }} />
     </div>
@@ -735,12 +802,13 @@ function MovingWindow({
 }
 
 /**
- * Everything drawn on the track, in paint order: windows (behind the bars), the ghost, the bars and the
- * mover, the lines with their casings and end dots, then the names and tags on their paper plates.
+ * Everything drawn on the track, in paint order: windows (behind the bars), the ghost, the lines that pass
+ * beneath the bars, the bars and the mover, the lines drawn over the bars, the end dots, then the names (inside
+ * the bars, beside them and on their paper plates) and the tags.
  */
-function Marks({ layout, plan, wide, ctx }: { layout: DrawingLayout; plan: LayoutPlan; wide: LayoutPlan | null; ctx: Ctx }) {
+function Marks({ plan, ctx }: { plan: LayoutPlan; ctx: Ctx }) {
   const { model, flight, drawn, swap } = ctx;
-  const { track, scale } = plan;
+  const { track, layout } = plan;
   const move = model.move;
   const bar = LAYOUT[layout].bar;
   const flying = flight !== null;
@@ -750,12 +818,13 @@ function Marks({ layout, plan, wide, ctx }: { layout: DrawingLayout; plan: Layou
   const moved = plan.views.moved;
   const rest = plan.views[drawn];
   const crossfade = Boolean(move && move.from.stageIndex !== move.to.stageIndex);
-  const hatchId = `${ctx.uid}-${layout}-hatch`;
+  const hatchId = `${ctx.uid}-${layout}-${plan.reference}-hatch`;
   const setById = new Map(model.sets.map((set) => [set.actId, set]));
   const partner = move ? setById.get(move.partnerId) : undefined;
   const partnerSpan = partner ? { start: partner.start, end: partner.end } : null;
   const lit = model.threads.find((thread) => thread.lit);
   const shiftOf = (view: GraphView) => (move ? moverAt(move, viewP(model, view)).start - move.from.start : 0);
+  const labelView = flying ? restView : drawn;
 
   // The chosen clash's wash inside a bar, as the share of that bar it covers in this frame.
   const washFor = (set: DayGraphSet, span: Span): { key?: string; transform: string } | null => {
@@ -867,7 +936,8 @@ function Marks({ layout, plan, wide, ctx }: { layout: DrawingLayout; plan: Layou
   const mover = move ? setById.get(move.actId) : undefined;
   const fromSpan = move ? { start: move.from.start, end: move.from.end } : null;
 
-  // --- lines
+  // --- lines: at rest where the view stands them; in flight, those that touch the mover at p, the rest sliding
+  // between their two places. Each is drawn beneath or over the bars as its resting view draws it.
   type Drawn = { line: PlanLine; key: string; transform: string; opacity?: number };
   const lines: Drawn[] = [];
   if (!flying) {
@@ -877,18 +947,17 @@ function Marks({ layout, plan, wide, ctx }: { layout: DrawingLayout; plan: Layou
     for (const key of keys) {
       const a = pub.lines.find((line) => line.key === key);
       const b = moved.lines.find((line) => line.key === key);
-      const base = (a ?? b) as PlanLine;
+      const base = (plan.views[restView].lines.find((line) => line.key === key) ?? a ?? b) as PlanLine;
       const offAt = lerp(a?.off ?? b?.off ?? 0, b?.off ?? a?.off ?? 0, p);
       if (!base.moving) {
-        lines.push({ line: base, key: `line:${key}`, transform: lineTransform(track, base.mid, offAt) });
+        lines.push({ line: base, key: `line:${key}`, transform: lineTransform(track, lerp(a?.mid ?? base.mid, b?.mid ?? base.mid, p), offAt) });
         continue;
       }
       const otherId = base.thread.aId === move.actId ? base.thread.bId : base.thread.aId;
       const other = setById.get(otherId);
       if (!other) continue;
       const otherSpan = { start: other.start, end: other.end };
-      const here = moverAt(move, p);
-      const mid = (Math.max(here.start, other.start) + Math.min(here.end, other.end)) / 2;
+      const mid = movingLineAt(move, otherSpan, p, a?.frac ?? b?.frac ?? 0.5, b?.frac ?? a?.frac ?? 0.5);
       const present = windowAt(move, otherSpan, p) !== null;
       const transform = lineTransform(track, mid, offAt);
       if (!crossfade) {
@@ -899,60 +968,59 @@ function Marks({ layout, plan, wide, ctx }: { layout: DrawingLayout; plan: Layou
       }
     }
   }
+  const strokeOf = (item: Drawn) => (
+    <LineStroke key={item.key} line={item.line} synthetic={model.synthetic} transform={item.transform} animKey={item.key} opacity={item.opacity} />
+  );
 
-  // --- names and tags: the resting view's while in flight (they swap when it settles). A phone narrower than
-  // 360px has its own placements where they differ, and CSS shows one set or the other.
-  const labelView = flying ? restView : drawn;
-  type Item = { key: string; id: string; text: string; spot: Spot; mover: boolean; tag: boolean; sig: string; className?: string };
-  const itemsOf = (source: LayoutPlan, view: GraphView): Item[] => [
-    ...Object.entries(source.views[view].labels).map(([id, spot]): Item => {
-      const text = setById.get(id)?.name ?? "";
+  // --- names and tags: the resting view's while in flight (they swap when it settles).
+  const nameOf = (id: string) => setById.get(id);
+  type Item = { key: string; id: string; spot: Spot; mover: boolean; tag: boolean; sig: string };
+  const itemsAt = (view: GraphView): Item[] => [
+    ...Object.entries(plan.views[view].labels).map(([id, spot]): Item => {
       const isMover = id === move?.actId;
       // The mover's name is known by where it sits on its bar, which travels; any other by where it sits.
-      const sig = isMover ? `mover|${spotSignature(spot, text, spot.anchor - shiftOf(view))}` : `${id}|${spotSignature(spot, text, spot.anchor)}`;
-      return { key: `label:${id}`, id, text, spot, mover: isMover, tag: false, sig };
+      const sig = isMover ? `mover|${spotSignature(spot, spot.anchor - shiftOf(view))}` : `${id}|${spotSignature(spot, spot.anchor)}`;
+      return { key: `label:${id}`, id, spot, mover: isMover, tag: false, sig };
     }),
-    ...source.views[view].tags.map(
-      (tag): Item => ({ key: `tag:${tag.key}`, id: tag.key, text: tag.text, spot: tag.spot, mover: false, tag: true, sig: `tag|${spotSignature(tag.spot, tag.text, tag.spot.anchor)}` }),
-    ),
+    ...plan.views[view].tags.map((tag): Item => ({ key: `tag:${tag.key}`, id: tag.key, spot: tag.spot, mover: false, tag: true, sig: `tag|${spotSignature(tag.spot, tag.spot.anchor)}` })),
   ];
-  const itemsAt = (view: GraphView): Item[] => {
-    if (!wide) return itemsOf(plan, view);
-    const regular = itemsOf(wide, view);
-    const narrow = itemsOf(plan, view);
-    const narrowSigs = new Set(narrow.map((item) => item.sig));
-    const regularSigs = new Set(regular.map((item) => item.sig));
-    return [
-      ...regular.map((item) => (narrowSigs.has(item.sig) ? item : { ...item, key: `${item.key}:wide`, className: "max-[360px]:hidden" })),
-      ...narrow.filter((item) => !regularSigs.has(item.sig)).map((item) => ({ ...item, key: `${item.key}:narrow`, className: "hidden max-[360px]:block" })),
-    ];
-  };
-  const identity = (item: Item) => `${item.sig}|${item.className ?? ""}`;
   const showing = itemsAt(labelView);
   let incoming = new Set<string>();
   let outgoing: Item[] = [];
   if (swap && !flying) {
     const before = itemsAt(swap.from);
-    const beforeIds = new Set(before.map(identity));
-    const afterIds = new Set(showing.map(identity));
-    incoming = new Set(showing.filter((item) => !beforeIds.has(identity(item))).map(identity));
-    outgoing = before.filter((item) => !afterIds.has(identity(item)));
+    const beforeIds = new Set(before.map((item) => item.sig));
+    const afterIds = new Set(showing.map((item) => item.sig));
+    incoming = new Set(showing.filter((item) => !beforeIds.has(item.sig)).map((item) => item.sig));
+    outgoing = before.filter((item) => !afterIds.has(item.sig));
   }
-  const renderItem = (item: Item, shift: number, mark: "in" | "out" | null) => (
-    <SpotLabel
-      key={`${mark ?? "on"}-${item.key}-${item.text}`}
-      spot={item.spot}
-      text={item.text}
-      track={track}
-      shift={shift}
-      className={cn(item.tag && "text-primary", item.className)}
-      data={{ [item.tag ? "data-shared-tag" : "data-label"]: item.id, ...(mark ? { "data-swap": mark } : {}) }}
-    />
-  );
+  const renderItem = (item: Item, shift: number, mark: "in" | "out" | null) => {
+    const set = nameOf(item.id);
+    const inBar = item.spot.kind === "inside" || item.spot.kind === "prefix";
+    return (
+      <SpotLabel
+        key={`${mark ?? "on"}-${item.key}-${item.spot.lines.join("/")}`}
+        spot={item.spot}
+        track={track}
+        shift={shift}
+        className={cn(
+          item.tag || set?.featured ? "font-semibold" : "font-medium",
+          item.tag && "text-primary",
+          !item.tag && inBar && set?.unscored && "text-muted-foreground",
+        )}
+        data={{
+          [item.tag ? "data-shared-tag" : "data-label"]: item.id,
+          ...(item.spot.slot ? { "data-slot": item.spot.slot } : {}),
+          ...(mark ? { "data-swap": mark } : {}),
+        }}
+      />
+    );
+  };
   const fixedItems = showing.filter((item) => !item.mover);
   const moverItems = showing.filter((item) => item.mover);
   const leavingMover = outgoing.filter((item) => item.mover);
   const leavingFixed = outgoing.filter((item) => !item.mover);
+  const slots = plan.views[labelView].slots;
 
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0">
@@ -981,15 +1049,16 @@ function Marks({ layout, plan, wide, ctx }: { layout: DrawingLayout; plan: Layou
         />
       ) : null}
 
+      {lines.filter((item) => item.line.under).map(strokeOf)}
+
       {still.map((item) => (
         <SetBar
           key={item.set.actId}
           set={item.set}
           span={item.span}
           track={track}
-          scale={scale}
           style={{ top: item.top, height: bar }}
-          showName={!item.set.featured}
+          slot={slots[item.set.actId]}
           wash={washFor(item.set, item.span)}
           ctx={ctx}
         />
@@ -1006,9 +1075,8 @@ function Marks({ layout, plan, wide, ctx }: { layout: DrawingLayout; plan: Layou
                 set={mover}
                 span={fromSpan}
                 track={track}
-                scale={scale}
                 style={{ top: 0, height: bar }}
-                showName={false}
+                slot={slots[mover.actId]}
                 wash={washFor(mover, fromSpan)}
                 ctx={ctx}
               />
@@ -1016,11 +1084,12 @@ function Marks({ layout, plan, wide, ctx }: { layout: DrawingLayout; plan: Layou
           ))
         : null}
 
+      {lines.filter((item) => !item.line.under).map(strokeOf)}
       {lines.map((item) => (
-        <LineMark key={item.key} line={item.line} synthetic={model.synthetic} transform={item.transform} animKey={item.key} opacity={item.opacity} />
+        <LineDots key={`dots-${item.key}`} line={item.line} synthetic={model.synthetic} transform={item.transform} animKey={item.key} opacity={item.opacity} />
       ))}
 
-      {fixedItems.map((item) => renderItem(item, 0, incoming.has(identity(item)) ? "in" : null))}
+      {fixedItems.map((item) => renderItem(item, 0, incoming.has(item.sig) ? "in" : null))}
       {move && moverItems.length
         ? moverCopies
             .filter((copy) => !crossfade || copy.key === (labelView === "moved" ? "mover@1" : "mover@0"))
@@ -1031,7 +1100,7 @@ function Marks({ layout, plan, wide, ctx }: { layout: DrawingLayout; plan: Layou
                 className="pointer-events-none absolute inset-0"
                 style={{ transform: moverTransform(track, move, p), opacity: copy.opacity }}
               >
-                {moverItems.map((item) => renderItem(item, shiftOf(labelView), incoming.has(identity(item)) ? "in" : null))}
+                {moverItems.map((item) => renderItem(item, shiftOf(labelView), incoming.has(item.sig) ? "in" : null))}
               </div>
             ))
         : null}
@@ -1049,10 +1118,10 @@ function Marks({ layout, plan, wide, ctx }: { layout: DrawingLayout; plan: Layou
 const lerp = (a: number, b: number, p: number) => a + (b - a) * p;
 
 /**
- * The lines' hit areas: one tab stop for the layout, each a 46px target with 10px corners (at least 44px after
+ * The lines' hit areas: one tab stop for the band, each a 46px target with 10px corners (at least 44px after
  * any rounding) that moves with its line. They sit over the names, so a focus ring is never hidden by one.
  */
-function Hits({ layout, plan, ctx }: { layout: DrawingLayout; plan: LayoutPlan; ctx: Ctx }) {
+function Hits({ plan, ctx }: { plan: LayoutPlan; ctx: Ctx }) {
   const { model, flight, shown } = ctx;
   const move = model.move;
   const view = plan.views[shown];
@@ -1063,18 +1132,14 @@ function Hits({ layout, plan, ctx }: { layout: DrawingLayout; plan: LayoutPlan; 
   const roving = ctx.active && keys.includes(ctx.active) ? ctx.active : (litKey ?? keys[0]);
   const p = flight ? flight.toP : viewP(model, ctx.drawn);
   const crossfade = Boolean(move && move.from.stageIndex !== move.to.stageIndex);
-  const setById = new Map(model.sets.map((set) => [set.actId, set]));
+  const otherView: GraphView = shown === "moved" ? "published" : "moved";
   return (
     <div className="pointer-events-none absolute inset-0 z-[2]">
       {order.map((line) => {
         let transform = lineTransform(plan.track, line.mid, line.off);
         if (flight && move && line.moving) {
-          const otherId = line.thread.aId === move.actId ? line.thread.bId : line.thread.aId;
-          const other = setById.get(otherId);
-          if (other) {
-            const here = moverAt(move, p);
-            transform = lineTransform(plan.track, (Math.max(here.start, other.start) + Math.min(here.end, other.end)) / 2, line.off);
-          }
+          const other = plan.views[otherView].lines.find((item) => item.key === line.key);
+          transform = lineTransform(plan.track, lineMid(model, line, other, p, shown === "published"), line.off);
         }
         const animKey = `line:${line.key}${crossfade && line.moving ? (shown === "moved" ? "@1" : "@0") : ""}`;
         return (
@@ -1086,8 +1151,9 @@ function Hits({ layout, plan, ctx }: { layout: DrawingLayout; plan: LayoutPlan; 
               tabIndex={line.key === roving ? 0 : -1}
               aria-label={threadNote(model, line.thread, shown)}
               className="pointer-events-auto absolute top-1/2 left-0 size-11.5 -translate-x-1/2 -translate-y-1/2 cursor-pointer rounded-md"
-              onFocus={() => ctx.onLineFocus(layout, line.key)}
-              onKeyDown={(event) => ctx.onLineKey(layout, line.key, event)}
+              onFocus={(event) => ctx.onLineFocus(plan, line.key, event)}
+              onBlur={(event) => ctx.onLineBlur(event)}
+              onKeyDown={(event) => ctx.onLineKey(plan, line.key, event)}
               onClick={() => ctx.onLineClick(line.key)}
               onPointerEnter={() => ctx.onHover({ kind: "line", key: line.key })}
               onPointerLeave={() => ctx.onHover(null)}
@@ -1183,7 +1249,7 @@ function Strip({ plan, ctx }: { plan: LayoutPlan; ctx: Ctx }) {
   const onClick = (event: MouseEvent<HTMLDivElement>) => {
     const box = event.currentTarget.getBoundingClientRect();
     if (box.width <= 0) return;
-    ctx.onStripTap(track.start + ((event.clientX - box.left) / box.width) * length);
+    ctx.onStripTap(plan, track.start + ((event.clientX - box.left) / box.width) * length);
   };
 
   return (
@@ -1222,66 +1288,114 @@ function Strip({ plan, ctx }: { plan: LayoutPlan; ctx: Ctx }) {
         className="absolute -top-0.5 -bottom-0.5 left-0 rounded-xs border-2 border-foreground"
         style={{ width: pct((focus / length) * 100), transform: `translateX(${pct(((ctx.pan - track.start) / focus) * 100)})` }}
       />
-      {/* The tap target reaches 44px tall over the gap and the detail's axis, which take no presses. */}
+      {/* The tap target reaches 44px tall over the gap, the detail's axis and the paper above its first row's bars, which take no presses. */}
       <span className="absolute inset-x-0 top-0 h-11" />
     </div>
   );
 }
 
+/** The note's width on a desktop and on a phone (px; a phone's is capped by the drawing's own width). */
+const NOTE_WIDTH: Record<DrawingLayout, number> = { desktop: 320, phone: 352, short: 352 };
+/** A note's text size, line box and padding (px): 13/18 with 8px above and below and a 1px edge. */
+const NOTE_LINE = 18;
+const NOTE_PAD = 18;
+
+/** How tall a note of `text` wraps to at `width` px (an estimate a little over the real height). */
+function noteHeight(text: string, width: number): number {
+  const lines = Math.max(1, Math.ceil(textWidth(text, 13, 500) / Math.max(1, width - 24)));
+  return lines * NOTE_LINE + NOTE_PAD;
+}
+
 /**
- * The note for the line or set under the pointer, or pinned by a tap, Enter or Space: above or below it, on the
- * side with more room, and kept inside the drawing's box, so it covers nothing under or over the drawing. An
- * overlay that moves nothing on the page. A phone's note may span the stage names, so it wraps to fewer lines.
+ * The note for the line or set under the pointer, pinned by a tap, Enter or Space, or reached from the
+ * keyboard: an overlay that moves nothing on the page. A line's note never covers its line or either of the
+ * line's two sets and their names: on a desktop it goes beside them when the track leaves room, else above or
+ * below them on the side with more room; where the drawing has no room on either side, it reaches past the
+ * drawing's edge rather than over those names. A set's note goes above or below the set, inside the drawing.
  */
-function NoteLayer({ layout, plan, ctx, top, height }: { layout: DrawingLayout; plan: LayoutPlan; ctx: Ctx; top: number; height: number }) {
+function NoteLayer({ plan, ctx, top, height }: { plan: LayoutPlan; ctx: Ctx; top: number; height: number }) {
   const { model, note, shown } = ctx;
   if (!note) return null;
+  const { layout, track } = plan;
   const view = plan.views[shown];
+  const desktop = layout === "desktop";
   const focus = Math.max(1, model.focus.end - model.focus.start);
+  const bar = LAYOUT[layout].bar;
+  const gutter = GUTTER[layout];
+  const column = desktop ? plan.reference : plan.reference + gutter;
+  const width = Math.min(NOTE_WIDTH[layout], column);
+  /** A minute plus px across the note's column: the track on a desktop; the whole box, stage names included, on a phone. */
+  const across = (minute: number, px: number) =>
+    desktop
+      ? `${pct(trackPct(track, minute))} + ${Math.round(px * 100) / 100}px`
+      : `${gutter}px + (100% - ${gutter}px) * ${Math.round(((minute - ctx.pan) / focus) * 10000) / 10000} + ${Math.round(px * 100) / 100}px`;
+  /** The same at the band's reference width, to choose a side. */
+  const acrossPx = (minute: number, px: number) => (desktop ? (minute - track.start) * plan.scale + px : gutter + (minute - ctx.pan) * plan.scale + px);
+
   let text = "";
   let minute = 0;
   let off = 0;
-  let upper = 0;
-  let lower = 0;
+  // The marks the note must leave in sight: as CSS edges (minute + px) and as px at the reference width.
+  const parts: { left: [number, number]; right: [number, number]; y0: number; y1: number }[] = [];
   if (note.kind === "line") {
     const line = view.lines.find((item) => item.key === note.key);
     if (!line) return null;
     text = threadNote(model, line.thread, shown);
     minute = line.mid;
     off = line.off;
-    upper = line.top;
-    lower = line.bottom;
+    parts.push({ left: [line.mid, line.off - 4], right: [line.mid, line.off + 4], y0: line.top, y1: line.bottom });
+    for (const id of [line.thread.aId, line.thread.bId]) {
+      const item = view.bars.find((entry) => entry.set.actId === id);
+      if (item) parts.push({ left: [item.span.start, 0], right: [item.span.end, 0], y0: item.top, y1: item.top + bar });
+      const spot = view.labels[id];
+      if (spot) {
+        const box = spotBox({ track, scale: plan.scale }, spot);
+        const base = (spot.anchor - track.start) * plan.scale;
+        parts.push({ left: [spot.anchor, box.x0 - base], right: [spot.anchor, box.x1 - base], y0: box.y0, y1: box.y1 });
+      }
+    }
   } else {
     const item = view.bars.find((entry) => entry.set.actId === note.id);
     if (!item) return null;
     text = setNote(model, item.set, shown);
     minute = (item.span.start + item.span.end) / 2;
-    upper = item.top;
-    lower = item.top + LAYOUT[layout].bar;
+    parts.push({ left: [item.span.start, 0], right: [item.span.end, 0], y0: item.top, y1: item.top + bar });
   }
-  const desktop = layout === "desktop";
-  // Where the mark is across the note's column: the track on a desktop; the whole box, stage names included, on a phone.
-  const anchor = desktop
-    ? `${pct(trackPct(plan.track, minute))} + ${off}px`
-    : `${GUTTER[layout]}px + (100% - ${GUTTER[layout]}px) * ${Math.round(((minute - ctx.pan) / focus) * 10000) / 10000} + ${off}px`;
-  const width = desktop ? "min(20rem, 100%)" : "min(22rem, 100%)";
-  const { above, offset } = noteSide(top + upper, top + lower, height);
-  const gap = <span aria-hidden="true" className="min-h-0 shrink" style={{ flexBasis: offset }} />;
+  const marks = {
+    x0: Math.min(...parts.map((part) => acrossPx(...part.left))),
+    x1: Math.max(...parts.map((part) => acrossPx(...part.right))),
+    y0: top + Math.min(...parts.map((part) => part.y0)),
+    y1: top + Math.max(...parts.map((part) => part.y1)),
+  };
+  const tall = noteHeight(text, width);
+  const place =
+    note.kind === "line" && desktop
+      ? notePlace(marks, { width: column, height }, { width, height: tall })
+      : notePlace({ ...marks, x0: 0, x1: column }, { width: column, height }, { width, height: tall });
+  const key = `${note.kind}-${note.kind === "line" ? note.key : note.id}-${shown}`;
+  const noteClass =
+    "pointer-events-none absolute z-10 rounded-md border border-border bg-popover px-3 py-2 text-[13px] leading-[18px] text-foreground transition-[opacity,translate] duration-(--dur-feedback) ease-(--ease-out) starting:translate-y-[3px] starting:opacity-0 motion-reduce:transition-none";
+  const style: CSSProperties = { width };
+  if (place.side === "left" || place.side === "right") {
+    // Beside: its near edge 6px off the marks' far edge, its top level with theirs (or its bottom, near the drawing's foot).
+    const edges = parts.map((part) => `calc(${across(...(place.side === "right" ? part.right : part.left))})`).join(", ");
+    if (place.side === "right") style.left = `calc(${parts.length > 1 ? `max(${edges})` : edges} + ${NOTE_GAP}px)`;
+    else style.right = `calc(100% - ${parts.length > 1 ? `min(${edges})` : edges} + ${NOTE_GAP}px)`;
+    if (marks.y0 + tall <= height) style.top = marks.y0;
+    else style.bottom = Math.max(0, height - marks.y1);
+  } else {
+    // Above or below the marks, centred on the line and kept inside the drawing's width. A line's note reaches
+    // past the drawing's top or foot when the drawing has no room for it there; a set's stays inside.
+    style.left = `clamp(0px, calc(${across(minute, off)} - ${width}px / 2), calc(100% - ${width}px))`;
+    const inside = note.kind === "set" ? Math.max(0, height - tall) : Number.POSITIVE_INFINITY;
+    if (place.side === "above") style.bottom = Math.min(height - marks.y0 + NOTE_GAP, inside);
+    else style.top = Math.min(marks.y1 + NOTE_GAP, inside);
+  }
   return (
-    <div
-      className={cn("pointer-events-none absolute inset-y-0 right-0 flex flex-col", above ? "justify-end" : "justify-start")}
-      style={{ left: desktop ? GUTTER[layout] : 0 }}
-    >
-      {above ? null : gap}
-      <div
-        key={`${note.kind}-${note.kind === "line" ? note.key : note.id}-${shown}`}
-        data-thread-note={note.kind}
-        className="relative z-10 shrink-0 rounded-md border border-border bg-popover px-3 py-2 text-[13px] leading-[18px] text-foreground transition-[opacity,translate] duration-(--dur-feedback) ease-(--ease-out) starting:translate-y-[3px] starting:opacity-0 motion-reduce:transition-none"
-        style={{ width, marginLeft: `clamp(0px, calc(${anchor} - ${width} / 2), calc(100% - ${width}))` }}
-      >
+    <div className="pointer-events-none absolute inset-y-0 right-0" style={{ left: desktop ? gutter : 0 }}>
+      <div key={key} data-thread-note={note.kind} data-note-side={place.side} className={noteClass} style={style}>
         {text}
       </div>
-      {above ? gap : null}
     </div>
   );
 }

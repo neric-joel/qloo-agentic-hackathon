@@ -10,7 +10,7 @@ import CheckPage from "@/app/check/page";
 import { ThemeProvider } from "@/components/theme/theme-provider";
 import { CHECK_COPY, announcement, runCheck } from "@/lib/check";
 import { breakDecisionId, pairDecisionId, pairLabel, type Decision } from "@/lib/check-decisions";
-import { parsePriceAnswer, priceRequest, type PriceAnswer, type PriceRequest } from "@/lib/check-price";
+import { parsePriceAnswer, priceBody, priceRequest, type PriceAnswer, type PriceRequest } from "@/lib/check-price";
 import { SAMPLE_GRID, SAMPLE_LABEL, SAMPLE_PLANTED_BREAKS, SAMPLE_SETTINGS, isSampleInput } from "@/lib/check-sample";
 import { applyChange, findChange, targetOfBreak, trialSteps } from "@/lib/check-trial";
 
@@ -919,5 +919,53 @@ describe("round-9 workspace: decisions, recovery, order and review", () => {
     const preview = renderToStaticMarkup(createElement(CheckBrief, { report, applied: [], decisions: [], price: null, preview: true }));
     expect(preview).not.toMatch(/^<div class="hidden/);
     expect(preview).toContain("--background:#ffffff");
+  });
+});
+
+describe("round 35: a skipped line is never sent, never scored and never passed silently", () => {
+  // Every name is invented. "Secret Skipped Act" sits on line 3, whose start does not read; it overlaps no one
+  // only because it was not read at all.
+  const grid = [
+    "Alpha Choir,Main,18:00,19:00",
+    "Beta Lanterns,Side,18:30,19:30",
+    "Secret Skipped Act,Tent,25:70,19:15",
+    "Gamma Rows,Tent,18:15,19:15",
+    "Delta Kites,Field,18:45,19:45",
+  ].join("\n");
+  const outcome = runCheck({ grid, changeover: "", curfew: "", pairs: "Alpha Choir | Secret Skipped Act" });
+  if (!outcome.ok) throw new Error("the readable lines should be checked");
+  const report = outcome.report;
+
+  it("leaves the skipped act out of every pair, the Compare request and its body", () => {
+    expect(report.sets.map((set) => set.act)).toEqual(["Alpha Choir", "Beta Lanterns", "Gamma Rows", "Delta Kites"]);
+    expect(report.shared.every((pair) => pair.a.act !== "Secret Skipped Act" && pair.b.act !== "Secret Skipped Act")).toBe(true);
+    const request = priceRequest(report);
+    if (!request) throw new Error("expected a request");
+    expect(request.acts).not.toContain("Secret Skipped Act");
+    expect(priceBody(request, "saved")).not.toContain("Secret Skipped Act");
+    expect(priceBody(request, "live")).not.toContain("Secret Skipped Act");
+  });
+
+  it("lists the pair rule it could not check and never prints the bare no-breaks sentence", () => {
+    expect(report.uncheckedPairs).toEqual(["Pair line 1 not checked: Secret Skipped Act is on a skipped line."]);
+    expect(report.settings.pairs).toEqual([]);
+    const html = renderToStaticMarkup(
+      createElement(CheckResults, { report, decisions: new Map(), onDecide: () => {}, showAll: false, onShowAll: () => {}, nonce: 1 }),
+    );
+    expect(text(html)).not.toContain(CHECK_COPY.noBreaks);
+    const brief = text(renderToStaticMarkup(createElement(CheckBrief, { report, applied: [], decisions: [], price: null })));
+    expect(brief).toContain("1 line skipped and not checked: line 3. The other 4 sets were checked.");
+    expect(brief).toContain("Pair line 1 not checked: Secret Skipped Act is on a skipped line.");
+    expect(announcement(outcome)).toMatch(/^1 line skipped and not checked: line 3\. The other 4 sets were checked\. Rule breaks: /);
+  });
+
+  it("makes no request while a messy paste is read, checked and drawn", () => {
+    stubNetwork();
+    const page = text(
+      renderToStaticMarkup(
+        createElement(ThemeProvider, null, createElement(CheckTool, { initial: { grid, changeover: "", curfew: "", pairs: "" }, checkOnLoad: true })),
+      ),
+    );
+    expect(page).toContain("1 line skipped and not checked: line 3.");
   });
 });

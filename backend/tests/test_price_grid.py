@@ -553,9 +553,9 @@ def test_a_minimal_saved_body_of_only_the_compared_pairs_names_finds_the_same_sa
         assert "glastonbury-2025-sun" in found
 
 
-def test_a_minimal_saved_body_from_the_invented_day_finds_the_invented_day():
+def test_a_minimal_saved_body_from_the_invented_day_finds_the_invented_day(tmp_path):
     """The /check sample: its five longest movable overlaps, with only their names, still match the invented
-    day (with the built days as candidates too) and price with no request."""
+    day (with the built days as candidates too, when they are present) and price with no request."""
     preset = invented()
     slots = sorted(preset.festival.timetable, key=lambda slot: (slot.day, slot.start))
     day = min(slot.day for slot in slots)
@@ -571,7 +571,9 @@ def test_a_minimal_saved_body_from_the_invented_day_finds_the_invented_day():
     assert len(pairs) == 5 and len(acts) >= gridprice.MIN_ACTS
     transport = RefusingTransport()
     qloo = QlooClient("test-key", transport=transport, backoff=0, max_rps=None)
-    folder = REAL_PRESETS if any(REAL_PRESETS.glob("*.json")) else Path(".")
+    # A clean clone has no built days (they are not in the repository): serve an empty folder then, never the
+    # working directory, whose JSON config files are not presets.
+    folder = REAL_PRESETS if any(REAL_PRESETS.glob("*.json")) else tmp_path
     serve(folder, qloo, NoLimiter(), price_grid_enabled=True)
     with TestClient(app) as client:
         response = price(client, acts, pairs)

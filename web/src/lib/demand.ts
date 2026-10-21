@@ -20,10 +20,10 @@ export type Demand =
 export const DEMAND = { status: "pending" } as Demand;
 
 /**
- * Where a programmer sends a bill for the pilot: an address or a page the owner supplies. Null until
- * the owner writes it in; the offer then points at the Devpost page instead.
+ * Where a programmer sends a bill for the pilot: an address or a page the owner supplies. Null points the
+ * offer at the Devpost page instead.
  */
-export const PILOT_CONTACT = null as string | null;
+export const PILOT_CONTACT = "nericjoel07@gmail.com" as string | null;
 
 /**
  * The pilot's terms, printed in the open under the offer once the owner has confirmed them; they are promises in his

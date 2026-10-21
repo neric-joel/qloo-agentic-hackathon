@@ -6,7 +6,7 @@ import MethodPage from "@/app/method/page";
 import { SyntheticContext } from "@/components/site/synthetic-context";
 import { qlooCredits } from "@/lib/credit";
 import * as demandModule from "@/lib/demand";
-import { PILOT, PILOT_TERMS, type Demand } from "@/lib/demand";
+import { PILOT, PILOT_CONTACT, PILOT_TERMS, type Demand } from "@/lib/demand";
 import { METHOD_FIGURES } from "@/lib/method-figures";
 import { PUBLIC_SOURCES } from "@/lib/public-sources";
 
@@ -28,6 +28,11 @@ import {
 
 // Every name and figure below is invented for the test, except the published figures the blocks read
 // from METHOD_FIGURES and PILOT.
+
+/** The pilot's contact line as the owner set it, and what the offer says when no contact is set. */
+const CONTACT_LINE = `Contact: ${PILOT_CONTACT}`;
+const CONTACT_FALLBACK = "Contact is on the Devpost page.";
+const escapeRe = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** Words from the public statements block that round 34 (audit Y7) took off the page, with its limit sentence. */
 const VOICE_WORDS = [
@@ -149,7 +154,7 @@ describe("WhyThisMatters", () => {
     expect(visible).toContain("Pilot offer");
     expect(visible).toContain("Walk through the Glastonbury 2025 Sunday brief with me");
     expect(visible.indexOf("Walk through")).toBeGreaterThan(visible.indexOf("Pilot offer"));
-    expect(visible).toContain("Contact is on the Devpost page.");
+    expect(visible).toContain(CONTACT_LINE);
     expect(visible).toContain("One answer is not a market.");
     expect(visible).toContain(COMPLAINTS_ELSEWHERE);
     // The rest of each finding is in its own disclosure, still in the server HTML.
@@ -179,7 +184,7 @@ describe("WhyThisMatters", () => {
     expect(html).not.toContain("border-t-2");
   });
 
-  it("closes the last column with the pilot offer, no request arithmetic on the page, and no contact until the owner adds one", () => {
+  it("closes the last column with the pilot offer, no request arithmetic on the page, and the owner's contact, with the Devpost page as the fallback", () => {
     const plain = text(renderToStaticMarkup(createElement(WhyThisMatters)));
     // Round 32 (V4): the label, then the offer, word for word. It offers only what costs no Qloo request: a walk
     // through a published day's brief, and rule checks on the festival's own draft that run in the browser.
@@ -195,13 +200,18 @@ describe("WhyThisMatters", () => {
     expect(html).not.toMatch(/<summary[^>]*>(?:<span[^>]*>)*About /);
     // The arithmetic itself stays as it was, for the Devpost page.
     expect(PILOT).toEqual({ requestsPerBill: 40, monthlyRequests: 10_000, fullDayRequests: [104, 70] });
-    expect(plain).toContain("Contact is on the Devpost page.");
+    expect(PILOT_CONTACT).toBe("nericjoel07@gmail.com");
+    expect(plain).toContain(CONTACT_LINE);
+    expect(html).toContain(`href="mailto:${PILOT_CONTACT}"`);
+    expect(plain).not.toContain(CONTACT_FALLBACK);
     expect(plain.indexOf("Pilot offer")).toBeGreaterThan(plain.indexOf("Who would pay is not known."));
     // The owner has not said bills are deleted after the run, so the page does not say it.
     expect(plain).not.toMatch(/deleted after the run/i);
     const withContact = renderToStaticMarkup(createElement(WhyThisMatters, { contact: "pilot@example.com" }));
     expect(withContact).toContain('href="mailto:pilot@example.com"');
-    expect(text(withContact)).not.toContain("Contact is on the Devpost page.");
+    expect(text(withContact)).not.toContain(CONTACT_FALLBACK);
+    // With no contact set, the offer points at the Devpost page.
+    expect(text(renderToStaticMarkup(createElement(WhyThisMatters, { contact: null })))).toContain(CONTACT_FALLBACK);
     expect(renderToStaticMarkup(createElement(WhyThisMatters, { contact: "https://example.com/pilot" }))).toContain(
       'href="https://example.com/pilot"',
     );
@@ -350,7 +360,9 @@ describe("WhyThisMatters", () => {
   });
 
   it("sets the pilot offer as one unboxed block under a top rule: no surface, fill, stat row, fold or button, only the offer, the /check link and the contact", () => {
-    const html = renderToStaticMarkup(createElement(WhyThisMatters));
+    // The layout is the same with or without a contact; the exact markup below is read with the fallback line, and the
+    // owner's contact is checked at the end of the test.
+    const html = renderToStaticMarkup(createElement(WhyThisMatters, { contact: null }));
     const pilot = html.slice(html.indexOf("<div data-pilot"));
     // A 1px border-border rule across its top (a top rule, never a left stripe), 24px of paper under it, then the
     // text, left-aligned and at most 68ch wide. No card, surface edge, radius or padding box.
@@ -393,6 +405,10 @@ describe("WhyThisMatters", () => {
     // The contact line: muted, at the section's 15px body size (no size class of its own), never ink-3.
     expect(html).toMatch(/<p data-pilot-contact="true" class="text-muted-foreground">Contact is on the Devpost page\.<\/p>/);
     expect(pilot).not.toMatch(/ink-3|text-(xs|sm|\[0\.8125rem\])[^"]*">Contact/);
+    // The owner's contact takes the same muted line, as a mail link, and adds the pilot's one other link.
+    const set = renderToStaticMarkup(createElement(WhyThisMatters));
+    expect(set).toMatch(new RegExp(`<p data-pilot-contact="true" class="text-muted-foreground">Contact: <a href="mailto:${escapeRe(PILOT_CONTACT ?? "")}"[^>]*>${escapeRe(PILOT_CONTACT ?? "")}</a></p>`));
+    expect(set.slice(set.indexOf("<div data-pilot")).match(/<a /g)).toHaveLength(2);
   });
 
   it("gives the pilot a text link with an arrow to /check while the check page is live, ahead of the contact line, never a filled button", () => {
@@ -408,10 +424,10 @@ describe("WhyThisMatters", () => {
     expect(html).not.toContain("bg-primary");
     expect(html).not.toContain("Check a draft grid now");
     const plain = text(html);
-    expect(plain.indexOf("Check a draft grid")).toBeLessThan(plain.indexOf("Contact is on the Devpost page."));
+    expect(plain.indexOf("Check a draft grid")).toBeLessThan(plain.indexOf(CONTACT_LINE));
     // Nothing follows the contact in the pilot: the request fold is gone (round 33, H3).
     const pilot = text(html.slice(html.indexOf("<div data-pilot")));
-    expect(pilot.endsWith("Contact is on the Devpost page.")).toBe(true);
+    expect(pilot.endsWith(CONTACT_LINE)).toBe(true);
   });
 
   it("lets the contact line lead, in ink, when the check page is not live", async () => {
@@ -422,8 +438,8 @@ describe("WhyThisMatters", () => {
       const html = renderToStaticMarkup(createElement(mod.WhyThisMatters));
       expect(html).not.toContain('href="/check"');
       const next = html.slice(html.indexOf("<div data-pilot-next"));
-      expect(next).toMatch(/^<div data-pilot-next="true"[^>]*><p data-pilot-contact="true">Contact is on the Devpost page\.<\/p><\/div>/);
-      expect(text(withoutDisclosures(html))).toContain("Contact is on the Devpost page.");
+      expect(next).toMatch(new RegExp(`^<div data-pilot-next="true"[^>]*><p data-pilot-contact="true">Contact: <a href="mailto:${escapeRe(PILOT_CONTACT ?? "")}"`));
+      expect(text(withoutDisclosures(html))).toContain(CONTACT_LINE);
     } finally {
       vi.doUnmock("@/lib/check-flag");
       vi.resetModules();
@@ -627,10 +643,10 @@ describe("forward-looking lines with no claim (round 31)", () => {
     const set = renderToStaticMarkup(createElement(WhyThisMatters, { terms }));
     const pilot = set.slice(set.indexOf("<div data-pilot"));
     expect(pilot).toContain(`<p data-pilot-terms="true" class="mt-4 max-w-[68ch] text-muted-foreground">${terms}</p>`);
-    // Under the offer, in the open, with the contact fallback kept.
+    // Under the offer, in the open, with the contact kept.
     expect(text(withoutDisclosures(pilot))).toContain(terms);
     expect(text(pilot).indexOf(terms)).toBeGreaterThan(text(pilot).indexOf("Pilot offer"));
-    expect(text(pilot)).toContain("Contact is on the Devpost page.");
+    expect(text(pilot)).toContain(CONTACT_LINE);
   });
 
   it("says, where the complaints are counted, that most are about other festivals and days than the ones shown", () => {

@@ -226,7 +226,9 @@ test.describe("who has complained, and what nobody has tested", () => {
     await expect(section).toContainText("Walk through the Glastonbury 2025 Sunday brief with me and say where it matches how your team would set those times.");
     await expect(section).toContainText("Your own draft can go through Check a draft grid, whose rule checks run in your browser and send nothing.");
     await expect(section).toContainText("Success: you say which suggestion you would take or turn down, and why.");
-    await expect(section).toContainText("Contact is on the Devpost page.");
+    // The owner's contact, as a mail link.
+    await expect(section).toContainText("Contact: nericjoel07@gmail.com");
+    await expect(section.getByRole("link", { name: "nericjoel07@gmail.com", exact: true })).toHaveAttribute("href", "mailto:nericjoel07@gmail.com");
     await section.getByRole("link", { name: "Check a draft grid" }).click();
     await expect(page).toHaveURL(/\/check$/);
   });

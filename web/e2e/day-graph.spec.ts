@@ -52,6 +52,200 @@ function drawingAnimations(page: Page): Promise<number[]> {
   });
 }
 
+/** What the names on the drawing look like in one view, in the band the visitor sees (round 35, day-graph lane). */
+type Labels = {
+  band: string;
+  layout: string;
+  /** Sets drawn in the band's window, by the slot their name takes (a to e; e is a set with no name drawn). */
+  slots: Record<string, number>;
+  /** Sets in the window whose drawn name is not the act's whole name, is clipped by the window, or is missing. */
+  notWhole: string[];
+  /** Sets in the window with no name drawn at all. */
+  unnamed: string[];
+  /** Visible names that end in an ellipsis with fewer than 8 characters before it. */
+  shortEllipsis: string[];
+  /** Painted-stroke samples inside a visible name, tag or plate box (inset 1 px), and the lines that make them. */
+  strokeHits: number;
+  through: string[];
+  /** Names beside their bar (slot b) or on a plate in the row gap (slot c) that are as near another bar as their own. */
+  association: string[];
+  /** Names that start left of the window: their first letter is cut. */
+  cutAtLeft: string[];
+};
+
+/**
+ * Measures the names in the band on show, in the page: each set in the window and its name, each name's box, and
+ * each line's path sampled every 1 px against every name and tag box inset by 1 px. A sample under a bar that is
+ * drawn above the line (a line drawn beneath the bars, passing under a set that is not one of its two) is dropped,
+ * since the bar hides it there.
+ */
+function measureLabels(names: Record<string, string>): Labels {
+  const graph = document.querySelector("[data-day-graph]") as HTMLElement;
+  const band = [...graph.querySelectorAll<HTMLElement>("[data-band]")].find((element) => element.getClientRects().length > 0) as HTMLElement;
+  const rect = (element: Element) => element.getBoundingClientRect();
+  // The band's time track sits in its second child, which clips it (the first holds the stage names).
+  const clip = rect(band.children[1]);
+  const seen = (box: DOMRect) => ({ left: Math.max(box.left, clip.left), right: Math.min(box.right, clip.right), top: box.top, bottom: box.bottom });
+  const gap = (a: { left: number; right: number; top: number; bottom: number }, b: { left: number; right: number; top: number; bottom: number }) =>
+    Math.hypot(Math.max(0, b.left - a.right, a.left - b.right), Math.max(0, b.top - a.bottom, a.top - b.bottom));
+  const overlapX = (a: { left: number; right: number }, b: { left: number; right: number }) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+  const textOf = (element: Element) => (element.children.length ? [...element.children].map((child) => child.textContent ?? "").join(" ") : (element.textContent ?? ""));
+  const bars = [...band.querySelectorAll<HTMLElement>("[data-set]")].map((element) => ({ id: element.dataset.set ?? "", slot: element.dataset.slot ?? "", box: rect(element) }));
+  const ghost = band.querySelector("[data-ghost]");
+  const moverId = (band.querySelector('[data-anim^="mover"] [data-set]') as HTMLElement | null)?.dataset.set ?? null;
+  const labels = [...band.querySelectorAll<HTMLElement>("[data-label]")].map((element) => ({ id: element.dataset.label ?? "", slot: element.dataset.slot ?? "", text: textOf(element), box: rect(element) }));
+  const tags = [...band.querySelectorAll<HTMLElement>("[data-shared-tag]")].map((element) => ({ text: textOf(element), box: rect(element) }));
+  const slots: Record<string, number> = {};
+  const notWhole: string[] = [];
+  const unnamed: string[] = [];
+  for (const bar of bars.filter((item) => seen(item.box).right - seen(item.box).left > 0.5)) {
+    slots[bar.slot] = (slots[bar.slot] ?? 0) + 1;
+    const label = labels.find((item) => item.id === bar.id);
+    const name = names[bar.id] ?? bar.id;
+    const clipped = Boolean(label && (label.box.left < clip.left - 0.5 || label.box.right > clip.right + 0.5));
+    if (!label) unnamed.push(`${name} (slot ${bar.slot})`);
+    if (!label || label.text !== name || clipped) notWhole.push(`${name} (slot ${bar.slot}${label ? `: "${label.text}"` : ", no name drawn"}${clipped ? ", clipped" : ""})`);
+  }
+  const shortEllipsis = labels.filter((item) => item.text.endsWith("…") && [...item.text.slice(0, -1)].length < 8).map((item) => item.text);
+  const association: string[] = [];
+  for (const label of labels.filter((item) => item.slot === "b" || item.slot === "c")) {
+    const own = bars.find((bar) => bar.id === label.id);
+    if (!own) {
+      association.push(`${label.text}: no bar of its own`);
+      continue;
+    }
+    const ownBox = seen(own.box);
+    const mine = gap(label.box, ownBox);
+    const others = [
+      ...bars.filter((bar) => bar.id !== label.id).map((bar) => ({ name: names[bar.id] ?? bar.id, box: seen(bar.box) })),
+      ...(ghost && label.id !== moverId ? [{ name: "the published slot", box: seen(rect(ghost)) }] : []),
+    ];
+    for (const other of others) {
+      if (other.box.right - other.box.left > 0.5 && gap(label.box, other.box) <= mine + 0.01) association.push(`${label.text} (slot ${label.slot}) is as near ${other.name} as its own bar`);
+    }
+    if (label.slot === "c" && overlapX(label.box, ownBox) < (label.box.right - label.box.left) / 2 - 0.01) association.push(`${label.text}: its plate is less than half over its bar`);
+  }
+  const boxes = [...labels.map((item) => ({ text: item.text, box: item.box })), ...tags.map((item) => ({ text: `tag "${item.text}"`, box: item.box }))];
+  let strokeHits = 0;
+  const through: string[] = [];
+  for (const holder of band.querySelectorAll<HTMLElement>("[data-thread]")) {
+    const line = holder.querySelector<SVGLineElement>("line[data-stroke]");
+    if (!line || parseFloat(getComputedStyle(holder).opacity) === 0) continue;
+    const key = (holder.dataset.anim ?? "").replace(/^line:/, "").replace(/@\d$/, "");
+    const [a, b] = key.split("~");
+    const under = holder.hasAttribute("data-under");
+    const half = parseFloat(line.getAttribute("stroke-width") ?? "1") / 2;
+    const ctm = line.getScreenCTM();
+    if (!ctm) continue;
+    const length = line.getTotalLength();
+    let count = 0;
+    const hit = new Set<string>();
+    for (let t = 0; t <= length; t += 1) {
+      const p = line.getPointAtLength(t).matrixTransform(ctm);
+      if (p.x < clip.left || p.x > clip.right) continue;
+      if (under && bars.some((bar) => bar.id !== a && bar.id !== b && p.x >= bar.box.left && p.x <= bar.box.right && p.y >= bar.box.top && p.y <= bar.box.bottom)) continue;
+      for (const item of boxes) {
+        const q = item.box;
+        if (p.y > q.top + 1 && p.y < q.bottom - 1 && p.x + half > q.left + 1 && p.x - half < q.right - 1) {
+          count += 1;
+          hit.add(item.text);
+        }
+      }
+    }
+    strokeHits += count;
+    if (count > 0) through.push(`${names[a] ?? a} × ${names[b] ?? b} through ${[...hit].join(", ")} (${count})`);
+  }
+  const cutAtLeft = labels.filter((item) => item.box.left < clip.left - 0.5).map((item) => item.text);
+  return { band: band.dataset.band ?? "", layout: band.dataset.layout ?? "", slots, notWhole, unnamed, shortEllipsis, strokeHits, through, association, cutAtLeft };
+}
+
+/** The saved day's act names by id, from the API (GET). */
+async function actNames(page: Page, id: string): Promise<Record<string, string>> {
+  const response = await page.request.get(`/api/presets/${id}`);
+  expect(response.ok(), `GET /api/presets/${id}`).toBeTruthy();
+  const preset = (await response.json()) as { festival: { acts: { id: string; name: string }[] } };
+  return Object.fromEntries(preset.festival.acts.map((act) => [act.id, act.name]));
+}
+
+/**
+ * The floors for the names on the drawing (round 35, NEXT.md day-graph acceptance), by width: how many sets may show
+ * a name that is not whole on each day (none at 1440 may show no name at all), and whether the painted-stroke and
+ * first-letter checks apply there. Short ellipses and association hold at every width.
+ */
+const LABEL_SIZES = [
+  { width: 1440, height: 900, notWhole: { [DAYS.glastonbury.id]: 3, [DAYS.riot.id]: 8 }, allNamed: true, strokes: true, firstLetter: false },
+  { width: 1280, height: 800, notWhole: { [DAYS.glastonbury.id]: 5, [DAYS.riot.id]: 12 }, allNamed: false, strokes: true, firstLetter: false },
+  { width: 1024, height: 768, notWhole: null, allNamed: false, strokes: true, firstLetter: false },
+  { width: 768, height: 1024, notWhole: null, allNamed: false, strokes: false, firstLetter: true },
+  { width: 390, height: 844, notWhole: null, allNamed: false, strokes: true, firstLetter: true },
+] as const;
+
+test.describe("the day graph's names", () => {
+  test.beforeEach(async ({ page }) => requireSavedDays(page));
+
+  for (const day of Object.values(DAYS)) {
+    test(`on ${day.title}, in both views: names whole, no short ellipsis, no line painted through a name, each name nearer its own bar (1440, 1280, 1024 and 768 on a desktop; 390 on a phone)`, async ({ page, isPhone }) => {
+      test.setTimeout(120_000);
+      const names = await actNames(page, day.id);
+      const home = new HomePage(page);
+      for (const size of LABEL_SIZES.filter((item) => (item.width < 640) === isPhone)) {
+        await page.setViewportSize({ width: size.width, height: size.height });
+        await home.goto(day.id);
+        for (const view of ["moved", "published"] as const) {
+          if (view === "published") await home.chooseView("As published");
+          await expect(home.graph).toHaveAttribute("data-view", view);
+          const found = await page.evaluate(measureLabels, names);
+          const where = `${size.width} x ${size.height}, ${view} view, band ${found.band} (${found.layout})`;
+          test.info().annotations.push({
+            type: `names at ${size.width}, ${view}`,
+            description: `slots ${JSON.stringify(found.slots)}; not whole ${found.notWhole.length}${found.notWhole.length ? ` (${found.notWhole.join("; ")})` : ""}; painted-stroke samples ${found.strokeHits}`,
+          });
+          // (i) Names shown whole: at most the floor not whole, and at 1440 every set in the window has its name drawn.
+          if (size.notWhole) {
+            expect(found.notWhole.length, `${where}: names not whole: ${found.notWhole.join("; ")}`).toBeLessThanOrEqual(size.notWhole[day.id]);
+          }
+          if (size.allNamed) expect(found.unnamed, `${where}: sets with no name drawn`).toEqual([]);
+          // (ii) No name is cut to a stub: an ellipsis keeps at least 8 characters before it.
+          expect(found.shortEllipsis, `${where}: names cut to under 8 characters`).toEqual([]);
+          // (iii) No line is painted through a name, a tag or a plate.
+          if (size.strokes) expect(found.strokeHits, `${where}: lines painted through names: ${found.through.join("; ")}`).toBe(0);
+          // (iv) A name beside its bar or on a plate in the row gap is nearer its own bar than any other.
+          expect(found.association, `${where}: names nearer another bar`).toEqual([]);
+          // (vi) On a phone's detail window, a set that starts before the window shows its first letter.
+          if (size.firstLetter) expect(found.cutAtLeft, `${where}: names cut at the window's left`).toEqual([]);
+        }
+      }
+    });
+  }
+
+  test("an arrow key on a line shows that line's note, in words, and Escape hides it with focus kept on the line", async ({ page }) => {
+    // A phone with a keyboard attached takes the same path, so both projects run it.
+    const home = new HomePage(page);
+    await home.goto(DAYS.glastonbury.id);
+
+    const note = home.graph.locator('[data-thread-note="line"]').filter({ visible: true });
+    const focused = () => page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? "");
+    await home.viewToggle.getByRole("radio", { checked: true }).focus();
+    await page.keyboard.press("Tab");
+    expect(await focused()).toMatch(/^#1 of \d+ clashes as published: /);
+    // Each arrow press moves to the next line drawn at this width (a phone draws fewer), by rank.
+    let last = await focused();
+    for (let step = 0; step < 2; step++) {
+      await page.keyboard.press("ArrowRight");
+      const now = await focused();
+      expect(now, "the arrow moved to another line").not.toBe(last);
+      expect(Number(/^#(\d+) of /.exec(now)?.[1]), "the next line by rank").toBeGreaterThan(Number(/^#(\d+) of /.exec(last)?.[1]));
+      // The note follows the focused line at once, with no press of Enter, and says what its name says.
+      await expect(note).toHaveCount(1);
+      await expect(note).toHaveText(now);
+      last = now;
+    }
+    await page.keyboard.press("Escape");
+    await expect(note).toHaveCount(0);
+    expect(await focused(), "focus stays on the line").toBe(last);
+  });
+});
+
 test.describe("the day graph", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
 
@@ -138,8 +332,9 @@ test.describe("the day graph", () => {
       await home.goto(DAYS.glastonbury.id);
 
       // The short layout: three rows, no overview strip.
-      await expect(home.graph.locator('[data-layout="short"]')).toBeVisible();
-      await expect(home.graph.locator('[data-layout="phone"]')).toBeHidden();
+      // Each layout holds one band per width (and each band names its layout too), so the layout is its wrapper.
+      await expect(home.graph.locator(':scope > [data-layout="short"]')).toBeVisible();
+      await expect(home.graph.locator(':scope > [data-layout="phone"]')).toBeHidden();
       await expect(home.graph.locator("[data-strip]").filter({ visible: true })).toHaveCount(0);
       if (view === "published") await home.chooseView("As published");
       await expect(home.graph).toHaveAttribute("data-view", view);
@@ -168,7 +363,7 @@ test.describe("the day graph", () => {
     }
   });
 
-  test("the hero says what it needs in at most 120 visible words at 1440 and 117 at 390", async ({ page, isPhone }) => {
+  test("the hero says what it needs in at most 125 visible words at 1440 and 122 at 390", async ({ page, isPhone }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
@@ -195,7 +390,8 @@ test.describe("the day graph", () => {
       }
       return words;
     });
-    const budget = isPhone ? 117 : 120;
+    // Round 35 (R1): the lede gained the frame, so the budget moved from 120 and 117 to 125 and 122.
+    const budget = isPhone ? 122 : 125;
     test.info().annotations.push({ type: `hero words at ${isPhone ? 390 : 1440}`, description: String(counted.length) });
     expect(counted.length, `visible hero words: ${counted.join(" ")}`).toBeLessThanOrEqual(budget);
     // The guarded lines are never trimmed to fit.

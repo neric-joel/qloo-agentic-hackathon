@@ -197,3 +197,26 @@ export function luminance([r, g, b]: [number, number, number]): number {
 export function pdfPages(pdf: Buffer): number {
   return (pdf.toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length;
 }
+
+/**
+ * A pasted draft grid with one line that cannot be read (round 35): twelve invented acts, line 4 starting at 25:70,
+ * and one stage written "Main   Stage". The check reads the other eleven lines and lists line 4 as skipped.
+ */
+export const MESSY_GRID = [
+  "Tidal Fields,Main Stage,14:00,15:00",
+  "Cobalt Rows,Side Stage,14:15,15:15",
+  "Paper Lanterns,Tent,14:30,15:15",
+  "Glass Harbour,Tent,25:70,19:30",
+  "Saltmarsh,Main Stage,15:30,16:30",
+  "Quiet Engine,Side Stage,15:45,16:45",
+  "Nobody Has Heard Of Us,Tent,16:00,16:45",
+  "Velvet Static,Main   Stage,17:00,18:00",
+  "Orbit Choir,Side Stage,17:15,18:15",
+  "Lowland Kites,Tent,17:30,18:15",
+  "Amber Kite,Main Stage,18:30,19:30",
+  "Ember Coast,Side Stage,18:45,19:45",
+].join("\n");
+
+/** What a check of MESSY_GRID says first, and its no-breaks line. */
+export const MESSY_SKIPPED = "1 line skipped and not checked: line 4. The other 11 sets were checked.";
+export const MESSY_NO_BREAKS = "No rule breaks found among the 11 sets checked, against the settings above.";

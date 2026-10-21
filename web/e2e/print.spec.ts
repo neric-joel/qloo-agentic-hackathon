@@ -1,12 +1,35 @@
-import { DAYS, luminance, pdfPages, requireSavedDays, rgbOf } from "./helpers";
+import { DAYS, luminance, MESSY_GRID, MESSY_NO_BREAKS, MESSY_SKIPPED, pdfPages, requireSavedDays, rgbOf } from "./helpers";
 import { expect, test } from "./fixtures";
+import { CheckPage } from "./pages/check-page";
 import { HomePage } from "./pages/home-page";
 import { SiteChrome } from "./pages/site-chrome";
 
 /**
  * Print media beyond the two sheets built for it (/brief and /check, covered in their own specs): the home page
- * and /method print dark ink on white paper in either theme.
+ * and /method print dark ink on white paper in either theme; and /check's draft brief after a check that skipped a
+ * line says so on its one page.
  */
+
+test.describe("print media for a check that skipped a line", () => {
+  test("the printed draft brief says which line was skipped, says what the no-breaks line counted, and fits one Letter page and one A4 page", async ({ page }) => {
+    const check = new CheckPage(page);
+    await check.goto();
+    await check.replaceWith(MESSY_GRID);
+    await check.checkButton.click();
+    await expect(check.skippedNotice.locator("p").first()).toHaveText(MESSY_SKIPPED);
+
+    await page.emulateMedia({ media: "print" });
+    // The skipped sentence prints under the brief's title; the on-screen notice does not print.
+    const printed = check.briefSkipped.filter({ visible: true });
+    await expect(printed).toHaveCount(1);
+    await expect(printed).toHaveText(MESSY_SKIPPED);
+    await expect(check.skippedNotice).toBeHidden();
+    // Only the brief prints, so the no-breaks line on the page in print is the brief's, with what it counted.
+    await expect(page.getByText(MESSY_NO_BREAKS, { exact: true }).filter({ visible: true }).first()).toBeVisible();
+    await expect(page.getByText("No rule breaks found against the settings above.", { exact: true }).filter({ visible: true })).toHaveCount(0);
+    for (const format of ["Letter", "A4"] as const) expect(pdfPages(await page.pdf({ format, printBackground: true })), `${format} pages`).toBe(1);
+  });
+});
 
 test.describe("print media on the home page and /method", () => {
   for (const [name, url] of [

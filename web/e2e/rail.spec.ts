@@ -12,8 +12,10 @@ test.describe("section rail", () => {
     await home.goto(DAYS.glastonbury.id);
 
     const links = home.rail.getByRole("link");
-    // Hidden clashes comes second, straight after the hero pair's own three rankings. Labels only: no numerals.
-    await expect(links).toHaveText(["What Qloo changes", "Hidden clashes", "Why this matters", "Timetable", "Try a move", "Recorded runs", "Sources"]);
+    // Hidden clashes comes second, straight after the hero pair's own three rankings. Labels only: no numerals. The
+    // agent section is named for the agent ("Agent runs") while its recorded runs are shown.
+    await expect(links).toHaveText(["What Qloo changes", "Hidden clashes", "Why this matters", "Timetable", "Try a move", "Agent runs", "Sources"]);
+    await expect(home.agentJump).toHaveAttribute("href", "#agent");
 
     // Every link points at an element that exists, and the targets run down the page in the same order.
     const hrefs = await links.evaluateAll((all) => all.map((link) => link.getAttribute("href") ?? ""));
@@ -31,6 +33,7 @@ test.describe("section rail", () => {
 
     await expect(home.railLink("Timetable")).toBeVisible();
     await expect(home.railLink("Try a move")).toBeVisible();
+    await expect(home.agentJump).toHaveAttribute("href", "#agent");
     await expect(home.railLink("Hidden clashes")).toHaveAttribute("href", "#hidden-wall");
     await expect(home.hiddenWall).toBeVisible();
     // The section counts this day's own Hidden labels, and says which day its sourced examples are saved with.
@@ -43,7 +46,7 @@ test.describe("section rail", () => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
-    for (const label of ["Hidden clashes", "Why this matters", "Timetable", "Try a move", "Recorded runs"]) {
+    for (const label of ["Hidden clashes", "Why this matters", "Timetable", "Try a move", "Agent runs"]) {
       const link = home.railLink(label);
       const href = await link.getAttribute("href");
       await link.click();

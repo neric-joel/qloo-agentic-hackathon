@@ -43,6 +43,14 @@ export class HomePage {
   readonly pasteLink: Locator;
 
   // The index card under the hero, in the section on what taste changes.
+  /** The card itself: the index, its scale, Show the working (and below 1024 px every line and action). */
+  readonly indexCard: Locator;
+  /** From 1024 px, beside the card: its hidden-clash line and its change line, each closed by its action. */
+  readonly indexBeside: Locator;
+  /**
+   * The index card with, from 1024 px, its two lines beside it: where its own actions are at any width. Below
+   * 1024 px it is the card alone (the lines beside it are not drawn there).
+   */
   readonly details: Locator;
   readonly indexBlock: Locator;
   readonly showWorking: Locator;
@@ -69,6 +77,13 @@ export class HomePage {
   readonly keepApartSummary: Locator;
   readonly keepApart: Locator;
   readonly agent: Locator;
+  /** The section nav's link to the agent section: "Agent runs" while recorded runs are shown. */
+  readonly agentJump: Locator;
+  /**
+   * "See that run": on a day whose runs sent no Qloo request, it follows the runs line when another published day
+   * holds a run that asked Qloo while it was recorded, and opens that day's agent section.
+   */
+  readonly agentPointer: Locator;
   readonly sources: Locator;
   /** The kept plan in "Try a move" (`#your-plan`), where "See your plan" lands. */
   readonly plan: Locator;
@@ -100,7 +115,9 @@ export class HomePage {
     this.groupAnnouncement = this.group.getByRole("status").last();
     this.pasteLink = this.hero.getByRole("link", { name: "Paste your own draft grid" });
 
-    this.details = page.locator("[data-decision-details]");
+    this.indexCard = page.locator("[data-decision-details]");
+    this.indexBeside = page.locator("[data-index-beside]");
+    this.details = this.indexCard.or(this.indexBeside.filter({ visible: true }));
     this.indexBlock = this.details.locator("[data-index-block]");
     this.showWorking = this.details.getByRole("button", { name: "Show the working" });
     this.working = this.details.getByRole("region", { name: "Show the working" });
@@ -123,6 +140,8 @@ export class HomePage {
     this.keepApart = page.getByRole("region", { name: "Keep two sets apart" });
     // While the live agent is off the section is named for what it holds; with it on, it invites a question.
     this.agent = page.getByRole("region", { name: /^(Recorded agent runs|The agent|Or describe the change in plain words)$/ });
+    this.agentJump = this.rail.getByRole("link", { name: "Agent runs", exact: true });
+    this.agentPointer = this.agent.getByRole("link", { name: "See that run", exact: true });
     this.sources = page.getByRole("region", { name: "Where the numbers come from" });
 
     this.plan = page.getByRole("group", { name: "Your tested moves" });

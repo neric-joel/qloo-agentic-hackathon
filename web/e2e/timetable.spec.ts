@@ -19,9 +19,11 @@ test.describe("timetable board", () => {
       await expect(tiles.filter({ hasText: new RegExp(`, ${stage}\\.`) }), stage).toHaveCount(8);
     }
     await expect(tiles.filter({ hasText: /Locked set\./ })).toHaveCount(5);
-    const unpriced = tiles.filter({ hasText: /not priced/ });
-    await expect(unpriced).toHaveCount(3);
-    await expect(unpriced.filter({ hasText: /^Thandii/ })).toHaveCount(1);
+    // The three sets with no Qloo signal say so to a screen reader as "not scored" (round 35: never "priced").
+    const unscored = tiles.filter({ hasText: /not scored/ });
+    await expect(unscored).toHaveCount(3);
+    await expect(unscored.filter({ hasText: /^Thandii/ })).toHaveCount(1);
+    await expect(tiles.filter({ hasText: /priced/ })).toHaveCount(0);
 
     // Every tile names its act, stage, times and draw; a priced one says whether it is in a ranked clash.
     await expect(home.tile("Sprints")).toHaveAccessibleName(/^Sprints , Woodsies\. 14:00–15:00 .*Draw \d+\. .*In 1 ranked clash; press Enter to open the costliest, number 1, with Katy J Pearson\.$/);
@@ -35,12 +37,13 @@ test.describe("timetable board", () => {
     await expect(home.tile("The Libertines")).toHaveAccessibleName(/No ranked clash\.$/);
   });
 
-  test("coverage says how many acts were priced, and the three left out are the dotted ones", async ({ page }) => {
+  test("coverage says how many acts were scored, and the three left out are the dotted ones", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
     const coverage = page.getByRole("region", { name: "Qloo coverage" });
-    await expect(coverage).toContainText("36 of 39 acts priced");
+    await expect(coverage).toContainText("36 of 39 acts scored");
+    await expect(coverage).not.toContainText("priced");
     await coverage.getByRole("button", { name: /3 left out, not scored as zero/ }).click();
     await expect(coverage).toContainText("Thandii, Abel Selaocoe & the Bantu Ensemble and Westside Cowboy");
     await expect(coverage).toContainText("Of the 39 acts: 35 strong signal, 1 weak signal, 3 no Qloo signal.");

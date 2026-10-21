@@ -27,9 +27,85 @@ const animationsIn = (page: Page, selector: string) =>
 /** Waits two animation frames, so anything a press starts has started. */
 const twoFrames = (page: Page) => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 
+/**
+ * Records, from before the page's own scripts run, every CSS animation start, every CSS transition start (and run)
+ * and every animation made through the Web Animations API (`Element.prototype.animate`), anywhere on the page.
+ */
+async function recordMotion(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const store = window as unknown as { __motion: { kind: string; at: number; what: string }[] };
+    store.__motion = [];
+    const name = (target: EventTarget | null) => {
+      const element = target as Element | null;
+      if (!element || !("tagName" in element)) return String(target);
+      const cls = (element.getAttribute("class") ?? "").trim().split(/\s+/).slice(0, 3).join(".");
+      return `${element.tagName.toLowerCase()}${cls ? `.${cls}` : ""}`;
+    };
+    for (const kind of ["animationstart", "transitionstart", "transitionrun"]) {
+      window.addEventListener(
+        kind,
+        (event) => {
+          const detail = event as AnimationEvent & TransitionEvent;
+          store.__motion.push({ kind, at: performance.now(), what: `${name(event.target)} ${detail.animationName ?? detail.propertyName ?? ""}`.trim() });
+        },
+        true,
+      );
+    }
+    const animate = Element.prototype.animate;
+    Element.prototype.animate = function (this: Element, ...args: Parameters<Element["animate"]>) {
+      store.__motion.push({ kind: "animate", at: performance.now(), what: name(this) });
+      return animate.apply(this, args);
+    };
+  });
+}
+
+/**
+ * Loads a home day and waits out the first 3 s of the load, or until 1.5 s after the page is ready when a slow
+ * server makes it later, then reports what moved and what is still animating.
+ */
+async function firstLoadMotion(page: Page, day: string): Promise<{ starts: string[]; runs: string[]; running: string[] }> {
+  await recordMotion(page);
+  const home = new HomePage(page);
+  await home.goto(day);
+  const ready = await page.evaluate(() => performance.now());
+  const until = Math.max(3_000, ready + 1_500);
+  await expect.poll(() => page.evaluate(() => performance.now()), { timeout: 20_000, message: "the first seconds of the load" }).toBeGreaterThanOrEqual(until);
+  return page.evaluate(() => {
+    const motion = (window as unknown as { __motion: { kind: string; at: number; what: string }[] }).__motion;
+    return {
+      starts: motion.filter((item) => item.kind !== "transitionrun").map((item) => `${item.kind} ${item.what} at ${Math.round(item.at)} ms`),
+      runs: motion.filter((item) => item.kind === "transitionrun").map((item) => `${item.what} at ${Math.round(item.at)} ms`),
+      running: document.getAnimations().map((animation) => {
+        const target = (animation.effect as KeyframeEffect | null)?.target as Element | null;
+        return `${target?.tagName.toLowerCase() ?? "?"} ${(animation as CSSAnimation).animationName ?? (animation as CSSTransition).transitionProperty ?? ""}`;
+      }),
+    };
+  });
+}
+
+test.describe("nothing moves on first paint, with motion allowed", () => {
+  test.use({ reducedMotion: "no-preference" });
+  test.beforeEach(async ({ page }) => requireSavedDays(page));
+
+  for (const day of Object.values(DAYS)) {
+    test(`a load of ${day.title} starts no CSS animation, no CSS transition and no Web Animation anywhere on the page, and nothing is animating once it settles`, async ({ page }) => {
+      const found = await firstLoadMotion(page, day.id);
+      test.info().annotations.push({ type: `first-load motion on ${day.title}`, description: `${found.starts.length} starts, ${found.runs.length} transition runs, ${found.running.length} running` });
+      expect(found.starts, "animation starts, transition starts and animate() calls in the first seconds").toEqual([]);
+      expect(found.running, "document.getAnimations() once the load has settled").toEqual([]);
+    });
+  }
+});
+
 test.describe("reduced motion", () => {
   test.use({ reducedMotion: "reduce" });
   test.beforeEach(async ({ page }) => requireSavedDays(page));
+
+  test("a load starts no animation or transition anywhere on the page, and nothing is animating once it settles", async ({ page }) => {
+    const found = await firstLoadMotion(page, DAYS.glastonbury.id);
+    expect(found.starts, "animation starts, transition starts and animate() calls in the first seconds").toEqual([]);
+    expect(found.running, "document.getAnimations() once the load has settled").toEqual([]);
+  });
 
   test("a first visit shows no opening and no reveal: the day is drawn at its final frame", async ({ page }) => {
     const home = new HomePage(page);

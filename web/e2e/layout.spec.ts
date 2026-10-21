@@ -1,4 +1,4 @@
-import { DAYS, expectNoHorizontalScroll, requireSavedDays, scrollThrough } from "./helpers";
+import { DAYS, expectNoHorizontalScroll, listDays, requireSavedDays, scrollThrough } from "./helpers";
 import { expect, test } from "./fixtures";
 import { CheckPage } from "./pages/check-page";
 import { HomePage } from "./pages/home-page";
@@ -76,6 +76,37 @@ test.describe("no horizontal scroll", () => {
     await check.page.getByRole("group").filter({ hasText: "Rules this check applies" }).locator("summary").click();
     await expectNoHorizontalScroll(page);
   });
+
+  for (const theme of ["light", "dark"] as const) {
+    test(`/check does not shift while it loads (${theme} theme): layout shift 0.000 over 5 s`, async ({ page }) => {
+      await page.addInitScript((value) => localStorage.setItem("theme", value), theme);
+      await page.emulateMedia({ colorScheme: theme });
+      // A buffered layout-shift observer from navigation, registered before the page's own scripts.
+      await page.addInitScript(() => {
+        const store = window as unknown as { __shift: number; __entries: number };
+        store.__shift = 0;
+        store.__entries = 0;
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries() as (PerformanceEntry & { value: number; hadRecentInput: boolean })[]) {
+            if (entry.hadRecentInput) continue;
+            store.__shift += entry.value;
+            store.__entries += 1;
+          }
+        }).observe({ type: "layout-shift", buffered: true });
+      });
+      await page.goto("/check", { waitUntil: "domcontentloaded" });
+      // The published day's action arrives after the API answers; its place is held, so nothing moves when it does.
+      const days = await listDays(page);
+      if (days.some((day) => !day.synthetic)) await expect(page.getByRole("button", { name: /^Check a published day: / })).toBeVisible({ timeout: 30_000 });
+      await expect.poll(() => page.evaluate(() => performance.now()), { timeout: 20_000, message: "5 s on the page" }).toBeGreaterThanOrEqual(5_000);
+      const { shift, entries } = await page.evaluate(() => {
+        const store = window as unknown as { __shift: number; __entries: number };
+        return { shift: store.__shift, entries: store.__entries };
+      });
+      test.info().annotations.push({ type: `/check layout shift, ${theme}`, description: `${shift.toFixed(4)} (${entries} entries)` });
+      expect(Number(shift.toFixed(3)), "cumulative layout shift over 5 s, to three places").toBe(0);
+    });
+  }
 
   test("the menu open on a phone", async ({ page, isPhone }) => {
     test.skip(!isPhone, "Phone layout only.");

@@ -1,7 +1,7 @@
 import type { Locator } from "@playwright/test";
 
 import { expect, test } from "./fixtures";
-import { DAYS, listDays, requireSavedDays } from "./helpers";
+import { DAYS, listDays, MESSY_GRID, MESSY_SKIPPED, requireSavedDays } from "./helpers";
 import { CheckPage } from "./pages/check-page";
 
 /**
@@ -204,6 +204,29 @@ test.describe("compare audience overlap, names no saved day has", () => {
     expect(sent.map((body) => body.mode)).toEqual(["saved"]);
     expect(guard.spending).toEqual([]);
     expect(guard.consoleErrors).toEqual([]);
+  });
+});
+
+test.describe("compare audience overlap after a check that skipped a line", () => {
+  test("Compare sends only the checked lines' acts: the act on the skipped line is never sent, in saved mode only", async ({ page, guard }) => {
+    const sent = recordPriceBodies(page);
+    const check = new CheckPage(page);
+    await check.goto();
+    await check.replaceWith(MESSY_GRID);
+    await check.checkButton.click();
+    await expect(check.skippedNotice.locator("p").first()).toHaveText(MESSY_SKIPPED);
+
+    await check.priceButton.click();
+    await expect.poll(() => sent.length).toBe(1);
+    expect(sent[0].mode).toBe("saved");
+    // Line 4 (Glass Harbour) was skipped, so it is in no pair and no name sent; every name sent is on a checked line.
+    expect(JSON.stringify(sent[0])).not.toContain("Glass Harbour");
+    const checkedActs = MESSY_GRID.split("\n").filter((_, i) => i !== 3).map((line) => line.split(",")[0]);
+    for (const act of sent[0].acts) expect(checkedActs, `${act} is on a checked line`).toContain(act);
+    expect(sent[0].acts, "only the act names in the compared pairs, each once").toEqual(namesInPairs(sent[0]));
+    // These invented acts are on no saved day: nothing is compared and no Qloo request is sent.
+    await expect(check.priceSection).toContainText("no Qloo request was sent");
+    expect(guard.spending).toEqual([]);
   });
 });
 

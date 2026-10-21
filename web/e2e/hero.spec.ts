@@ -17,6 +17,43 @@ const SIDE_EFFECTS = {
   [DAYS.riot.id]: "Ends the 5 min overlap with Twin Peaks. No other overlap gets longer.",
 } as const;
 
+/**
+ * The hero's boxes, in page pixels (scroll does not change them): the pitch, the picker, the dateline, the toggle,
+ * the drawing, the decision group's lines, the filled action's place, the kept notice's room, the paste, the key
+ * and the section nav. The drawing is the layout on show; the filled action is the group's first filled button
+ * (Keep this move, or Add to your plan in its place while the offer is open).
+ */
+type HeroBox = { left: number; top: number; width: number; bottom: number };
+async function heroBoxes(page: import("@playwright/test").Page): Promise<Record<string, HeroBox | null>> {
+  return page.evaluate(() => {
+    const box = (element: Element | null | undefined) => {
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      return { left: rect.left, top: rect.top + window.scrollY, width: rect.width, bottom: rect.bottom + window.scrollY };
+    };
+    const shown = (element: Element) => getComputedStyle(element).display !== "none" && element.getClientRects().length > 0;
+    const group = document.querySelector("[data-hero-group]");
+    const h1 = document.getElementById("pitch-heading");
+    return {
+      h1: box(h1),
+      lede: box(h1?.nextElementSibling),
+      picker: box(document.querySelector('[role="radiogroup"][aria-label="Festival day"]')),
+      dateline: box(document.querySelector("[data-dateline]")),
+      toggle: box(document.querySelector('[role="radiogroup"][aria-label="Drawing shows"]')),
+      drawing: box([...document.querySelectorAll("[data-day-graph] > [data-layout]")].find(shown)),
+      readout: box(document.querySelector("[data-readout]")),
+      side: box(document.querySelector("[data-side-effects]")),
+      taste: box(document.querySelector("[data-taste-line]")),
+      attribution: box(document.querySelector("[data-attribution]")),
+      keep: box(group ? [...group.querySelectorAll('button[data-variant="default"]')].find(shown) : null),
+      slot: box(group?.querySelector("[data-kept-notice]")),
+      paste: box(group ? [...group.querySelectorAll("a")].find((link) => /Paste your own draft grid/.test(link.textContent ?? "")) : null),
+      key: box(document.querySelector("[data-day-graph-key]")),
+      nav: box(document.querySelector('nav[aria-label="On this page"]')),
+    };
+  });
+}
+
 /** True when every locator starts below the one before it in the document (DOM order). */
 async function inDomOrder(parts: Locator[]): Promise<boolean> {
   const handles = await Promise.all(parts.map((part) => part.elementHandle()));
@@ -214,6 +251,59 @@ test.describe("hero decision", () => {
     });
   }
 
+  for (const day of Object.values(DAYS)) {
+    test(`on ${day.title}, with the two-set change already kept, Keep this move's offer moves no hero box from the plain kept state, and the whole offer is in view`, async ({ page, isPhone }) => {
+      const home = new HomePage(page);
+      const move = new TryAMove(page);
+      const offer = home.group.getByRole("group", { name: "Keep this move: add it to your plan, or replace your plan" });
+      const sizes = isPhone
+        ? [
+            { width: 390, height: 844 },
+            { width: 375, height: 667 },
+          ]
+        : [{ width: 1440, height: 900 }];
+      for (const size of sizes) {
+        await page.setViewportSize(size);
+        const at = `${size.width} x ${size.height}`;
+
+        // The plain kept state: an empty plan, then Keep this move.
+        await home.goto(day.id);
+        await page.evaluate(() => sessionStorage.clear());
+        await home.goto(day.id);
+        await home.keepMove.click();
+        await expect(home.keptNotice).toBeVisible();
+        await expect(move.kept).toHaveCount(1);
+        const kept = await heroBoxes(page);
+
+        // The existing-plan state: the index card's two-set change kept first, then Keep this move, which asks first.
+        await page.evaluate(() => sessionStorage.clear());
+        await home.goto(day.id);
+        await home.details.getByRole("button", { name: "Keep the two-set change" }).click();
+        await expect(move.kept).toHaveCount(1);
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await home.keepMove.click();
+        await expect(offer).toBeVisible();
+        await expect(offer.getByRole("button", { name: "Add to your plan" })).toBeFocused();
+        const asked = await heroBoxes(page);
+
+        for (const [name, before] of Object.entries(kept)) {
+          const after = asked[name];
+          expect(before, `${at}: ${name} is drawn in the kept state`).not.toBeNull();
+          expect(after, `${at}: ${name} is drawn with the offer open`).not.toBeNull();
+          for (const edge of ["left", "top", "width", "bottom"] as const) {
+            expect(Math.abs((after?.[edge] ?? 0) - (before?.[edge] ?? 0)), `${at}: ${name} ${edge} ${before?.[edge]} kept, ${after?.[edge]} with the offer`).toBeLessThanOrEqual(1);
+          }
+        }
+        // The whole offer is on the screen: Add, Replace and the words in the confirmation's room.
+        await expect(offer.getByRole("button", { name: "Add to your plan" })).toBeInViewport({ ratio: 1 });
+        await expect(offer.getByRole("button", { name: "Replace your plan" })).toBeInViewport({ ratio: 1 });
+        await expect(home.group.locator("[data-keep-offer-status]")).toBeInViewport({ ratio: 1 });
+        // The plan holds the two-set change, which is a step (a change of two sets), not a move.
+        await expect(home.group.locator("[data-keep-offer-status]")).toHaveText("Your plan already holds 1 kept step.");
+      }
+    });
+  }
+
   test("Show the working opens by click and by keyboard, and says how the clash was chosen", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
@@ -258,7 +348,7 @@ test.describe("hero decision", () => {
     const home = new HomePage(page);
     await home.goto(DAYS.riot.id);
 
-    await expect(home.dateline).toContainText(`${DAYS.riot.dayName}. Published timetable`);
+    await expect(home.dateline).toContainText(`${DAYS.riot.dayName}. Published timetable; saved global Qloo reading built `);
     await expect(home.moveLead).toHaveText("Bowling for Soup 20 minutes later");
     await expect(home.readout).toHaveText(/^40 →\s+to 35 min shared with Alanis Morissette$/);
     await expect(home.sideEffects).toHaveText(SIDE_EFFECTS[DAYS.riot.id]);
@@ -272,30 +362,63 @@ test.describe("hero decision", () => {
     await expect(home.plan.getByRole("link", { name: "Open as a one-page brief" })).toHaveAttribute("href", /preset=riot-fest-2026-sun/);
   });
 
-  test("the index card reads in order: the index with its stamp, its scale, the hidden line, Show the working, then its actions", async ({ page }) => {
+  test("the index card reads in order: the index with its stamp, its scale, the hidden line, Show the working, then its actions (from 1024 px the hidden line and the change line sit beside the card)", async ({ page, isPhone }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
-    const top = async (locator: Locator) => (await locator.boundingBox())?.y ?? Number.NaN;
-    const index = home.details.getByText("Clash Budget Index", { exact: true });
-    const scale = home.details.getByText(/^A score, not money: 100 = the average random valid timetable of this lineup\. Lower is better\./);
-    // The hidden line states its scope: one of the day's hidden clashes, among the day's ranked clashes.
-    const hidden = home.details.getByText(/^A hidden clash, 1 of \d+ among the day’s \d+ ranked clashes: main genres differ/);
+    const box = async (locator: Locator) => {
+      const found = await locator.boundingBox();
+      expect(found, "drawn").not.toBeNull();
+      return found ?? { x: Number.NaN, y: Number.NaN, width: Number.NaN, height: Number.NaN };
+    };
+    const top = async (locator: Locator) => (await box(locator)).y;
+    const index = home.indexCard.getByText("Clash Budget Index", { exact: true });
+    const scale = home.indexCard.getByText(/^A score, not money: 100 = the average random valid timetable of this lineup\. Lower is better\./);
+    // The hidden line states its scope: one of the day's hidden clashes, among the day's ranked clashes. Below 1024 px
+    // it is in the card; from 1024 px it sits beside the card, closed by its action.
+    const hidden = home.details.getByText(/^A hidden clash, 1 of \d+ among the day’s \d+ ranked clashes: main genres differ/).filter({ visible: true });
     const actions = home.details.getByRole("button", { name: "Open a hidden clash" });
     for (const part of [index, scale, hidden, home.showWorking, actions]) await expect(part).toBeVisible();
-    const ys = [await top(index), await top(scale), await top(hidden), await top(home.showWorking), await top(actions)];
-    expect(ys, "index, scale, hidden line, Show the working and the actions, top to bottom").toEqual([...ys].sort((a, b) => a - b));
+    await expect(hidden, "the hidden line is said once at this width").toHaveCount(1);
+    if (isPhone) {
+      // One column: index, scale, hidden line, Show the working, then the actions, top to bottom, all in the card.
+      const ys = [await top(index), await top(scale), await top(hidden), await top(home.showWorking), await top(actions)];
+      expect(ys, "index, scale, hidden line, Show the working and the actions, top to bottom").toEqual([...ys].sort((a, b) => a - b));
+      await expect(home.indexCard.getByRole("button", { name: "Open a hidden clash" })).toBeVisible();
+    } else {
+      // The card reads index, scale, Show the working; beside it (to its right) the hidden line closed by its action,
+      // then the change line closed by Keep the two-set change, whose top is at or above the card's foot.
+      const ys = [await top(index), await top(scale), await top(home.showWorking)];
+      expect(ys, "index, scale and Show the working, top to bottom in the card").toEqual([...ys].sort((a, b) => a - b));
+      const card = await box(home.indexCard);
+      const besideLine = home.indexBeside.locator("[data-hidden-line]");
+      const changeLine = home.indexBeside.locator("[data-change-line]");
+      await expect(besideLine).toBeVisible();
+      await expect(changeLine).toBeVisible();
+      await expect(besideLine.getByRole("button", { name: "Open a hidden clash" })).toBeVisible();
+      await expect(changeLine.getByRole("button", { name: "Keep the two-set change" })).toBeVisible();
+      const [hiddenBox, changeBox] = [await box(besideLine), await box(changeLine)];
+      expect(hiddenBox.x, "the hidden line sits to the right of the card").toBeGreaterThanOrEqual(card.x + card.width);
+      expect(hiddenBox.y, "the hidden line comes before the change line").toBeLessThan(changeBox.y);
+      expect(changeBox.y, "the change line's top is at or above the card's foot").toBeLessThanOrEqual(card.y + card.height);
+      // The card's own copies of those lines and actions are not drawn at this width: each is said once.
+      await expect(home.indexCard.getByRole("button", { name: "Open a hidden clash" })).toHaveCount(0);
+      await expect(home.indexCard.getByRole("button", { name: "Keep the two-set change" })).toHaveCount(0);
+    }
     // The index carries its Derived stamp, and who scored it, in the index's own paragraph.
     await expect(home.indexBlock.getByText("Derived")).toBeVisible();
     await expect(home.indexBlock).toContainText("Selected and scored by this app’s index. A reading, not a verdict.");
     // "Lower is better" is said once in the card, in the index's own paragraph.
-    expect((await home.details.innerText()).split("Lower is better").length - 1, "\"Lower is better\" once in the card").toBe(1);
+    expect((await home.indexCard.innerText()).split("Lower is better").length - 1, "\"Lower is better\" once in the card").toBe(1);
     // The card holds no second Keep this move (the hero's is the one filled action) and no three-rank line.
     await expect(home.details.getByRole("button", { name: "Keep this move" })).toHaveCount(0);
-    await expect(home.details).not.toContainText(/Time alone ranks this pair/);
-    // The day's saved reading is dated in the hero's dateline (a date, not a figure).
+    await expect(home.indexCard).not.toContainText(/Time alone ranks this pair/);
+    if (!isPhone) await expect(home.indexBeside).not.toContainText(/Time alone ranks this pair/);
+    // The day's saved reading is dated in the hero's dateline (a date, not a figure), and called global: both saved
+    // days were read with no location sent.
+    await expect(home.dateline).toHaveText(`Sunday. Published timetable; saved global Qloo reading built 3 Oct 2026. ${HONESTY.neither}`);
     await expect(home.dateline).toHaveText(
-      new RegExp(`^${DAYS.glastonbury.dayName}\\. Published timetable; saved Qloo reading built \\d{1,2} [A-Z][a-z]{2} \\d{4}\\. ${literal(HONESTY.neither)}$`),
+      new RegExp(`^${DAYS.glastonbury.dayName}\\. Published timetable; saved global Qloo reading built \\d{1,2} [A-Z][a-z]{2} \\d{4}\\. ${literal(HONESTY.neither)}$`),
     );
   });
 

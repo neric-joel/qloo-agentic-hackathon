@@ -1,4 +1,6 @@
+import { DAYS, requireSavedDays } from "./helpers";
 import { expect, test } from "./fixtures";
+import { HomePage } from "./pages/home-page";
 import { SiteChrome } from "./pages/site-chrome";
 
 /** The header, the footer, and the page that is not there. */
@@ -74,6 +76,32 @@ test.describe("site navigation", () => {
     await expect(page).toHaveURL(/#main$/);
     await expect(page.locator("#main")).toBeInViewport();
   });
+});
+
+test.describe("the section nav under the hero", () => {
+  test.beforeEach(async ({ page }) => requireSavedDays(page));
+
+  for (const day of Object.values(DAYS)) {
+    test(`on ${day.title}, it names the agent section "Agent runs", and at 1440 x 900 that link is on the first screen`, async ({ page, isPhone }) => {
+      const home = new HomePage(page);
+      await home.goto(day.id);
+
+      // The word "agent" is on the first screen: the jump link to the recorded runs is named for the agent.
+      await expect(home.agentJump).toHaveCount(1);
+      await expect(home.agentJump).toHaveAttribute("href", "#agent");
+      await expect(home.rail.getByRole("link", { name: "Recorded runs" })).toHaveCount(0);
+      if (!isPhone) {
+        await expect(home.agentJump).toBeInViewport({ ratio: 1 });
+        const box = await home.agentJump.boundingBox();
+        expect((box?.y ?? 0) + (box?.height ?? 0), "the link ends inside the first 900 px").toBeLessThanOrEqual(900);
+      }
+      // It leads to the agent section, which says what it holds.
+      await home.agentJump.click();
+      await expect(page).toHaveURL(/#agent$/);
+      await expect(home.agent).toBeInViewport();
+      await expect(home.agent.getByRole("heading", { level: 2 })).toHaveText("Recorded agent runs");
+    });
+  }
 });
 
 test.describe("page not found", () => {

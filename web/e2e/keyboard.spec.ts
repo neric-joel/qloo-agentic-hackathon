@@ -49,7 +49,7 @@ test.describe("keyboard", () => {
       /^Why this matters$/,
       /^Timetable$/,
       /^Try a move$/,
-      /^Recorded runs$/,
+      /^Agent runs$/,
       /^Sources$/,
     ];
     for (const pattern of expected) {
@@ -153,7 +153,7 @@ test.describe("keyboard", () => {
     await expect(home.dayPicker.getByRole("radio", { name: DAYS.glastonbury.festival })).toBeFocused({ timeout: 3_000 });
   });
 
-  test("the drawing's lines are one tab stop: the arrow keys step through them by rank, Enter pins a note, Escape unpins it", async ({ page }) => {
+  test("the drawing's lines are one tab stop: the arrow keys step through them by rank, each showing its note; Enter pins it, Escape hides it", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
@@ -189,9 +189,11 @@ test.describe("keyboard", () => {
     await page.keyboard.press("Home");
     expect(await focusedName()).toMatch(/^#1 of /);
 
-    // Enter pins the line's note, in words; Escape unpins it and leaves focus on the line.
+    // A line reached from the keyboard shows its note at once, in words (round 35: no press of Enter needed); Enter
+    // pins it; Escape hides it and leaves focus on the line.
     const note = home.graph.locator('[data-thread-note="line"]').filter({ visible: true });
-    await expect(note).toHaveCount(0);
+    await expect(note).toBeVisible();
+    await expect(note).toHaveText(await focusedName());
     await page.keyboard.press("Enter");
     await expect(note).toBeVisible();
     await expect(note).toHaveText(await focusedName());

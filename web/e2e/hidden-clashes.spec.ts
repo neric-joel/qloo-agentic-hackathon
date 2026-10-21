@@ -71,6 +71,52 @@ test.describe("hidden clashes", () => {
     await expect(wall).toContainText("pairs the press or fans called out with no genre tag in common");
   });
 
+  for (const theme of ["light", "dark"] as const) {
+    test(`the word "Hidden" is ink, never raspberry: in the costliest-clashes list and on the drawer's chip (${theme})`, async ({ page }) => {
+      await page.addInitScript((value) => localStorage.setItem("theme", value), theme);
+      await page.emulateMedia({ colorScheme: theme });
+      const home = new HomePage(page);
+      await home.goto(DAYS.glastonbury.id);
+      expect(await home.chrome.appliedTheme()).toBe(theme);
+
+      // The colours the tokens resolve to in this theme (one meaning per hue: raspberry is shared time and its cost).
+      const tokens = await page.evaluate(() => {
+        const probe = document.createElement("span");
+        document.body.append(probe);
+        const resolve = (value: string) => {
+          probe.style.color = value;
+          return getComputedStyle(probe).color;
+        };
+        const found = { foreground: resolve("var(--foreground)"), primary: resolve("var(--primary)") };
+        probe.remove();
+        return found;
+      });
+      expect(tokens.foreground).not.toBe(tokens.primary);
+
+      // Every Hidden word in the list, and its mark's ring.
+      const badges = home.costliest.locator("[data-clash-badge]").filter({ hasText: "Hidden" });
+      expect(await badges.count(), "the list labels at least one clash Hidden").toBeGreaterThan(0);
+      const listed = await badges.evaluateAll((all) =>
+        all.map((badge) => ({
+          text: getComputedStyle(badge).color,
+          rings: [...badge.querySelectorAll("svg *")].map((mark) => getComputedStyle(mark).stroke).filter((stroke) => stroke !== "none"),
+        })),
+      );
+      for (const badge of listed) {
+        expect(badge.text, "the Hidden word in the list").toBe(tokens.foreground);
+        for (const ring of badge.rings) expect(ring, "its mark's ring").not.toBe(tokens.primary);
+      }
+
+      // The chip on the hidden clash's drawer.
+      await home.costliest.getByRole("button", { name: /^Clash 1 / }).click();
+      const chip = home.drawer.locator(".tag").filter({ hasText: "Hidden clash" }).first();
+      await expect(chip).toBeVisible();
+      const colour = await chip.evaluate((element) => getComputedStyle(element).color);
+      expect(colour, "the drawer's Hidden clash chip").toBe(tokens.foreground);
+      expect(colour).not.toBe(tokens.primary);
+    });
+  }
+
   test("a hidden clash on the board is marked, and opens like any other", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);

@@ -351,7 +351,7 @@ test.describe("corners: one radius system", () => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
-    await expectRadius(home.details, "14px", "the index card");
+    await expectRadius(home.indexCard, "14px", "the index card");
     await home.showWorking.click();
     await expectRadius(home.working.getByRole("table").locator("xpath=ancestor::div[contains(@class,'border')][1]"), "10px", "the trade-off table's block");
     const rankings = home.whatQloo.getByRole("group").filter({ has: page.locator("summary", { hasText: /^Two rankings of this day/ }) });
@@ -415,18 +415,80 @@ test.describe("corners: one radius system", () => {
     expect(ring).toEqual({ radius: "6px", outline: "solid" });
   });
 
-  test("the clash drawer rounds its free corners at 14px and keeps its screen-edge side straight", async ({ page, isPhone }) => {
+  test("the clash drawer rounds every corner off the screen's edge at 14px, and a corner on the edge is straight", async ({ page, isPhone }) => {
     await useSeatTheme(page, isPhone);
     const home = new HomePage(page);
-    await home.goto(DAYS.glastonbury.id);
+    // Below 640 px a side sheet fills the screen, so all four corners sit on its edges (2.6.2) and compute 0; from 640 px
+    // it floats inside the window and every corner computes 14px. Any corner off the screen's edge is 14px everywhere.
+    const sizes = isPhone
+      ? [
+          { width: 390, height: 844, all: "0px" },
+          { width: 320, height: 640, all: null },
+        ]
+      : [
+          { width: 1440, height: 900, all: "14px" },
+          { width: 1024, height: 768, all: "14px" },
+          { width: 640, height: 900, all: "14px" },
+        ];
+    for (const size of sizes) {
+      await page.setViewportSize({ width: size.width, height: size.height });
+      await home.goto(DAYS.glastonbury.id);
+      await home.tile("Sprints").click();
+      const sheet = page.locator('[data-slot="sheet-content"]');
+      await expect(sheet).toBeVisible();
+      const found = await sheet.evaluate((element) => {
+        const style = getComputedStyle(element);
+        const box = element.getBoundingClientRect();
+        const [w, h] = [document.documentElement.clientWidth, window.innerHeight];
+        const touches = { top: box.top <= 0.5, right: box.right >= w - 0.5, bottom: box.bottom >= h - 0.5, left: box.left <= 0.5 };
+        // A corner sits on the screen's edge when both of its sides lie on the screen's edges.
+        return [
+          { corner: "top-left", radius: style.borderTopLeftRadius, edge: touches.top && touches.left },
+          { corner: "top-right", radius: style.borderTopRightRadius, edge: touches.top && touches.right },
+          { corner: "bottom-right", radius: style.borderBottomRightRadius, edge: touches.bottom && touches.right },
+          { corner: "bottom-left", radius: style.borderBottomLeftRadius, edge: touches.bottom && touches.left },
+        ];
+      });
+      const at = `${size.width} x ${size.height}`;
+      if (size.all) expect(found.map((item) => item.radius), `${at}: the drawer's four corners`).toEqual([size.all, size.all, size.all, size.all]);
+      for (const item of found) {
+        expect(item.radius, `${at}: the ${item.corner} corner, ${item.edge ? "on the screen's edge" : "off the screen's edge"}`).toBe(item.edge ? "0px" : "14px");
+      }
+      await page.keyboard.press("Escape");
+      await expect(home.drawer).toHaveCount(0);
+    }
+  });
 
-    await home.tile("Sprints").click();
-    const sheet = page.locator('[data-slot="sheet-content"]');
-    await expect(sheet).toBeVisible();
-    const side = await sheet.getAttribute("data-side");
-    const [tl, tr, br, bl] = await corners(sheet);
-    const free = side === "right" ? [tl, bl] : side === "left" ? [tr, br] : side === "bottom" ? [tl, tr] : [bl, br];
-    expect(free, `the free corners of a ${side} sheet`).toEqual(["14px", "14px"]);
+  test("ruled text buttons take the 10px control corner, on both days", async ({ page, isPhone }) => {
+    await useSeatTheme(page, isPhone);
+    const home = new HomePage(page);
+    for (const day of Object.values(DAYS)) {
+      await home.goto(day.id);
+      await scrollThrough(page);
+      // Every one drawn at this width with a box of its own: the card's actions below 1024 px, Try this rule
+      // yourself, the costliest clash's action on its own line, the re-check.
+      const ruled = page.locator('[data-slot="button"][data-variant="ruled"]:not([data-index-beside] p *)');
+      expect(await ruled.count(), `${day.title}: ruled buttons on the page`).toBeGreaterThan(2);
+      await expectRadius(ruled, "10px", `${day.title}: ruled button`);
+      // From 1024 px the two actions that close a sentence beside the index card sit in its line, about 20 px
+      // tall: they take a text link's 6px corner, and that corner stays under half the box's height (never a pill).
+      const inline = page.locator('[data-index-beside] p [data-slot="button"][data-variant="ruled"]');
+      if (isPhone) {
+        await expect(inline.filter({ visible: true }), `${day.title}: no sentence beside the card on a phone`).toHaveCount(0);
+        continue;
+      }
+      await expectRadius(inline, "6px", `${day.title}: action closing a sentence beside the card`);
+      const boxes = await inline.evaluateAll((all) =>
+        all
+          .filter((element) => element.getBoundingClientRect().width > 0)
+          .map((element) => ({
+            name: (element.textContent ?? "").trim().slice(0, 40),
+            radius: parseFloat(getComputedStyle(element).borderTopLeftRadius),
+            height: element.getBoundingClientRect().height,
+          })),
+      );
+      for (const box of boxes) expect(box.radius, `${day.title}: "${box.name}" is not a pill`).toBeLessThan(box.height / 2);
+    }
   });
 
   test("/check: the editor is a 14px panel edged on four sides, and the review card and its preview sheet are 14px", async ({ page, isPhone }) => {

@@ -1,4 +1,4 @@
-import { DAYS, HONESTY, requireSavedDays, scrollThrough } from "./helpers";
+import { DAYS, HONESTY, literal, requireSavedDays, scrollThrough } from "./helpers";
 import { expect, test } from "./fixtures";
 import { HomePage } from "./pages/home-page";
 import { SiteChrome } from "./pages/site-chrome";
@@ -29,8 +29,16 @@ test.describe("honesty lines", () => {
       await expect(home.attribution).toHaveText(`Selected and scored by this app’s index. ${HONESTY.reading}`);
       await expect(home.attribution).toBeInViewport();
       await expect(home.indexBlock).toContainText(HONESTY.reading);
-      // The festivals did not ask for this: stated in the hero's dateline, and again where the numbers come from.
+      // The festivals did not ask for this: stated in the hero's dateline, and again where the numbers come from. The
+      // dateline also says the saved reading is global: both days were read with no location sent.
       await expect(home.dateline).toContainText(HONESTY.neither);
+      if (day.id === DAYS.glastonbury.id) {
+        await expect(home.dateline).toHaveText(`Sunday. Published timetable; saved global Qloo reading built 3 Oct 2026. ${HONESTY.neither}`);
+      } else {
+        await expect(home.dateline).toHaveText(
+          new RegExp(`^${day.dayName}\\. Published timetable; saved global Qloo reading built \\d{1,2} [A-Z][a-z]{2} \\d{4}\\. ${literal(HONESTY.neither)}$`),
+        );
+      }
       await expect(home.hero.getByText(HONESTY.neither)).toBeVisible();
       await expect(home.sources).toContainText(SOURCES_LINE[day.id]);
     });
@@ -75,12 +83,14 @@ test.describe("honesty lines", () => {
     await expect(new TryAMove(page).planRegion).toContainText("Scored by the same measure the places are found with, so a lower number shows what that measure rewards, not that audiences would be better served.");
   });
 
-  test("the pitch says who it is for, and the taste number says it is a rank, not attendance, beside it", async ({ page }) => {
+  test("the pitch says who it is for and that Qloo taste data is used to schedule, not to recommend; the taste number says it is a rank, not attendance, beside it", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
     await expect(home.lede).toContainText("For heads of programming:");
-    await expect(home.lede).toContainText("from Qloo data.");
+    // The data is named as Qloo's and its use is framed: scheduling, not recommending.
+    await expect(home.lede).toContainText("Qloo taste data used to schedule, not to recommend.");
+    await expect(home.lede).not.toContainText("attendance");
     // The qualifier sits beside its number, in one element with the Derived stamp (the rank is this app's).
     await expect(home.tasteLine).toContainText(/^Taste overlap: \d+ of 100 on this bill \(a rank, not attendance\)/);
     await expect(home.tasteLine.getByText("Derived")).toBeVisible();

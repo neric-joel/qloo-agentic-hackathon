@@ -4,9 +4,15 @@ import { HomePage } from "./pages/home-page";
 import { minutes, parsePlace, TryAMove } from "./pages/try-a-move";
 
 /**
- * Try a move: pick a set, see every legal place on the 5-minute grid with its price, keep a move, stack
- * another, undo, start over. Every price comes from the engine through /api, with no language model.
+ * Try a move: pick a set, see every legal place on the 5-minute grid with its index, keep a move, stack
+ * another, undo, start over. Every score comes from the engine through /api, with no language model.
  */
+
+/** Said after "Adds no rule break." for every legal place: the rules the place was checked against. */
+const RULES_CHECKED = "Checked against the stage’s hours, the curfew, the changeover gap, locked sets and pairs that must never overlap.";
+
+/** Sprints at Woodsies 14:15 (the hero's move) starts an overlap with a set in none of its lists: the hero's own clause. */
+const OUTSIDE_LINE = "Outside the listed clashes: new 15 min overlap with Joy Crookes.";
 
 /** The day's published Clash Budget Index: the first figure of the index card's "A to B." */
 async function publishedIndex(home: HomePage): Promise<string> {
@@ -61,9 +67,53 @@ test.describe("try a move", () => {
     await expect(move.card).toContainText(`${places.length} legal places, checking every start on a 5-minute grid.`);
     // The first place is chosen already and priced in full.
     await expect(move.places.getByRole("button").first()).toHaveAttribute("aria-pressed", "true");
-    await expect(move.card.getByRole("heading", { name: "Clashes it ends" })).toBeVisible();
-    await expect(move.card.getByRole("heading", { name: "Clashes it adds" })).toBeVisible();
-    await expect(move.card.getByRole("heading", { name: "Clashes it keeps" })).toBeVisible();
+    // The lists say which clashes they hold: the set's listed (costliest) clashes, before and after the place.
+    await expect(move.card.getByRole("heading", { name: "Listed clashes it ends", exact: true })).toBeVisible();
+    await expect(move.card.getByRole("heading", { name: "Listed clashes it adds", exact: true })).toBeVisible();
+    await expect(move.card.getByRole("heading", { name: "Listed clashes it keeps", exact: true })).toBeVisible();
+    await expect(move.card.getByRole("heading", { name: /^Clashes it (ends|adds|keeps)$/ })).toHaveCount(0);
+    // The chosen place says which rules it passed, above its listed clashes.
+    await expect(move.card).toContainText(`Adds no rule break. ${RULES_CHECKED}`);
+  });
+
+  test("Sprints at Woodsies 14:15 names the overlap it starts outside its listed clashes, in the hero's own words, and the rules it passed", async ({ page, isPhone }) => {
+    const home = new HomePage(page);
+    const move = new TryAMove(page);
+    await home.goto(DAYS.glastonbury.id);
+
+    // The hero's move, on the same load: Sprints 15 minutes later starts an overlap with Joy Crookes.
+    await expect(home.sideEffects).toContainText("New 15 min overlap with Joy Crookes.");
+
+    // Try a move opens on the hero's move as its tested place, with no click: Sprints at Woodsies 14:15.
+    const tested = move.section.locator("[data-tested-card]");
+    await expect(tested).toContainText("Tested place");
+    await expect(tested).toContainText("Sprints at Woodsies · 14:15–15:15");
+    // The rules the place passed, after "Adds no rule break.".
+    await expect(tested).toContainText(`Adds no rule break. ${RULES_CHECKED}`);
+    // "Listed" is defined where it is used, and the summary ends on the overlap outside the list.
+    const summary = move.listedSummary("Sprints").first();
+    await expect(summary).toBeVisible();
+    await expect(summary).toHaveText(/^Listed clashes of Sprints \(its three costliest, as scored\): .+\. Outside the list, 1 overlap starts or grows\.$/);
+    // The overlap outside the list, named as the hero names it, so "0 added" is never the last word on it.
+    await expect(move.outsideLine.first()).toHaveText(OUTSIDE_LINE);
+
+    // Picked, Sprints lists its places: the first (lowest index) is Woodsies 14:15, and the full list says the same
+    // under its lists.
+    await move.starter("Sprints").click();
+    if (!isPhone) {
+      await expect(move.bestPlace).toContainText("Sprints at Woodsies · 14:15–15:15");
+      await expect(move.bestPlace).toContainText(`Adds no rule break. ${RULES_CHECKED}`);
+      await expect(move.bestPlace).toContainText(OUTSIDE_LINE);
+    }
+    await move.openEvery("Sprints");
+    await expect(move.places.getByRole("button").first()).toHaveAccessibleName(/^Woodsies 14:15–15:15: /);
+    await expect(move.places.getByRole("button").first()).toHaveAttribute("aria-pressed", "true");
+    await expect(move.card.getByRole("heading", { name: "Listed clashes it adds", exact: true })).toBeVisible();
+    await expect(move.card.getByText(OUTSIDE_LINE).filter({ visible: true }).first()).toBeVisible();
+
+    // Scored, never priced, in every word Try a move shows, every disclosure open.
+    await move.section.evaluate((section) => section.querySelectorAll("details").forEach((details) => (details.open = true)));
+    expect(await move.section.innerText()).not.toMatch(/\bpric(e|ed|es|ing)\b/i);
   });
 
   test("from 1024 px a picked set fills the right column with its best tested place, and keeps it", async ({ page, isPhone }) => {
@@ -204,7 +254,8 @@ test.describe("try a move", () => {
     await expect(move.starters).not.toContainText("Olivia Rodrigo");
 
     await move.choose("Thandii");
-    await expect(move.card).toContainText("Qloo has no usable signal for Thandii, so its clashes are not priced and no place changes the Clash Budget Index.");
+    await expect(move.card).toContainText("Qloo has no usable signal for Thandii, so its clashes are not scored and no place changes the Clash Budget Index.");
+    await expect(move.card).not.toContainText("priced");
     for (const label of await move.placeLabels()) expect(parsePlace(label).change).toBe("No change");
   });
 

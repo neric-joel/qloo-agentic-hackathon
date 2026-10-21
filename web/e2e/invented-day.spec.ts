@@ -46,17 +46,62 @@ test.describe("invented example day", () => {
     await expect(home.graphKey).toContainText("thicker means a higher invented taste overlap rank");
     await expect(home.graphKey).toContainText("Dashed: slot before the move or new overlap.");
 
-    // The index scale reads the same on the invented day; "draw" is glossed as invented popularity, and the card
-    // names no saved Qloo reading.
-    await expect(home.details).toContainText(HONESTY.reading);
-    await expect(home.details).toContainText("A score, not money: 100 = the average random valid timetable of this lineup. Lower is better.");
-    await expect(home.details).not.toContainText("Qloo popularity");
+    // The index scale reads the same on the invented day; "draw" is glossed as invented popularity, and the card (with,
+    // from 1024 px, its lines beside it) names no saved Qloo reading.
+    await expect(home.indexCard).toContainText(HONESTY.reading);
+    await expect(home.indexCard).toContainText("A score, not money: 100 = the average random valid timetable of this lineup. Lower is better.");
+    await expect(home.indexCard).not.toContainText("Qloo popularity");
+    await expect(home.indexBeside).not.toContainText(/Qloo popularity|saved Qloo reading/i);
     await home.showWorking.click();
     await expect(home.working).toBeVisible();
-    await expect(home.details).not.toContainText(/saved Qloo reading|Qloo requests in this run/i);
+    await expect(home.indexCard).not.toContainText(/saved Qloo reading|Qloo requests in this run/i);
     await expect(home.details.getByRole("button", { name: /^Re-check this pair with Qloo/ })).toHaveCount(0);
     await expect(home.board.getByRole("button")).toHaveCount(24);
     expect(day.served.some((line) => line.endsWith("/decision"))).toBe(true);
+  });
+
+  test("its board says 'No taste signal' on a set with none, never 'No priced signal', and coverage says scored", async ({ page }) => {
+    await serveInventedDay(page);
+    const home = new HomePage(page);
+    await home.goto();
+
+    const unsignalled = home.board.getByRole("button").filter({ hasText: /not scored/ });
+    await expect(unsignalled.first()).toBeVisible();
+    await expect(home.board).toContainText("No taste signal");
+    await expect(home.board).not.toContainText("No priced signal");
+    // Rendered words only: the server's serialized summary of the real day is not shown text.
+    await expect(page.locator("body")).not.toContainText(/No priced signal|acts priced|not priced/, { useInnerText: true });
+    // The coverage line under the board (named for the invented day's own coverage, not Qloo's).
+    await expect(page.locator('section[aria-labelledby="coverage-heading"]')).toContainText(/\d+ of \d+ acts scored/);
+  });
+
+  test("its agent section points to no other day's run and asks for no other day's recordings", async ({ page, guard }) => {
+    const day = await serveInventedDay(page);
+    const home = new HomePage(page);
+    await home.goto();
+
+    await expect(home.agent).toBeVisible();
+    await home.agent.scrollIntoViewIfNeeded();
+    await expect(home.agentPointer).toHaveCount(0);
+    await expect(home.agent).not.toContainText("asked Qloo while it was recorded");
+    // Only the invented day's own recordings were asked for, by the page or behind the fixture.
+    const recordings = guard.requested.filter((url) => new URL(url).pathname.endsWith("/recordings")).map((url) => new URL(url).pathname);
+    expect(new Set(recordings)).toEqual(new Set([`/api/presets/${day.id}/recordings`]));
+    expect(day.served.filter((line) => line.endsWith("/recordings"))).toEqual(day.served.filter((line) => line === `GET /api/presets/${day.id}/recordings`));
+  });
+
+  test("the pitch is the server's own, and the invented hero under it credits no Qloo", async ({ page }) => {
+    // The lede is drawn by the server from its own reading of the API, which serves the published days here, so it
+    // is the published frame; on a server that serves only the invented day it reads "taste data used to schedule,
+    // not to recommend" with no Qloo word (pinned in unit tests, where the server's reading can be set).
+    await serveInventedDay(page);
+    const home = new HomePage(page);
+    await home.goto();
+    await expect(home.lede).toHaveText(
+      /^For heads of programming: (Qloo )?taste data used to schedule, not to recommend\. Clashes ranked by minutes shared, popularity and taste overlap\.$/,
+    );
+    const below = await page.locator("[data-hero] > *").evaluateAll((all) => all.slice(1).map((part) => (part as HTMLElement).innerText).join("\n"));
+    expect(below.replaceAll("no Qloo request was made", ""), "the invented hero under the pitch names no Qloo").not.toMatch(/Qloo/);
   });
 
   test("the invented hero never says published and credits no Qloo, and its lines are ink, never teal", async ({ page }) => {

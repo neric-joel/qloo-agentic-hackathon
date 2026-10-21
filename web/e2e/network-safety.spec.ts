@@ -65,6 +65,35 @@ test.describe("the browser only talks to this site", () => {
     expect(new Set(api)).toEqual(
       new Set(["/api/presets", "/api/presets/:id", "/api/presets/:id/decision", "/api/presets/:id/lenses", "/api/presets/:id/moves", "/api/presets/:id/recordings", "/api/presets/:id/whatif", "/api/health", "/api/price-grid"]),
     );
+    // The requests other than GET: the engine's what-if (Keep) and the saved-mode compare, nothing else.
+    expect(new Set(guard.writes.map((write) => write.replace(/\/presets\/[^/]+/, "/presets/:id")))).toEqual(new Set(["POST /api/presets/:id/whatif", "POST /api/price-grid"]));
+  });
+
+  test("a Glastonbury load never reads Riot Fest's saved runs and sends nothing; a Riot Fest load never reads Glastonbury's", async ({ page, guard }) => {
+    await requireSavedDays(page);
+    const home = new HomePage(page);
+    const recordingsOf = (id: string) => guard.requested.filter((url) => new URL(url).pathname === `/api/presets/${id}/recordings`);
+
+    await home.goto(DAYS.glastonbury.id);
+    // Glastonbury holds its own run that asked Qloo, so no pointer is drawn and Riot Fest's saved runs are not read.
+    await expect(home.agentPointer).toHaveCount(0);
+    await scrollThrough(page);
+    expect(recordingsOf(DAYS.riot.id).length, "GETs of Riot Fest's recordings on a Glastonbury load").toBe(0);
+    expect(recordingsOf(DAYS.glastonbury.id).length, "the day's own recordings").toBeGreaterThanOrEqual(1);
+    // Loading, scrolling and reading send nothing: no request other than GET, and none that spends.
+    expect(guard.writes, "requests other than GET on a load").toEqual([]);
+    expect(guard.spending).toEqual([]);
+
+    const before = guard.requested.length;
+    await home.goto(DAYS.riot.id);
+    await expect(home.agent.getByRole("list", { name: "Recorded runs" })).toBeVisible();
+    await scrollThrough(page);
+    expect(
+      guard.requested.slice(before).filter((url) => new URL(url).pathname === `/api/presets/${DAYS.glastonbury.id}/recordings`),
+      "GETs of Glastonbury's recordings on a Riot Fest load",
+    ).toEqual([]);
+    await expect(home.agentPointer).toHaveCount(0);
+    expect(guard.writes, "requests other than GET on a load").toEqual([]);
   });
 
   test("the pages load no scripts, styles, fonts or images from anywhere else", async ({ page }) => {

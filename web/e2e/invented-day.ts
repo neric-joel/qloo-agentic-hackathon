@@ -7,7 +7,12 @@ import type { Page } from "@playwright/test";
  * Answers the browser's `/api/presets...` requests with the invented example day (Lanternfield), from the
  * files `fixtures/generate-invented-day.py` wrote with the backend's own generator. The local API serves
  * that day only when it has no built festival days, so this is how the suite reaches it. Only what the
- * invented-day spec presses is answered; anything else is a 404, which the console watch reports.
+ * invented-day spec presses is answered; anything else is a 404, which the console watch reports. A server with
+ * only the invented day has no other day's recordings, so a request for any other day's recordings (which the page
+ * should never send there) is answered with no runs, and recorded in `served` so a spec can see it was sent.
+ *
+ * The pitch above the hero (the lede) is drawn by the server from its own reading of the API, which here serves
+ * the published days, so these browser-side answers cannot reach it: the invented lede is pinned in unit tests.
  */
 
 const DIR = path.join(__dirname, "fixtures", "invented-day");
@@ -39,7 +44,7 @@ export async function serveInventedDay(page: Page): Promise<InventedDay> {
   const served: string[] = [];
 
   await page.route(
-    (url) => url.pathname === "/api/presets" || url.pathname.startsWith(`/api/presets/${id}`),
+    (url) => url.pathname === "/api/presets" || url.pathname.startsWith(`/api/presets/${id}`) || /^\/api\/presets\/[^/]+\/recordings$/.test(url.pathname),
     async (route) => {
       const request = route.request();
       const url = new URL(request.url());
@@ -51,6 +56,7 @@ export async function serveInventedDay(page: Page): Promise<InventedDay> {
       if (url.pathname === `${base}/decision`) return send(decision);
       if (url.pathname === `${base}/lenses`) return send(lenses);
       if (url.pathname === `${base}/recordings`) return send(recordings);
+      if (url.pathname.endsWith("/recordings")) return send({ runs: [] });
       if (url.pathname === `${base}/moves`) {
         const answer = moves[url.searchParams.get("act") ?? ""];
         if (answer) return send(answer);

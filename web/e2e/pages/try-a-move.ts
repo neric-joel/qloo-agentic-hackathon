@@ -20,6 +20,8 @@ export class TryAMove {
   readonly startOver: Locator;
   readonly briefLink: Locator;
   readonly announcement: Locator;
+  /** The line naming overlaps a place starts or lengthens with sets in none of its lists ("Outside the listed clashes: ..."). */
+  readonly outsideLine: Locator;
 
   constructor(readonly page: Page) {
     this.section = page.getByRole("region", { name: "Move a set and see what it costs" });
@@ -39,6 +41,18 @@ export class TryAMove {
     this.briefLink = this.plan.getByRole("link", { name: "Open as a one-page brief" });
     // The polite status line that says what just happened ("Plan: 2 kept moves. ...").
     this.announcement = this.section.getByRole("status").filter({ hasText: /\S/ });
+    this.outsideLine = this.section.locator("p").filter({ hasText: /^Outside the listed clashes: / }).filter({ visible: true });
+  }
+
+  /**
+   * The summary of a place's listed clashes, as shown: "Listed clashes of Sprints (its three costliest, as scored): ...".
+   * "Listed" is defined where it is used: the set's three costliest clashes, before and after the place.
+   */
+  listedSummary(act: string): Locator {
+    return this.section
+      .locator("p")
+      .filter({ hasText: new RegExp(`^Listed clashes of ${literal(act)} \\(its three costliest, as scored\\): `) })
+      .filter({ visible: true });
   }
 
   /** The heading of the answer for the picked set: "Where Gurriers could go". */

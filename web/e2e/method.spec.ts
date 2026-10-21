@@ -95,7 +95,8 @@ test.describe("how we know (/method)", () => {
     const followUp = page.getByRole("region", { name: "What we tested it against" }).getByRole("group", { name: "Taste inside the full price (exploratory)" });
     const heading = followUp.getByRole("heading", { level: 3, name: "Taste inside the full price (exploratory)" });
     await expect(heading).toBeVisible();
-    await expect(followUp).toContainText("Run after the failed test above, on the same 68 scored pairs, so it is exploratory.");
+    await expect(followUp).toContainText("Run after the failed test above, on the same 68 complained-about pairs, so it is exploratory.");
+    await expect(followUp).not.toContainText("scored pairs");
     await expect(followUp).toContainText("so the full price did not establish an advantage over popularity.");
     await expect(followUp).toContainText("This check did not establish that taste adds to time and draw.");
     await expect(followUp).toContainText("So the full price depends on the real taste values, which is not the same as taste adding to time and draw.");
@@ -149,8 +150,53 @@ test.describe("how we know (/method)", () => {
     await expect(rest.getByRole("heading", { level: 3, name: "Where each number comes from" })).toBeVisible();
     await expect(rest.getByRole("term").filter({ hasText: /^Source: / })).toHaveText(["Source: Recorded", "Source: Derived", "Source: Qloo", "Source: LLM"]);
     await expect(rest.getByRole("definition").filter({ hasText: "A saved Qloo response." })).toBeVisible();
-    await expect(rest.getByRole("definition").filter({ hasText: "Written by the language model." })).toBeVisible();
+    // The model's words are named as a model's, and as not Qloo data, the same words as the chip they explain.
+    await expect(rest.getByRole("definition").filter({ hasText: "Written by a language model. Not Qloo data." })).toBeVisible();
+    await expect(rest.getByRole("definition").filter({ hasText: "Written by the language model." })).toHaveCount(0);
     await expect(rest).toContainText("The festival days shown were built from saved Qloo responses; the festivals themselves do not use Clash Control.");
+  });
+
+  test("says why Qloo, not a similar-artists list or ticket data, and what the four control acts show and do not show, with no click", async ({ page }) => {
+    const rest = page.getByRole("region", { name: "How the rest works" });
+
+    // Why Qloo: its own block with its own address.
+    const why = page.locator("#why-qloo");
+    await expect(why.getByRole("heading", { level: 3 })).toHaveText("Why Qloo, not a similar-artists list or ticket data");
+    await expect(why.getByRole("heading", { level: 3 })).toHaveAttribute("id", "why-qloo-heading");
+    await expect(why.locator("p")).toHaveText(
+      "A similar-artists list names an act’s nearest neighbours. This app needs a reading for every clashing pair on a bill, so it asks Qloo to rank all of a day’s acts against each act’s audience (filter.results.entities). That works before tickets go on sale and for acts with no ticket history at the festival; acts Qloo has no signal for are left out, not scored as zero. It reads taste, not attendance, and this app estimates no attendance.",
+    );
+    await expect(rest.locator("#why-qloo")).toHaveCount(1);
+
+    // The control acts: named, with the threshold, the result on both saved days, and what the result does not test.
+    const controls = page.locator("#controls");
+    await expect(controls.getByRole("heading", { level: 3 })).toHaveText("Four control acts");
+    await expect(controls.getByRole("heading", { level: 3 })).toHaveAttribute("id", "controls-heading");
+    await expect(controls.locator("p")).toHaveText(
+      "Each build also looks up four acts chosen to be unrelated to a festival bill: Vienna Philharmonic, Raffi, Frankie Yankovic and Mormon Tabernacle Choir. If their audiences do not rank near the bottom of the bill (a mean percentile of 0.35 or lower), the build says the signal does not separate audiences on that bill. On both saved days their mean percentile was 0.35 or lower. This does not test whether the clash rankings are useful. Their lookups are marked as control acts in How Qloo was used.",
+    );
+    await expect(controls).toContainText("On both saved days their mean percentile was 0.35 or lower. This does not test whether the clash rankings are useful.");
+
+    // Both are on the page with no click (not inside a closed disclosure), and their addresses land on them.
+    for (const block of [why, controls]) {
+      await expect(block).toBeVisible();
+      expect(await block.evaluate((element) => element.closest("details:not([open])") === null), "open, with no click").toBe(true);
+    }
+    await page.goto("/method#controls", { waitUntil: "domcontentloaded" });
+    await expect(page.locator("#controls-heading")).toBeInViewport();
+    await page.goto("/method#why-qloo", { waitUntil: "domcontentloaded" });
+    await expect(page.locator("#why-qloo-heading")).toBeInViewport();
+  });
+
+  test("names the backtest's sample as complained-about pairs, and says the taste reading is global, with no click", async ({ page }) => {
+    const tested = page.getByRole("region", { name: "What we tested it against" });
+    const sample = tested.getByText(/68 complained-about pairs from 42 complaints \(one complaint can name more than two acts\), across 15 festival days\./);
+    await expect(sample).toBeVisible();
+    expect(await sample.evaluate((element) => element.closest("details:not([open])") === null), "open, with no click").toBe(true);
+    await expect(page.getByRole("article")).not.toContainText("scored pairs from");
+    // The limits say the reading is global: no location was sent.
+    const limits = page.getByRole("region", { name: "What taste overlap cannot tell you" });
+    await expect(limits.getByText("It is a global reading: no location was sent, so it says how close two audiences are in general, not at this festival.")).toBeVisible();
   });
 
   test("the contents links jump to their sections and mark the current one", async ({ page }) => {

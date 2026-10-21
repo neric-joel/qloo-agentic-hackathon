@@ -6,7 +6,11 @@ import { test as base, expect, type Page, type Request } from "@playwright/test"
  *  - a network guard: any request to a host other than the site's own is blocked before it leaves the
  *    browser and recorded, and so is any request that could reach Qloo or a language model (the agent
  *    route, the live pair check, and grid pricing in anything but its saved mode). The test fails
- *    afterwards if either list is not empty, so no spec can spend quota by accident.
+ *    afterwards if either list is not empty, so no spec can spend quota by accident. Every other request to the
+ *    site's API with a method other than GET is recorded too, and the test fails if one is anything but the
+ *    engine's own what-if (`POST /api/presets/{id}/whatif`, sent by Keep, Add or Replace) or a saved-mode
+ *    "Compare audience overlap" (`POST /api/price-grid` with `mode: "saved"`, answered from a saved day with no
+ *    Qloo request).
  *  - a console watch: a console error or an uncaught page error fails the test, unless the spec names the
  *    one it expects (`test.use({ ignoreConsole: [/status of 404/] })`, for a page that is meant to 404).
  *  - `isPhone`, true for the 390 px project, for the few places where the page itself differs.
@@ -14,6 +18,9 @@ import { test as base, expect, type Page, type Request } from "@playwright/test"
 
 const BASE = new URL(process.env.BASE_URL ?? "http://localhost:3000");
 const OWN_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", BASE.hostname]);
+
+/** The only requests the browser may send with a method other than GET (the second only in saved mode, which spendsQuota checks). */
+const ALLOWED_WRITES = [/^POST \/api\/presets\/[^/]+\/whatif$/, /^POST \/api\/price-grid$/];
 
 /** Paths whose answer comes from Qloo or a language model. */
 const SPENDING_PATHS = [/^\/api\/pair(\/|$)/, /^\/api\/runs(\/|$)/, /^\/api\/baseline(\/|$)/, /^\/api\/agent(\/|$)/];
@@ -25,6 +32,8 @@ export type Guard = {
   external: string[];
   /** Requests that would have reached Qloo or a model (blocked). */
   spending: string[];
+  /** Requests sent to the site's API with a method other than GET and let through, as "METHOD path". */
+  writes: string[];
   /** Console errors and uncaught page errors. */
   consoleErrors: string[];
 };
@@ -67,7 +76,7 @@ export const test = base.extend<Fixtures>({
 
   guard: [
     async ({ context, ignoreConsole }, run) => {
-      const guard: Guard = { requested: [], external: [], spending: [], consoleErrors: [] };
+      const guard: Guard = { requested: [], external: [], spending: [], writes: [], consoleErrors: [] };
 
       context.on("request", (request) => guard.requested.push(request.url()));
 
@@ -96,6 +105,7 @@ export const test = base.extend<Fixtures>({
             guard.spending.push(`${route.request().method()} ${route.request().url()}`);
             return route.abort("blockedbyclient");
           }
+          if (route.request().method() !== "GET") guard.writes.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
           return route.fallback();
         },
       );
@@ -104,6 +114,10 @@ export const test = base.extend<Fixtures>({
 
       expect(guard.external, "the browser asked for a host other than the site's own").toEqual([]);
       expect(guard.spending, "a request that could reach Qloo or a language model was attempted").toEqual([]);
+      expect(
+        guard.writes.filter((write) => !ALLOWED_WRITES.some((pattern) => pattern.test(write))),
+        "a request other than GET, the engine's what-if or a saved-mode compare",
+      ).toEqual([]);
       const unexpected = guard.consoleErrors.filter((error) => !ignoreConsole.some((pattern) => pattern.test(error)));
       expect(unexpected, "console errors").toEqual([]);
     },

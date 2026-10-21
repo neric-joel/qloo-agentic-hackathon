@@ -114,8 +114,60 @@ test.describe("what Qloo changes", () => {
   });
 });
 
+test.describe("what Qloo changes: its height and the index card's lines beside it", () => {
+  test.beforeEach(async ({ page }) => requireSavedDays(page));
+
+  for (const day of Object.values(DAYS)) {
+    test(`on ${day.title}, the section is at most 760 px tall at 1440 light and 1,500 px at 390 dark; from 1024 px the two-set line's top is at or above the index card's foot`, async ({ page, isPhone }) => {
+      const theme = isPhone ? "dark" : "light";
+      await page.addInitScript((value) => localStorage.setItem("theme", value), theme);
+      await page.emulateMedia({ colorScheme: theme });
+      const home = new HomePage(page);
+      await home.goto(day.id);
+      expect(await home.chrome.appliedTheme()).toBe(theme);
+
+      // Every disclosure closed, as the page opens.
+      await expect(home.whatQloo.locator("details[open]")).toHaveCount(0);
+      const height = await home.whatQloo.evaluate((section) => section.getBoundingClientRect().height);
+      const ceiling = isPhone ? 1_500 : 760;
+      test.info().annotations.push({ type: `What Qloo changes on ${day.title} at ${isPhone ? "390 dark" : "1440 light"}`, description: `${height.toFixed(1)} px` });
+      expect(height, `"What Qloo changes" height at ${isPhone ? "390 dark" : "1440 light"}`).toBeLessThanOrEqual(ceiling);
+
+      if (!isPhone) {
+        // The two-set change line sits beside the index card, high enough that the index it names is read beside the
+        // card's scale; on Glastonbury the hidden-clash line comes before it.
+        const card = await home.indexCard.boundingBox();
+        const change = await home.indexBeside.locator("[data-change-line]").boundingBox();
+        expect(card, "the index card is drawn").not.toBeNull();
+        expect(change, "the two-set line is drawn beside the card").not.toBeNull();
+        expect(change?.y ?? Infinity, "the two-set line's top is at or above the card's foot").toBeLessThanOrEqual((card?.y ?? 0) + (card?.height ?? 0));
+        expect(change?.x ?? 0, "beside the card, to its right").toBeGreaterThanOrEqual((card?.x ?? 0) + (card?.width ?? 0));
+        await expect(home.indexBeside.locator("[data-change-line]").getByRole("button", { name: "Keep the two-set change" })).toBeVisible();
+      }
+    });
+  }
+});
+
 test.describe("who has complained, and what nobody has tested", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
+
+  test("opens on the stake and the moment of use, with no click", async ({ page }) => {
+    const home = new HomePage(page);
+    await home.goto(DAYS.glastonbury.id);
+
+    const stake = home.whyThisMatters.getByText(
+      "When two sets clash, anyone who wants to see both has to choose. Clash Control is for the time after acts are booked and before set times go out.",
+      { exact: true },
+    );
+    await expect(stake).toBeVisible();
+    expect(await stake.evaluate((element) => element.closest("details:not([open])") === null), "open, with no click").toBe(true);
+    // It is the section's first line under its heading, before the finding.
+    const [lead, finding] = await Promise.all([
+      stake.boundingBox(),
+      home.whyThisMatters.getByRole("heading", { level: 3, name: /^45 clashes that fans or the press complained about/ }).boundingBox(),
+    ]);
+    expect(lead?.y ?? Infinity, "the stake comes before the finding").toBeLessThan(finding?.y ?? 0);
+  });
 
   test("states the problem with its public figures beside what limits them, and quotes no paraphrased voices", async ({ page }) => {
     const home = new HomePage(page);

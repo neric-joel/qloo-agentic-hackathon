@@ -7,6 +7,18 @@ import { parsePlace, TryAMove } from "./pages/try-a-move";
 const SAVED_READING = "Every place it tested was scored with this day’s saved Qloo reading (taste overlap and popularity); it sent no new request.";
 
 /**
+ * The runs line on a day whose runs sent no Qloo request. Both saved days now hold a run that asked Qloo, so it shows
+ * on neither, and neither points to the other day's run (the pointer is covered by agent-panel.test.ts).
+ */
+const RUNS_LINE = "These runs send no new Qloo request; they test moves with this day’s saved reading.";
+
+/** The Riot Fest replay's request row: it reached Qloo live when the run was recorded, and nothing is fetched now. */
+const REPLAY_ROW = "Live when recorded, 3 Oct 2026; replayed now, nothing fetched.";
+
+/** The four acts looked up to check that unrelated audiences rank near the bottom of a bill. */
+const CONTROL_ACTS = ["Vienna Philharmonic", "Raffi", "Frankie Yankovic", "Mormon Tabernacle Choir"];
+
+/**
  * The agent section on a server with no language model: the live agent is off, and saved runs replay from
  * a recorded stream. A replay is never a live call, so nothing here may reach /api/runs, Qloo or a model.
  */
@@ -34,29 +46,58 @@ test.describe("recorded agent runs", () => {
     await expect(home.agent.getByRole("heading", { level: 3, name: "What the agent can and cannot do" })).toBeVisible();
     await expect(home.agent).toContainText("It can test a move, but it never changes your timetable unless you press Keep this place.");
     await expect(home.agent).toContainText("At most 12 Qloo requests and 6 model turns per run.");
-    // The recordings on this day sent no new Qloo request, and the line under the run list says so, and what they
-    // scored with (it is computed from the listed runs, so a run that asked Qloo would remove it).
-    await expect(home.agent.getByRole("list", { name: "Recorded runs" }).getByRole("listitem")).toHaveCount(3);
-    await expect(home.agent).toContainText("These runs send no new Qloo request; they test moves with this day’s saved reading.");
+    // One recording on this day asked Qloo, and its row says so; the runs line, computed from the listed runs, is gone.
+    const runs = home.agent.getByRole("list", { name: "Recorded runs" }).getByRole("listitem");
+    await expect(runs).toHaveCount(4);
+    await expect(runs.filter({ hasText: "This run made 1 Qloo request." })).toHaveCount(1);
+    await expect(home.agent).not.toContainText(RUNS_LINE);
     expect(guard.requested.filter((url) => url.includes("/api/runs"))).toEqual([]);
   });
 
-  test("Glastonbury lists three saved runs, each with its question and what it shows", async ({ page }) => {
+  test("Glastonbury's run that asked Qloo says so, so it shows no pointer and never asks for Riot Fest's recordings", async ({ page, guard }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
-    // A run that ends with a place to keep comes first (it is the default replay); the run the rules refuse is last.
+    // Only the hidden-clash run asked Qloo; every other run says it made none.
     const runs = home.agent.getByRole("list", { name: "Recorded runs" }).getByRole("listitem");
-    await expect(runs).toHaveCount(3);
+    await expect(runs).toHaveCount(4);
+    await expect(runs.filter({ hasText: "This run made 1 Qloo request." })).toHaveCount(1);
+    await expect(runs.filter({ hasText: "This run made 1 Qloo request." })).toContainText("Explain a hidden clash and find a move");
+    await expect(runs.filter({ hasText: "This run made no Qloo request." })).toHaveCount(3);
+    // The day's own run asked Qloo, so there is no pointer to another day's run, and nothing reads Riot Fest's runs.
+    await expect(home.agentPointer).toHaveCount(0);
+    await expect(home.agent).not.toContainText("asked Qloo while it was recorded");
+    expect(guard.requested.filter((url) => new URL(url).pathname === `/api/presets/${DAYS.riot.id}/recordings`)).toEqual([]);
+  });
+
+  test("Riot Fest's run asked Qloo, so it shows no pointer and never asks for Glastonbury's recordings", async ({ page, guard }) => {
+    const home = new HomePage(page);
+    await home.goto(DAYS.riot.id);
+
+    await expect(home.agent.getByRole("list", { name: "Recorded runs" }).getByRole("listitem").first()).toContainText("This run made 1 Qloo request.");
+    await expect(home.agentPointer).toHaveCount(0);
+    await expect(home.agent).not.toContainText("asked Qloo while it was recorded");
+    expect(guard.requested.filter((url) => new URL(url).pathname === `/api/presets/${DAYS.glastonbury.id}/recordings`)).toEqual([]);
+  });
+
+  test("Glastonbury lists four saved runs, each with its question and what it shows", async ({ page }) => {
+    const home = new HomePage(page);
+    await home.goto(DAYS.glastonbury.id);
+
+    // Runs that end with a place to keep come first (the first is the default replay); the run the rules refuse is last.
+    const runs = home.agent.getByRole("list", { name: "Recorded runs" }).getByRole("listitem");
+    await expect(runs).toHaveCount(4);
     await expect(runs.nth(0)).toContainText("Keep Jorja Smith and Olivia Rodrigo where they are, and keep Parcels and The Maccabees from overlapping. Then tell me where Parcels could go.");
     await expect(runs.nth(0)).toContainText("Set two rules, then move one set");
-    await expect(runs.nth(1)).toContainText("Why do Thandii and The Selecter clash?");
-    await expect(runs.nth(1)).toContainText("Ask about an act Qloo knows nothing about");
-    await expect(runs.nth(2)).toContainText("Can Nadine Shah play the Other stage at 15:30? Check it against the rules.");
-    await expect(runs.nth(2)).toContainText("Ask for a move the rules refuse");
+    await expect(runs.nth(1)).toContainText("Why do Nadine Shah and Gurriers clash, and where could Gurriers go instead?");
+    await expect(runs.nth(1)).toContainText("Explain a hidden clash and find a move");
+    await expect(runs.nth(2)).toContainText("Why do Thandii and The Selecter clash?");
+    await expect(runs.nth(2)).toContainText("Ask about an act Qloo knows nothing about");
+    await expect(runs.nth(3)).toContainText("Can Nadine Shah play the Other stage at 15:30? Check it against the rules.");
+    await expect(runs.nth(3)).toContainText("Ask for a move the rules refuse");
     for (const run of await runs.all()) await expect(run.getByRole("button", { name: /^Replay the recorded run: / })).toBeEnabled();
-    // The section is the rail's "Recorded runs".
-    await expect(home.railLink("Recorded runs")).toHaveAttribute("href", "#agent");
+    // The section is the rail's "Agent runs".
+    await expect(home.agentJump).toHaveAttribute("href", "#agent");
   });
 
   test("replaying a run that the rules refuse: steps, a plain answer, and no live request", async ({ page, guard }) => {
@@ -181,6 +222,106 @@ test.describe("recorded agent runs", () => {
     await expect(runs.first()).toContainText("This run made 1 Qloo request.");
     await expect(home.agent.getByRole("button", { name: "Qloo requests in this run: 0" })).toHaveCount(0);
     await expect(home.agent).not.toContainText(SAVED_READING);
+
+    // Its trace says the request was live when the run was recorded, and that nothing is fetched now: on the request's
+    // row, and as the summary's last figure.
+    await home.agent.getByRole("button", { name: "Qloo requests in this run: 1" }).click();
+    await expect(home.drawer).toBeVisible();
+    const row = home.drawer.locator("[data-replay-provenance]");
+    await expect(row).toHaveCount(1);
+    await expect(row).toHaveText(REPLAY_ROW);
+    const summary = await home.drawer
+      .locator("dl")
+      .first()
+      .evaluate((list) => [...list.children].map((part) => (part as HTMLElement).innerText.replace(/\s+/g, " ").trim()).join(" · "));
+    expect(summary, "the trace summary").toMatch(/^Requests? 1 · Cached 0 · Recorded 1 · Live when recorded 1$/);
+    expect(summary.endsWith(" · Live when recorded 1"), "the summary ends with the live-when-recorded count").toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(home.drawer).toHaveCount(0);
+  });
+
+  test("a run that was not live when recorded never says it was: Glastonbury's replay trace has no live-when-recorded row", async ({ page }) => {
+    const home = new HomePage(page);
+    await home.goto(DAYS.glastonbury.id);
+
+    await home.agent.getByRole("button", { name: "Replay the recorded run: Ask for a move the rules refuse" }).click();
+    await home.agent.getByRole("button", { name: "Skip to the answer" }).click();
+    await expect(home.agent.getByRole("status").filter({ hasText: /\S/ })).toHaveText("The recorded run has finished.", { timeout: 15_000 });
+    await home.agent.getByRole("button", { name: "Qloo requests in this run: 0" }).click();
+    await expect(home.drawer).toBeVisible();
+    await expect(home.drawer.locator("[data-replay-provenance]")).toHaveCount(0);
+    await expect(home.drawer).not.toContainText("Live when recorded");
+    await page.keyboard.press("Escape");
+  });
+
+  test("the run that tested another set than the hero's says so without naming a card the page no longer has", async ({ page }) => {
+    const home = new HomePage(page);
+    await home.goto(DAYS.glastonbury.id);
+
+    await home.agent.getByRole("button", { name: /^Replay the recorded run: Set two rules, then move one set/ }).click();
+    await home.agent.getByRole("button", { name: "Skip to the answer" }).click();
+    await expect(home.agent.getByRole("status").filter({ hasText: /\S/ })).toHaveText("The recorded run has finished.", { timeout: 15_000 });
+    const conversation = home.agent.getByRole("list", { name: "Conversation" });
+    await expect(conversation).toContainText(
+      "This run looked for a place for Parcels that lowers the index; the move at the top of the page works on the day’s costliest clash that a move can lower, so their index changes differ.",
+    );
+    // Nothing on the page names the "decision card" round 34 removed, with every disclosure open.
+    await page.evaluate(() => document.querySelectorAll("details").forEach((details) => (details.open = true)));
+    expect(await page.locator("body").innerText()).not.toMatch(/decision card/i);
+  });
+
+  for (const day of Object.values(DAYS)) {
+    test(`on ${day.title}, a replay moves nothing on the page once it has started: layout shift after the press is at most 0.01 (1440 light, 390 dark)`, async ({ page, isPhone }) => {
+      test.setTimeout(90_000);
+      const theme = isPhone ? "dark" : "light";
+      await page.addInitScript((value) => localStorage.setItem("theme", value), theme);
+      await page.emulateMedia({ colorScheme: theme });
+      // A buffered layout-shift observer from navigation; each entry keeps its time and whether input was recent.
+      await page.addInitScript(() => {
+        const store = window as unknown as { __shifts: { at: number; value: number; input: boolean }[] };
+        store.__shifts = [];
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries() as (PerformanceEntry & { value: number; hadRecentInput: boolean })[]) {
+            store.__shifts.push({ at: entry.startTime, value: entry.value, input: entry.hadRecentInput });
+          }
+        }).observe({ type: "layout-shift", buffered: true });
+      });
+      const home = new HomePage(page);
+      await home.goto(day.id);
+      expect(await home.chrome.appliedTheme()).toBe(theme);
+
+      const replay = home.agent.getByRole("button", { name: /^Replay the recorded run: / }).first();
+      await replay.scrollIntoViewIfNeeded();
+      const pressed = await page.evaluate(() => performance.now());
+      await replay.click();
+      // The run plays to its end on its own pacing.
+      await expect(home.agent.getByRole("status").filter({ hasText: /\S/ })).toHaveText("The recorded run has finished.", { timeout: 60_000 });
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      const shifts = await page.evaluate(() => (window as unknown as { __shifts: { at: number; value: number; input: boolean }[] }).__shifts);
+      const after = shifts.filter((entry) => entry.at >= pressed);
+      const shift = after.filter((entry) => !entry.input).reduce((sum, entry) => sum + entry.value, 0);
+      const withInput = after.reduce((sum, entry) => sum + entry.value, 0);
+      test.info().annotations.push({ type: `replay layout shift on ${day.title} at ${isPhone ? "390 dark" : "1440 light"}`, description: `${shift.toFixed(4)} (with entries right after the press: ${withInput.toFixed(4)})` });
+      expect(shift, "layout shift after the press, as the browser scores it").toBeLessThanOrEqual(0.01);
+    });
+  }
+
+  test("How Qloo was used marks the four control acts' lookups, each linking to where they are explained", async ({ page }) => {
+    const home = new HomePage(page);
+    await home.goto(DAYS.glastonbury.id);
+
+    await home.trace.click();
+    await expect(home.drawer).toBeVisible();
+    const labels = home.drawer.getByRole("link", { name: "control act", exact: true });
+    await expect(labels).toHaveCount(CONTROL_ACTS.length);
+    for (const label of await labels.all()) {
+      await expect(label).toHaveAttribute("href", "/method#controls");
+      await expect(label).toHaveAttribute("title", "Looked up to check that unrelated audiences rank near the bottom.");
+    }
+    // Each label sits after its act's /search query, one per control act.
+    const queries = await labels.evaluateAll((all) => all.map((label) => (label.parentElement?.textContent ?? "").replace("control act", "").trim()));
+    expect([...queries].sort()).toEqual([...CONTROL_ACTS].sort());
+    await page.keyboard.press("Escape");
   });
 
   test("while a run replays on a wide screen, the column beside it holds the runs and what the agent can do", async ({ page, isPhone }) => {

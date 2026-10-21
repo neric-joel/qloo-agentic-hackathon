@@ -4,6 +4,9 @@ import { HomePage } from "./pages/home-page";
 
 /** The home page loads on each saved festival day, switches between them, and keeps its two honesty lines. */
 
+/** The lede on a published day: who it is for, the frame, then what the ranking reads (round 35, R1). */
+const LEDE = "For heads of programming: Qloo taste data used to schedule, not to recommend. Clashes ranked by minutes shared, popularity and taste overlap.";
+
 for (const day of Object.values(DAYS)) {
   test.describe(`home on ${day.title}`, () => {
     test.beforeEach(async ({ page }) => requireSavedDays(page));
@@ -14,15 +17,16 @@ for (const day of Object.values(DAYS)) {
 
       await expect(page).toHaveTitle(/Clash Control/);
       await expect(home.heading).toBeVisible();
-      // The lede says who it is for and what the ranking reads, from Qloo data; the attendance qualifier sits
-      // beside the taste number, in the group's taste line.
-      await expect(home.lede).toHaveText("For heads of programming: clashes ranked by minutes shared, popularity and audience taste overlap, from Qloo data.");
+      // The lede says who it is for and the frame (Qloo taste data used to schedule, not to recommend), then what the
+      // ranking reads; the attendance qualifier sits beside the taste number, in the group's taste line.
+      await expect(home.lede).toHaveText(LEDE);
       await expect(home.tasteLine).toContainText("(a rank, not attendance)");
 
       // The hero: the picker on this day, the dateline naming the day, the day drawn, and the decision group with
       // its move, readout and the one filled action.
       await expect(home.dayPicker.getByRole("radio", { name: day.festival })).toBeChecked();
-      await expect(home.dateline).toContainText(`${day.dayName}. Published timetable; saved Qloo reading built `);
+      // Both saved days were read with no location sent, so the dateline calls the reading global.
+      await expect(home.dateline).toContainText(`${day.dayName}. Published timetable; saved global Qloo reading built `);
       await expect(home.graph).toBeVisible();
       await expect(home.graph).toHaveAccessibleName(new RegExp(`^${day.title}, drawn with .+: \\d+ sets on \\d+ stages$`));
       // The key says what the drawing's lines, their width and its dashes mean, and names any overlap the move
@@ -45,6 +49,11 @@ for (const day of Object.values(DAYS)) {
       await expect(home.board.getByRole("button")).toHaveCount(Number(sets));
       // The drawing draws the same day: as many sets and stages as the board.
       await expect(home.graph).toHaveAccessibleName(new RegExp(`: ${sets} sets on ${stages} stages$`));
+    });
+
+    test("the server's own HTML carries the lede, word for word, before any script runs", async ({ page }) => {
+      const html = await (await page.request.get(`/?preset=${day.id}`)).text();
+      expect(html, "the server HTML holds the lede").toContain(`>${LEDE}<`);
     });
 
     test("the index card's starting score is the day's published Clash Budget Index", async ({ page }) => {

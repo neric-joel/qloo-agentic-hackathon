@@ -32,6 +32,24 @@ export class CheckPage {
   /** What a screen reader hears after a check. */
   readonly announcement: Locator;
 
+  // Round 35: a real paste survives first contact.
+  /** The Table view's paste target: a paste there lands in the CSV editor. */
+  readonly pasteTarget: Locator;
+  /** The pair rules, one per line ("Act A | Act B"), inside the rule settings. */
+  readonly pairs: Locator;
+  /** After a check that skipped lines: the notice that says which, and why, first in the results. */
+  readonly skippedNotice: Locator;
+  /** After a check: "Checked {n} sets on {s} stages in {ms} ms, in this browser." */
+  readonly checkTime: Locator;
+  /** The refusal of a grid that cannot be checked ("The grid was not checked." and its line messages). */
+  readonly refusal: Locator;
+  /** In the preview's box, in place of its bars, while the text does not read. */
+  readonly previewUnavailable: Locator;
+  /** Under the refusal's line messages, when the lines look separated by semicolons. */
+  readonly separatorHint: Locator;
+  /** In the printed draft brief, under its title: the skipped sentence. */
+  readonly briefSkipped: Locator;
+
   constructor(readonly page: Page) {
     this.chrome = new SiteChrome(page);
 
@@ -56,6 +74,26 @@ export class CheckPage {
     this.review = page.getByRole("region", { name: "Draft review" });
     this.printButton = page.getByRole("button", { name: "Print draft brief" });
     this.announcement = page.getByRole("status").filter({ hasText: /Rule breaks: \d+/ });
+
+    this.pasteTarget = page.locator("[data-paste-target]");
+    this.pairs = page.getByRole("textbox", { name: "Pairs that must never overlap" });
+    this.skippedNotice = page.locator("[data-skipped]");
+    this.checkTime = page.locator("[data-check-time]");
+    this.refusal = page.getByRole("alert").filter({ hasText: "The grid was not checked." });
+    this.previewUnavailable = page.locator("[data-preview-unavailable]");
+    this.separatorHint = page.locator("[data-separator-hint]");
+    this.briefSkipped = page.locator("[data-brief-skipped]");
+  }
+
+  /** The gutter's mark beside a line the last check skipped ("skipped 4"), in the CSV view. */
+  skippedMark(line: number): Locator {
+    return this.page.locator(`[data-skipped-line="${line}"]`);
+  }
+
+  /** Clears the grid and the rules, and puts this text in the CSV editor. */
+  async replaceWith(csv: string): Promise<void> {
+    await this.clearButton.click();
+    await this.paste(csv);
   }
 
   async goto(): Promise<void> {

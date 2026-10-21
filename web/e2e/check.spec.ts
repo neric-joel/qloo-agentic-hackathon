@@ -3,7 +3,7 @@ import fs from "node:fs";
 import type { Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures";
-import { listDays, luminance, pdfPages, rgbOf } from "./helpers";
+import { listDays, luminance, MESSY_GRID, MESSY_NO_BREAKS, MESSY_SKIPPED, pdfPages, rgbOf } from "./helpers";
 import { CheckPage } from "./pages/check-page";
 
 /**
@@ -498,6 +498,165 @@ test.describe("check a draft grid, round-31 paths", () => {
     await expect(check.page.getByText(/its billing rules and stage hours are not checked here\./).first()).toBeVisible();
     // It is a published timetable, not the invented sample.
     await expect(check.page.getByText("Invented sample: 25 sets with four planted rule breaks.")).toHaveCount(0);
+  });
+});
+
+test.describe("check a draft grid, round 35: a real paste survives first contact", () => {
+  /** The time line after any check, measured in this browser. */
+  const TIME_LINE = /^Checked \d+ sets on \d+ stages in \d+ ms, in this browser\.$/;
+
+  test("a paste into the Table view lands in the CSV editor, says so once, and checks nothing", async ({ page, context, guard }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    const check = new CheckPage(page);
+    await check.goto();
+
+    // The page opens on the Table view, with the sample checked.
+    await expect(check.table).toBeVisible();
+    await expect(check.pasteTarget).toBeVisible();
+    const lines = MESSY_GRID.split("\n").map((line) => line.split(",").join("\t"));
+    await check.pasteTarget.click({ position: { x: 24, y: 24 } });
+    await page.evaluate((text) => navigator.clipboard.writeText(text), lines.join("\n"));
+    const before = guard.requested.length;
+    await page.keyboard.press("ControlOrMeta+V");
+
+    // The text is in the CSV editor, which has focus; the table and its paste target are gone.
+    await expect(check.grid).toBeVisible();
+    await expect(check.grid).toBeFocused();
+    await expect(check.grid).toHaveValue(lines.join("\n"));
+    await expect(check.pasteTarget).toHaveCount(0);
+    await expect(check.table).toHaveCount(0);
+    // It is said once, politely, and nothing was checked or sent: the sample's results stand until Check the grid.
+    await expect(page.getByRole("status").filter({ hasText: "Pasted 12 lines into the CSV editor. Press Check the grid." })).toHaveCount(1);
+    await expect(check.skippedNotice).toHaveCount(0);
+    expect(guard.requested.slice(before).filter((url) => new URL(url).pathname.startsWith("/api/") && !/\/api\/(presets|health)/.test(new URL(url).pathname))).toEqual([]);
+
+    // Checked, the pasted grid reads like the typed one.
+    await check.checkButton.click();
+    await expect(check.skippedNotice.locator("p").first()).toHaveText(MESSY_SKIPPED);
+  });
+
+  test("a grid with one unreadable line checks the other lines, says which line it skipped and why, and marks it", async ({ page }) => {
+    const check = new CheckPage(page);
+    await check.goto();
+    await check.replaceWith(MESSY_GRID);
+    await check.checkButton.click();
+
+    // The skipped line comes first in the results, with its reason.
+    await expect(check.skippedNotice).toBeVisible();
+    await expect(check.skippedNotice.locator("p").first()).toHaveText(MESSY_SKIPPED);
+    await expect(check.skippedNotice).toContainText("Line 4: the start time is not a time such as 18:00, 24:30, 6:00 PM or 6pm (hours up to 47).");
+    // The rest was checked: the eleven readable sets, and no rule break among them, said with what was checked.
+    await expect(check.page.getByText("Read 11 sets on 3 stages.", { exact: true })).toBeVisible();
+    await expect(check.rulesSection).toContainText(MESSY_NO_BREAKS);
+    await expect(check.page.locator("body")).not.toContainText("No rule breaks found against the settings above.", { useInnerText: true });
+    await expect(check.refusal).toHaveCount(0);
+    // The skipped line is marked beside the text, in ink, and the time line says what was read.
+    const mark = check.skippedMark(4);
+    await expect(mark).toBeVisible();
+    await expect(mark).toHaveText("skipped 4");
+    expect(await mark.evaluate((element) => getComputedStyle(element).color)).toBe(await check.page.evaluate(() => getComputedStyle(document.body).color));
+    await expect(check.checkTime).toHaveText(TIME_LINE);
+    await expect(check.checkTime).toHaveText(/^Checked 11 sets on 3 stages in /);
+    // A screen reader hears the skipped sentence once.
+    await expect(check.page.getByRole("status").filter({ hasText: MESSY_SKIPPED })).toHaveCount(1);
+  });
+
+  test("a pair rule naming an act on a skipped line is listed as not checked, never passed silently", async ({ page }) => {
+    const check = new CheckPage(page);
+    await check.goto();
+    await check.replaceWith(MESSY_GRID);
+    await check.rules.locator("summary").click();
+    await check.pairs.fill("Glass Harbour | Tidal Fields");
+    await check.checkButton.click();
+
+    await expect(check.skippedNotice.locator("p").first()).toHaveText(MESSY_SKIPPED);
+    await expect(check.skippedNotice).toContainText("Pair line 1 not checked: Glass Harbour is on a skipped line.");
+    await expect(check.rulesSection).toContainText(MESSY_NO_BREAKS);
+  });
+
+  for (const fault of [
+    {
+      name: "a header that does not read",
+      // A header (it names known columns) that lacks two of the four it needs, so no line can be read with confidence.
+      grid: ["artist,stage,begins,ends", "Tidal Fields,Main Stage,14:00,15:00", "Cobalt Rows,Side Stage,14:15,15:15"].join("\n"),
+      says: "Line 1: the header should read act, stage, start, end (locked and day are optional; other columns are ignored).",
+    },
+    {
+      name: "two days",
+      grid: ["act,stage,start,end,day", "Tidal Fields,Main Stage,14:00,15:00,Friday", "Cobalt Rows,Side Stage,14:15,15:15,Saturday"].join("\n"),
+      says: "This grid has more than one day (Friday, Saturday). Paste one day at a time.",
+    },
+    {
+      name: "more sets than the page reads",
+      grid: Array.from({ length: 61 }, (_, i) => {
+        const hour = String(10 + Math.floor(i / 6)).padStart(2, "0");
+        return `Act ${i + 1},Stage ${(i % 6) + 1},${hour}:00,${hour}:45`;
+      }).join("\n"),
+      says: "That is 61 sets. This page reads up to 60 sets, one day at a time.",
+    },
+  ]) {
+    test(`${fault.name} still stops the whole check: "The grid was not checked."`, async ({ page }) => {
+      const check = new CheckPage(page);
+      await check.goto();
+      await check.replaceWith(fault.grid);
+      await check.checkButton.click();
+
+      await expect(check.refusal).toBeVisible();
+      await expect(check.refusal).toContainText(fault.says);
+      await expect(check.checked).toHaveCount(0);
+      await expect(check.skippedNotice).toHaveCount(0);
+      await expect(check.checkTime).toHaveCount(0);
+      // The preview says it cannot draw the grid, in place of its bars.
+      await expect(check.previewUnavailable).toHaveText("Preview unavailable: fix the lines listed and check again.");
+    });
+  }
+
+  test("lines separated by semicolons are refused with a hint, and the preview's notice takes its bars' place at their height", async ({ page }) => {
+    const check = new CheckPage(page);
+    await check.goto();
+    await check.clearButton.click();
+    await check.csvView.click();
+    const box = check.page.locator("[data-preview-box]");
+    await expect(box).toBeVisible();
+    const empty = await box.boundingBox();
+    // Before any text, the preview's outline bars are drawn and there is no notice.
+    await expect(check.previewUnavailable).toHaveCount(0);
+
+    await check.grid.fill(MESSY_GRID.split("\n").map((line) => line.split(",").join(";")).join("\n"));
+    await check.checkButton.click();
+    await expect(check.refusal).toBeVisible();
+    await expect(check.refusal).toContainText("And 7 more problems.");
+    await expect(check.separatorHint).toHaveCount(1);
+    await expect(check.separatorHint).toHaveText("These lines look separated by semicolons. Use commas or tabs between act, stage, start and end.");
+    // Nothing can be read, so the preview draws no bars: its notice says so, in the same box at the same height.
+    await expect(check.previewUnavailable).toHaveText("Preview unavailable: fix the lines listed and check again.");
+    const bars = await box
+      .locator("span.bg-muted")
+      .evaluateAll((all) => all.filter((bar) => getComputedStyle(bar).visibility !== "hidden" && bar.getClientRects().length > 0).length);
+    expect(bars, "skeleton bars drawn while nothing can be read").toBe(0);
+    const unavailable = await box.boundingBox();
+    expect(Math.abs((unavailable?.height ?? 0) - (empty?.height ?? 0)), "the preview box keeps its height").toBeLessThanOrEqual(1);
+  });
+
+  test("every check says what it read and how long it took, in this browser: the sample, a published day, a paste", async ({ page }) => {
+    const check = new CheckPage(page);
+    await check.goto();
+
+    await check.sampleButton.click();
+    await expect(check.checkTime).toHaveText(TIME_LINE);
+    await expect(check.checkTime).toHaveText(/^Checked 25 sets on 4 stages in /);
+    const days = await listDays(page);
+    if (days.some((day) => !day.synthetic)) {
+      await check.publishedButton.click();
+      // Wait for the published day to arrive and be checked (the sample's time line is already on the page).
+      await expect(check.page.getByRole("status").filter({ hasText: "Published timetable loaded." })).toContainText(/Rule breaks: \d+\./);
+      await expect(check.checkTime).toHaveText(TIME_LINE);
+      await expect(check.checkTime).not.toHaveText(/^Checked 25 sets on 4 stages in /);
+    }
+    await check.replaceWith(CLEAN_GRID);
+    await check.checkButton.click();
+    await expect(check.checkTime).toHaveText(TIME_LINE);
+    await expect(check.checkTime).toHaveText(/^Checked 8 sets on 4 stages in /);
   });
 });
 

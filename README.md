@@ -1,37 +1,44 @@
 # Clash Control
 
-Clash Control helps a festival programmer decide which set-time clash is worth moving, and which one could stay. It checks a timetable against hard rules (changeovers, curfew, locked sets, pairs that must never overlap), ranks the clashes by time shared, draw (Qloo popularity) and a taste-overlap rank calculated from Qloo audience data, and tests a move against every rule before it prices it.
+Qloo taste data used to schedule, not to recommend: for festival heads of programming, Clash Control ranks set-time clashes by minutes shared, Qloo popularity and a taste overlap rank calculated from Qloo data (a rank, not attendance), and tests a legal move.
 
-**Live demo:** [clash-control.vercel.app](https://clash-control.vercel.app) · [Check a draft grid](https://clash-control.vercel.app/check) · [One-page brief](https://clash-control.vercel.app/brief) · [How we know](https://clash-control.vercel.app/method)
+**Live:** [clash-control.vercel.app](https://clash-control.vercel.app) · [Check a draft grid](https://clash-control.vercel.app/check) · [One-page brief](https://clash-control.vercel.app/brief?preset=glastonbury-2025-sun&day=0) · [How we know](https://clash-control.vercel.app/method)
 
-Taste overlap is a rank from 0 to 100 among the acts compared for this bill. It is not the share of fans two acts have in common, an attendance estimate or a money figure. The Clash Budget Index is a unitless score, not money: it compares a day's taste-overlap cost with random valid reorderings of the same lineup (100 is their average; lower is better). It is a reading of one measure, not a verdict on a real festival's programming. Neither festival shown uses Clash Control.
+**Licence:** MIT, see [LICENSE](LICENSE).
+
+## Judge in 60 seconds
+
+1. Open [Glastonbury 2025, Sunday](https://clash-control.vercel.app/?preset=glastonbury-2025-sun). The drawing shows Sprints 15 minutes later, 45 → 30 min shared with Katy J Pearson, and its cost: "New 15 min overlap with Joy Crookes. Shortens 3 other overlaps by 15 min." Press **Keep this move** and read "Kept in your plan. Nothing moves until the acts’ teams agree." Scroll once to "Adding taste moves this pair from #18 to #1" and its limit, "This does not prove #1 is the right clash to move."
+2. On [Check a draft grid](https://clash-control.vercel.app/check), press **Check a published day: Glastonbury 2025, Sunday**, then **Compare audience overlap**. With no Qloo request it prints "Taste overlap changes the order of the 10 compared overlaps: Royel Otis × Djo moves from 10th to 1st." The pairs come from the app's own index: "a worked example, not a test."
+3. Open [the brief with that move kept](https://clash-control.vercel.app/brief?preset=glastonbury-2025-sun&day=0&moves=sprints~woodsies~0~1415): one printable page with a sign-off block.
+
+Taste overlap is a rank from 0 to 100 among the acts compared for one bill. It is not a share of people in common, an attendance estimate or a money figure. The Clash Budget Index is a unitless score: 100 is the average random valid timetable of the same lineup, and lower is better. It is a reading of one measure, not a verdict on a real festival's programming. Neither festival shown uses Clash Control.
 
 ## What is saved and what is live
 
-In the code, every feature that calls Qloo or a language model at request time is off unless the deployment's environment switches it on:
+In the code, every feature that calls Qloo or the agent's provider at request time is off unless the deployment's environment switches it on:
 
 | Feature | Default in the code | Switched on by |
 | --- | --- | --- |
 | Live pair re-check (3 Qloo requests) | Off | `PAIR_CHECK_ENABLED` and a Qloo key |
-| Live grid pricing on `/check` (up to 35 Qloo requests) | Off | `PRICE_GRID_ENABLED` and a Qloo key |
-| Live agent runs | Off (answers 503) | A configured language-model provider |
+| Live grid compare on `/check` (up to 35 Qloo requests) | Off | `PRICE_GRID_ENABLED` and a Qloo key |
+| Live agent runs | Off (answers 503) | The agent's provider settings in `backend/.env.example` |
 
-With all three off, a visitor sees saved readings of two published festival days, built from saved Qloo responses, and recorded agent runs replayed from saved streams. Each is labelled as saved or recorded on the page. `GET /api/health` reports which live features a deployment has on (`pair_check`, `price_grid_live`, `llm_configured`). Every live feature is capped per visitor and per day, and stops calling Qloo when the month's remaining allowance falls below `QLOO_QUOTA_FLOOR` (1,500 by default).
+With all three off, a visitor sees saved readings of two published festival days and recorded agent runs, each labelled on the page. `GET /api/health` reports which live features a deployment has on (`pair_check`, `price_grid_live`, and whether the agent is configured). Every live feature is capped per visitor and per day, counted in memory per server instance, and stops calling Qloo when the month's remaining allowance falls below `QLOO_QUOTA_FLOOR` (1,500 by default).
 
 ## What the app does
 
-- **One decision on the first screen.** For a published day, the costliest clash that has a legal place lowering the index: the move, the sets' shared minutes before and after, and the index before and after, with its scale beside it. One line ranks the pair three ways (time alone, time and draw, then with taste overlap), so the reader sees what Qloo's reading changes. **Keep this move** puts the move in the plan and confirms it in place ("Kept in your plan. Nothing moves until the acts' teams agree.", with a link to the plan). **Show the working** gives the reasoning, a two-set change that would end the overlap if a rule required it, and the date the saved reading was built.
-- **What Qloo changes.** The same clash ranked by time only, by time and draw, and by time, draw and taste, plus the day's two rankings of its costliest clashes with and without taste overlap. It also names a clash that taste lowers ("Lower priority by this index; a candidate to keep."), the other half of the decision: which overlap a programmer might keep.
-- **Hidden clashes.** On the timetable, Hidden marks a clash whose acts' main genre tags differ while their taste overlap is in the top tenth of the bill's priced pairs. Beside it, called-out clashes whose acts share no genre tag, with the audience tags Qloo says they share and the source of each complaint. They are examples, not detections; how often pairs with no shared genre tag and high taste overlap drew complaints is on [How we know](https://clash-control.vercel.app/method#limits).
-- **Try a move.** Pick a set; the engine lists every legal start on a 5-minute grid and prices each one. Keep a move to stack the next test on top of it; the plan then offers the next clash in the published day's ranking.
-- **Keep two sets apart.** Pick two sets that share time. The search covers single places for either set and swaps with one other set, each checked for a new rule break. A change that moves a set to another stage says it needs production sign-off.
-- **Recorded agent runs.** Saved runs of the optional agent replay with no Qloo or model call. Each run's trace is labelled with the Qloo requests that run sent ("Qloo requests in this run: 0" for a run that sent none), and a run that priced every place it tested says those prices used the day's saved Qloo reading. When a run tested a legal place, **Keep this place** adds it to the plan, and the plan prices it again. If the plan already holds steps, it offers **Add to your plan** (the whole plan is checked first; a refused add changes nothing and says why) or **Replace your plan**.
-- **One-page brief (`/brief`).** The day's index, its five costliest clashes, the hidden clashes and the kept plan, with a sign-off block, on one printed page. With no plan it shows the first published day and says no moves are kept yet.
-- **Check a draft grid (`/check`).** Paste one day of a draft timetable (or load an invented sample, or **Check a published day**) and list its rule breaks and the sets that share time. The rule checks run in your browser. Nothing is sent unless you press **Compare audience overlap**, which sends act names and pairs, and nothing else (no times, stages or rules), to this app's server at `POST /api/price-grid`. The server answers from a saved festival day with no Qloo request; a saved answer takes up to 60 act names and 10 pairs. On a published day, the pairs are up to 10 of that day's own costliest clashes that can move (pairs with both sets locked, or with an act that has no usable signal, are passed over), and the page says so: they are chosen by the app's index, which already includes taste overlap, so the comparison is a worked example, not a test. On a pasted grid they are its 5 longest overlaps. Only where `PRICE_GRID_ENABLED` is set can it ask Qloo live, for at most 25 act names and 5 pairs, under the caps below. Names are not stored or logged. A clash marked kept on purpose stays kept: Find a change leaves out, by default, any change that would end it, in a closed list you can open.
-- **How we know (`/method`).** What the price is, the backtest against press-flagged clashes (including the pre-set test that failed), the exploratory follow-ups (among them taste inside the full price, by festival), what taste overlap cannot tell you, and the exact parameters of each Qloo request.
-- **Live pair re-check.** Where the deployment switches it on, the decision card offers "Re-check this pair with Qloo (3 requests)". It opens the pair's panel, where a second press asks Qloo again and shows the fresh reading beside the saved one, never replacing it.
+- **The day, drawn, with one move on it.** The first screen draws a published day as one picture: every set at its time on its stage, and the 15 costliest clashes as lines (thicker means a higher taste overlap rank), with the move this app's index picks. On Glastonbury 2025's Sunday that is Sprints 15 minutes later, 45 → 30 min shared with Katy J Pearson, with its cost beside it ("New 15 min overlap with Joy Crookes. Shortens 3 other overlaps by 15 min.") and "Taste overlap: 99 of 100 on this bill (a rank, not attendance)". A toggle shows the day as published. **Keep this move** confirms in place: "Kept in your plan. Nothing moves until the acts’ teams agree."
+- **What Qloo changes.** The same pair ranked three ways: time alone #23 of 68 (tied with 18 others), time and Qloo popularity #18, with taste overlap from Qloo data #1. The heading reads "Adding taste moves this pair from #18 to #1", and under it: "This does not prove #1 is the right clash to move." Beside it sits the failed test: the test we set before building failed, and popularity did better. Below come the index before and after, a two-set change that would end the overlap, the day's two rankings with and without taste, and a clash that taste lowers ("… #56 with taste: by this index, a candidate to keep."). Where the deployment has `pair_check` on, this section also offers a live re-check of the pair (3 Qloo requests); while it is off, the offer does not show.
+- **Hidden clashes.** On the timetable, Hidden marks a clash whose acts' main genre tags differ while their taste overlap is in the top tenth of the bill's scored pairs. The Hidden clashes section shows called-out clashes whose acts share no genre tag, with the audience tags Qloo returns and each complaint's source; the first is Ethel Cain and Geese (Lollapalooza 2026), 8 audience tags in common. They are examples, not detections.
+- **Try a move.** Pick a set; every legal start on a 5-minute grid is scored, "Checked against the stage’s hours, the curfew, the changeover gap, locked sets and pairs that must never overlap." A tested place also says what grows outside its listed clashes ("Outside the listed clashes: new 15 min overlap with Joy Crookes."). Keep a move to stack the next test on it.
+- **Keep two sets apart.** For two sets that share time, single places for either set and swaps with one other set, each checked for a new rule break. A change of stage says it needs production sign-off.
+- **Recorded agent runs.** Saved runs of the optional agent replay from saved streams; nothing is fetched. Each trace lists the Qloo requests its run made when recorded. Where a day's runs made none, the section points to the run that did: Riot Fest's, whose one `/v2/analysis/compare` request reads "Live when recorded, 3 Oct 2026; replayed now, nothing fetched." **Keep this place** adds a tested place to the plan, or offers **Add to your plan** (the whole plan is checked first) and **Replace your plan** when the plan already holds steps. Every figure comes from the engine; a language model writes the run's explanations.
+- **One-page brief (`/brief`).** The day's index, its five costliest clashes, the hidden clashes and the kept plan, with a sign-off block, on one printed page.
+- **Check a draft grid (`/check`).** Paste one day of a draft timetable (or load the invented sample, or **Check a published day**) for its rule breaks and the sets that share time. The rule checks run in your browser; an unreadable line is skipped and listed while the rest are checked. The results header gives that run's time (one run of the sample printed "Checked 25 sets on 4 stages in 1 ms, in this browser."), a measurement of that run, never time saved. Nothing is sent unless you press **Compare audience overlap**, which sends only act names and pairs to this app's server (`POST /api/price-grid`). It answers from a saved festival day with no Qloo request: on a published day, up to 10 of the day's costliest movable clashes, chosen by the app's index, which already includes taste overlap, so the page calls it a worked example, not a test; on a pasted grid, its 5 longest overlaps. Only where `PRICE_GRID_ENABLED` is set can it ask Qloo live, for at most 25 act names and 5 pairs. Names are not stored or logged.
+- **How we know (`/method`).** The score, the backtest against complained-about clashes (including the pre-set test that failed), the exploratory follow-ups, why Qloo rather than a similar-artists list or ticket data, the four control acts, what taste overlap cannot tell you, and every Qloo parameter.
 
-The backend computes the figures on `/`, `/brief` and in the plan, move and rule routes. `/check` is the exception: its rule checks run in the browser, and it calls the backend only when Compare audience overlap is pressed. Qloo returns popularity and audience affinities; it does not return the taste-overlap rank, the clash price or the index.
+The backend computes the figures on `/`, `/brief` and the plan, move and rule routes; `/check` runs its rule checks in the browser. Qloo returns popularity, audience affinities and tags; the taste overlap rank, the clash score and the index are calculated by this app from Qloo data.
 
 ## Qloo usage
 
@@ -39,7 +46,7 @@ The code calls three Qloo endpoints and no others, in this order. The API key st
 
 | Endpoint | Parameters sent | Used for |
 | --- | --- | --- |
-| `GET /search` | `query` (the act's name), `types=urn:entity:artist`, `take=3` | Match each act name to a Qloo artist entity and read its popularity. A similar name is not enough; unmatched acts stay unpriced. |
+| `GET /search` | `query` (the act's name), `types=urn:entity:artist`, `take=3` | Match each act name to a Qloo artist entity and read its popularity. An exact name match, else a near match at 0.92 similarity; an act with namesakes is marked weak. Unmatched acts are left out, not scored as zero. |
 | `GET /v2/insights` | `filter.type=urn:entity:artist`, `signal.interests.entities` (one act), `filter.results.entities` (the day's other acts, up to 50 per request), `take` (the same count) | Rank the other acts on a bill for one act's audience. The app ranks each row within the day and averages the two directions into taste overlap. |
 | `GET /v2/analysis/compare` | `a.signal.interests.entities`, `b.signal.interests.entities` (one act each), `take=50` | Read the taste tags two audiences share (the clash panel, hidden clashes, `explain_clash`, the live re-check). |
 
@@ -50,15 +57,15 @@ The code calls three Qloo endpoints and no others, in this order. The API key st
 | Building the Glastonbury 2025 Sunday preset | 104 (45 `/search`, 36 `/v2/insights`, 23 `/v2/analysis/compare`) |
 | Building the Riot Fest 2026 Sunday preset | 70 (39 `/search`, 31 `/v2/insights`) |
 | One live pair re-check (off unless `PAIR_CHECK_ENABLED`) | 3 requests (two `/v2/insights`, one `/v2/analysis/compare`), private, never retried; capped at 8 per visitor-hour, 20 per visitor-day and 60 a day |
-| One live grid price (`/check`, off unless `PRICE_GRID_ENABLED`) | Up to 35 requests (at most 25 acts and 5 pairs: one `/search` per act, one `/v2/insights` per act in a priced pair), private, never retried; capped at 1 per visitor-hour, 2 per visitor-day and 4 a day |
+| One live grid compare (`/check`, off unless `PRICE_GRID_ENABLED`) | Up to 35 requests (at most 25 acts and 5 pairs: one `/search` per act, one `/v2/insights` per act in a compared pair), private, never retried; capped at 1 per visitor-hour, 2 per visitor-day and 4 a day |
 | One `explain_clash` agent tool call | 1 (`/v2/analysis/compare`), only when both acts have a Qloo id |
-| Everything else (decision, moves, rule search, plans, brief, `/check` rule checks and saved-day comparison of up to 60 names and 10 pairs, recorded runs) | 0 |
+| Everything else (moves, rule search, plans, brief, `/check` rule checks and the saved-day comparison, recorded runs) | 0 |
 
-The preset counts are the lengths of each preset's saved `requests` list: client request records, one per call the build made through the Qloo client. A call answered from the cache may send no HTTP request and a retried call may send several, so a record is not a count of HTTP requests. The live pair re-check's three requests are exact: they are private and retries are off. An agent run is capped at 12 Qloo requests and 6 model turns (`AGENT_MAX_QLOO_CALLS_PER_RUN`, `AGENT_MAX_TURNS`). A generic explore scenario for the agent (`ALLOW_EXPLORE`, off by default) calls `/search` and `/v2/insights` once per lookup within that cap. Qloo's month allowance is shared across all of this, so the live re-check, live grid pricing and the agent's Qloo-backed tools stop calling Qloo below the quota floor.
+The preset counts are client request records, one per call the build made through the Qloo client; a cached call may send no HTTP request and a retried one several. The pair re-check's three requests are exact (private, no retries). An agent run is capped at 12 Qloo requests and 6 agent turns (`AGENT_MAX_QLOO_CALLS_PER_RUN`, `AGENT_MAX_TURNS`), and live runs at 8 per visitor-hour, 20 per visitor-day and 150 a day. Every cap is counted in memory per server instance (`backend/app/limits.py`). Qloo's month allowance is shared across all of this, so the live re-check, the live grid compare and the agent's Qloo-backed tools stop calling Qloo below the quota floor.
 
 ## Run it locally
 
-Prerequisites: Node.js 22.12 or newer (the version is pinned in `.nvmrc`; `nvm use` picks it up) with npm, and Python 3.12 or newer with [uv](https://docs.astral.sh/uv/). You do not need a Qloo key, an `.env` file or any presets.
+Prerequisites: Node.js 22.12 or newer (pinned in `.nvmrc`; `nvm use` picks it up) with npm, and Python 3.12 or newer with uv. You do not need a Qloo key, an `.env` file or any presets.
 
 ```bash
 # terminal 1: the API
@@ -72,9 +79,9 @@ npm ci
 npm run dev
 ```
 
-Open `http://localhost:3000`. The web app proxies `/api/*` to `http://127.0.0.1:8000`. To point it elsewhere, set `BACKEND_URL`. It is read when `next.config.ts` is evaluated: at start-up for `npm run dev`, and at build time for a production build. `npm run start` serves the address that `npm run build` baked in, so set `BACKEND_URL` before you build, not before you start.
+Open `http://localhost:3000`. The web app proxies `/api/*` to `http://127.0.0.1:8000`; to point it elsewhere, set `BACKEND_URL` before `npm run dev` or before a production build (it is read when `next.config.ts` is evaluated).
 
-**Presets are optional.** A preset is one festival day scored ahead of time. Real presets hold Qloo-derived data, so `backend/presets/` is git-ignored and never committed. When that folder is missing or holds no preset, the API serves one invented day instead, `Lanternfield Friday (synthetic demo)`, flagged `synthetic: true`. The page shows the banner `Synthetic example day: invented acts, no Qloo data`. Its acts, set times, popularity and affinities are generated from a set random seed (`app/schedule/synthetic.py`); no Qloo request is made and nothing on it says anything about a real festival. Every route works on it, including the decision, moves, rule search and plans. The names are random word pairs and could match a real act by chance. To read the day as JSON: `uv run python scripts/make_synthetic_preset.py --out synthetic.json` from `backend/`.
+**Presets are optional.** A preset is one festival day scored ahead of time. Real presets hold Qloo-derived data, so `backend/presets/` is git-ignored and never committed. Without one, the API serves an invented day, `Lanternfield Friday (synthetic demo)`, under the banner `Synthetic example day: invented acts, no Qloo data`. It is generated from a set random seed (`app/schedule/synthetic.py`), makes no Qloo request and works on every route; its names are random word pairs and could match a real act by chance.
 
 To build a real preset you need a Qloo key in `backend/.env` (copy `backend/.env.example`; the file is git-ignored):
 
@@ -83,11 +90,13 @@ cd backend
 uv run python scripts/build_preset.py glastonbury-2025 Sun --stages main --cache ~/qloo-cache --out presets/glastonbury-2025-sun.json
 ```
 
-The published timetables the builder reads are in `backend/app/lineups/data/`. Responses are saved to `--cache` first, so rebuilding spends no quota; keep that folder outside the repository. Add `--location` to send the festival's city with each `/v2/insights` request (it is off by default and the shipped days were built without it). Do not commit presets, cached responses or keys.
+The published timetables the builder reads are in `backend/app/lineups/data/`. Responses are saved to `--cache` first, so rebuilding spends no quota; keep that folder outside the repository. Add `--location` to send the festival's city with each `/v2/insights` request. Do not commit presets, cached responses or keys.
 
 For a frontend-only preview with a simulated event stream and no backend, run the web app with `NEXT_PUBLIC_MOCK_STREAM=1`. The page labels that mode as simulated.
 
-### Checks
+## Tests
+
+Run locally on 20 Oct 2026 on the round-35 working tree: 1,980 vitest tests in 78 files, 762 pytest tests and 16 script tests passed, and the Playwright suite passed 560 tests across the desktop and phone projects (2 of them on its configured retry; 30 skip by design on one project), with 0 failed. These are local runs, not a CI result.
 
 Run from the repository root; each line is its own subshell, so the block can be pasted as it is.
 
@@ -97,13 +106,13 @@ Run from the repository root; each line is its own subshell, so the block can be
 node --test scripts/*.test.mjs
 ```
 
-The backend tests use fakes and `httpx.MockTransport`; none calls Qloo or a model. Tests run on synthetic days and invented values; a claims test also reads the local presets when that folder exists, and a few web tests use public act names as labels. No test holds a Qloo value.
+The backend tests use fakes and `httpx.MockTransport`; none calls Qloo or the agent's provider, and no test holds a Qloo value.
 
-The end-to-end suite (`cd web && npm run e2e`, Playwright) drives a running site; see [web/e2e/README.md](web/e2e/README.md).
+The end-to-end suite (`cd web && npm run e2e`, Playwright, both projects) drives a running site; its real-day specs need the saved presets and skip without them. See [web/e2e/README.md](web/e2e/README.md).
 
 ### Smoke test
 
-`scripts/smoke.mjs` reads pages and saved presets and sends only requests that are refused before anything is spent; it never reaches Qloo or a model.
+`scripts/smoke.mjs` reads pages and saved presets and sends only requests that are refused before anything is spent; it never reaches Qloo or the agent's provider.
 
 ```bash
 # a local run or a clean clone (one preset, or only the invented day, is enough; no Qloo key needed)
@@ -119,9 +128,9 @@ It prints one line per check and exits 1 when any check fails.
 ## How it fits together
 
 - `backend/app/schedule/`: the timetable engine. Layout and rule checks, scoring, the Clash Budget Index baseline (random valid timetables), the move search and the rule search.
-- `backend/app/qloo/`: the Qloo client (cache, retries, request records, an allowance guard) and the construction of taste overlap from affinity rankings.
+- `backend/app/qloo/`: the Qloo client (cache, shared in-flight requests, 4.5 requests a second, request records, an allowance guard) and the construction of taste overlap from affinity rankings.
 - `backend/app/presets.py`, `decision.py`, `whatif.py`, `audit.py`, `pair.py`, `gridprice.py`, `recordings.py`: the read-only API over saved days, plus `POST /api/pair`, `POST /api/price-grid` and `POST /api/presets/{id}/whatif`. The full overlap matrix stays on the server. Computed move and plan answers share caps of 300 per visitor-hour, 1,500 per visitor-day and 5,000 per day (`WHATIF_PER_VISITOR_HOUR`, `WHATIF_PER_VISITOR_DAY`, `WHATIF_PER_DAY` in `backend/app/config.py`); a plan already computed costs nothing to ask again.
-- `backend/app/agent/`, `runs.py`: the optional agent and its tools, which call the same engine. Every figure in its result cards comes from the engine; its answer in words is written by a language model and labelled as such.
+- `backend/app/agent/`, `runs.py`: the optional agent and its seven tools (`list_timetable`, `clash_report`, `explain_clash`, `find_moves`, `try_move`, `add_constraint`, `reslot`), which call the same engine. Only `explain_clash` sends a Qloo request.
 - `scripts/smoke.mjs`: the deployment smoke test above.
 - `web/`: a Next.js 16 app (App Router, Tailwind v4). Pages: `/`, `/method`, `/brief`, `/check`. `next.config.ts` rewrites `/api/*` to the backend; `src/proxy.ts` signs the caller's address for the API's per-visitor caps.
 
@@ -129,24 +138,20 @@ See [web/README.md](web/README.md) for the frontend.
 
 ## How we know
 
-The pre-set test failed. Taste overlap put 46.8% of 42 press-flagged clash clusters (68 scored pairs) in the top quarter of their day, against a bar of 60% written down before the test. Its AUC was 0.634, against 0.512 for genre tags and 0.722 for Qloo popularity. Popularity, also a Qloo field, did better. Taste overlap is nearly unrelated to popularity (correlation 0.08 across all concurrent pairs), so it orders a day differently from draw alone; the app uses it as a second opinion beside time and draw. A later label-shuffle check is exploratory: it ran after the test failed, on a press-skewed set, and treats pairs as independent although they come from 42 complaints. The move-suggestion check missed its bar too (7.1 index points against 10).
+The pre-set test failed. Taste overlap put 46.8% of 68 complained-about pairs from 42 complaints in the top quarter of their day, against a bar of 60% written down before the test (AUC 0.634, against 0.512 for genre tags and 0.722 for Qloo popularity). Popularity, also a Qloo field, did better. Taste overlap is nearly unrelated to popularity (correlation 0.08), so the app uses it as a second opinion beside time and draw. The move-suggestion check missed its bar too (7.1 index points against 10).
 
-In an exploratory re-check on the same complaint data (68 complained-about clashes at five festivals), the app's full price, which multiplies Qloo taste overlap by shared minutes and Qloo popularity, scored AUC 0.746 against 0.722 for popularity alone, a difference of +0.024 (95% interval -0.074 to +0.136) that did not establish an advantage over popularity, and it fell to 0.652 on average when taste overlap was shuffled within each day.
+Two follow-ups are exploratory, run after the test failed on the same pairs. The full price (the index's pair score: taste overlap × shared minutes × Qloo popularity) scored AUC 0.746 against 0.722 for popularity alone, a difference of +0.024 (95% interval -0.074 to +0.136) that did not establish an advantage over popularity. Held at one taste value for every pair, the same score reached 0.754; the full price minus it is -0.009 (interval -0.102 to +0.079), so this check did not establish that taste adds to time and draw. By festival, adding taste raised the AUC at Glastonbury 2025 by 0.201 (interval 0.111 to 0.277) and lowered it over the four US festivals by 0.065 (interval -0.163 to +0.025).
 
-A second exploratory check held taste overlap the same for every pair, so only shared time and draw are left: that price scored 0.754, and the full price minus it is -0.009 (95% interval -0.102 to +0.079). The interval includes 0, so this check did not establish that taste adds to time and draw. The shuffle shows that the price depends on the real taste values, which is not the same as taste adding to them. By festival: at Glastonbury 2025, adding taste raised the price's AUC by 0.201 (interval 0.111 to 0.277); over the four US festivals, where most complaints named the day's biggest acts, it lowered it by 0.065 (interval -0.163 to +0.025, which includes 0).
+Each build also looks up four control acts unrelated to a festival bill. On both saved days their mean percentile was 0.35 or lower, the build's own threshold; that checks the signal, not whether the clash rankings are useful.
 
-The full figures and method are on [How we know](https://clash-control.vercel.app/method). The backtest cannot be rerun from this repository: its complaint set is public (sources are listed on `/method`), but the Qloo responses it scored are Qloo-derived data and are kept outside version control. `web/src/lib/method-figures.ts` holds every figure the page prints, and a test pins each one.
+The figures and method are on [How we know](https://clash-control.vercel.app/method). The backtest cannot be rerun from this repository: its complaint sources are public and listed on `/method`, but the Qloo responses it scored are kept outside version control. `web/src/lib/method-figures.ts` holds every figure the page prints, and a test pins each one.
 
 ## Limits
 
 - **The pre-set test failed** (above). The result that held is a separate signal from popularity, not a better one.
-- **Taste overlap is a rank, not attendance.** It says how alike Qloo ranks two audiences in taste relative to one bill. Acts Qloo has no signal for are left out, never scored as zero; across the five festivals tested, 449 of 624 acts had a usable signal.
-- **The shipped days are a global reading.** They were ranked without a location, so they say nothing about a city's own audience.
-- **Moves are graded by the measure that found them.** A lower index after a move is expected under that measure and says nothing about a better real timetable. The rule search covers single-set places on a 5-minute grid and two-set changes; longer chains are not searched. Real programmers weigh many constraints this app does not see, and nothing moves until the acts' teams agree.
+- **Taste overlap is a rank, not attendance.** It says how close two audiences are in taste relative to one bill, from Qloo's affinity data. Acts with no Qloo signal are left out, never scored as zero; across the five festivals tested, 449 of 624 acts had a usable signal.
+- **The shipped days are a global reading.** They were ranked without a location, so they say nothing about a city's own audience. Asking again for the US festival days with each city would cost 347 Qloo requests.
+- **Moves are graded by the measure that found them.** A lower index after a move is expected under that measure and says nothing about a better real timetable. Longer chains than two-set changes are not searched, and real programmers weigh constraints this app does not see.
 - **The festivals shown do not use Clash Control.** The two published days are scored from public timetables. Nothing on them is a festival's own data or view.
-- **Who would pay is not known.** No festival has used it; the pilot offered on the home page is how that would be found out. That offer needs no Qloo request: a walk through the published Glastonbury 2025 Sunday brief, or rule checks on a festival's own draft in Check a draft grid.
+- **Who would pay is not known.** No festival has used it; the pilot on the home page, a walk through the Glastonbury 2025 Sunday brief, is how that would be found out.
 - **Saved Qloo-derived data is not in this repository.** Presets, saved responses and recorded runs are built outside version control.
-
-## License
-
-[MIT](LICENSE).

@@ -1,4 +1,4 @@
-import { HONESTY } from "./helpers";
+import { HONESTY, visibleTexts } from "./helpers";
 import { expect, test } from "./fixtures";
 import { SiteChrome } from "./pages/site-chrome";
 
@@ -133,7 +133,8 @@ test.describe("how we know (/method)", () => {
     for (const endpoint of await endpoints.all()) {
       await expect(endpoint).toContainText("We send");
       await expect(endpoint).toContainText("We get back");
-      await expect(endpoint).toContainText("Sent live:");
+      await expect(endpoint).toContainText(/Sent live (only )?by /);
+      await expect(endpoint).not.toContainText("Sent live:");
     }
     await expect(endpoints.nth(0)).toContainText("The act's name.");
     await expect(endpoints.nth(1)).toContainText("filter.results.entities");
@@ -143,6 +144,57 @@ test.describe("how we know (/method)", () => {
     await expect(rest).toContainText("Live calls come only from the re-check route, the pasted-grid route in live mode and the agent route, each limited per visitor");
     // The path from a timetable to the index.
     await expect(rest.getByRole("list", { name: "From your timetable to the index" }).getByRole("listitem")).toHaveCount(4);
+  });
+
+  test("says what each live path really sends: no card names the agent's general tools, /search has no \"only\", and the page says the explore tools are refused", async ({ page }) => {
+    // Round 36: the clash agent asks Qloo only through compare, when it explains a clash; its general explore tools are
+    // never offered by the page and refused by the API unless the deployment switches them on.
+    const rest = page.getByRole("region", { name: "How the rest works" });
+    const endpoints = rest.getByRole("list", { name: /^The three Qloo endpoints this product calls/ }).getByRole("listitem");
+    // Each card's last row; it opens with "Sent live by", so a screen reader hears exactly the visible row (no hidden label).
+    const live = async (card: number) => visibleTexts(endpoints.nth(card).locator("p").filter({ hasText: /Sent live (only )?by / }));
+    expect(await live(0)).toEqual(["Sent live by the pasted-grid score in live mode, where switched on."]);
+    expect(await live(1)).toEqual(["Sent live by the pair re-check (two of its three requests) and the pasted-grid score in live mode, where switched on."]);
+    expect(await live(2)).toEqual(["Sent live by the pair re-check (its third request) and by the agent when it explains a clash, where switched on."]);
+    for (const card of [0, 1]) await expect(endpoints.nth(card)).not.toContainText(/agent[’']s tools/);
+    expect((await live(0)).join(" "), "no \"only\" on the /search card's live row").not.toMatch(/\bonly\b/);
+    const calls = page.locator("#qloo-calls");
+    await expect(calls).toContainText("The page never offers the agent’s general explore tools, and the API refuses them unless the deployment switches them on.");
+    await expect(calls).not.toContainText("can also send other entity types and signals");
+    await expect(page.getByRole("article")).not.toContainText(/agent[’']s tools/);
+  });
+
+  test("states under its limits, with no click and in the shared words, whose locks they are", async ({ page }) => {
+    // Round 36 (lib/locks.ts LOCK_RULE): on both published days the locked sets are exactly the last set on each stage.
+    const rule = "On the published days, the locked sets are the last set on each stage. This app keeps them in place; the festivals did not mark them.";
+    const items = page.locator("#limits li");
+    await expect(items.filter({ hasText: rule })).toHaveCount(1);
+    await expect(items.filter({ hasText: rule })).toHaveText(rule);
+    await expect(items.filter({ hasText: rule })).toBeVisible();
+    // Second to last, just before what the readings must never be used for.
+    const all = await items.allInnerTexts();
+    expect(all.at(-2), "the lock rule is the second-to-last limit").toBe(rule);
+    expect(all.at(-1)).toBe("Do not use this to set fees, billing order or an artist’s worth, or for crowd capacity, safety or attendance.");
+    await expect(page.getByRole("article")).not.toContainText("not by the festival");
+    expect(await page.getByRole("article").innerText().then((text) => text.split(rule).length - 1), "stated once on the page").toBe(1);
+  });
+
+  test("the follow-up's finding against popularity is on the page with no click, and every address on the page lands on a block", async ({ page }) => {
+    const tested = page.getByRole("region", { name: "What we tested it against" });
+    const finding = tested.getByText("The exploratory follow-up did not establish an advantage over popularity.");
+    await expect(finding).toBeVisible();
+    expect(await finding.evaluate((element) => element.closest("details:not([open])") === null), "open, with no click").toBe(true);
+    const withPrice = tested.getByText(/so the full price did not establish an advantage over popularity\./);
+    await expect(withPrice).toBeVisible();
+    expect(await withPrice.evaluate((element) => element.closest("details:not([open])") === null), "open, with no click").toBe(true);
+
+    // The addresses the home page, the brief and the docs link to, and every in-page link, resolve to an element.
+    const ids = ["price", "tested", "limits", "labels", "brief", "moving-sets", "live-check", "controls", "why-qloo", "qloo-calls", "taste-in-price"];
+    for (const id of ids) await expect(page.locator(`[id="${id}"]`), `#${id}`).toHaveCount(1);
+    const unresolved = await page.evaluate(() =>
+      [...document.querySelectorAll<HTMLAnchorElement>('a[href^="#"]')].map((link) => link.getAttribute("href") ?? "").filter((href) => href.length > 1 && !document.getElementById(decodeURIComponent(href.slice(1)))),
+    );
+    expect(unresolved, "in-page links with no target").toEqual([]);
   });
 
   test("says where each number comes from, in four provenance words", async ({ page }) => {
@@ -172,10 +224,12 @@ test.describe("how we know (/method)", () => {
     const controls = page.locator("#controls");
     await expect(controls.getByRole("heading", { level: 3 })).toHaveText("Four control acts");
     await expect(controls.getByRole("heading", { level: 3 })).toHaveAttribute("id", "controls-heading");
+    // Round 36: one sentence says how the control acts enter the percentiles (the mechanism, nothing more).
     await expect(controls.locator("p")).toHaveText(
-      "Each build also looks up four acts chosen to be unrelated to a festival bill: Vienna Philharmonic, Raffi, Frankie Yankovic and Mormon Tabernacle Choir. If their audiences do not rank near the bottom of the bill (a mean percentile of 0.35 or lower), the build says the signal does not separate audiences on that bill. On both saved days their mean percentile was 0.35 or lower. This does not test whether the clash rankings are useful. Their lookups are marked as control acts in How Qloo was used.",
+      "Each build also looks up four acts chosen to be unrelated to a festival bill: Vienna Philharmonic, Raffi, Frankie Yankovic and Mormon Tabernacle Choir. If their audiences do not rank near the bottom of the bill (a mean percentile of 0.35 or lower), the build says the signal does not separate audiences on that bill. On both saved days their mean percentile was 0.35 or lower. They are also in each act’s ranked list, so they count in its percentiles. This does not test whether the clash rankings are useful. Their lookups are marked as control acts in How Qloo was used.",
     );
-    await expect(controls).toContainText("On both saved days their mean percentile was 0.35 or lower. This does not test whether the clash rankings are useful.");
+    await expect(controls).toContainText("On both saved days their mean percentile was 0.35 or lower. They are also in each act’s ranked list, so they count in its percentiles. This does not test whether the clash rankings are useful.");
+    await expect(controls).not.toContainText(/moves a little|order in a list changes/);
 
     // Both are on the page with no click (not inside a closed disclosure), and their addresses land on them.
     for (const block of [why, controls]) {

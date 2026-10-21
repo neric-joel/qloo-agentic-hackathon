@@ -2,6 +2,12 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 import { SiteChrome } from "./site-chrome";
 
+/** The printed draft brief's sign-off labels, the same three as the published-day brief's (round 36). */
+export const DRAFT_SIGN_OFF = ["Prepared by", "Reviewed by (head of programming)", "Date"];
+
+/** The printed draft brief's first line: its heading, then the print date (a grid with no day column names no day). */
+export const DRAFT_HEADING = /^Draft grid check · printed \d{1,2} [A-Z][a-z]{2} \d{4}$/;
+
 /** /check: paste a draft grid, read its rule breaks and shared time, and (optionally) compare audience overlap. */
 export class CheckPage {
   readonly chrome: SiteChrome;
@@ -50,6 +56,14 @@ export class CheckPage {
   /** In the printed draft brief, under its title: the skipped sentence. */
   readonly briefSkipped: Locator;
 
+  // Round 36.
+  /** After a check: "Read {n} sets on {s} stages", then what it says about locks (on screen; the sheet has its own). */
+  readonly readLine: Locator;
+  /** The printed draft brief's first line ("Draft grid check · printed {date}"), drawn in print only. */
+  readonly draftHeading: Locator;
+  /** The printed draft brief's sign-off block, drawn in print only. */
+  readonly signOff: Locator;
+
   constructor(readonly page: Page) {
     this.chrome = new SiteChrome(page);
 
@@ -83,6 +97,37 @@ export class CheckPage {
     this.previewUnavailable = page.locator("[data-preview-unavailable]");
     this.separatorHint = page.locator("[data-separator-hint]");
     this.briefSkipped = page.locator("[data-brief-skipped]");
+
+    // The results' own line, not the rail preview's "Read {n} sets on {s} stages. Rule breaks: ..." copy of the sheet.
+    // ("stages?" is pinned to the whole word by the lookahead for "." or ";", so it cannot back off to "stage".)
+    this.readLine = page.getByText(/^Read \d+ sets? on \d+ stages?(?=[.;])(?!\. Rule breaks)/).filter({ visible: true });
+    // The rail's preview thumbnail holds a copy of each, never drawn; the one that prints is the visible one.
+    this.draftHeading = page.locator("[data-draft-heading]").filter({ visible: true });
+    this.signOff = page.locator("[data-sign-off]").filter({ visible: true });
+  }
+
+  /**
+   * After a check that read every line: "Read {n} sets on {s} stages.", no refusal and no skipped line, so every line
+   * of the paste was read.
+   */
+  async expectEveryLineRead(sets: number, stages: number): Promise<void> {
+    await expect(this.refusal).toHaveCount(0);
+    await expect(this.skippedNotice).toHaveCount(0);
+    await expect(this.readLine).toHaveText(`Read ${sets} sets on ${stages} stages.`);
+  }
+
+  /**
+   * In print media: the draft brief's heading shows once, above everything else on the sheet, and its sign-off shows
+   * its three labels in order, each with a blank line to write on. On screen neither is drawn.
+   */
+  async expectDraftHeadingAndSignOff(): Promise<void> {
+    await expect(this.draftHeading).toHaveCount(1);
+    await expect(this.draftHeading).toHaveText(DRAFT_HEADING);
+    await expect(this.signOff).toHaveCount(1);
+    await expect(this.signOff.getByRole("term")).toHaveText(DRAFT_SIGN_OFF);
+    await expect(this.signOff.getByRole("definition")).toHaveCount(DRAFT_SIGN_OFF.length);
+    const [top, bottom] = await Promise.all([this.draftHeading.boundingBox(), this.signOff.boundingBox()]);
+    expect(top?.y ?? Infinity, "the heading is above the sign-off").toBeLessThan(bottom?.y ?? 0);
   }
 
   /** The gutter's mark beside a line the last check skipped ("skipped 4"), in the CSV view. */

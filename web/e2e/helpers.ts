@@ -170,6 +170,24 @@ export async function requireSavedDays(page: Page): Promise<void> {
   test.skip(missing.length > 0, `the API does not serve ${missing.map((day) => day.id).join(", ")}`);
 }
 
+/**
+ * Where the sticky bars at the top of the screen end, in viewport pixels: the site header, and under it the home page's
+ * section nav where that sticks too (from 768 px). A bar that is not stuck to the top at this moment is left out.
+ */
+export async function stickyBarsFoot(page: Page): Promise<number> {
+  const bars = [page.getByRole("banner"), page.getByRole("navigation", { name: "On this page" })];
+  let foot = 0;
+  for (const bar of bars) {
+    if ((await bar.count()) === 0) continue;
+    const { top, bottom, position } = await bar.first().evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return { top: box.top, bottom: box.bottom, position: getComputedStyle(element).position };
+    });
+    if ((position === "sticky" || position === "fixed") && top >= -1 && top <= foot + 1) foot = Math.max(foot, bottom);
+  }
+  return foot;
+}
+
 /** A computed colour as RGB, whatever notation the browser reports it in (oklch included). */
 export async function rgbOf(page: Page, selector: string, property: "backgroundColor" | "color"): Promise<[number, number, number]> {
   return page.evaluate(
@@ -220,3 +238,6 @@ export const MESSY_GRID = [
 /** What a check of MESSY_GRID says first, and its no-breaks line. */
 export const MESSY_SKIPPED = "1 line skipped and not checked: line 4. The other 11 sets were checked.";
 export const MESSY_NO_BREAKS = "No rule breaks found among the 11 sets checked, against the settings above.";
+
+/** Why MESSY_GRID's line 4 was skipped (round 36): the act on the line, and the value it could not read, quoted. */
+export const MESSY_LINE_4 = 'Line 4 (Glass Harbour): the start time "25:70" is not a time such as 18:00, 18.00, 1800, 24:30, 6:00 PM or 6pm.';

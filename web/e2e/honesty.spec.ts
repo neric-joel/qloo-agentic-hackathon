@@ -127,6 +127,54 @@ test.describe("honesty lines", () => {
     await expect(article).toContainText("not endorsed by Qloo or Glastonbury Festival 2025");
   });
 
+  /**
+   * The price words (round 36, NEXT.md 8.4). Every index is "a score, not money", so the pages say "score". R3 (the
+   * guarded strings) was not built this round, so these, and only these, keep "price": the footer's sources line on
+   * every page, and on /method the "full price" family (its table header "Full price" included) and formulaNote's "the
+   * printed price". Pages as opened, every disclosure open, no Replay and no live press.
+   */
+  const PRICE_WORD = /\bpric(e|ed|es|ing)\b/gi;
+  const FOOTER_SOURCES = "Popularity and audience comparisons are saved Qloo responses; taste overlap and prices are calculated by this app from them.";
+  const METHOD_KEPT = [/\bfull price\b/gi, /\bthe printed price\b/gi] as const;
+  /** Lock words no page says: the old ones, and one that would claim to know what the festival did. */
+  const NOT_SAID = /not by the festival|which cannot move|Locked set: fixed slot|this set stays put/;
+
+  for (const [name, url] of [
+    ["the home page", `/?preset=${DAYS.glastonbury.id}`],
+    ["Riot Fest's home page", `/?preset=${DAYS.riot.id}`],
+    ["/method", "/method"],
+    ["/check", "/check"],
+    ["the kept Glastonbury brief", `/brief?preset=${DAYS.glastonbury.id}&day=0&moves=sprints~woodsies~0~1415`],
+  ] as const) {
+    test(`${name}: the only "price" words are the ones kept by name, and no lock word claims the festival's view`, async ({ page, isPhone }) => {
+      await page.goto(url, { waitUntil: "domcontentloaded" });
+      await new SiteChrome(page).waitForHydration();
+      if (url.startsWith("/?")) await new HomePage(page).waitUntilReady();
+      if (url.startsWith("/brief")) await expect(page.getByRole("region", { name: "Your plan" })).toBeVisible();
+      if (url === "/check") await expect(page.getByRole("region", { name: "Checked" })).toBeVisible();
+      await scrollThrough(page);
+      // The board's reading of its key is a view change, not a disclosure; open it too where it is a button.
+      if (url.startsWith("/?") && !isPhone) await page.getByRole("button", { name: "How to read the board" }).click();
+      await page.evaluate(() => document.querySelectorAll("details").forEach((details) => (details.open = true)));
+      let text = (await page.locator("body").innerText()).replace(/\s+/g, " ");
+
+      // The footer's sources line: once, and it keeps its word while R3 is not built.
+      expect(text.split(FOOTER_SOURCES).length - 1, "the footer's sources line").toBe(1);
+      text = text.replace(FOOTER_SOURCES, "");
+      if (url === "/method") {
+        const [full, printed] = METHOD_KEPT.map((kept) => text.match(kept)?.length ?? 0);
+        // Eight sentences of the exploratory follow-up and its table header, and formulaNote once.
+        expect(full, '"full price" on /method').toBe(9);
+        expect(printed, '"the printed price" on /method').toBe(1);
+        await expect(page.getByRole("columnheader", { name: "Full price" })).toHaveCount(1);
+        for (const kept of METHOD_KEPT) text = text.replace(kept, "");
+      }
+      const left = [...text.matchAll(PRICE_WORD)].map((match) => text.slice(Math.max(0, (match.index ?? 0) - 50), (match.index ?? 0) + 50));
+      expect(left, `${name}: price words beyond the ones kept by name`).toEqual([]);
+      expect(text, `${name}: lock words`).not.toMatch(NOT_SAID);
+    });
+  }
+
   test("the footer on every page says the festivals shown do not use Clash Control, with its licence line", async ({ page }) => {
     for (const url of ["/", "/method", "/check", "/brief"]) {
       await page.goto(url, { waitUntil: "domcontentloaded" });

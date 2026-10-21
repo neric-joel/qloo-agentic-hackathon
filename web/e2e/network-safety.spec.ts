@@ -5,8 +5,8 @@ import { HomePage } from "./pages/home-page";
 import { TryAMove } from "./pages/try-a-move";
 
 /**
- * The browser talks to this site and nothing else. No request goes to qloo.com or anthropic.com (or any other
- * host), and no request that could spend Qloo quota or a model call leaves the browser. The `guard` fixture
+ * The browser talks to this site and nothing else. No request goes to Qloo's API host or a model provider's host (or
+ * any other host), and no request that could spend Qloo quota or a model call leaves the browser. The `guard` fixture
  * already blocks and records both for every test; these specs walk the whole product with it and say so.
  */
 

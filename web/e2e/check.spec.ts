@@ -3,7 +3,7 @@ import fs from "node:fs";
 import type { Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures";
-import { listDays, luminance, MESSY_GRID, MESSY_NO_BREAKS, MESSY_SKIPPED, pdfPages, rgbOf } from "./helpers";
+import { listDays, luminance, MESSY_GRID, MESSY_LINE_4, MESSY_NO_BREAKS, MESSY_SKIPPED, pdfPages, requireSavedDays, rgbOf } from "./helpers";
 import { CheckPage } from "./pages/check-page";
 
 /**
@@ -21,6 +21,12 @@ const CLEAN_GRID = [
   "Geordie Greep,The Park,12:45,13:30",
   "Jorja Smith,Woodsies,21:30,22:45",
 ].join("\n");
+
+/** The time forms a skip or refusal names (round 36: the dotted and four-digit forms read too). */
+const TIME_FORMS = "18:00, 18.00, 1800, 24:30, 6:00 PM or 6pm";
+
+/** What the rail says is open on the invented sample, before any decision (round 36). */
+const OPEN_ON_SAMPLE = "4 rule breaks to review · 35 overlaps to decide";
 
 /** The review's "n / 4 rule breaks reviewed" line; its numerals and words sit in separate elements. */
 const reviewed = (n: number) => new RegExp(String.raw`${n}\s*/\s*4\s*rule breaks reviewed`);
@@ -45,6 +51,11 @@ test.describe("check a draft grid", () => {
     // The check ran in the browser: nothing was sent to price anything.
     expect(apiWrites(guard.requested)).toEqual([]);
     await expect(check.page.getByText("Rule checks run in your browser; nothing is sent unless you press Compare audience overlap.")).toBeVisible();
+    // Round 36: the rail says what is open with rule breaks apart from ordinary overlaps, beside its heading and in its
+    // Open row, and never as one lumped "n open".
+    await expect(check.review.getByText(OPEN_ON_SAMPLE, { exact: true })).toHaveCount(2);
+    await expect(check.review.getByText(OPEN_ON_SAMPLE, { exact: true }).first()).toBeVisible();
+    await expect(check.review).not.toContainText(/\b\d+ open\b/);
   });
 
   test("lists the four planted rule breaks, each with its rows and its next step", async ({ page }) => {
@@ -185,8 +196,9 @@ test.describe("check a draft grid", () => {
     await check.checkButton.click();
 
     const alert = check.page.getByRole("alert").filter({ hasText: "The grid was not checked." });
-    await expect(alert).toContainText("Line 1: the start time is not a time such as 18:00, 24:30, 6:00 PM or 6pm (hours up to 47).");
-    await expect(alert).toContainText("Line 2: expected act, stage, start, end (and locked), but found 2 fields.");
+    // Round 36: each line's message names its act and quotes the value it could not read.
+    await expect(alert).toContainText(`Line 1 (Zorp): the start time "25:99" is not a time such as ${TIME_FORMS}.`);
+    await expect(alert).toContainText("Line 2 (Only): expected act, stage, start, end (and locked), but found 2 fields.");
     await expect(check.checked).toHaveCount(0);
   });
 
@@ -362,6 +374,8 @@ test.describe("check a draft grid", () => {
     await expect(sheet).toContainText("Computed in your browser from the pasted grid.", { useInnerText: true });
     await expect(sheet).toContainText("Your decisions", { useInnerText: true });
     await expect(sheet).not.toContainText("Check the grid", { useInnerText: true });
+    // Round 36: on paper it opens with its heading and the print date, and ends with the sign-off block.
+    await check.expectDraftHeadingAndSignOff();
 
     for (const format of ["Letter", "A4"] as const) {
       const pdf = await page.pdf({ format, printBackground: true });
@@ -499,6 +513,120 @@ test.describe("check a draft grid, round-31 paths", () => {
     // It is a published timetable, not the invented sample.
     await expect(check.page.getByText("Invented sample: 25 sets with four planted rule breaks.")).toHaveCount(0);
   });
+
+  // Round 36: a published day's locks are this app's (neither festival marks a set as fixed), and on both days the locked
+  // sets are exactly the last set on each stage, so the read line says so; a pasted grid keeps "marked locked".
+  for (const day of [
+    { id: "glastonbury-2025-sun", label: "Glastonbury 2025, Sunday" },
+    { id: "riot-fest-2026-sun", label: "Riot Fest 2026, Sunday" },
+  ]) {
+    test(`Check a published day (${day.label}) says whose locks they are: this app's, the last set on each stage, not the festival's`, async ({ page, guard }) => {
+      await requireSavedDays(page);
+      // The button offers the first published day the list names; to reach the other, the list is answered in the
+      // order that puts it first (a GET answered from the server's own list, nothing else changed).
+      await page.route(
+        (url) => url.pathname === "/api/presets",
+        async (route) => {
+          const response = await route.fetch();
+          const list = (await response.json()) as { id: string }[];
+          await route.fulfill({ response, json: [...list.filter((item) => item.id === day.id), ...list.filter((item) => item.id !== day.id)] });
+        },
+      );
+      const check = new CheckPage(page);
+      await check.goto();
+      await expect(check.publishedButton).toHaveAccessibleName(`Check a published day: ${day.label}`);
+      await check.publishedButton.click();
+      await expect(check.page.getByRole("status").filter({ hasText: "Published timetable loaded." })).toContainText(/Rule breaks: \d+\./);
+
+      await expect(check.readLine).toHaveText(
+        /^Read \d+ sets on \d+ stages; 5 locked by this app \(the last set on each stage\); the festival did not mark them\. Locked sets are still checked against your rules; they are only kept in place when you search for a change\.$/,
+      );
+      await expect(check.readLine).not.toContainText("marked locked");
+      await expect(check.page.locator("body")).not.toContainText("not by the festival", { useInnerText: true });
+      expect(guard.writes, "nothing sent").toEqual([]);
+    });
+  }
+});
+
+test.describe("check a draft grid, round 36: a real grid's own words", () => {
+  /** The rail's open line once every rule break is decided or there were none: overlaps only, the zero part left out. */
+  const OVERLAPS_ONLY = /^\d+ overlaps? to decide$/;
+
+  /**
+   * Pastes a grid over the sample and checks it; the answer reads the requests other than GET sent from the paste on
+   * (it must be none: the check runs in the browser).
+   */
+  async function pasteAndCheck(check: CheckPage, grid: string, guard: { writes: string[] }): Promise<() => string[]> {
+    const before = guard.writes.length;
+    await check.replaceWith(grid);
+    await check.checkButton.click();
+    return () => guard.writes.slice(before);
+  }
+
+  for (const paste of [
+    {
+      name: "a header in the grid's own words (Artist, Stage, Start, Finish)",
+      grid: ["Artist,Stage,Start,Finish", "Aurora,Main,18:00,19:00", "Borealis,Side,18:30,19:30", "Cygnus,Main,19:20,20:20", "Draco,Side,19:45,20:45", "Eridanus,Tent,18:15,19:15", "Fornax,Tent,19:30,20:30"],
+      sets: 6,
+      stages: 3,
+    },
+    {
+      name: "one column of time ranges (Set time), with a hyphen, \"to\", an en dash and dotted and h forms",
+      grid: ["Act,Stage,Set time", "Aurora,Main,18:00-19:00", "Borealis,Side,6pm to 7:15pm", "Cygnus,Tent,18:30–19:30", "Draco,Main,19.30 - 20h30"],
+      sets: 4,
+      stages: 3,
+    },
+    {
+      name: "dotted, compact, h and one-letter times with no header",
+      grid: ["Aurora,Main,6.30pm,7.30 pm", "Borealis,Side,6.30 pm,19:30", "Cygnus,Tent,18.30,1930", "Draco,Field,1830,19:45", "Eridanus,Hall,18h30,20h00", "Fornax,Yard,6:30p,7:30p"],
+      sets: 6,
+      stages: 6,
+    },
+  ]) {
+    test(`${paste.name} is read line by line, every line, and nothing is sent`, async ({ page, guard }) => {
+      const check = new CheckPage(page);
+      await check.goto();
+      const sent = await pasteAndCheck(check, paste.grid.join("\n"), guard);
+
+      await check.expectEveryLineRead(paste.sets, paste.stages);
+      await expect(check.checkTime).toHaveText(new RegExp(`^Checked ${paste.sets} sets on ${paste.stages} stages in \\d+ ms, in this browser\\.$`));
+      expect(sent(), "requests other than GET while pasting and checking").toEqual([]);
+      expect(apiWrites(guard.requested)).toEqual([]);
+    });
+  }
+
+  test("a header it cannot read is refused in one message that names the missing column, quotes the cell it did not read, and reads no line after it", async ({ page, guard }) => {
+    const check = new CheckPage(page);
+    await check.goto();
+    // Two more lines under it that would each be refused on their own (a bad time, two fields): neither is read.
+    const sent = await pasteAndCheck(check, ["Act,Stage,Start,Endzeit", "Aurora,Main,25:99,19:00", "Only,two"].join("\n"), guard);
+
+    await expect(check.refusal).toBeVisible();
+    await expect(check.refusal.getByRole("listitem")).toHaveCount(1);
+    await expect(check.refusal.getByRole("listitem")).toHaveText(
+      'Line 1: no column reads as end. Not read: "Endzeit". For end this check reads: end, end time, ends, finish, finish time, finishes, until, to, set end.',
+    );
+    await expect(check.refusal).not.toContainText("Line 2");
+    await expect(check.checked).toHaveCount(0);
+    expect(sent(), "requests other than GET").toEqual([]);
+  });
+
+  test("the messy paste's skip names the act and quotes its value, and the rail counts only what is open: overlaps, no rule break", async ({ page, guard }) => {
+    const check = new CheckPage(page);
+    await check.goto();
+    const sent = await pasteAndCheck(check, MESSY_GRID, guard);
+
+    await expect(check.skippedNotice.locator("p").first()).toHaveText(MESSY_SKIPPED);
+    await expect(check.skippedNotice).toContainText(MESSY_LINE_4);
+    // The line is still marked in the editor.
+    await expect(check.skippedMark(4)).toHaveText("skipped 4");
+    // No rule break among the eleven sets read, so the rail's open line names only the overlaps, beside its heading and
+    // in its Open row.
+    const open = check.review.getByText(OVERLAPS_ONLY);
+    await expect(open).toHaveCount(2);
+    await expect(check.review.getByText(/^\d+ rule breaks? to review/)).toHaveCount(0);
+    expect(sent(), "requests other than GET").toEqual([]);
+  });
 });
 
 test.describe("check a draft grid, round 35: a real paste survives first contact", () => {
@@ -544,7 +672,8 @@ test.describe("check a draft grid, round 35: a real paste survives first contact
     // The skipped line comes first in the results, with its reason.
     await expect(check.skippedNotice).toBeVisible();
     await expect(check.skippedNotice.locator("p").first()).toHaveText(MESSY_SKIPPED);
-    await expect(check.skippedNotice).toContainText("Line 4: the start time is not a time such as 18:00, 24:30, 6:00 PM or 6pm (hours up to 47).");
+    // Round 36: the reason names the act on the line and quotes the value it could not read.
+    await expect(check.skippedNotice).toContainText(MESSY_LINE_4);
     // The rest was checked: the eleven readable sets, and no rule break among them, said with what was checked.
     await expect(check.page.getByText("Read 11 sets on 3 stages.", { exact: true })).toBeVisible();
     await expect(check.rulesSection).toContainText(MESSY_NO_BREAKS);
@@ -578,8 +707,10 @@ test.describe("check a draft grid, round 35: a real paste survives first contact
     {
       name: "a header that does not read",
       // A header (it names known columns) that lacks two of the four it needs, so no line can be read with confidence.
-      grid: ["artist,stage,begins,ends", "Tidal Fields,Main Stage,14:00,15:00", "Cobalt Rows,Side Stage,14:15,15:15"].join("\n"),
-      says: "Line 1: the header should read act, stage, start, end (locked and day are optional; other columns are ignored).",
+      // Round 36: "begins" and "ends" now read as start and end, so the words here are ones it does not know; the one
+      // message names each missing column, quotes the cells it did not read, and lists the words it reads for each.
+      grid: ["artist,stage,kickoff,endzeit", "Tidal Fields,Main Stage,14:00,15:00", "Cobalt Rows,Side Stage,14:15,15:15"].join("\n"),
+      says: 'Line 1: no column reads as start or end. Not read: "kickoff", "endzeit". For start this check reads: start, start time, starts, begin, begins, from, set start. For end this check reads: end, end time, ends, finish, finish time, finishes, until, to, set end. Or one column of ranges such as 18:00-19:00, headed time, times, set time, set times or slot.',
     },
     {
       name: "two days",
@@ -622,7 +753,9 @@ test.describe("check a draft grid, round 35: a real paste survives first contact
     // Before any text, the preview's outline bars are drawn and there is no notice.
     await expect(check.previewUnavailable).toHaveCount(0);
 
-    await check.grid.fill(MESSY_GRID.split("\n").map((line) => line.split(",").join(";")).join("\n"));
+    // Round 36 fix pass: a grid separated by semicolons from its first line is read, so the hint is for a comma header
+    // over lines that use semicolons.
+    await check.grid.fill(["act,stage,start,end", ...MESSY_GRID.split("\n").map((line) => line.split(",").join(";"))].join("\n"));
     await check.checkButton.click();
     await expect(check.refusal).toBeVisible();
     await expect(check.refusal).toContainText("And 7 more problems.");
@@ -636,6 +769,17 @@ test.describe("check a draft grid, round 35: a real paste survives first contact
     expect(bars, "skeleton bars drawn while nothing can be read").toBe(0);
     const unavailable = await box.boundingBox();
     expect(Math.abs((unavailable?.height ?? 0) - (empty?.height ?? 0)), "the preview box keeps its height").toBeLessThanOrEqual(1);
+  });
+
+  test("a grid separated by semicolons from its first line, as a comma-decimal spreadsheet saves it, is read line by line", async ({ page }) => {
+    const check = new CheckPage(page);
+    await check.goto();
+    await check.replaceWith(MESSY_GRID.split("\n").map((line) => line.split(",").join(";")).join("\n"));
+    await check.checkButton.click();
+    await expect(check.refusal).toHaveCount(0);
+    await expect(check.separatorHint).toHaveCount(0);
+    await expect(check.skippedNotice.locator("p").first()).toHaveText(MESSY_SKIPPED);
+    await expect(check.skippedNotice).toContainText(MESSY_LINE_4);
   });
 
   test("every check says what it read and how long it took, in this browser: the sample, a published day, a paste", async ({ page }) => {

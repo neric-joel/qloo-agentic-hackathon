@@ -37,6 +37,18 @@ the local one with no language model and with live Qloo features off; the suite 
 | `layout.spec.ts`, `health.spec.ts` | No sideways scroll, `/check` with no layout shift; every page loads clean and well formed |
 | `network-safety.spec.ts` | The browser talks to this site only and spends no Qloo or model call; the other day's saved runs read at most once with a GET; the guard itself blocks a live-mode price |
 
+Round 36 added, each in the file named:
+
+| File | What it pins |
+| --- | --- |
+| `day-graph.spec.ts` | The leaders: every name drawn outside its bar has one 1 px leader, at most 24 px, from its name's box to its own bar's rounded edge, in both views at 1440, 1280 and 390, with no name dropped and no leader without a name |
+| `timetable.spec.ts`, `try-a-move.spec.ts`, `invented-day.spec.ts` | Whose lock it is: the board's key says "Locked by this app: the last set on its stage stays in place." on both published days and "Locked: an invented fixed slot." on the invented day; the costliest clashes' locked share and Try a move say "sets this app locks"; coverage counts sets; the drawer's "The score" |
+| `honesty.spec.ts` | The price words: on `/`, Riot Fest, `/method`, `/check` and the kept brief, every disclosure open, the only "price" words are the ones round 36 kept by name (the footer's sources line, and on `/method` the "full price" family and "the printed price"); no page says "not by the festival" |
+| `check.spec.ts`, `print.spec.ts` | `/check`: the header words, one column of time ranges and the dotted, compact and "h" time forms read line by line; a header it cannot read refused in one message that names the missing column and quotes the cells it did not read; a skip that names the act and quotes the value; the rail's split counts; a published day's lock clause; the printed draft's heading and sign-off; nothing sent while pasting |
+| `method.spec.ts` | The live rows that no longer name the agent's tools, no "only" on `/search`, the explore-tools sentence, the control acts' percentile sentence, the lock rule in the limits, the follow-up's finding visible with no click, and every anchor |
+| `brief.spec.ts` | The day's figure under the title with its caption, the lock line exactly where a shown row is marked both locked, "not scored", and one page at Letter and A4 bare and kept on both days |
+| `recorded-runs.spec.ts`, `navigation.spec.ts` | After a replay ends, the section heading clear of the sticky bars by 8 px from 1024 px (on one column the run's question is, with the heading scrolled wholly past), the run picker's label clear of them at the page's end, and the "Agent runs" jump landing clear of them |
+
 `pages/` holds page objects (locators by role and label, plus the hero's own hooks such as `data-hero-group` and
 `data-day-graph`; never `data-testid`), `helpers.ts` small shared checks,
 and `fixtures.ts` the shared `test`.
@@ -64,7 +76,7 @@ browser-side fixture cannot reach, so the invented lede is pinned in unit tests 
 Wait for the page, not the clock: `home.goto()` and `check.goto()` return once the page has hydrated
 (`SiteChrome.waitForHydration`), because a click made earlier is lost. Do not use `waitForTimeout` or `networkidle`.
 
-## Budgets the suite holds (round 35)
+## Budgets the suite holds (round 35, unchanged in round 36)
 
 | Budget | Where |
 | --- | --- |
@@ -74,7 +86,7 @@ Wait for the page, not the clock: `home.goto()` and `check.goto()` return once t
 | With the offer open (a step already kept), every hero box within 1 px of the plain kept state at 1440 x 900, 390 x 844 and 375 x 667, the whole offer in view | `hero.spec.ts` |
 | Drawing names at 1440 x 900: at most 3 not whole on Glastonbury and 8 on Riot Fest, none without a name; at 1280 x 800 at most 5 and 12; no ellipsis with under 8 characters before it; 0 painted-stroke samples in a name, tag or plate at 1440, 1280, 1024 and 390 | `day-graph.spec.ts` |
 | "What Qloo changes" at most 760 px at 1440 light and 1,500 px at 390 dark | `sections.spec.ts` |
-| Layout shift: under 0.0005 for the hero over 5 s; 0.000 for `/check` over 5 s; at most 0.01 after a replay starts | `day-graph.spec.ts`, `layout.spec.ts`, `recorded-runs.spec.ts` |
+| Layout shift: under 0.0005 for the hero over 5 s (from round 36 on a load with the webfont already cached, so a dev server that serves the font late does not count as the page's shift); 0.000 for `/check` over 5 s; at most 0.01 after a replay starts | `day-graph.spec.ts`, `layout.spec.ts`, `recorded-runs.spec.ts` |
 | First paint with motion allowed: 0 CSS animation starts, 0 transition starts, 0 `Element.animate` calls in the first 3 s, nothing running after | `reduced-motion.spec.ts` |
 
 ## Known defects

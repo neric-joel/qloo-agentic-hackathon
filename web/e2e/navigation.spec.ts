@@ -1,4 +1,4 @@
-import { DAYS, requireSavedDays } from "./helpers";
+import { DAYS, requireSavedDays, stickyBarsFoot } from "./helpers";
 import { expect, test } from "./fixtures";
 import { HomePage } from "./pages/home-page";
 import { SiteChrome } from "./pages/site-chrome";
@@ -100,6 +100,11 @@ test.describe("the section nav under the hero", () => {
       await expect(page).toHaveURL(/#agent$/);
       await expect(home.agent).toBeInViewport();
       await expect(home.agent.getByRole("heading", { level: 2 })).toHaveText("Recorded agent runs");
+      // Round 36: the section's heading lands clear of the sticky bars, by at least 8 px.
+      const heading = home.agent.getByRole("heading", { level: 2 });
+      await expect
+        .poll(async () => ((await heading.boundingBox())?.y ?? 0) - (await stickyBarsFoot(page)), { message: "the heading's top against the bars' foot" })
+        .toBeGreaterThanOrEqual(8);
     });
   }
 });

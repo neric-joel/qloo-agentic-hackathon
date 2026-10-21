@@ -71,8 +71,18 @@ test.describe("invented example day", () => {
     await expect(home.board).not.toContainText("No priced signal");
     // Rendered words only: the server's serialized summary of the real day is not shown text.
     await expect(page.locator("body")).not.toContainText(/No priced signal|acts priced|not priced/, { useInnerText: true });
-    // The coverage line under the board (named for the invented day's own coverage, not Qloo's).
-    await expect(page.locator('section[aria-labelledby="coverage-heading"]')).toContainText(/\d+ of \d+ acts scored/);
+    // The coverage line under the board (named for the invented day's own coverage, not Qloo's). Round 36: it counts sets.
+    await expect(page.locator('section[aria-labelledby="coverage-heading"]')).toContainText(/\d+ of \d+ sets scored/);
+  });
+
+  test("Try a move keeps the invented day's own lock words, never this app's", async ({ page }) => {
+    await serveInventedDay(page);
+    const home = new HomePage(page);
+    await home.goto();
+
+    // Round 36: on a published day the intro says "Sets this app locks stay put."; the invented day's locks are invented.
+    await expect(home.tryAMove.getByText(/Keep a move to stack the next one\. Locked sets stay put\.$/)).toBeVisible();
+    await expect(home.tryAMove).not.toContainText("Sets this app locks");
   });
 
   test("its agent section points to no other day's run and asks for no other day's recordings", async ({ page, guard }) => {

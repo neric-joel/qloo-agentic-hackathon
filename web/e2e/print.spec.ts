@@ -27,7 +27,19 @@ test.describe("print media for a check that skipped a line", () => {
     // Only the brief prints, so the no-breaks line on the page in print is the brief's, with what it counted.
     await expect(page.getByText(MESSY_NO_BREAKS, { exact: true }).filter({ visible: true }).first()).toBeVisible();
     await expect(page.getByText("No rule breaks found against the settings above.", { exact: true }).filter({ visible: true })).toHaveCount(0);
+    // Round 36: the sheet opens with "Draft grid check" and the print date, and closes with the three sign-off labels,
+    // still on one page.
+    await check.expectDraftHeadingAndSignOff();
     for (const format of ["Letter", "A4"] as const) expect(pdfPages(await page.pdf({ format, printBackground: true })), `${format} pages`).toBe(1);
+  });
+
+  test("on screen the draft brief's heading and sign-off are not drawn: they are on paper only", async ({ page }) => {
+    const check = new CheckPage(page);
+    await check.goto();
+    await expect(check.draftHeading).toHaveCount(0);
+    await expect(check.signOff).toHaveCount(0);
+    await page.emulateMedia({ media: "print" });
+    await check.expectDraftHeadingAndSignOff();
   });
 });
 

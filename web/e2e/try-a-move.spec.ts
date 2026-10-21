@@ -40,6 +40,17 @@ test.describe("try a move", () => {
     await expect(move.starter("Katy J Pearson")).toContainText("with Sprints");
   });
 
+  for (const day of Object.values(DAYS)) {
+    test(`on ${day.title}, the intro says whose locks keep sets in place: this app's`, async ({ page }) => {
+      const home = new HomePage(page);
+      await home.goto(day.id);
+      // Round 36: the published days' locks are this app's (the festivals marked none), in the short form that keeps
+      // the intro's height; the last-set rule itself is stated in the board's key, on /method and in the brief.
+      await expect(home.tryAMove.getByText(/Keep a move to stack the next one\. Sets this app locks stay put\.$/)).toBeVisible();
+      await expect(home.tryAMove).not.toContainText("Locked sets stay put.");
+    });
+  }
+
   test("a picked set lists its legal places on the 5-minute grid, lowest index first", async ({ page }) => {
     const home = new HomePage(page);
     const move = new TryAMove(page);

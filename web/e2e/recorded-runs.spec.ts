@@ -1,4 +1,4 @@
-import { DAYS, pdfPages, requireSavedDays } from "./helpers";
+import { DAYS, pdfPages, requireSavedDays, stickyBarsFoot } from "./helpers";
 import { expect, test } from "./fixtures";
 import { HomePage } from "./pages/home-page";
 import { parsePlace, TryAMove } from "./pages/try-a-move";
@@ -124,6 +124,33 @@ test.describe("recorded agent runs", () => {
     await expect(conversation.getByRole("button", { name: "Qloo requests in this run: 0" })).toBeVisible();
     await expect(conversation.getByRole("button", { name: /^How Qloo was used/ })).toHaveCount(0);
     expect(guard.requested.filter((url) => url.includes("/api/runs"))).toEqual([]);
+  });
+
+  test("after a replay ends, the section's heading is clear of the sticky bars by 8 px; on one column the run's question is, with the heading scrolled wholly past", async ({ page, isPhone }) => {
+    const home = new HomePage(page);
+    await home.goto(DAYS.glastonbury.id);
+
+    await home.agent.getByRole("button", { name: "Replay the recorded run: Ask for a move the rules refuse" }).click();
+    await expect(home.agent.getByRole("status").filter({ hasText: /\S/ })).toHaveText("The recorded run has finished.", { timeout: 25_000 });
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const foot = await stickyBarsFoot(page);
+    const heading = await home.agent.getByRole("heading", { level: 2 }).boundingBox();
+    const question = await home.agent.getByRole("list", { name: "Conversation" }).getByRole("listitem").first().boundingBox();
+    test.info().annotations.push({ type: `after the replay at ${isPhone ? 390 : 1440}`, description: `bars end ${foot}; heading top ${heading?.y}; question top ${question?.y}` });
+    if (!isPhone) {
+      // Round 36 (agent lane): the section lands where the "Agent runs" jump lands it, the question beside the heading.
+      expect(heading?.y ?? 0, "the heading's top against the bars' foot + 8").toBeGreaterThanOrEqual(foot + 8);
+      expect((question?.y ?? 0) + 1, "the run's question is on the screen").toBeLessThan(page.viewportSize()?.height ?? 0);
+      // At the page's end the sticky run picker's label stays clear of the bars too.
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      const label = home.agent.getByText("Watch a recorded run", { exact: true });
+      await expect.poll(async () => ((await label.boundingBox())?.y ?? 0) - (await stickyBarsFoot(page)), { message: "the picker's label against the bars' foot" }).toBeGreaterThanOrEqual(8);
+    } else {
+      // One column: the replay brings the run's question to the top so the answer streams in below it; the heading above
+      // it is then wholly scrolled past, never half under the header.
+      expect(question?.y ?? 0, "the question's top against the bar's foot + 8").toBeGreaterThanOrEqual(foot + 8);
+      expect((heading?.y ?? 0) + (heading?.height ?? 0), "the heading is wholly above the screen").toBeLessThanOrEqual(0);
+    }
   });
 
   test("Skip to the answer finishes a longer run at once, and its numbers are the engine's", async ({ page }) => {

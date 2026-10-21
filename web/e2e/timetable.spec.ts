@@ -1,8 +1,31 @@
+import type { Page } from "@playwright/test";
+
 import { DAYS, requireSavedDays, visibleTexts } from "./helpers";
 import { expect, test } from "./fixtures";
+import { serveInventedDay } from "./invented-day";
 import { HomePage } from "./pages/home-page";
 
 /** The board: every stage and set drawn, the key that explains its marks, the costliest clashes, and the clash drawer. */
+
+/**
+ * A lock's words in the board's key (round 36, lib/locks.ts). The published days' locks are this app's: the festivals
+ * marked no set as fixed, and on both days the locked sets are exactly the last set on each stage, so the key states
+ * that rule. The invented day's locks are part of the invented day.
+ */
+const LOCK_SHORT = "Locked by this app: the last set on its stage stays in place.";
+const LOCK_INVENTED = "Locked: an invented fixed slot.";
+
+/** The costliest clashes' locked share on a published day: whose locks they are, and that no move is suggested there. */
+const LOCKED_SHARE = /\d+% of the day’s cost sits between two sets this app locks, so it suggests no move there\./;
+
+/** Lock words the page no longer says (round 35's), and one it must never say. */
+const OLD_LOCK_WORDS = /Locked set: fixed slot|which cannot move|this set stays put|not by the festival/;
+
+/** Opens the board's key as a visitor does: "How to read the board" from 640 px, its fold on a phone. */
+async function openBoardKey(page: Page, isPhone: boolean): Promise<void> {
+  if (isPhone) await page.getByText(/^How to read the board \(\d+ symbols?\)$/).click();
+  else await page.getByRole("button", { name: "How to read the board" }).click();
+}
 
 test.describe("timetable board", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
@@ -37,12 +60,13 @@ test.describe("timetable board", () => {
     await expect(home.tile("The Libertines")).toHaveAccessibleName(/No ranked clash\.$/);
   });
 
-  test("coverage says how many acts were scored, and the three left out are the dotted ones", async ({ page }) => {
+  test("coverage says how many sets were scored, and the three left out are the dotted ones", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
     const coverage = page.getByRole("region", { name: "Qloo coverage" });
-    await expect(coverage).toContainText("36 of 39 acts scored");
+    // Round 36: the count is of sets, as the board draws them.
+    await expect(coverage).toContainText("36 of 39 sets scored");
     await expect(coverage).not.toContainText("priced");
     await coverage.getByRole("button", { name: /3 left out, not scored as zero/ }).click();
     await expect(coverage).toContainText("Thandii, Abel Selaocoe & the Bantu Ensemble and Westside Cowboy");
@@ -55,11 +79,12 @@ test.describe("timetable board", () => {
     await home.goto(DAYS.glastonbury.id);
 
     const key = page.getByRole("list", { name: "Timetable key" });
-    await expect(key.getByRole("listitem")).toHaveText(["Locked", "No Qloo signal", "Clash", "Hidden clash"]);
+    // Round 36 fix pass: the key row spells whose lock it is with no click.
+    await expect(key.getByRole("listitem")).toHaveText([LOCK_SHORT, "No Qloo signal", "Clash", "Hidden clash"]);
     await page.getByRole("button", { name: "How to read the board" }).click();
-    // The key is drawn once per width band; the one on show is the one that counts.
+    // The key is drawn once per width band; the one on show is the one that counts. Round 36: the lock says whose it is.
     for (const meaning of [
-      "Locked set: fixed slot",
+      LOCK_SHORT,
       "No Qloo signal: left out, not scored as zero",
       "Clash link: stronger = costlier",
       "Hidden clash: genres differ, taste overlap is high",
@@ -67,6 +92,21 @@ test.describe("timetable board", () => {
       await expect(page.getByText(meaning).filter({ visible: true }), meaning).toHaveCount(1);
     }
   });
+
+  for (const day of Object.values(DAYS)) {
+    test(`on ${day.title}, the key says whose lock it is, and the costliest clashes' locked share says the same`, async ({ page, isPhone }) => {
+      const home = new HomePage(page);
+      await home.goto(day.id);
+
+      await openBoardKey(page, isPhone);
+      // The rule's words, once on show (the key is drawn once per width band), and never the old "fixed slot".
+      await expect(page.getByText(LOCK_SHORT, { exact: true }).filter({ visible: true })).toHaveCount(1);
+      await expect(page.getByText(LOCK_INVENTED, { exact: true })).toHaveCount(0);
+      // The locked share under the costliest clashes: "sets this app locks", in its short form.
+      await expect(home.costliest.getByText(LOCKED_SHARE)).toBeVisible();
+      await expect(page.locator("body")).not.toContainText(OLD_LOCK_WORDS, { useInnerText: true });
+    });
+  }
 
   test("on a phone the key is one closed summary and the board scrolls inside its own frame", async ({ page, isPhone }) => {
     test.skip(!isPhone, "Phone layout only.");
@@ -100,7 +140,7 @@ test.describe("timetable board", () => {
     }
   });
 
-  test("a clash opens its drawer with the price worked out from its factors", async ({ page }) => {
+  test("a clash opens its drawer with the score worked out from its factors", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
@@ -110,15 +150,17 @@ test.describe("timetable board", () => {
     await expect(home.drawer.getByRole("heading", { level: 2 })).toHaveText("The Brian Jonestown Massacre × St. Vincent");
     await expect(home.drawer).toContainText("Clash 2 of 15");
     await expect(home.drawer).toContainText("Taste overlap is not attendance.");
-    await expect(home.drawer.getByRole("heading", { name: "The price" })).toBeVisible();
+    // Round 36: the section is "The score", and the drawer says no price word.
+    await expect(home.drawer.getByRole("heading", { name: "The score" })).toBeVisible();
+    await expect(home.drawer).not.toContainText(/\bpric(e|ed|es|ing)\b/i);
     for (const factor of ["Taste overlap", "Time shared", "Combined draw", "Share of day's cost"]) {
       await expect(home.drawer.getByRole("term").filter({ hasText: factor })).toBeVisible();
     }
 
     // The printed product is the product of the printed factors, to rounding.
-    const formula = await home.drawer.getByText(/^price = taste overlap /).innerText();
-    const [overlap, share, draw, rarity, price] = (formula.match(/\d\.\d{3}/g) ?? []).map(Number);
-    expect(overlap * share * draw * rarity).toBeCloseTo(price, 2);
+    const formula = await home.drawer.getByText(/^score = taste overlap /).innerText();
+    const [overlap, share, draw, rarity, score] = (formula.match(/\d\.\d{3}/g) ?? []).map(Number);
+    expect(overlap * share * draw * rarity).toBeCloseTo(score, 2);
 
     // Its two sets, their draw, and where its sources sit.
     await expect(home.drawer).toContainText("Draw (Qloo popularity)");
@@ -229,5 +271,19 @@ test.describe("timetable board", () => {
     await expect(home.drawer.getByRole("heading", { level: 3 }).first()).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(home.drawer).toHaveCount(0);
+  });
+});
+
+test.describe("timetable board on the invented day", () => {
+  test("the key calls a lock an invented fixed slot, never this app's, and states no last-set rule", async ({ page, isPhone }) => {
+    await serveInventedDay(page);
+    const home = new HomePage(page);
+    await home.goto();
+
+    await openBoardKey(page, isPhone);
+    await expect(page.getByText(LOCK_INVENTED, { exact: true }).filter({ visible: true })).toHaveCount(1);
+    // The rule is about the published days' slots; the invented day's locks are invented, and nobody else's.
+    await expect(page.locator("body")).not.toContainText(/Locked by this app|the last set on its stage/, { useInnerText: true });
+    await expect(page.locator("body")).not.toContainText(OLD_LOCK_WORDS, { useInnerText: true });
   });
 });

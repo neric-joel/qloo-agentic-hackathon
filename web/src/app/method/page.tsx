@@ -12,6 +12,7 @@ import { CONTROL_ACTS, CONTROL_RANK_LIMIT } from "@/lib/control-acts";
 import { BUILT_FROM_REAL, BUILT_FROM_SYNTHETIC, COUNTS_ONLY_NEUTRAL, formulaNote } from "@/lib/credit";
 import { DO_NOT_USE } from "@/lib/demand";
 import type { Provenance } from "@/lib/events";
+import { LOCK_RULE } from "@/lib/locks";
 import {
   METHOD_FIGURES,
   formatAuc,
@@ -406,8 +407,10 @@ const Token = ({ children }: { children: ReactNode }) => <code className="font-m
 
 /**
  * One card per Qloo endpoint the backend calls. Every line is read off backend/app/qloo/client.py (the
- * three paths), overlap.py (the build's parameters), pair.py, gridprice.py and agent/qloo_tools.py; a test
- * checks each path against the client's source. No response data appears here. Every row was saved when the day
+ * three paths), overlap.py (the build's parameters), pair.py, gridprice.py and agent/clash_tools.py (explain_clash,
+ * the only clash-agent tool that asks Qloo); the general explore tools in agent/qloo_tools.py are refused by
+ * main.py unless allow_explore is switched on, so no live row names them. A test checks each path against the
+ * client's source. No response data appears here. Every row was saved when the day
  * was built (said once, in the caption), so `live` is only the part that differs: where it is also sent live.
  */
 const QLOO_CALLS: readonly {
@@ -428,7 +431,7 @@ const QLOO_CALLS: readonly {
       { name: "take", value: <Token>3</Token> },
     ],
     returns: "Candidate entities. We keep the one whose name matches and use its id as the act's identity.",
-    live: "Sent live only by the pasted-grid score in live mode and the agent's tools, where switched on.",
+    live: "Sent live by the pasted-grid score in live mode, where switched on.",
   },
   {
     path: "/v2/insights",
@@ -444,7 +447,7 @@ const QLOO_CALLS: readonly {
       },
     ],
     returns: "How strongly the signal act's audience leans toward each listed act. Ranked within the day, this becomes taste overlap.",
-    live: "Sent live by the pair re-check (two of its three requests), the pasted-grid score in live mode and the agent's tools, where switched on.",
+    live: "Sent live by the pair re-check (two of its three requests) and the pasted-grid score in live mode, where switched on.",
   },
   {
     path: "/v2/analysis/compare",
@@ -597,8 +600,9 @@ const PARAM_ROW =
  * semibold mono (it is Qloo's; teal on /method at all times), its purpose, one plain sentence, then what we send as
  * one hairline-ruled group (PARAM_LIST and PARAM_ROW: the parameter in 13px ink mono, breaking only after a dot, and
  * what it means at 15px, side by side where the endpoint is 24rem wide, key over meaning where it is narrower), what
- * we get back, and, as a muted last row, where it is also sent live. Parameter names are case-sensitive, so they keep
- * their case.
+ * we get back, and, as a muted last row, where it is also sent live. That row opens with "Sent live by", so it labels
+ * itself and carries no hidden label (one read "Sent live: Sent live by ..." aloud). Parameter names are
+ * case-sensitive, so they keep their case.
  */
 function QlooCalls() {
   return (
@@ -634,10 +638,7 @@ function QlooCalls() {
             </dl>
             <p className="mt-4 text-[0.8125rem] font-semibold">We get back</p>
             <p className="mt-1 border-b border-border pb-2 text-sm leading-snug">{call.returns}</p>
-            <p className="pt-2 text-[0.8125rem] leading-snug text-muted-foreground">
-              <span className="sr-only">Sent live: </span>
-              {call.live}
-            </p>
+            <p className="pt-2 text-[0.8125rem] leading-snug text-muted-foreground">{call.live}</p>
           </li>
         ))}
       </ul>
@@ -1120,6 +1121,9 @@ export default function MethodPage() {
             The Clash Budget Index compares a timetable with random valid timetables of the same
             lineup. It reads one kind of cost. Real programming weighs much more than taste overlap.
           </li>
+          {/* Whose locks they are (lib/locks.ts): a statement about the two published days, where the locked sets are
+              exactly the last set on each stage; the guard checks it against lockRuleHolds on both days' slots. */}
+          <li>{LOCK_RULE}</li>
           <li>{DO_NOT_USE}</li>
         </ul>
       </Section>
@@ -1147,8 +1151,8 @@ export default function MethodPage() {
           <p>
             The cards show the timetable&rsquo;s own requests. Live calls come only from the re-check route, the
             pasted-grid route in live mode and the agent route, each limited per visitor; their Qloo requests
-            pause when the monthly Qloo allowance runs low. The agent&rsquo;s general explore tools, where switched
-            on, can also send other entity types and signals to the same endpoints.
+            pause when the monthly Qloo allowance runs low. The page never offers the agent&rsquo;s general explore
+            tools, and the API refuses them unless the deployment switches them on.
             The pair re-check sends exactly three requests and never reads a saved answer as live.
           </p>
         </SubBlock>
@@ -1168,8 +1172,9 @@ export default function MethodPage() {
             Each build also looks up {numberWord(CONTROL_ACTS.length)} acts chosen to be unrelated to a festival bill:{" "}
             {nameList(CONTROL_ACTS)}. If their audiences do not rank near the bottom of the bill (a mean percentile
             of {CONTROL_RANK_LIMIT} or lower), the build says the signal does not separate audiences on that bill. On
-            both saved days their mean percentile was {CONTROL_RANK_LIMIT} or lower. This does not test whether the
-            clash rankings are useful. Their lookups are marked as control acts in How Qloo was used.
+            both saved days their mean percentile was {CONTROL_RANK_LIMIT} or lower. They are also in each act&rsquo;s
+            ranked list, so they count in its percentiles. This does not test whether the clash rankings are useful.
+            Their lookups are marked as control acts in How Qloo was used.
           </p>
         </SubBlock>
 

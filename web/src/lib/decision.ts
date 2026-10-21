@@ -251,7 +251,7 @@ export const TRADEOFF_NOTE_CARD =
 export const TRADEOFF_NOTE_BRIEF = "Weigh this reading; the plan receipt above is what your plan does.";
 export const TRADEOFF_MOVE_HEAD = "Move one set";
 export const TRADEOFF_RULE_HEAD = "Keep the two apart";
-export const NO_PRICED_CLASH = "No priced clash left on this day";
+export const NO_PRICED_CLASH = "No scored clash left on this day";
 
 /** "Sprints and Katy J Pearson". */
 function andList(names: readonly string[]): string {
@@ -603,7 +603,7 @@ export function buildDecisionCopy(preset: Preset, decision: Decision | null): De
     }
     if (decision.skippedLocked > 0) {
       const n = decision.skippedLocked;
-      parts.push(`The ${n} costlier ${n === 1 ? "clash is" : "clashes are"} between locked sets.`);
+      parts.push(`The ${n} costlier ${n === 1 ? "clash is" : "clashes are"} between sets this app locks.`);
     }
     if (decision.skippedNoPlace > 0) {
       const n = decision.skippedNoPlace;

@@ -13,17 +13,19 @@ import { loadSyntheticFlag } from "@/lib/server-summary";
 import "./globals.css";
 
 // Archivo, one family for every role; its width axis stays loaded but no display style uses it.
+// "optional": the preloaded file is used when it is there for the first paint, and a page that painted
+// without it keeps the size-matched fallback, so a slow font never re-wraps text the reader already sees.
 const archivo = Archivo({
   variable: "--font-archivo",
   subsets: ["latin"],
   axes: ["wdth"],
-  display: "swap",
+  display: "optional",
 });
 
 // The default for every page, so it says nothing that is true of only one kind of day: a published day
 // credits Qloo and the invented day does not. The home page replaces it with the day it serves.
 const DESCRIPTION =
-  "Clash Control prices the set-time clashes on a festival timetable: how popular the two acts are, times how much their audiences overlap in taste. Taste, not attendance.";
+  "Clash Control scores the set-time clashes on a festival timetable: how popular the two acts are, times how much their audiences overlap in taste. Taste, not attendance.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://clash-control.vercel.app"),

@@ -27,7 +27,7 @@ describe("the coverage meter's fill", () => {
     expect(html).toMatch(/rounded-bar bg-muted"><span data-coverage-fill=""/);
     // A 64 x 6px meter, so it reads as a meter rather than a stray dash.
     expect(html).toMatch(/class="relative block h-1\.5 w-16 shrink-0 overflow-hidden rounded-bar bg-muted"/);
-    // 2 of 3 acts scored.
+    // 2 of 3 sets scored.
     expect(html).toContain("width:66.7%");
   });
 
@@ -41,7 +41,7 @@ describe("the coverage meter's fill", () => {
     const published = render(false);
     expect(published).toContain("Qloo coverage");
     expect(published).toMatch(/left out, not scored as zero/);
-    expect(published.replace(/<[^>]+>/g, "").replace(/&nbsp;| /g, " ")).toMatch(/2 of 3 acts scored · 1 left out, not scored as zero/);
+    expect(published.replace(/<[^>]+>/g, "").replace(/&nbsp;| /g, " ")).toMatch(/2 of 3 sets scored · 1 left out, not scored as zero/);
     expect(published).not.toContain("priced");
     expect(render(true)).toContain("Signal coverage");
   });

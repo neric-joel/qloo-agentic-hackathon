@@ -30,6 +30,7 @@ import {
   type Decision,
   type Tradeoff,
 } from "./decision";
+import { lockRuleHolds, lockRuleLine, type LockSlot } from "./locks";
 import { clockMinutes, currentPlacement } from "./moves";
 import { planVerdict, publishedVerdict, raisesIndex } from "./plan-copy";
 import type { BaselineStats, Preset } from "./preset";
@@ -45,7 +46,7 @@ import {
   type StackMove,
   type StackStep,
 } from "./stack";
-import { formatRange, overlapWindow } from "./timetable";
+import { formatClock, formatRange, overlapWindow, timeDomain } from "./timetable";
 
 /** How many of the day's costliest clashes the brief's table lists. */
 export const BRIEF_CLASHES = 5;
@@ -172,7 +173,7 @@ export function indexSentence(index: number | null): string {
     : `Clash Budget Index ${formatIndex(index)}.`;
 }
 
-/** "Taste overlap is scored for 36 of 39 sets; 3 have no usable Qloo signal and are not priced." */
+/** "Taste overlap is scored for 36 of 39 sets; 3 have no usable Qloo signal and are not scored." */
 export function coverageSentence(
   figures: Pick<DayFigures, "scored" | "total" | "unpriced">,
   synthetic = false,
@@ -181,10 +182,10 @@ export function coverageSentence(
   if (synthetic) {
     return unpriced === 0
       ? `Taste overlap is invented for all ${pluralize(total, "set")}.`
-      : `Taste overlap is invented for ${scored} of ${pluralize(total, "set")}; ${unpriced === 1 ? "1 is" : `${unpriced} are`} not priced.`;
+      : `Taste overlap is invented for ${scored} of ${pluralize(total, "set")}; ${unpriced === 1 ? "1 is" : `${unpriced} are`} not scored.`;
   }
   if (unpriced === 0) return `Taste overlap is scored for all ${pluralize(total, "set")}.`;
-  const rest = unpriced === 1 ? "1 has no usable Qloo signal and is not priced" : `${unpriced} have no usable Qloo signal and are not priced`;
+  const rest = unpriced === 1 ? "1 has no usable Qloo signal and is not scored" : `${unpriced} have no usable Qloo signal and are not scored`;
   return `Taste overlap is scored for ${scored} of ${pluralize(total, "set")}; ${rest}.`;
 }
 
@@ -580,15 +581,42 @@ export function heavyPlan(steps: readonly BriefStep[], columns: 1 | 2): boolean 
  * Whether the published day's table is printed at all. With the comparison on the sheet, a plan that takes
  * three printed lines or more down its tallest column (one kept change, or a move and another step) leaves no
  * margin for it on a Letter or A4 page, and the comparison already names that clash. It stays on the screen.
+ * When the drawing of the day prints beside the comparison, it takes the table's room: the drawing shows that
+ * clash, the comparison says what each change leaves of it, and the baseline line names it.
  */
-export function tableOnPaper(steps: readonly BriefStep[], columns: 1 | 2, withTradeoff = false): boolean {
+export function tableOnPaper(
+  steps: readonly BriefStep[],
+  columns: 1 | 2,
+  withTradeoff = false,
+  withFigure = false,
+): boolean {
   if (!withTradeoff) return true;
+  if (withFigure && steps.length > 0) return false;
   const lines = steps.reduce((sum, step) => sum + stepLines(step, columns), 0);
   return lines / columns < TALL_PLAN_LINES;
 }
 
 /** Which of the plan's extras the printed sheet keeps: the shared-minutes line and the per-step decision lines. */
 export type PaperExtras = { minutes: boolean; decisions: boolean };
+
+/**
+ * The most printed lines of steps, in one column, with which the drawing of the day prints: one single move. A
+ * longer plan keeps the drawing on the screen only, so the sheet stays one page.
+ */
+const FIGURE_PAPER_LINES = 2;
+
+/**
+ * Whether the drawing of the day prints. Always on a sheet with no kept step, which has room for it. With kept steps
+ * only for one single move beside the comparison, where it takes the room of the published day's one-row table (see
+ * `tableOnPaper`): the drawing shows that clash. Every other plan keeps it on the screen, and a single move with no
+ * comparison keeps its five rows and its hidden list on paper. Measured with headless Chrome on Letter and A4 (print
+ * media, 10 mm margins) on both published days.
+ */
+export function figureOnPaper(steps: readonly BriefStep[], columns: 1 | 2, withTradeoff = false): boolean {
+  if (steps.length === 0) return true;
+  const lines = steps.reduce((sum, step) => sum + stepLines(step, columns), 0) / columns;
+  return withTradeoff && columns === 1 && lines <= FIGURE_PAPER_LINES;
+}
 
 /** The most printed lines of steps (a kept change counting one more) that leave room on paper for the minutes line. */
 const MINUTES_PAPER_LINES = 6;
@@ -612,11 +640,17 @@ const DECISIONS_PAPER_LINES = 8;
  * - The decision lines: in one column, at most eight printed lines of steps; in two columns, at most four lines down
  *   each column (four single moves).
  */
-export function onPaper(steps: readonly BriefStep[], columns: 1 | 2, withTradeoff = false): PaperExtras {
+export function onPaper(
+  steps: readonly BriefStep[],
+  columns: 1 | 2,
+  withTradeoff = false,
+  /** The drawing of the day prints: beside the comparison it holds the table's room, so the minutes line stays off. */
+  withFigure = false,
+): PaperExtras {
   const lines = steps.reduce((sum, step) => sum + stepLines(step, columns), 0) / columns;
   if (columns === 2) return { minutes: false, decisions: lines <= HEAVY_PLAN_LINES };
   const counted = lines + steps.filter(isBriefRuleStep).length;
-  const besideTable = withTradeoff && tableOnPaper(steps, columns, withTradeoff);
+  const besideTable = withTradeoff && (withFigure || tableOnPaper(steps, columns, withTradeoff));
   return {
     minutes: !besideTable && counted <= MINUTES_PAPER_LINES,
     decisions: counted <= DECISIONS_PAPER_LINES,
@@ -711,6 +745,8 @@ export type BriefTradeoff = {
   moveReceipt: { move: StackMove; receipt: string } | null;
   /** Said under the table when its pair is not the published day's costliest pair; else null. */
   pairNote: string | null;
+  /** The card's clash, by act id: the pair its move and its change are made for. */
+  pair: { aId: string; bId: string } | null;
 };
 
 /**
@@ -756,7 +792,363 @@ export function briefTradeoff(
     alone,
     moveReceipt: seedMove !== null && copy.moveReceipt !== null ? { move: seedMove, receipt: copy.moveReceipt } : null,
     pairNote: comparisonPairNote(preset, decision),
+    pair: decision.clash ? { aId: decision.clash.aId, bId: decision.clash.bId } : null,
   };
+}
+
+// ------------------------------------------------------------------------------------ the locks
+
+/**
+ * The one lock line under the published day's table, printed once and only when a row it shows is marked "both
+ * locked": the rule (`lockRuleLine`) where `lockRuleHolds` proves it on the day's slots, else the generic words.
+ * Null on the invented day and when no shown row is locked at both ends.
+ */
+export function briefLockLine(
+  preset: Pick<Preset, "festival" | "synthetic">,
+  day: number,
+  rows: readonly Pick<BriefRow, "bothLocked">[],
+): string | null {
+  if (!rows.some((row) => row.bothLocked)) return null;
+  const slots: LockSlot[] = preset.festival.timetable
+    .filter((slot) => slot.day === day)
+    .map((slot) => ({ stage: slot.stage_id, day: slot.day, start: slot.start, end: slot.end, locked: slot.locked === true }));
+  return lockRuleLine({ synthetic: preset.synthetic === true, holds: lockRuleHolds(slots) });
+}
+
+// ------------------------------------------------------------------------------------ the day, drawn
+
+/** One set in the brief's drawing, where the sheet leaves it: minutes from the day's midnight, on its stage's lane. */
+export type FigureSet = {
+  actId: string;
+  name: string;
+  lane: number;
+  start: number;
+  end: number;
+  /** A kept step moved it. */
+  moved: boolean;
+  /** Named in the drawing: a set the sheet already names in its first lines. */
+  named: boolean;
+};
+
+/** A kept step's set at its published place, drawn as a dashed outline. */
+export type FigureGhost = { actId: string; lane: number; start: number; end: number };
+
+/** The minutes two sets share, hatched on each of their two bars. */
+export type FigureHatch = { aId: string; bId: string; start: number; end: number };
+
+export type BriefFigure = {
+  /** "plan": the day as the kept steps leave it; "published": the day as published. */
+  kind: "plan" | "published";
+  /** One lane per stage with a set on the day, in festival order. */
+  stages: { id: string; name: string }[];
+  /** The whole hours drawn: from the hour of the first start to the hour after the last end. */
+  domain: { start: number; end: number };
+  sets: FigureSet[];
+  ghosts: FigureGhost[];
+  hatches: FigureHatch[];
+  /** The line under the drawing. Its first sentence is the drawing's title and the rest its description. */
+  caption: string;
+  title: string;
+  desc: string;
+};
+
+type FigurePlace = { day: number; stage: string; start: number; end: number };
+
+/** Minutes two places share: the same day, different stages, as the index counts them. */
+function sharedWindow(a: FigurePlace | undefined, b: FigurePlace | undefined): { start: number; end: number } | null {
+  if (!a || !b || a.day !== b.day || a.stage === b.stage) return null;
+  return overlapWindow(a, b);
+}
+
+/** "A", "A and B", "A, B and C". */
+function andNames(names: readonly string[]): string {
+  return names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/**
+ * The brief's day as one static picture: every set on its stage's lane at the time the kept steps leave it, each
+ * kept step's published slot (dashed) and the minutes its set still shares with the partner the sheet names
+ * (hatched); with no kept step, the day as published with the costliest clash's shared minutes hatched.
+ *
+ * Only the sets the sheet already names in its first lines are named: each kept single move's set; its partner when
+ * the move is the card's (its receipt or the comparison names the pair); both sets of a kept change's pair and every
+ * set the change moves; and the longest new overlap the minutes line names. A single move that is not the card's
+ * names no partner, so it hatches nothing. With no kept step: the costliest clash's two sets, the table's first row.
+ * Minutes from the published timetable and the plan's places only: no score, no attendance. Null when the day has no
+ * set or a step's times cannot be read.
+ */
+export function briefFigure(
+  preset: Pick<Preset, "festival" | "report">,
+  day: number,
+  dayLabel: string,
+  plan: Pick<Plan, "steps"> | null,
+  options: {
+    /** The card's clash (`BriefTradeoff.pair`), when the sheet holds the comparison. */
+    pair?: { aId: string; bId: string } | null;
+    /** The plan's shared minutes (`sharedMinutes`), for the longest new overlap it names. */
+    minutes?: SharedMinutes | null;
+  } = {},
+): BriefFigure | null {
+  const { festival, report } = preset;
+  const names = new Map(festival.acts.map((act) => [act.id, act.name]));
+  const published = new Map<string, FigurePlace>(
+    festival.timetable.map((slot) => [slot.act_id, { day: slot.day, stage: slot.stage_id, start: slot.start, end: slot.end }]),
+  );
+  const placed = new Map(published);
+  const named = new Set<string>();
+  const pairs: { a: string; b: string; kind: "move" | "rule" }[] = [];
+  const steps = plan?.steps ?? [];
+
+  for (const step of steps) {
+    const places = isPlanRuleStep(step) ? step.moves : [step];
+    for (const place of places) {
+      const start = clockMinutes(place.start);
+      const end = clockMinutes(place.end);
+      if (start === null || end === null || end <= start) return null;
+      placed.set(place.actId, { day: place.day, stage: place.stageId, start, end });
+      named.add(place.actId);
+    }
+    if (isPlanRuleStep(step)) {
+      named.add(step.rule.a.actId).add(step.rule.b.actId);
+      pairs.push({ a: step.rule.a.actId, b: step.rule.b.actId, kind: "rule" });
+    } else if (options.pair && (options.pair.aId === step.actId || options.pair.bId === step.actId)) {
+      const partner = options.pair.aId === step.actId ? options.pair.bId : options.pair.aId;
+      named.add(partner);
+      pairs.push({ a: step.actId, b: partner, kind: "move" });
+    }
+  }
+
+  const onDay = [...placed].filter(([, place]) => place.day === day);
+  if (onDay.length === 0) return null;
+  const moved = new Set(
+    [...placed.keys()].filter((id) => {
+      const before = published.get(id);
+      const after = placed.get(id);
+      return !before || !after || before.day !== after.day || before.stage !== after.stage || before.start !== after.start;
+    }),
+  );
+
+  const kind = steps.length > 0 ? "plan" : "published";
+  if (kind === "plan") {
+    // The minutes line names its longest new overlap, "A × B": both sets by name.
+    const longest = options.minutes?.outside.longest;
+    if (longest) {
+      for (const name of [longest.a, longest.b]) {
+        const id = onDay.find(([actId]) => names.get(actId) === name)?.[0];
+        if (id) named.add(id);
+      }
+    }
+  } else {
+    const first = topClashes(report.clashes, day, 1)[0];
+    if (first) {
+      named.add(first.a.act_id).add(first.b.act_id);
+      pairs.push({ a: first.a.act_id, b: first.b.act_id, kind: "rule" });
+    }
+  }
+
+  const ghosts: FigurePlace[] = [];
+  const ghostIds: string[] = [];
+  for (const id of moved) {
+    const before = published.get(id);
+    if (before && before.day === day) {
+      ghosts.push(before);
+      ghostIds.push(id);
+    }
+  }
+
+  const used = new Set([...onDay.map(([, place]) => place.stage), ...ghosts.map((place) => place.stage)]);
+  const stages = festival.stages.filter((stage) => used.has(stage.id)).map((stage) => ({ id: stage.id, name: stage.name }));
+  const laneOf = new Map(stages.map((stage, index) => [stage.id, index]));
+  const domain = timeDomain([...onDay.map(([, place]) => place), ...ghosts], 60);
+
+  const hatches: FigureHatch[] = [];
+  const hatched: { a: string; b: string; kind: "move" | "rule" }[] = [];
+  const seen = new Set<string>();
+  for (const pair of pairs) {
+    const key = pair.a < pair.b ? `${pair.a}|${pair.b}` : `${pair.b}|${pair.a}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const window = sharedWindow(placed.get(pair.a), placed.get(pair.b));
+    if (!window || placed.get(pair.a)?.day !== day) continue;
+    hatches.push({ aId: pair.a, bId: pair.b, start: window.start, end: window.end });
+    hatched.push(pair);
+  }
+
+  const sets: FigureSet[] = onDay
+    .filter(([, place]) => laneOf.has(place.stage))
+    .map(([actId, place]) => ({
+      actId,
+      name: names.get(actId) ?? actId,
+      lane: laneOf.get(place.stage) ?? 0,
+      start: place.start,
+      end: place.end,
+      moved: moved.has(actId),
+      named: named.has(actId),
+    }))
+    .sort((p, q) => p.lane - q.lane || p.start - q.start);
+
+  const nameOf = (id: string) => names.get(id) ?? id;
+  const sentences: string[] = [];
+  if (kind === "published") {
+    sentences.push(`${dayLabel}, as published.`);
+    if (hatches.length > 0) sentences.push("Hatched: minutes shared by the costliest clash.");
+  } else {
+    sentences.push(`${dayLabel}, as your plan leaves it.`);
+    const [only] = hatched;
+    if (hatched.length === 1 && only.kind === "move") sentences.push(`Hatched: minutes shared with ${nameOf(only.b)}.`);
+    else if (hatched.length === 1) sentences.push(`Hatched: minutes ${andNames([nameOf(only.a), nameOf(only.b)])} share.`);
+    else if (hatched.length > 1) sentences.push("Hatched: minutes each kept step’s pair still shares.");
+    if (ghosts.length === 1) sentences.push("Dashed: the published slot.");
+    else if (ghosts.length > 1) sentences.push("Dashed: the published slots.");
+  }
+  const caption = sentences.join(" ");
+  const [title, ...rest] = sentences;
+
+  return {
+    kind,
+    stages,
+    domain,
+    sets,
+    ghosts: ghosts.map((place, i) => ({ actId: ghostIds[i], lane: laneOf.get(place.stage) ?? 0, start: place.start, end: place.end })),
+    hatches,
+    caption,
+    title,
+    desc: rest.length > 0 ? rest.join(" ") : title,
+  };
+}
+
+/**
+ * The drawing's frame, in the SVG's own units. `wide` is the printed text column of an A4 page (190 mm), so on A4
+ * a unit is a CSS pixel and the 10-unit names print at 7.5 pt (on Letter, 3% larger); on a wide screen it scales up
+ * to the sheet's text column. It is kept low, because it prints on a full sheet. `narrow` is a phone's text column,
+ * never printed, with taller bars. `minTick` is the least room between two labelled hours.
+ *
+ * Every lane is the same height, `gap` over `bar`, so the stages stand at one even pitch whether or not a lane names
+ * a set: the gap is the air above each bar and the row its lane's names sit in, their baseline `nameRise` above the
+ * bar's top (nearer their own bar than the one above). `axis` is the hour row and `hourBaseline` its labels' baseline.
+ * `radius` is the corner of every bar, dashed slot and clip: about a third of the bar's height, the proportion of
+ * the day drawing's 6px corner on its 19px bars, so a set here is the same rounded rectangle, smaller, never a capsule.
+ */
+export const FIGURE_FRAMES = {
+  wide: { width: 718, font: 10, minTick: 34, axis: 8.5, hourBaseline: 7.5, gap: 13, bar: 8, radius: 2.5, nameRise: 3.4 },
+  narrow: { width: 340, font: 10, minTick: 40, axis: 8.5, hourBaseline: 7.5, gap: 13, bar: 10, radius: 3, nameRise: 3.4 },
+} as const;
+
+export type FigureFrame = (typeof FIGURE_FRAMES)[keyof typeof FIGURE_FRAMES];
+
+/** Room between two names in one lane, and between the stage names and the first hour. */
+const NAME_GAP = 6;
+
+/**
+ * About how wide a line of text sets in the site's sans at `size` units: narrow letters, capitals and wide letters
+ * apart. An estimate for placing names (it errs wide, so a name never runs into another or past the edge).
+ */
+export function textWidth(text: string, size: number, bold = false): number {
+  let em = 0;
+  for (const char of text) {
+    if (/[ijl.,:;'’|!]/.test(char)) em += 0.27;
+    else if (/[ftrI ()\-–]/.test(char)) em += 0.34;
+    else if (/[mwMW]/.test(char)) em += 0.86;
+    else if (/[A-Z&]/.test(char)) em += 0.68;
+    else if (/\d/.test(char)) em += 0.58;
+    else em += 0.56;
+  }
+  return em * size * (bold ? 1.06 : 1);
+}
+
+export type FigureLayout = {
+  width: number;
+  height: number;
+  /** Where the hours start: right of the stage names. */
+  plotX: number;
+  /** One gridline per hour; a label on every hour that has room, on a whole step of hours. */
+  ticks: { x: number; label: string | null }[];
+  /** Every lane at one pitch: its bars' top, and its names' baseline when it names a set. */
+  lanes: { name: string; barY: number; nameY: number | null }[];
+  bars: { actId: string; x: number; y: number; w: number; h: number; named: boolean; moved: boolean }[];
+  ghosts: { actId: string; x: number; y: number; w: number; h: number }[];
+  /** A hatch over part of one bar (`bar` indexes `bars`), clipped by that bar's own rounded shape. */
+  hatches: { bar: number; x: number; w: number }[];
+  /** The named sets' names, each whole, in its lane's name row above the bars, from `x` (text-anchor start). */
+  names: { actId: string; text: string; x: number; y: number; w: number }[];
+};
+
+/**
+ * Positions for one frame. Every lane is `gap` + `bar` high, its bars at the foot; a lane that names a set writes the
+ * name in the gap over its bar. Names start at their bar and move right of an earlier name in the same lane, never
+ * past either edge.
+ */
+export function layoutFigure(figure: BriefFigure, frame: FigureFrame): FigureLayout {
+  const m = frame;
+  const { width, font } = frame;
+  const longestStage = Math.max(0, ...figure.stages.map((stage) => textWidth(stage.name, font)));
+  const plotX = Math.min(Math.max(longestStage + NAME_GAP + 2, 28), Math.round(width * 0.3));
+  const plotW = width - plotX;
+  const minutes = Math.max(60, figure.domain.end - figure.domain.start);
+  const scale = plotW / minutes;
+  const xOf = (t: number) => plotX + (t - figure.domain.start) * scale;
+
+  // Lanes, top to bottom, at one pitch.
+  const namedLanes = new Set(figure.sets.filter((set) => set.named).map((set) => set.lane));
+  const pitch = m.gap + m.bar;
+  const lanes = figure.stages.map((stage, index) => {
+    const barY = m.axis + index * pitch + m.gap;
+    return { name: stage.name, barY, nameY: namedLanes.has(index) ? barY - m.nameRise : null };
+  });
+  const y = m.axis + lanes.length * pitch;
+
+  // Hours: a gridline on each, a label on each whole step that has room.
+  const hourPx = 60 * scale;
+  const step = [1, 2, 3, 4, 6].find((hours) => hours * hourPx >= frame.minTick) ?? 6;
+  const ticks: FigureLayout["ticks"] = [];
+  for (let t = figure.domain.start, i = 0; t <= figure.domain.end; t += 60, i += 1) {
+    const x = xOf(t);
+    const label = formatClock(t);
+    const half = textWidth(label, font) / 2;
+    const fits = i % step === 0 && t < figure.domain.end && x - half >= 0 && x + half <= width;
+    ticks.push({ x, label: fits ? label : null });
+  }
+
+  const bars = figure.sets.map((set) => ({
+    actId: set.actId,
+    x: xOf(set.start),
+    y: lanes[set.lane]?.barY ?? m.axis,
+    w: Math.max(1, (set.end - set.start) * scale),
+    h: m.bar,
+    named: set.named,
+    moved: set.moved,
+  }));
+  const barOf = new Map(bars.map((bar, index) => [bar.actId, index]));
+  const ghosts = figure.ghosts.map((ghost) => ({
+    actId: ghost.actId,
+    x: xOf(ghost.start),
+    y: lanes[ghost.lane]?.barY ?? m.axis,
+    w: Math.max(1, (ghost.end - ghost.start) * scale),
+    h: m.bar,
+  }));
+  const hatches: FigureLayout["hatches"] = [];
+  for (const hatch of figure.hatches) {
+    for (const id of [hatch.aId, hatch.bId]) {
+      const bar = barOf.get(id);
+      if (bar === undefined) continue;
+      hatches.push({ bar, x: xOf(hatch.start), w: Math.max(1, (hatch.end - hatch.start) * scale) });
+    }
+  }
+
+  const names: FigureLayout["names"] = [];
+  for (let lane = 0; lane < lanes.length; lane += 1) {
+    const nameY = lanes[lane].nameY;
+    if (nameY === null) continue;
+    let after = plotX;
+    for (const set of figure.sets.filter((item) => item.lane === lane && item.named)) {
+      const w = textWidth(set.name, font, true);
+      const x = Math.max(Math.min(Math.max(xOf(set.start), after), width - w), plotX);
+      names.push({ actId: set.actId, text: set.name, x, y: nameY, w });
+      after = x + w + NAME_GAP;
+    }
+  }
+
+  return { width, height: y, plotX, ticks, lanes, bars, ghosts, hatches, names };
 }
 
 // ------------------------------------------------------------------------------------ the footer

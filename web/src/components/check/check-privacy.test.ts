@@ -602,7 +602,7 @@ const NETWORK: readonly [string, RegExp][] = [
 // The two UI primitives the route draws with (a button and the Table / CSV switch) import only React and
 // `cn`; neither fetches. `@/lib/lenses` is read by the price module for its parser only (asserted below).
 const ALLOWED_IMPORT =
-  /^(react|react-dom|lucide-react|next|next\/link|@\/components\/ui\/button|@\/components\/ui\/segmented-control|@\/lib\/check|@\/lib\/check-sample|@\/lib\/check-trial|@\/lib\/check-flag|@\/lib\/check-decisions|@\/lib\/check-share|@\/lib\/check-price|@\/lib\/agent-status|@\/lib\/art|@\/lib\/utils|@\/lib\/lenses|@\/components\/check\/.+|\.\/.+)$/;
+  /^(react|react-dom|lucide-react|next|next\/link|@\/components\/ui\/button|@\/components\/ui\/segmented-control|@\/lib\/check|@\/lib\/check-sample|@\/lib\/check-trial|@\/lib\/check-flag|@\/lib\/check-decisions|@\/lib\/check-share|@\/lib\/check-price|@\/lib\/agent-status|@\/lib\/art|@\/lib\/utils|@\/lib\/lenses|@\/lib\/locks|@\/components\/check\/.+|\.\/.+)$/;
 
 describe("the check route holds no network call", () => {
   it("finds the route's files", () => {
@@ -821,13 +821,13 @@ describe("round-9 workspace: decisions, recovery, order and review", () => {
   it("sums the draft up in a review: reviewed, overlaps, compared, changes, kept, not changing, open", () => {
     const html = renderToStaticMarkup(createElement(ThemeProvider, null, createElement(CheckTool, { initial: SAMPLE, checkOnLoad: true })));
     const review = text(html.slice(html.indexOf(`id="${RESULT_IDS.review}"`)));
-    expect(review).toMatch(/Draft review 39 open Invented sample 0 \/ 4 rule breaks reviewed/);
+    expect(review).toMatch(/Draft review 4 rule breaks to review · 35 overlaps to decide Invented sample 0 \/ 4 rule breaks reviewed/);
     expect(review).toContain("Sets checked 25 on 4 stages");
     expect(review).toContain("Rule breaks 4 · 0 of 4 reviewed");
     expect(review).toContain("Overlaps 35 pairs · 0 decided");
     expect(review).toContain("Compared with Qloo data Not yet Compare audience overlap");
     expect(review).toContain("Changes None tested yet");
-    expect(review).toContain("Kept on purpose 0 Not changing 0 Open 4 rule breaks · 35 pairs");
+    expect(review).toContain("Kept on purpose 0 Not changing 0 Open 4 rule breaks to review · 35 overlaps to decide");
     expect(review).toContain("Print draft brief Copy share link Download CSV Anyone with this link can read the grid.");
     // The sticky rail from lg up; in the flow on a phone.
     expect(html).toMatch(/lg:sticky lg:top-20[^"]*"><section id="check-review"/);

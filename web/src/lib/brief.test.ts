@@ -46,8 +46,16 @@ import {
   heavyPlan,
   tableClashes,
   tableOnPaper,
+  FIGURE_FRAMES,
+  briefFigure,
+  briefLockLine,
+  figureOnPaper,
+  layoutFigure,
+  textWidth,
+  type BriefFigure,
   type BriefStep,
 } from "./brief";
+import { LOCK_RULE, LOCK_RULE_GENERIC } from "./locks";
 import { qlooCredits } from "./credit";
 import { buildDecisionCopy, parseDecision } from "./decision";
 import type { Lenses } from "./lenses";
@@ -292,14 +300,22 @@ describe("the day's figures", () => {
     expect(formatIndex(91)).toBe("91.0");
   });
 
-  it("says how many sets are scored, with and without unscored acts (round 33: 'scored', as the index is)", () => {
+  it("says how many sets are scored, with and without unscored acts (round 33: 'scored', as the index is; round 36: 'not scored')", () => {
     expect(coverageSentence(dayFigures(makePreset()))).toBe(
-      "Taste overlap is scored for 7 of 8 sets; 1 has no usable Qloo signal and is not priced.",
+      "Taste overlap is scored for 7 of 8 sets; 1 has no usable Qloo signal and is not scored.",
     );
     expect(coverageSentence({ scored: 36, total: 39, unpriced: 3 })).toBe(
-      "Taste overlap is scored for 36 of 39 sets; 3 have no usable Qloo signal and are not priced.",
+      "Taste overlap is scored for 36 of 39 sets; 3 have no usable Qloo signal and are not scored.",
     );
     expect(coverageSentence({ scored: 12, total: 12, unpriced: 0 })).toBe("Taste overlap is scored for all 12 sets.");
+    // The invented day's variant, in the same words (round 36).
+    expect(coverageSentence({ scored: 2, total: 3, unpriced: 1 }, true)).toBe("Taste overlap is invented for 2 of 3 sets; 1 is not scored.");
+    expect(coverageSentence({ scored: 1, total: 3, unpriced: 2 }, true)).toBe("Taste overlap is invented for 1 of 3 sets; 2 are not scored.");
+    for (const synthetic of [false, true]) {
+      for (const unpriced of [0, 1, 3]) {
+        expect(coverageSentence({ scored: 12 - unpriced, total: 12, unpriced }, synthetic)).not.toMatch(/\bpric(e|ed|es|ing)\b/i);
+      }
+    }
   });
 
   it("places the index below, inside or above the middle 80%, as the page prints them", () => {
@@ -1270,5 +1286,278 @@ describe("what a full sheet leaves off paper (round 33)", () => {
     expect(onPaper([change(1), change(2), change(3)], 1)).toEqual({ minutes: false, decisions: false });
     for (const count of [5, 6, 7, 8]) expect(onPaper(moves(count), 2)).toEqual({ minutes: false, decisions: false });
     expect(onPaper([change(1), ...moves(4).map((step, i) => ({ ...step, n: i + 2 }))], 2, true)).toEqual({ minutes: false, decisions: false });
+  });
+});
+
+// ------------------------------------------------------------------------------------ the locks (round 36)
+
+describe("the lock line under the table (round 36)", () => {
+  /** Day 0 with Act Three, the only set on The Barn, locked too: every stage's last set is then locked. */
+  function allLastLocked(): Preset {
+    const preset = makePreset();
+    return makePreset({
+      festival: {
+        ...preset.festival,
+        timetable: preset.festival.timetable.map((item) => (item.act_id === "act-three" ? { ...item, locked: true } : item)),
+      },
+    });
+  }
+
+  it("states the rule only where the day's locked sets are exactly the last on each stage, else the generic words", () => {
+    // The Barn's last set (Act Three) is not locked on the fixture, so the rule cannot be stated.
+    expect(briefLockLine(makePreset(), 0, briefRows(makePreset(), 0))).toBe(LOCK_RULE_GENERIC);
+    expect(briefLockLine(allLastLocked(), 0, briefRows(allLastLocked(), 0))).toBe(LOCK_RULE);
+  });
+
+  it("prints nothing when no shown row is locked at both ends, and nothing on the invented day", () => {
+    // The three costliest rows hold no clash between two locked sets.
+    const three = briefRows(makePreset(), 0, 3);
+    expect(three.some((row) => row.bothLocked)).toBe(false);
+    expect(briefLockLine(makePreset(), 0, three)).toBeNull();
+    const invented = makePreset({ synthetic: true });
+    expect(briefLockLine(invented, 0, briefRows(invented, 0))).toBeNull();
+  });
+
+  it("prints once, under the table and before its notes, on a sheet that shows a both-locked row", () => {
+    for (const [preset, line] of [
+      [makePreset(), LOCK_RULE_GENERIC],
+      [allLastLocked(), LOCK_RULE],
+    ] as const) {
+      const html = sheetHtml(preset, null);
+      const text = plainOf(html);
+      expect(text.split(line)).toHaveLength(2);
+      expect(text.indexOf(line)).toBeGreaterThan(text.indexOf("both locked"));
+      expect(text.indexOf(line)).toBeLessThan(text.indexOf(HIDDEN_NOTE));
+      expect(html).toContain(
+        `<p data-lock-rule="true" class="mt-2 text-sm text-muted-foreground print:mt-[2pt] print:text-[9pt] print:leading-[1.17]">${line}</p>`,
+      );
+      expect(html.indexOf("data-lock-rule")).toBeGreaterThan(html.indexOf("</table>"));
+      expect(text).not.toMatch(/not by the festival/i);
+    }
+    // A plan that shortens the table to three rows shows no both-locked row, so no line; nor does the invented day.
+    expect(sheetHtml(makePreset(), PLAN)).not.toContain("data-lock-rule");
+    expect(sheetHtml(makePreset({ synthetic: true }), null)).not.toContain("data-lock-rule");
+  });
+});
+
+// ------------------------------------------------------------------------------------ the day, drawn (round 36)
+
+describe("the day, drawn (round 36)", () => {
+  const preset = makePreset();
+  const pair = { aId: "act-one", bId: "act-two" };
+  /** The card's move: Act Two from South Tent 14:15-15:15 to The Barn at 14:30. */
+  const cardPlan: Plan = {
+    ...PLAN,
+    steps: [{ ...PLAN.steps[0], act: "Act Two", actId: "act-two", stage: "The Barn", stageId: "barn", start: "14:30", end: "15:30" }],
+  };
+  const figureOf = (plan: Plan | null, options: Parameters<typeof briefFigure>[4] = {}, p: Preset = preset) =>
+    briefFigure(p, 0, "Sunday", plan, options)!;
+  const named = (figure: BriefFigure) => figure.sets.filter((set) => set.named).map((set) => set.name).sort();
+
+  it("draws a kept move where the plan leaves it, its published slot dashed and the minutes it still shares with its named partner hatched", () => {
+    const figure = figureOf(cardPlan, { pair, minutes: sharedMinutes(preset, 0, cardPlan) });
+    expect(figure.kind).toBe("plan");
+    expect(figure.stages.map((stage) => stage.name)).toEqual(["North Field", "South Tent", "The Barn"]);
+    expect(figure.domain).toEqual({ start: 840, end: 1380 });
+    expect(figure.sets.find((set) => set.actId === "act-two")).toMatchObject({ lane: 2, start: 870, end: 930, moved: true, named: true });
+    // The published slot, South Tent 14:15-15:15, dashed.
+    expect(figure.ghosts).toEqual([{ actId: "act-two", lane: 1, start: 855, end: 915 }]);
+    // Act One plays North Field 14:00-15:00: the two still share 14:30-15:00.
+    expect(figure.hatches).toEqual([{ aId: "act-two", bId: "act-one", start: 870, end: 900 }]);
+    expect(figure.caption).toBe("Sunday, as your plan leaves it. Hatched: minutes shared with Act One. Dashed: the published slot.");
+    expect(`${figure.title} ${figure.desc}`).toBe(figure.caption);
+    // Every set of the day is drawn once; the other day's set is not.
+    expect(figure.sets.map((set) => set.actId).sort()).toEqual([
+      "act-five",
+      "act-four",
+      "act-one",
+      "act-seven",
+      "act-six",
+      "act-three",
+      "act-two",
+    ]);
+  });
+
+  it("names only the sets the sheet names in its first lines: the mover, its partner and the longest new overlap", () => {
+    expect(named(figureOf(cardPlan, { pair, minutes: sharedMinutes(preset, 0, cardPlan) }))).toEqual(["Act One", "Act Two"]);
+    // Act Seven to The Barn at 14:00: the minutes line names its longest new overlap, Act Seven × Act One.
+    const seven: Plan = { ...PLAN, steps: [step("act-seven", "Act Seven", "The Barn", "barn", "14:00", "15:00", 110)] };
+    expect(named(figureOf(seven, { minutes: sharedMinutes(preset, 0, seven) }))).toEqual(["Act One", "Act Seven"]);
+    // A move that is not the card's names no partner, so nothing is hatched and the caption says only what is drawn.
+    const other: Plan = { ...PLAN, steps: [PLAN.steps[1]] };
+    const lone = figureOf(other, { pair, minutes: sharedMinutes(preset, 0, other) });
+    expect(named(lone)).toEqual(["Act Four"]);
+    expect(lone.hatches).toEqual([]);
+    expect(lone.caption).toBe("Sunday, as your plan leaves it. Dashed: the published slot.");
+    // No partner without the card's pair, even for the card's own move.
+    expect(figureOf(cardPlan).hatches).toEqual([]);
+  });
+
+  it("draws a kept change's moved sets and its pair, hatching what the pair still shares", () => {
+    const apart = figureOf({ ...PLAN, steps: [ruleStep(108)] });
+    expect(named(apart)).toEqual(["Act One", "Act Three", "Act Two"]);
+    expect(apart.ghosts.map((ghost) => ghost.actId).sort()).toEqual(["act-three", "act-two"]);
+    expect(apart.hatches).toEqual([]);
+    expect(apart.caption).toBe("Sunday, as your plan leaves it. Dashed: the published slots.");
+    // The same change with Act Two at 14:45 leaves the pair 15 minutes.
+    const near = ruleStep(108);
+    near.moves[0] = { ...near.moves[0], start: "14:45", end: "15:45" };
+    const sharing = figureOf({ ...PLAN, steps: [near] });
+    expect(sharing.hatches).toEqual([{ aId: "act-one", bId: "act-two", start: 885, end: 900 }]);
+    expect(sharing.caption).toBe("Sunday, as your plan leaves it. Hatched: minutes Act One and Act Two share. Dashed: the published slots.");
+  });
+
+  it("with no kept move, draws the day as published with the costliest clash's shared minutes hatched", () => {
+    const figure = figureOf(null);
+    expect(figure.kind).toBe("published");
+    expect(figure.ghosts).toEqual([]);
+    expect(figure.sets.every((set) => !set.moved)).toBe(true);
+    expect(named(figure)).toEqual(["Act One", "Act Two"]);
+    expect(figure.hatches).toEqual([{ aId: "act-one", bId: "act-two", start: 855, end: 900 }]);
+    expect(figure.caption).toBe("Sunday, as published. Hatched: minutes shared by the costliest clash.");
+    expect(figure.title).toBe("Sunday, as published.");
+    expect(figure.desc).toBe("Hatched: minutes shared by the costliest clash.");
+    // A day with no ranked clash: nothing hatched, and the caption claims no hatch.
+    const calm = figureOf(null, {}, makePreset({ report: { ...preset.report, clashes: [] } }));
+    expect(calm.hatches).toEqual([]);
+    expect(calm.caption).toBe("Sunday, as published.");
+    expect(calm.desc).toBe(calm.title);
+  });
+
+  it("is null for a day with no set or a step whose times cannot be read, and its caption holds no figure, score, attendance or Qloo word", () => {
+    expect(briefFigure(preset, 5, "Friday", null)).toBeNull();
+    expect(briefFigure(preset, 0, "Sunday", { steps: [{ ...PLAN.steps[0], start: "9pm" }] })).toBeNull();
+    for (const figure of [figureOf(null), figureOf(cardPlan, { pair }), figureOf(null, {}, makePreset({ synthetic: true }))]) {
+      expect(figure.caption).not.toMatch(/\d|Qloo|attend|people|fans|crowd|audience|revenue|money|score|pric/i);
+    }
+  });
+
+  it("lays out each frame inside its width: names whole, never overlapping in a lane, and low enough to print", () => {
+    const figure = figureOf(cardPlan, { pair, minutes: sharedMinutes(preset, 0, cardPlan) });
+    for (const frame of [FIGURE_FRAMES.wide, FIGURE_FRAMES.narrow]) {
+      const layout = layoutFigure(figure, frame);
+      expect(layout.width).toBe(frame.width);
+      // Every lane at one pitch, named or not (North Field and The Barn name a set; South Tent does not).
+      const pitch = frame.gap + frame.bar;
+      expect(layout.height).toBe(frame.axis + 3 * pitch);
+      expect(layout.lanes.map((lane) => lane.barY)).toEqual([0, 1, 2].map((i) => frame.axis + i * pitch + frame.gap));
+      expect(layout.lanes.map((lane) => lane.nameY !== null)).toEqual([true, false, true]);
+      expect(layout.names.map((name) => name.text)).toEqual(["Act One", "Act Two"]);
+      for (const name of layout.names) {
+        expect(name.x).toBeGreaterThanOrEqual(layout.plotX);
+        expect(name.x + name.w).toBeLessThanOrEqual(frame.width);
+      }
+      // One bar per set; each hatch inside its bar.
+      expect(layout.bars).toHaveLength(figure.sets.length);
+      for (const hatch of layout.hatches) {
+        const bar = layout.bars[hatch.bar];
+        expect(hatch.x).toBeGreaterThanOrEqual(bar.x - 0.001);
+        expect(hatch.x + hatch.w).toBeLessThanOrEqual(bar.x + bar.w + 0.001);
+      }
+      expect(layout.hatches.map((hatch) => layout.bars[hatch.bar].actId).sort()).toEqual(["act-one", "act-two"]);
+      expect(layout.ghosts).toHaveLength(1);
+      // A gridline on every hour from 14:00 to 23:00; labels only on whole steps, never on the last line.
+      expect(layout.ticks).toHaveLength(10);
+      expect(layout.ticks.at(-1)?.label).toBeNull();
+      expect(layout.ticks[0].label).toBe("14:00");
+    }
+    // Five stages stay under 190 printed px on Letter (the wide frame prints 3% larger), and so do eight.
+    const widePitch = FIGURE_FRAMES.wide.gap + FIGURE_FRAMES.wide.bar;
+    expect((FIGURE_FRAMES.wide.axis + 5 * widePitch) * (740 / 718)).toBeLessThan(190);
+    expect((FIGURE_FRAMES.wide.axis + 8 * widePitch) * (740 / 718)).toBeLessThan(190);
+  });
+
+  it("keeps each name in the gap over its own bar, clear of that bar's edge and of the bar above, and nearer its own (round 36 fix)", () => {
+    const figure = figureOf(cardPlan, { pair, minutes: sharedMinutes(preset, 0, cardPlan) });
+    // The site's sans, measured: ink rises 0.73 em over the baseline and falls 0.19 em under it. A named bar's edge
+    // is 1.5 units wide, so it reaches 0.75 out of the bar; a plain bar's reaches 0.375.
+    const [ascent, descent] = [0.73, 0.19];
+    for (const frame of [FIGURE_FRAMES.wide, FIGURE_FRAMES.narrow]) {
+      const layout = layoutFigure(figure, frame);
+      layout.lanes.forEach((lane, index) => {
+        if (lane.nameY === null) return;
+        expect(lane.nameY).toBeCloseTo(lane.barY - frame.nameRise, 6);
+        const inkBottom = lane.nameY + descent * frame.font;
+        const inkTop = lane.nameY - ascent * frame.font;
+        const above = index === 0 ? frame.hourBaseline : layout.lanes[index - 1].barY + frame.bar + 0.75;
+        const toOwn = lane.barY - 0.75 - inkBottom;
+        const toAbove = inkTop - above;
+        expect(toOwn).toBeGreaterThan(0.5);
+        expect(toAbove).toBeGreaterThan(1.5);
+        expect(toOwn).toBeLessThan(toAbove);
+      });
+    }
+  });
+
+  it("draws every set as a rounded rectangle, never a capsule: a corner about a third of the bar's height (round 36 fix)", () => {
+    for (const frame of [FIGURE_FRAMES.wide, FIGURE_FRAMES.narrow]) {
+      expect(frame.radius).toBeGreaterThan(0);
+      expect(frame.radius).toBeLessThan(frame.bar / 2);
+      // The day drawing's 6px corner on its 19px and 24px bars is 0.25 to 0.32 of the height.
+      expect(frame.radius / frame.bar).toBeGreaterThanOrEqual(0.25);
+      expect(frame.radius / frame.bar).toBeLessThanOrEqual(1 / 3);
+      // The air over a bar is more than its height, as in the day drawing.
+      expect(frame.gap).toBeGreaterThan(frame.bar);
+    }
+  });
+
+  it("moves a name right of an earlier name in its lane, and keeps a late name inside the right edge", () => {
+    const base = figureOf(null);
+    const crowded: BriefFigure = {
+      ...base,
+      sets: base.sets.map((set) =>
+        set.lane === 0 ? { ...set, named: true, name: `${set.name} with a very long stage billing` } : { ...set, named: false },
+      ),
+    };
+    const layout = layoutFigure(crowded, FIGURE_FRAMES.narrow);
+    expect(layout.names.length).toBeGreaterThan(1);
+    const sorted = [...layout.names].sort((p, q) => p.x - q.x);
+    for (const name of sorted) expect(name.x + name.w).toBeLessThanOrEqual(FIGURE_FRAMES.narrow.width + 0.001);
+    expect(sorted[1].x).toBeGreaterThan(sorted[0].x);
+    expect(textWidth("Act One", 10)).toBeGreaterThan(30);
+    expect(textWidth("Act One", 10, true)).toBeGreaterThan(textWidth("Act One", 10));
+  });
+});
+
+describe("where the drawing prints (round 36)", () => {
+  const move = (n: number): BriefStep => ({ n, act: "A", place: "P", shift: "s", before: "1.0", after: "0.9", raises: false, receipt: null });
+  const change = (n: number): BriefStep => ({ n, line: "L", before: "1.0", after: "0.9", raises: false, receipt: "r" });
+
+  it("prints on a sheet with no kept step, and beside the comparison for one single move only", () => {
+    expect(figureOnPaper([], 1)).toBe(true);
+    expect(figureOnPaper([move(1)], 1, true)).toBe(true);
+    // A single move without the comparison keeps its five rows and hidden list on paper instead.
+    expect(figureOnPaper([move(1)], 1, false)).toBe(false);
+    expect(figureOnPaper([change(1)], 1, true)).toBe(false);
+    expect(figureOnPaper([move(1), move(2)], 1, true)).toBe(false);
+    expect(figureOnPaper([move(1), move(2), move(3), move(4)], 2, true)).toBe(false);
+  });
+
+  it("takes the one-row table's room beside the comparison, and keeps the minutes line off paper there", () => {
+    expect(tableOnPaper([move(1)], 1, true, true)).toBe(false);
+    expect(tableOnPaper([move(1)], 1, true, false)).toBe(true);
+    expect(tableOnPaper([move(1)], 1, false, true)).toBe(true);
+    expect(onPaper([move(1)], 1, true, true)).toEqual({ minutes: false, decisions: true });
+    expect(onPaper([move(1)], 1, false, true)).toEqual({ minutes: true, decisions: true });
+  });
+
+  it("on the sheet: printed for the card's one move with its comparison and on a bare sheet, screen only for a longer plan", () => {
+    const decision = parseDecision(decisionRaw());
+    const card: Plan = {
+      ...PLAN,
+      steps: [{ ...PLAN.steps[0], act: "Act Two", actId: "act-two", stage: "The Barn", stageId: "barn", start: "14:30", end: "15:30" }],
+    };
+    const figureClass = (html: string) => html.match(/<figure data-brief-figure="" class="([^"]*)"/)?.[1].split(" ") ?? [];
+    const kept = sheetHtml(makePreset(), card, { tradeoff: briefTradeoff(makePreset(), decision, [CARD_MOVE], 0) });
+    expect(figureClass(kept)).toContain("break-inside-avoid");
+    expect(figureClass(kept)).not.toContain("print:hidden");
+    // The published day's one-row table leaves paper; the baseline line names that clash in its place.
+    expect(kept.match(/<section[^>]*aria-labelledby="brief-[^"]*on-the-published-day[^"]*"[^>]*>/)?.[0]).toContain("print:hidden");
+    expect(kept).toMatch(/<p class="[^"]*hidden[^"]*print:block[^"]*">Published day before these moves: costliest Act One and Act Two/);
+    expect(plainOf(kept)).toContain("Sunday, as your plan leaves it. Hatched: minutes shared with Act One. Dashed: the published slot.");
+    expect(figureClass(sheetHtml(makePreset(), null))).not.toContain("print:hidden");
+    const long = sheetHtml(makePreset(), PLAN, { tradeoff: briefTradeoff(makePreset(), decision, [CARD_MOVE, OTHER_MOVE], 0) });
+    expect(figureClass(long)).toContain("print:hidden");
+    expect(figureClass(sheetHtml(makePreset(), PLAN))).toContain("print:hidden");
   });
 });

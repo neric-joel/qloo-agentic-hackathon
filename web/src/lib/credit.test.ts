@@ -406,6 +406,8 @@ describe("the price words", () => {
       expect(note).toContain("rounded when printed, so they may not multiply to exactly the printed price");
       expect(note).toContain("stand-in draw set by its billing tier (0.9, 0.7, 0.5 and 0.3 for tiers 1 to 4)");
       expect(formulaNoteShort(synthetic)).toContain("0 to 1 scale and rounded when printed");
+      expect(formulaNoteShort(synthetic)).toContain("so they may not multiply to exactly the score.");
+      expect(formulaNoteShort(synthetic)).not.toMatch(/\bpric(e|ed|es|ing)\b/i);
     }
     expect(formulaNote(false)).toContain("no Qloo popularity");
     expect(formulaNote(true)).toContain("no popularity figure");
@@ -424,10 +426,10 @@ describe("the price words", () => {
       createElement(ClashDetails, { preset: published(), shown: published().report.clashes[0] }),
     );
     expect(drawer).toContain("Factors are on a 0 to 1 scale and rounded when printed");
-    // The lens says only why its apart pairs price at zero; /method#price carries the full formula note.
+    // The lens says only why its apart pairs score zero; /method#price carries the full formula note.
     const lens = renderToStaticMarkup(createElement(TasteLens, { lenses: LENSES, ranked: [], onOpen: noop }));
     expect(lens).not.toContain("The factors are on a 0 to 1 scale");
-    expect(lens).toMatch(/<a[^>]*href="\/method#price"[^>]*>How the price works<\/a>/);
+    expect(lens).toMatch(/<a[^>]*href="\/method#price"[^>]*>How the score works<\/a>/);
   });
 });
 

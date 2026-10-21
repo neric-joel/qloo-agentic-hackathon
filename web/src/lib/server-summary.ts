@@ -99,9 +99,9 @@ function evidenceSentence(preset: Preset): string {
   const total = coverage.strong + coverage.weak + coverage.none;
   const unpriced = Math.max(0, total - coverage.scored_acts);
   return (
-    `Priced from ${pluralize(preset.requests.length, "saved Qloo request record")}: ` +
+    `Scored from ${pluralize(preset.requests.length, "saved Qloo request record")}: ` +
     `${coverage.scored_acts} of ${pluralize(total, "act")} matched to Qloo artists` +
-    (unpriced > 0 ? `; ${unpriced} not priced.` : ".")
+    (unpriced > 0 ? `; ${unpriced} not scored.` : ".")
   );
 }
 

@@ -24,7 +24,9 @@ import {
   servableDay,
   firstPublishedDay,
   loadPublishedDay,
+  loadPublishedDays,
   loadPublishedTimetable,
+  publishedDays,
   lockedLine,
   omittedLine,
   notCompared,
@@ -708,6 +710,29 @@ describe("round 31: a published day to check (C8)", () => {
     }
     vi.stubGlobal("fetch", respond(500, {}));
     expect(await loadPublishedDay()).toBeNull();
+  });
+
+  it("round 36: lists every published day in the API's order for the offer, with one bodiless GET, and none when there is none", async () => {
+    const days = [
+      { id: "brookfield-2030-sat", title: "Brookfield 2030, Saturday" },
+      { id: "other-2030-sun", title: "Other 2030, Sunday" },
+    ];
+    expect(publishedDays(list)).toEqual(days);
+    expect(publishedDays([list[0]])).toEqual([]);
+    expect(publishedDays([{ id: "../x", title: "Odd" }, ...list])).toEqual(days);
+    expect(publishedDays(null)).toEqual([]);
+    expect(publishedDays({ presets: list })).toEqual([]);
+    const fetch = respond(200, list);
+    vi.stubGlobal("fetch", fetch);
+    expect(await loadPublishedDays()).toEqual(days);
+    const calls = fetch.mock.calls as [string, RequestInit][];
+    expect(calls.map(([url]) => url)).toEqual(["/api/presets"]);
+    expect(calls[0][1]).toMatchObject({ method: "GET" });
+    expect(calls[0][1].body).toBeUndefined();
+    vi.stubGlobal("fetch", respond(200, [list[0]]));
+    expect(await loadPublishedDays()).toBeNull();
+    vi.stubGlobal("fetch", respond(500, {}));
+    expect(await loadPublishedDays()).toBeNull();
   });
 });
 

@@ -1013,7 +1013,7 @@ describe("the side-by-side comparison in the card", () => {
       rows: rows.map((row) => (row.id === "costliest" ? { ...row, move: NO_PRICED_CLASH } : row)).filter((row) => row.id !== "flags"),
     };
     expect(consequenceLine(cleared)).toBe(
-      "Move one set: no priced clash is left on this day; keep the two apart: the costliest clash after is Cy Twombly and Di Vine, 30 minutes, 9.5 index points.",
+      "Move one set: no scored clash is left on this day; keep the two apart: the costliest clash after is Cy Twombly and Di Vine, 30 minutes, 9.5 index points.",
     );
     // The same clash left after both changes is named once.
     const same = {
@@ -1028,7 +1028,7 @@ describe("the side-by-side comparison in the card", () => {
       rows: rows.map((row) => (row.id === "costliest" ? { ...row, move: NO_PRICED_CLASH, rule: NO_PRICED_CLASH } : row)),
     };
     expect(consequenceLine(none)).toBe(
-      "Keep the two apart: adds 1 stage-fit flag; either way no priced clash is left on this day.",
+      "Keep the two apart: adds 1 stage-fit flag; either way no scored clash is left on this day.",
     );
   });
 

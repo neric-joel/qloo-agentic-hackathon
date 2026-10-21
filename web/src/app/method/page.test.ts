@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { FIGURE_DOMAIN } from "@/components/clash/why-this-matters";
 import { CONTROL_ACTS, CONTROL_RANK_LIMIT } from "@/lib/control-acts";
+import { LOCK_RULE } from "@/lib/locks";
 import { METHOD_FIGURES, methodRow } from "@/lib/method-figures";
 
 import MethodPage from "./page";
@@ -263,8 +264,13 @@ describe("Qloo requests (lane A; cards and the request flow, round 20)", () => {
       // No viewport breakpoint decides the rows: only the container variant.
       expect(card.slice(card.indexOf("<dl"), card.indexOf("</dl>"))).not.toMatch(/\b(sm|md|lg|xl):/);
       expect(card).not.toContain("grid-cols-[40%");
-      // The live line stays word for word as the muted last row.
-      expect(text(card)).toMatch(/Sent live: Sent live [^]*\.$/);
+      // The live line stays word for word as the muted last row. It opens with "Sent live by", so it labels itself:
+      // no hidden "Sent live: " label before it, which a screen reader read as "Sent live: Sent live by ..." (round 36).
+      expect(text(card)).toMatch(/ We get back [^]* Sent live (only )?by [^]*\.$/);
+      const liveRow = card.slice(card.lastIndexOf("<p "));
+      expect(liveRow).toMatch(/^<p class="pt-2 text-\[0\.8125rem\] leading-snug text-muted-foreground">Sent live (only )?by [^<]*\.<\/p>$/);
+      expect(text(card)).not.toMatch(/Sent live:/);
+      expect(card).not.toContain("sr-only");
     }
     for (const label of ["Match an act", "Rank affinity", "Shared tags"]) expect(block).toContain(label);
     // No table, no disclosure per card: the parameters are in the open.
@@ -316,6 +322,25 @@ describe("Qloo requests (lane A; cards and the request flow, round 20)", () => {
     expect(html).not.toContain("Saved; live in");
     expect(html).not.toContain("Saved when the day was built.");
     expect(html.match(/Sent live (only )?by /g)).toHaveLength(3);
+  });
+
+  it("says what each live path really sends: the clash agent asks Qloo only through compare, and /search's row claims no 'only' (round 36)", () => {
+    // backend/app/agent/clash_tools.py: explain_clash is the clash agent's one Qloo request (/v2/analysis/compare);
+    // the general explore tools are refused by backend/app/main.py unless allow_explore is switched on.
+    const cards = [...block.matchAll(/<li data-endpoint="true" class="[^"]*">([\s\S]*?)<\/li>/g)].map((m) => m[1]);
+    // Each card's last row read whole, hidden text included, so what a screen reader hears is exactly the visible row.
+    const live = cards.map((card) => text(card.slice(card.lastIndexOf("<p "))));
+    expect(live).toEqual([
+      "Sent live by the pasted-grid score in live mode, where switched on.",
+      "Sent live by the pair re-check (two of its three requests) and the pasted-grid score in live mode, where switched on.",
+      "Sent live by the pair re-check (its third request) and by the agent when it explains a clash, where switched on.",
+    ]);
+    for (const card of cards.slice(0, 2)) expect(text(card)).not.toMatch(/agent's tools|agent’s tools/);
+    expect(live[0]).not.toMatch(/\bonly\b/);
+    expect(text(block)).toContain(
+      "The page never offers the agent's general explore tools, and the API refuses them unless the deployment switches them on.",
+    );
+    expect(text(block)).not.toContain("can also send other entity types and signals");
   });
 });
 
@@ -1096,10 +1121,14 @@ describe("why Qloo, the control acts, the backtest's pairs, the legend and the g
     expect(controls).toMatch(
       /^<div id="controls" class="scroll-mt-24 pt-8 first:pt-0"><h3 id="controls-heading" class="text-lg leading-snug font-semibold break-words">Four control acts<\/h3>/,
     );
+    // Round 36: the control acts are candidates in every act's /v2/insights row (backend/app/qloo/overlap.py), so the
+    // block says they count in its percentiles: the mechanism only, nothing on how much a value moves.
     const said =
-      "Each build also looks up four acts chosen to be unrelated to a festival bill: Vienna Philharmonic, Raffi, Frankie Yankovic and Mormon Tabernacle Choir. If their audiences do not rank near the bottom of the bill (a mean percentile of 0.35 or lower), the build says the signal does not separate audiences on that bill. On both saved days their mean percentile was 0.35 or lower. This does not test whether the clash rankings are useful. Their lookups are marked as control acts in How Qloo was used.";
+      "Each build also looks up four acts chosen to be unrelated to a festival bill: Vienna Philharmonic, Raffi, Frankie Yankovic and Mormon Tabernacle Choir. If their audiences do not rank near the bottom of the bill (a mean percentile of 0.35 or lower), the build says the signal does not separate audiences on that bill. On both saved days their mean percentile was 0.35 or lower. They are also in each act's ranked list, so they count in its percentiles. This does not test whether the clash rankings are useful. Their lookups are marked as control acts in How Qloo was used.";
     expect(text(controls)).toBe(`Four control acts ${said}`);
     expect(visible).toContain(said);
+    expect(controls).toContain("They are also in each act’s ranked list, so they count in its percentiles.");
+    expect(text(controls)).not.toMatch(/moves a little|order in a list changes/);
     // The build tests the mean, so no line says an act passed.
     expect(text(controls)).not.toMatch(/each (act )?passed|every act passed|all four passed/i);
     // The names and the limit come from the contract: none is typed in the page's source.
@@ -1156,5 +1185,21 @@ describe("why Qloo, the control acts, the backtest's pairs, the legend and the g
     expect(text(html).split(line).length - 1).toBe(1);
     // The location cost is said once, in the evidence text, not repeated here.
     expect(text(limits)).not.toContain("347");
+  });
+
+  it("says under its limits, once and in the shared words, that the published days' locks are this app's (round 36)", () => {
+    const start = html.indexOf('<section id="limits"');
+    const limits = html.slice(start, html.indexOf("</section>", start));
+    expect(LOCK_RULE).toBe(
+      "On the published days, the locked sets are the last set on each stage. This app keeps them in place; the festivals did not mark them.",
+    );
+    const items = [...limits.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => m[1]);
+    // Byte for byte as lib/locks.ts writes it, as its own row, once on the page and in the open.
+    expect(items).toContain(LOCK_RULE);
+    expect(html.split(LOCK_RULE).length - 1).toBe(1);
+    expect(visible).toContain(LOCK_RULE);
+    // A row of the limits list, before the do-not-use line that closes it.
+    expect(items.indexOf(LOCK_RULE)).toBe(items.length - 2);
+    expect(text(html)).not.toMatch(/not by the festival/i);
   });
 });

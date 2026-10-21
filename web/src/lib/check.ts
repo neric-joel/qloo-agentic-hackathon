@@ -5,7 +5,7 @@
  *
  * Guards that keep the page honest about what it read:
  * - one day, 60 sets, 10 stages and 8 KB; anything else is refused with a plain message;
- * - quoted fields with commas are read as one field; comma or tab, decided by the first line;
+ * - quoted fields with commas are read as one field; comma, semicolon or tab, decided by the first line;
  * - two kinds of failure. A fault of the whole input (empty, too big, an unreadable character, a header
  *   that does not read, more than one day, no readable set, over a limit, any settings problem) stops the
  *   check. A fault of one line (a quote left open, the wrong number of fields, a blank or overlong name,
@@ -49,10 +49,20 @@ export const CHECK_LIMITS = {
 /** The characters echoed at most from any pasted name. */
 const ECHO_CHARS = 80;
 const MINUTES_PER_DAY = 1440;
-/** H:MM or HH:MM, with optional seconds that are dropped (spreadsheets often copy 18:00:00). */
-const CLOCK = /^(\d{1,2}):([0-5]\d)(?::[0-5]\d)?$/;
-/** A 12-hour time as spreadsheets and exports write it: 2:00 PM, 2pm, 3:10pm, 12:30 a.m. */
-const CLOCK_12 = /^(\d{1,2})(?::([0-5]\d))?(?::[0-5]\d)?\s*([ap])\.?\s*m\.?$/i;
+/**
+ * H:MM or HH:MM, or the same with a dot (18.30), with optional seconds after a colon that are dropped
+ * (spreadsheets often copy 18:00:00).
+ */
+const CLOCK = /^(\d{1,2})[:.]([0-5]\d)(?::[0-5]\d)?$/;
+/** Hours and minutes around an h, as many European timetables write them: 18h30. */
+const CLOCK_H = /^(\d{1,2})h([0-5]\d)$/i;
+/** Four digits with no separator, 1830 or 0030: read in a start or end cell only, never in the curfew field. */
+const CLOCK_COMPACT = /^(\d{2})([0-5]\d)$/;
+/**
+ * A 12-hour time as spreadsheets and exports write it: 2:00 PM, 2pm, 3:10pm, 6.30 pm, 12:30 a.m., and with a
+ * single a or p: 6:30p, 6.30a.
+ */
+const CLOCK_12 = /^(\d{1,2})(?:[:.]([0-5]\d))?(?::[0-5]\d)?\s*([ap])(?:\.?\s*m)?\.?$/i;
 /**
  * Control characters (tab, carriage return and line feed are handled before this runs) and invisible
  * format characters, except the joiners real names use (U+200C, U+200D). Soft hyphens (U+00AD) are
@@ -122,11 +132,14 @@ export type CheckSettings = {
  */
 export type SkippedLine = {
   line: number;
-  /** Why, as the page says it: "Line 4: the start time is not a time such as …". */
+  /** Why, as the page says it, naming the act when the line has one and quoting a rejected value: "Line 4 (Glass Harbour): the start time "25:70" is not a time such as …". */
   message: string;
   /** The act as written on the line, when it can be told; a pair rule that names it is listed as not checked. */
   act: string | null;
-  /** The line read as one field and holds a semicolon: it looks separated by semicolons. */
+  /**
+   * The line read as one field and holds a semicolon while the first line set commas or tabs: it looks
+   * separated by semicolons. Never true in a grid read by semicolons.
+   */
   semicolons: boolean;
 };
 
@@ -143,6 +156,8 @@ export type CheckReport = {
   skipped?: SkippedLine[];
   /** "Pair line 2 not checked: Aurora is on a skipped line.", one per pair rule that names a skipped act. */
   uncheckedPairs?: string[];
+  /** The day column's one value as first written (clipped to 20 characters); null or absent without one. */
+  day?: string | null;
 };
 
 /**
@@ -299,13 +314,14 @@ function plural(count: number, one: string, many: string = `${one}s`): string {
 type Clock = { minutes: number; twelveHour: boolean };
 
 /**
- * Minutes for `H:MM` or `HH:MM` (hours up to 47), or for a 12-hour time (`2:00 PM`, `2pm`, `12:30 AM`
- * is 00:30), or null when it is neither. `twelveHour` says which, because a 12-hour time cannot be
- * written as 24:30 for after midnight.
+ * Minutes for `H:MM`, `HH:MM`, `18.30` or `18h30` (hours up to 47), with `compact` also `1830`, or for a
+ * 12-hour time (`2:00 PM`, `2pm`, `6.30pm`, `6:30p`; `12:30 AM` is 00:30), or null when it is none of these.
+ * A bare number of one to three digits is never a time. `twelveHour` says which kind, because a 12-hour
+ * time cannot be written as 24:30 for after midnight.
  */
-function readClock(value: string): Clock | null {
+function readClock(value: string, compact = false): Clock | null {
   const text = value.trim();
-  const match = CLOCK.exec(text);
+  const match = CLOCK.exec(text) ?? CLOCK_H.exec(text) ?? (compact ? CLOCK_COMPACT.exec(text) : null);
   if (match) {
     const minutes = Number(match[1]) * 60 + Number(match[2]);
     return minutes <= CHECK_LIMITS.maxMinutes ? { minutes, twelveHour: false } : null;
@@ -322,12 +338,49 @@ function parseClock(value: string): number | null {
   return readClock(value)?.minutes ?? null;
 }
 
-const TIME_FORMS = "18:00, 24:30, 6:00 PM or 6pm";
+const TIME_FORMS = "18:00, 18.00, 1800, 24:30, 6:00 PM or 6pm";
 
-/** The delimiter of the paste: a tab on the first non-blank line means tab, otherwise comma. */
+/**
+ * The two sides of a time range in one cell, "18:00-19:00", "18:00–19:00" (en dash) or "6pm to 7:15pm",
+ * each still to be read as a time; null when the cell is not two non-blank sides around one separator.
+ */
+function rangeSides(value: string): [string, string] | null {
+  const text = value.trim();
+  for (const separator of [/\s+to\s+/i, /\s*[-–]\s*/]) {
+    const sides = text.split(separator);
+    if (sides.length === 2 && sides.every((side) => side.trim() !== "")) return [sides[0].trim(), sides[1].trim()];
+  }
+  return null;
+}
+
+/** A cell a data row would hold for its times: a time, or a range of two. A header row holds neither. */
+function readsAsTime(value: string): boolean {
+  if (readClock(value, true) !== null) return true;
+  const sides = rangeSides(value);
+  return sides !== null && sides.every((side) => readClock(side, true) !== null);
+}
+
+/** A pasted value as a skip message quotes it: trimmed, at most 30 characters, in straight quotes. */
+function quoted(value: string): string {
+  return `"${clip(tidy(value), 30)}"`;
+}
+
+/** " (Act)" after a line number, when the line has an act to name; else nothing. */
+function named(act: string | null): string {
+  return act ? ` (${act})` : "";
+}
+
+/**
+ * The delimiter of the paste, decided by its first non-blank line: a tab means tab; otherwise a semicolon when
+ * that line holds more semicolons than commas outside its quoted fields (the CSV a spreadsheet writes where the
+ * comma is the decimal mark), else a comma.
+ */
 function delimiterOf(lines: readonly string[]): string {
   const first = lines.find((line) => line.trim() !== "") ?? "";
-  return first.includes("\t") ? "\t" : ",";
+  if (first.includes("\t")) return "\t";
+  const bare = first.replace(/"(?:[^"]|"")*"/g, "");
+  const count = (char: string) => bare.split(char).length - 1;
+  return count(";") > count(",") ? ";" : ",";
 }
 
 type SplitResult = { ok: true; fields: string[] } | { ok: false };
@@ -379,17 +432,46 @@ function splitLine(line: string, delimiter: string): SplitResult {
 
 type Column = "act" | "stage" | "start" | "end" | "locked" | "day";
 
-/** What a header cell may be called, by column; spreadsheets say "Start time" and capitalise freely. */
+/** What a header cell may be called, by column; spreadsheets say "Start time" or "Finish" and capitalise freely. */
 const HEADER_NAMES: Record<Column, ReadonlySet<string>> = {
-  act: new Set(["act", "act name", "artist", "artist name"]),
-  stage: new Set(["stage", "stage name"]),
-  start: new Set(["start", "start time"]),
-  end: new Set(["end", "end time"]),
-  locked: new Set(["locked"]),
+  act: new Set(["act", "act name", "artist", "artist name", "band", "performer"]),
+  stage: new Set(["stage", "stage name", "venue", "tent", "area"]),
+  start: new Set(["start", "start time", "starts", "begin", "begins", "from", "set start"]),
+  end: new Set(["end", "end time", "ends", "finish", "finish time", "finishes", "until", "to", "set end"]),
+  locked: new Set(["locked", "lock", "fixed"]),
   day: new Set(["day", "date"]),
 };
 
 const COLUMNS = Object.keys(HEADER_NAMES) as Column[];
+
+/** The columns a header must name for any line to be read. */
+const REQUIRED: readonly Column[] = ["act", "stage", "start", "end"];
+
+/**
+ * One column of time ranges ("18:00-19:00"), read into start and end when a header names no start and no
+ * end column and exactly one column by one of these.
+ */
+const RANGE_NAMES: ReadonlySet<string> = new Set(["time", "times", "set time", "set times", "slot"]);
+
+/** "end", "act or stage", "act, stage or end". */
+function orList(items: readonly string[]): string {
+  return items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} or ${items[items.length - 1]}`;
+}
+
+/**
+ * The one message for a header that is read as a header but leaves a needed column out: each missing column,
+ * every header cell that named nothing, quoted, and the words this check reads for each missing column.
+ * "Line 1: no column reads as end. Not read: "Endzeit". For end this check reads: end, end time, …"
+ */
+function headerRefusal(row: number, missing: readonly Column[], unread: readonly string[]): string {
+  const notRead = unread.length > 0 ? ` Not read: ${unread.map(quoted).join(", ")}.` : "";
+  const words = missing.map((column) => ` For ${column} this check reads: ${[...HEADER_NAMES[column]].join(", ")}.`).join("");
+  const range =
+    missing.includes("start") && missing.includes("end")
+      ? ` Or one column of ranges such as 18:00-19:00, headed ${orList([...RANGE_NAMES])}.`
+      : "";
+  return `Line ${row}: no column reads as ${orList(missing)}.${notRead}${words}${range}`;
+}
 
 function headerName(value: string): string {
   return value.trim().toLowerCase().replace(/[_\s]+/g, " ");
@@ -400,10 +482,22 @@ function columnOf(value: string): Column | null {
   return COLUMNS.find((column) => HEADER_NAMES[column].has(name)) ?? null;
 }
 
-/** Where each column sits in a row; without a header, act, stage, start, end and locked in that order. */
-type Layout = { act: number; stage: number; start: number; end: number; locked: number | null; day: number | null; width: number };
+/**
+ * Where each column sits in a row; without a header, act, stage, start, end and locked in that order. With
+ * `range`, start and end are the same column, each cell a range such as 18:00-19:00.
+ */
+type Layout = {
+  act: number;
+  stage: number;
+  start: number;
+  end: number;
+  locked: number | null;
+  day: number | null;
+  width: number;
+  range: boolean;
+};
 
-const POSITIONAL: Layout = { act: 0, stage: 1, start: 2, end: 3, locked: 4, day: null, width: 5 };
+const POSITIONAL: Layout = { act: 0, stage: 1, start: 2, end: 3, locked: 4, day: null, width: 5, range: false };
 
 /** Distinct day values listed in the refusal of a grid with more than one day. */
 const DAYS_SHOWN = 5;
@@ -459,9 +553,12 @@ function textProblem(text: string, linePrefix: string): string | null {
   return null;
 }
 
-/** What `parseGrid` read: the readable sets and the skipped lines, or the problems that stop the whole check. */
+/**
+ * What `parseGrid` read: the readable sets, the skipped lines and the day column's one value (null when the
+ * grid has no day column or no day written), or the problems that stop the whole check.
+ */
 export type GridResult =
-  | { ok: true; sets: CheckSet[]; notes: string[]; skipped: SkippedLine[] }
+  | { ok: true; sets: CheckSet[]; notes: string[]; skipped: SkippedLine[]; day: string | null }
   | { ok: false; errors: string[]; skipped?: SkippedLine[] };
 
 /** An act name fit to compare with a pair rule: tidied, not blank and within the length limit; else null. */
@@ -509,6 +606,9 @@ export function parseGrid(raw: string): GridResult {
   let headerChecked = false;
   let layout: Layout = POSITIONAL;
   let headed = false;
+  // A header read as a header that leaves a needed column out: its one message is the whole answer, and no
+  // line after it is read (none could be read with confidence).
+  let refusal: string | null = null;
 
   /** One line left out: its message is listed, and nothing on it is checked. */
   const skip = (row: number, message: string, act: string | null, semicolons = false) => {
@@ -517,48 +617,54 @@ export function parseGrid(raw: string): GridResult {
   };
 
   lines.forEach((line, index) => {
-    if (line.trim() === "") return;
+    if (refusal !== null || line.trim() === "") return;
     const row = index + 1;
     const split = splitLine(line, delimiter);
     if (!split.ok) {
-      skip(row, `Line ${row}: a quote is not closed or has text after it.`, looseAct(line, delimiter, layout.act));
+      const loose = looseAct(line, delimiter, layout.act);
+      skip(row, `Line ${row}${named(loose)}: a quote is not closed or has text after it.`, loose);
       return;
     }
     const fields = split.fields;
     if (!headerChecked) {
       headerChecked = true;
-      // A first line with no time in it that names a known column is a header.
-      const looksLikeHeader =
-        fields.every((field) => readClock(field) === null) && fields.some((field) => columnOf(field) !== null);
+      // A first line with no time in it, two or more of whose cells name a column, is a header.
+      const naming = fields.map((field) => columnOf(field) ?? (RANGE_NAMES.has(headerName(field)) ? "range" : null));
+      const looksLikeHeader = naming.filter((name) => name !== null).length >= 2 && !fields.some(readsAsTime);
       if (looksLikeHeader) {
         const found = new Map<Column, number>();
-        const ignored: string[] = [];
         let repeated = false;
-        fields.forEach((field, at) => {
-          const column = columnOf(field);
-          if (column === null) {
-            if (field.trim() !== "") ignored.push(clip(tidy(field), 30));
-          } else if (found.has(column)) repeated = true;
-          else found.set(column, at);
+        naming.forEach((name, at) => {
+          if (name === null || name === "range") return;
+          if (found.has(name)) repeated = true;
+          else found.set(name, at);
         });
-        const required: Column[] = ["act", "stage", "start", "end"];
-        if (repeated || required.some((column) => !found.has(column))) {
-          // Without its columns no line can be read with confidence: the whole grid waits for the header.
-          whole = true;
-          problems.add(
-            `Line ${row}: the header should read act, stage, start, end (locked and day are optional; other columns are ignored).`,
-          );
+        const ranges = naming.flatMap((name, at) => (name === "range" ? [at] : []));
+        // One time-range column stands in for start and end when the header names neither.
+        const range = !found.has("start") && !found.has("end") && ranges.length === 1;
+        // Every cell that named nothing, in header order (a range column this header does not use among them).
+        const unread = fields.filter(
+          (field, at) => field.trim() !== "" && (naming[at] === null || (naming[at] === "range" && !range)),
+        );
+        const missing = REQUIRED.filter((column) => !found.has(column) && !(range && (column === "start" || column === "end")));
+        if (missing.length > 0) {
+          refusal = headerRefusal(row, missing, unread);
+        } else if (repeated) {
+          refusal = `Line ${row}: the header should read act, stage, start, end (locked and day are optional; other columns are ignored).`;
         } else {
+          const at = range ? ranges[0] : null;
           layout = {
             act: found.get("act") as number,
             stage: found.get("stage") as number,
-            start: found.get("start") as number,
-            end: found.get("end") as number,
+            start: at ?? (found.get("start") as number),
+            end: at ?? (found.get("end") as number),
             locked: found.get("locked") ?? null,
             day: found.get("day") ?? null,
             width: fields.length,
+            range,
           };
           headed = true;
+          const ignored = unread.map((field) => clip(tidy(field), 30));
           if (ignored.length > 0) {
             notes.push(
               `Ignored ${ignored.length === 1 ? "a column" : `${ignored.length} columns`} this page does not read: ${ignored.join(", ")}.`,
@@ -574,34 +680,48 @@ export function parseGrid(raw: string): GridResult {
       ? fields.length >= needed && fields.length <= layout.width
       : fields.length >= 4 && fields.length <= 5;
     if (!fits) {
+      const act = actName(fields[layout.act]);
+      // A line that did not split at all has no act to name, only its whole text.
+      const who = fields.length > 1 ? named(act) : "";
       skip(
         row,
         headed
-          ? `Line ${row}: the header has ${plural(layout.width, "column")}, but this line has ${plural(fields.length, "field")}.`
-          : `Line ${row}: expected act, stage, start, end (and locked), but found ${plural(fields.length, "field")}.`,
-        actName(fields[layout.act]),
-        fields.length === 1 && line.includes(";"),
+          ? `Line ${row}${who}: the header has ${plural(layout.width, "column")}, but this line has ${plural(fields.length, "field")}.`
+          : `Line ${row}${who}: expected act, stage, start, end (and locked), but found ${plural(fields.length, "field")}.`,
+        act,
+        // Only where the first line set another separator: in a grid read by semicolons, no line looks like one.
+        delimiter !== ";" && fields.length === 1 && line.includes(";"),
       );
       return;
     }
     const act = tidy(fields[layout.act]);
     const stage = tidy(fields[layout.stage]);
     if (act === "" || stage === "") {
-      skip(row, `Line ${row}: the act and the stage cannot be blank.`, actName(act));
+      skip(row, `Line ${row}${named(actName(act))}: the act and the stage cannot be blank.`, actName(act));
       return;
     }
     if (Array.from(act).length > CHECK_LIMITS.nameChars || Array.from(stage).length > CHECK_LIMITS.nameChars) {
-      skip(row, `Line ${row}: a name is longer than ${CHECK_LIMITS.nameChars} characters.`, actName(act));
+      skip(row, `Line ${row}${named(actName(act))}: a name is longer than ${CHECK_LIMITS.nameChars} characters.`, actName(act));
       return;
     }
-    const startClock = readClock(fields[layout.start]);
-    const endClock = readClock(fields[layout.end]);
+    let startText = fields[layout.start];
+    let endText = fields[layout.end];
+    if (layout.range) {
+      const sides = rangeSides(fields[layout.start]);
+      if (sides === null) {
+        skip(row, `Line ${row}${named(act)}: the set time ${quoted(fields[layout.start])} is not a range such as 18:00-19:00 or 6pm to 7:15pm.`, act);
+        return;
+      }
+      [startText, endText] = sides;
+    }
+    const startClock = readClock(startText, true);
+    const endClock = readClock(endText, true);
     if (startClock === null) {
-      skip(row, `Line ${row}: the start time is not a time such as ${TIME_FORMS} (hours up to 47).`, act);
+      skip(row, `Line ${row}${named(act)}: the start time ${quoted(startText)} is not a time such as ${TIME_FORMS}.`, act);
       return;
     }
     if (endClock === null) {
-      skip(row, `Line ${row}: the end time is not a time such as ${TIME_FORMS} (hours up to 47).`, act);
+      skip(row, `Line ${row}${named(act)}: the end time ${quoted(endText)} is not a time such as ${TIME_FORMS}.`, act);
       return;
     }
     const start = startClock.minutes;
@@ -611,17 +731,18 @@ export function parseGrid(raw: string): GridResult {
       // that starts after midnight and ends earlier could mean anything.
       if (end < CHECK_LIMITS.dayStartsAt && start >= CHECK_LIMITS.dayStartsAt) end += MINUTES_PER_DAY;
       else {
-        skip(row, `Line ${row}: the set ends before it starts. For after midnight, write the end as 24:30 or later.`, act);
+        skip(row, `Line ${row}${named(act)}: the set ends before it starts. For after midnight, write the end as 24:30 or later.`, act);
         return;
       }
     }
     if (end <= start) {
-      skip(row, `Line ${row}: the set must end after it starts.`, act);
+      skip(row, `Line ${row}${named(act)}: the set must end after it starts.`, act);
       return;
     }
-    const flag = (layout.locked === null ? "" : (fields[layout.locked] ?? "")).trim().toLowerCase();
+    const rawFlag = layout.locked === null ? "" : (fields[layout.locked] ?? "");
+    const flag = rawFlag.trim().toLowerCase();
     if (!LOCKED_YES.has(flag) && !LOCKED_NO.has(flag)) {
-      skip(row, `Line ${row}: the locked column should be yes, no or blank.`, act);
+      skip(row, `Line ${row}${named(act)}: the locked column should be yes, no or blank, not ${quoted(rawFlag)}.`, act);
       return;
     }
     drafts.push({
@@ -635,6 +756,10 @@ export function parseGrid(raw: string): GridResult {
       day: layout.day === null ? "" : tidy(fields[layout.day] ?? ""),
     });
   });
+
+  // Assigned inside the loop above, so read it back here as either kind.
+  const refused = refusal as string | null;
+  if (refused !== null) return { ok: false, errors: [refused] };
 
   // The day's order and repeats, over the lines that read. A line that fails either is skipped (a repeat:
   // the later line), and its message is listed after the whole-input problems, as it always was.
@@ -651,13 +776,13 @@ export function parseGrid(raw: string): GridResult {
         d.start += MINUTES_PER_DAY;
         if (d.end < MINUTES_PER_DAY) d.end += MINUTES_PER_DAY;
         if (d.end <= d.start || d.end > CHECK_LIMITS.maxMinutes) {
-          skipLater(d, `Line ${d.row}: the set ends before it starts. For after midnight, write the end as 24:30 or later.`);
+          skipLater(d, `Line ${d.row}${named(d.act)}: the set ends before it starts. For after midnight, write the end as 24:30 or later.`);
           continue;
         }
       } else {
         skipLater(
           d,
-          `Line ${d.row}: starts before 06:00 while other sets start in the afternoon or evening. Write after-midnight times as 24:30 or later so the day reads in order.`,
+          `Line ${d.row}${named(d.act)}: starts before 06:00 while other sets start in the afternoon or evening. Write after-midnight times as 24:30 or later so the day reads in order.`,
         );
         continue;
       }
@@ -665,7 +790,7 @@ export function parseGrid(raw: string): GridResult {
     const key = lengthPrefixed(normalizeName(d.act), normalizeName(d.stage), String(d.start), String(d.end));
     const first = seen.get(key);
     if (first !== undefined) {
-      skipLater(d, `Line ${d.row}: the same set as line ${first} (same act, stage and times).`);
+      skipLater(d, `Line ${d.row}${named(d.act)}: the same set as line ${first} (same act, stage and times).`);
       continue;
     }
     seen.set(key, d.row);
@@ -709,6 +834,7 @@ export function parseGrid(raw: string): GridResult {
     ok: true,
     notes,
     skipped,
+    day: days.size === 1 ? [...days.values()][0] : null,
     sets: readable.map((d) => ({
       row: d.row,
       act: d.act,
@@ -1089,6 +1215,7 @@ export function runCheck(input: CheckInput): CheckOutcome {
       notes: grid.notes,
       skipped,
       uncheckedPairs: settings.unchecked,
+      day: grid.day,
     },
   };
 }

@@ -62,7 +62,7 @@ describe("the server summary of an invented day", () => {
     const summary = summarize(real());
     expect(summary.synthetic).toBe(false);
     expect(summary.evidence).toBe(
-      "Priced from 2 saved Qloo request records: 2 of 3 acts matched to Qloo artists; 1 not priced.",
+      "Scored from 2 saved Qloo request records: 2 of 3 acts matched to Qloo artists; 1 not scored.",
     );
   });
 
@@ -189,10 +189,10 @@ describe("the brief of an invented day", () => {
     for (const line of HOW_TO_READ_SYNTHETIC.slice(0, 2)) expect(line).not.toMatch(/Qloo/);
     expect(coverageSentence({ scored: 3, total: 3, unpriced: 0 }, true)).toBe("Taste overlap is invented for all 3 sets.");
     expect(coverageSentence({ scored: 2, total: 3, unpriced: 1 }, true)).toBe(
-      "Taste overlap is invented for 2 of 3 sets; 1 is not priced.",
+      "Taste overlap is invented for 2 of 3 sets; 1 is not scored.",
     );
     expect(coverageSentence({ scored: 1, total: 3, unpriced: 2 }, true)).toBe(
-      "Taste overlap is invented for 1 of 3 sets; 2 are not priced.",
+      "Taste overlap is invented for 1 of 3 sets; 2 are not scored.",
     );
     expect(briefIntro("Tiny Fest", true)).not.toMatch(/Tiny Fest/);
     expect(noPricedClashes(true)).not.toMatch(/Qloo/);

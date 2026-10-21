@@ -5,6 +5,7 @@ import { Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { legendNoSignal, noSignalLabel, weakSignalLabel } from "@/lib/credit";
+import { lockLabel } from "@/lib/locks";
 
 import { TEXT_TOGGLE_CLASS } from "./coverage-meter";
 import { WEAK_CUE_WORD } from "./timetable-grid";
@@ -27,6 +28,17 @@ type LegendOptions = {
   /** The invented day: the key does not name Qloo. */
   synthetic?: boolean;
   /**
+   * On a published day, the locked sets are exactly the last set on each stage (`lockRuleHolds` on the
+   * day's slots), so the lock's words may state that rule; otherwise they say only that this app keeps
+   * them in place.
+   */
+  holds?: boolean;
+  /**
+   * The lock's reading is drawn apart, on its own line outside the key (`LockKey`, above the phone's
+   * folded key), so the key leaves it out and does not count it.
+   */
+  lockApart?: boolean;
+  /**
    * Some tile on the board prints the short weak cue (" · weak", "·weak" or "weak"), so the key draws
    * that cue and names it. Roomy weak tiles say "Weak Qloo signal" in words and need no key.
    */
@@ -36,8 +48,13 @@ type LegendOptions = {
 /**
  * A key item. `cue` marks a cue key: a specimen of a word the board prints, drawn like a symbol but
  * not one of the symbols `legendSymbolCount` counts, and shown only while the board prints it.
+ * `spelled` marks the item whose row entry is its whole reading (the lock, which says whose lock it is
+ * with no click), so the reading under the row does not repeat it.
  */
-type LegendItem = { key: string; swatch: ReactNode; name: string; label: string; cue?: true };
+type LegendItem = { key: string; swatch: ReactNode; name: string; label: string; cue?: true; spelled?: true };
+
+/** The lock glyph, the same in the key's row and on the lock's own line. */
+const LOCK_SWATCH = <Lock className="size-3.5 text-foreground" strokeWidth={2} />;
 
 /**
  * How many tiles on the page's board print the short weak cue. `TimetableGrid` publishes it after it
@@ -84,15 +101,27 @@ function useBoardCueTiles(): number {
  * (a lock, a dotted mini tile, the cue word in a mini tile, a filled disc, an outlined disc, a dashed
  * ink slot).
  */
-function legendItems({ showLinks = true, planShown = false, synthetic = false, weak = false }: LegendOptions): LegendItem[] {
+function legendItems({
+  showLinks = true,
+  planShown = false,
+  synthetic = false,
+  holds = false,
+  lockApart = false,
+  weak = false,
+}: LegendOptions): LegendItem[] {
   const weakLabel = weakSignalLabel(synthetic).replace(/\.$/, "");
   return [
-    {
-      key: "locked",
-      swatch: <Lock className="size-3.5 text-foreground" strokeWidth={2} />,
-      name: "Locked",
-      label: "Locked set: fixed slot",
-    },
+    ...(lockApart
+      ? []
+      : [
+          {
+            key: "locked",
+            swatch: LOCK_SWATCH,
+            name: "Locked",
+            label: lockLabel({ synthetic, holds }),
+            spelled: true as const,
+          },
+        ]),
     {
       key: "no-signal",
       // The no-signal tile in small: the board's paper in a dotted control-grey edge, 20 x 12, drawn at
@@ -187,7 +216,7 @@ export function legendSymbolCount(options: LegendOptions = {}): number {
 function FullKey({ items, className }: { items: readonly LegendItem[]; className?: string }) {
   return (
     <ul className={cn("space-y-2 text-[0.8125rem] text-foreground", className)}>
-      {items.map((item) => (
+      {items.filter((item) => !item.spelled).map((item) => (
         <li key={item.key} className="flex items-center gap-2.5">
           <Glyph className="w-9">{item.swatch}</Glyph>
           <span data-legend-item={item.key}>{item.label}</span>
@@ -198,7 +227,21 @@ function FullKey({ items, className }: { items: readonly LegendItem[]; className
 }
 
 /**
- * Key to the timetable: one row of 16px glyphs and 13px ink words (under the coverage line when
+ * The lock's reading on a line of its own, in the key's glyph and words: on a phone it sits above the
+ * folded key (which then leaves the lock out), so whose lock it is is said with no tap.
+ */
+export function LockKey({ synthetic = false, holds = false, className }: Pick<LegendOptions, "synthetic" | "holds"> & { className?: string }) {
+  return (
+    <p className={cn("flex items-start gap-x-2 text-[0.8125rem] text-foreground", className)}>
+      <Glyph>{LOCK_SWATCH}</Glyph>
+      <span data-legend-item="locked">{lockLabel({ synthetic, holds })}</span>
+    </p>
+  );
+}
+
+/**
+ * Key to the timetable: one row of 16px glyphs and 13px ink words, the lock's in full so whose lock it
+ * is needs no click (under the coverage line when
  * `inline`, with the toggle at that line's right end), and a quiet underlined "How to read the board"
  * toggle that opens the full reading of each symbol and the
  * board's note under the row (in the HTML either way, so it prints and never needs script to
@@ -213,6 +256,8 @@ export function TimetableLegend({
   showLinks = true,
   planShown = false,
   synthetic = false,
+  holds = false,
+  lockApart = false,
   weak,
   inline = false,
   note,
@@ -230,7 +275,7 @@ export function TimetableLegend({
   const panelId = useId();
   const [open, setOpen] = useState(false);
   const published = useBoardCueTiles() > 0;
-  const items = legendItems({ showLinks, planShown, synthetic, weak: weak ?? published });
+  const items = legendItems({ showLinks, planShown, synthetic, holds, lockApart, weak: weak ?? published });
   // Inside the coverage row the parts take two deliberate rows: coverage and this toggle on the first
   // (the toggle at its right end), the key alone on the second, then the warning and the reading. The
   // source order (key, toggle) stays, so nothing focusable changes place in the tab order.
@@ -243,13 +288,22 @@ export function TimetableLegend({
           inline && "order-1 basis-full",
         )}
       >
-        {items.map((item) => (
-          // Glyph and word never part: each item is one unbreakable unit.
-          <li key={item.key} className="flex items-center gap-x-2 whitespace-nowrap">
-            <Glyph>{item.swatch}</Glyph>
-            <span data-legend-item={item.key}>{item.name}</span>
-          </li>
-        ))}
+        {items.map((item) =>
+          item.spelled ? (
+            // The lock reads in full here, so whose lock it is needs no click. A sentence, it may wrap on a
+            // narrow key, its glyph on the first line.
+            <li key={item.key} className="flex min-w-0 items-start gap-x-2">
+              <Glyph>{item.swatch}</Glyph>
+              <span data-legend-item={item.key}>{item.label}</span>
+            </li>
+          ) : (
+            // Glyph and word never part: each item is one unbreakable unit.
+            <li key={item.key} className="flex items-center gap-x-2 whitespace-nowrap">
+              <Glyph>{item.swatch}</Glyph>
+              <span data-legend-item={item.key}>{item.name}</span>
+            </li>
+          ),
+        )}
       </ul>
       <button
         type="button"

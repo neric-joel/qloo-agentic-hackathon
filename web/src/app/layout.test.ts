@@ -9,8 +9,14 @@ import { SYNTHETIC_NOTICE } from "@/lib/synthetic-notice";
 // The layout draws the synthetic notice from the server's own flag, so it is in the server HTML of every
 // page and does not wait for hydration. Invented list entries only.
 
+// The options the layout hands the font loader, kept so a test can read how the font is shown.
+const fontCalls = vi.hoisted(() => [] as unknown[]);
+
 vi.mock("next/font/google", () => ({
-  Archivo: () => ({ variable: "font-archivo" }),
+  Archivo: (options: unknown) => {
+    fontCalls.push(options);
+    return { variable: "font-archivo" };
+  },
 }));
 
 afterEach(() => {
@@ -74,6 +80,13 @@ describe("the root layout", () => {
     // The retired curtain's names, spelled in pieces so a source scan for them finds none.
     for (const name of ["data-", "cc.", "cc:", "cc-"].map((head) => `${head}intro`)) expect(markup).not.toContain(name);
     expect(markup).not.toContain("font-mono");
+  });
+
+  it("never swaps the font in after the first paint, so a slow font cannot move text already on screen", async () => {
+    serve([entry]);
+    await html();
+    expect(fontCalls).toHaveLength(1);
+    expect(fontCalls[0]).toMatchObject({ variable: "--font-archivo", subsets: ["latin"], display: "optional" });
   });
 
   it("prints neither for a real day, and does not fail when the list cannot be read", async () => {

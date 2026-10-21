@@ -82,6 +82,27 @@ type ClashListProps = {
   className?: string;
 };
 
+/**
+ * The locked share's sentence under the list's heading. The locks on a published day are this app's (the
+ * festivals did not mark them), so the words say whose they are and that no move is suggested there; the
+ * invented day's locks are part of the invented day. The short form, on every published day: the rule
+ * itself (the last set on each stage) is stated in the board's key, on /method and in the brief, so this
+ * line keeps the page's height.
+ */
+export function lockedShareLine(share: string, synthetic: boolean): string {
+  return synthetic
+    ? `${share} of the day’s cost sits between two locked sets of the invented day.`
+    : `${share} of the day’s cost sits between two sets this app locks, so it suggests no move there.`;
+}
+
+/**
+ * The mark on a clash whose two sets are both locked, in its row and in its details. On a published day
+ * it says whose locks they are, as every lock on the page does; the invented day's locks are its own.
+ */
+export function bothLockedLabel(synthetic: boolean): string {
+  return synthetic ? "Both sets locked" : "Both sets locked by this app";
+}
+
 /** The costliest clashes of the day, each opening its details. */
 export function ClashList({
   clashes,
@@ -171,8 +192,8 @@ export function ClashList({
               {clash.label ? (
                 <>
                   {/* The label as the legend writes it, open on the line: a hidden clash takes the
-                      legend's outlined vermilion mark and its word in vermilion; any other label is ink
-                      words alone. Row grounds are paper, card or the accent wash, never bg-muted. */}
+                      outlined Hidden mark, a plain ink ring, and its word in raspberry; any other label is
+                      ink words alone. Row grounds are paper, card or the accent wash, never bg-muted. */}
                   <span
                     data-clash-badge=""
                     className={cn(
@@ -194,7 +215,7 @@ export function ClashList({
                   {" · "}
                   <span className="inline-flex items-center gap-1 font-semibold text-foreground">
                     <Lock aria-hidden="true" className="size-3" />
-                    Both sets locked
+                    {bothLockedLabel(synthetic)}
                   </span>
                 </>
               ) : null}
@@ -210,7 +231,7 @@ export function ClashList({
                 <span className="font-mono tabular-nums">{formatDraw(clash.draw)}</span>
               </span>
               <span className="flex min-w-0 items-center gap-2">
-                {/* The share of the day's cost: a vermilion 6px capsule on a muted track, scaled to the costliest clash shown. */}
+                {/* The share of the day's cost: a raspberry 6px capsule on a muted track, scaled to the costliest clash shown. */}
                 <span aria-hidden="true" className="relative h-1.5 w-12 shrink-0 overflow-hidden rounded-bar bg-muted">
                   <span
                     className="absolute inset-y-0 left-0 rounded-bar bg-primary"
@@ -256,8 +277,7 @@ export function ClashList({
           {fixedShare > 0 ? (
             <>
               {" "}
-              {formatPercent(fixedShare)} of the day&rsquo;s cost sits between two locked sets, which
-              cannot move.
+              {lockedShareLine(formatPercent(fixedShare), synthetic)}
             </>
           ) : null}{" "}
           {synthetic
@@ -269,8 +289,8 @@ export function ClashList({
       {clashes.length === 0 ? (
         <p className="mt-4 text-sm text-muted-foreground">
           {synthetic
-            ? "No priced clashes on this day: no two priced acts play at the same time."
-            : "No priced clashes on this day: no two acts with a Qloo signal play at the same time."}
+            ? "No scored clashes on this day: no two scored acts play at the same time."
+            : "No scored clashes on this day: no two acts with a Qloo signal play at the same time."}
         </p>
       ) : (
         <>

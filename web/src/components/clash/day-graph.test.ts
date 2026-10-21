@@ -13,6 +13,7 @@ import {
   EASE_MOVE,
   keyLine,
   MOVE_MS,
+  planLeaders,
   sideEffectText,
   threadWidth,
   type DayGraphModel,
@@ -367,9 +368,63 @@ describe("DayGraph: the server frame", () => {
 
   it("marks a locked set with its lock and an unscored one with a muted fill and no edge", () => {
     const html = layoutOf(render(moved, "published"), "desktop");
-    expect(html).toMatch(/data-set="larch"[^>]*>.*?title="Locked: this set stays put"/);
+    // Larch is locked but is not the last set on Main, so its lock does not state the last-set rule.
+    expect(html).toMatch(/data-set="larch"[^>]*>.*?title="Locked by this app: kept in place\."/);
     expect(html).toMatch(/data-set="kauri"[^>]*? class="[^"]*\bbg-muted\b/);
     expect(html).not.toMatch(/data-set="kauri"[^>]*? class="[^"]*\bborder-border-strong\b/);
+  });
+
+  it("says on a lock whose lock it is: this app's, the last set on its stage on a day that keeps that rule, an invented fixed slot on the invented day", () => {
+    // As on both published days: the locked sets are exactly the last set on each stage.
+    const last = new Set(["juniper", "ivy", "cedar", "kauri", "hazel"]);
+    const published: DayGraphModel = { ...moved, sets: moved.sets.map((set) => ({ ...set, locked: last.has(set.actId) })) };
+    const html = layoutOf(render(published, "published"), "desktop");
+    for (const id of last) expect(html).toMatch(new RegExp(`data-set="${id}"[^>]*>(?:(?!data-set=).)*?title="Locked by this app: the last set on its stage stays in place\\."`));
+    expect(html).not.toMatch(/Locked: this set stays put|kept in place/);
+    const invented = layoutOf(render(model({ synthetic: true }), "published"), "desktop");
+    expect(invented).toMatch(/data-set="larch"[^>]*>.*?title="Locked: an invented fixed slot\."/);
+    expect(invented).not.toMatch(/Locked by this app/);
+  });
+
+  it("joins each name drawn outside its bar to that bar with a 1px leader in the quiet ink: a mark with no text, no focus and no pointer, in the names' layer", () => {
+    for (const view of ["moved", "published"] as const) {
+      const html = render(moved, view);
+      for (const layout of ["desktop", "phone", "short"] as const) {
+        for (const band of BANDS[layout]) {
+          const markup = bandOf(html, layout, band.track);
+          const plan = planDrawing(moved, layout, band.track);
+          const planned = planLeaders(moved, plan)[view];
+          const leaders = [...markup.matchAll(/<svg data-leader="([^"]+)"([^>]*)>(.*?)<\/svg>/g)];
+          const where = `${layout} at ${band.track}px, ${view}`;
+          // One per name drawn outside its bar (none was dropped on this day), and none for a name inside its bar.
+          expect(planned.dropped, where).toEqual([]);
+          expect(leaders.map((match) => match[1]).sort(), where).toEqual(planned.leaders.map((leader) => leader.id).sort());
+          const outside = Object.entries(plan.views[view].labels).filter(([, spot]) => spot.kind === "beside" || spot.kind === "above" || spot.kind === "below");
+          expect(leaders.length, where).toBe(outside.length);
+          for (const [, , attributes, inner] of leaders) {
+            expect(attributes).toContain('aria-hidden="true"');
+            expect(attributes).toContain('focusable="false"');
+            expect(attributes).toContain("pointer-events-none");
+            expect(attributes).not.toMatch(/tabindex|role=|data-swap|opacity/);
+            expect(inner).toMatch(/^<line x1="[-\d.]+" y1="[-\d.]+" x2="[-\d.]+" y2="[-\d.]+" stroke="var\(--border-strong\)" stroke-width="1"><\/line>$/);
+          }
+          if (leaders.length > 0) {
+            // In the names' layer: after every line, casing and end dot, before the lines' hit areas.
+            const first = markup.search(/<svg data-leader=/);
+            expect(first).toBeGreaterThan(Math.max(...[...markup.matchAll(/data-end-dot=|data-thread=/g)].map((match) => match.index ?? -1)));
+            expect(first).toBeLessThan(markup.indexOf("z-[2]"));
+          }
+        }
+      }
+      // Each featured name sits outside its bar, so each has its leader; Fir's name sits inside its bar and has none.
+      const desktop = bandOf(html, "desktop", 1104);
+      for (const set of moved.sets.filter((item) => item.featured)) expect(desktop).toContain(`data-leader="${set.actId}"`);
+      expect(desktop).not.toContain('data-leader="fir"');
+      expect(html).not.toContain("data-leader-dropped");
+    }
+    // The mover's leader rides the mover's layer with its name.
+    const moverLayer = bandOf(render(moved, "moved"), "desktop", 1104).match(/<div data-anim="mover" class="pointer-events-none absolute inset-0"[^>]*>(.*?)<span data-label="alder"/)?.[1] ?? "";
+    expect(moverLayer).toContain('data-leader="alder"');
   });
 
   it("draws a mover that changes stage on its own row in each view", () => {

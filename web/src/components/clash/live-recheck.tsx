@@ -216,7 +216,7 @@ export function LiveRecheck({ preset, shown, actA, actB, receipt, earlier, onRes
       <div className="mt-4">
         {unpriced ? (
           <p className="max-w-prose text-[0.9375rem] leading-relaxed text-muted-foreground">
-            Qloo has no usable signal for {unpriced}, so this pair is not priced and cannot be re-checked.
+            Qloo has no usable signal for {unpriced}, so this pair is not scored and cannot be re-checked.
           </p>
         ) : (
           <>

@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 
 import { CHECK_COPY, RULE_LABELS, formatClock, noBreaksLine, pairCountLabel, skippedSentence, type CheckReport } from "@/lib/check";
 import { decisionLine, type Decision } from "@/lib/check-decisions";
@@ -25,6 +25,48 @@ import { cn } from "@/lib/utils";
 
 /** Rows printed per list before "+K more on screen". */
 export const BRIEF_ROWS = 25;
+
+/** The printed draft's heading, first on the page. */
+export const DRAFT_HEADING = "Draft grid check";
+
+/**
+ * The sign-off block's labels, each printed with a line to write on: the same three as the published-day brief's
+ * (`check-brief.test.ts` pins them equal to its `SIGN_OFF`, which this route does not import).
+ */
+export const DRAFT_SIGN_OFF = ["Prepared by", "Reviewed by (head of programming)", "Date"] as const;
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+/** A date as the printed draft gives it: "20 Oct 2026", in the browser's own time zone. */
+export function printedDate(date: Date): string {
+  return `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`;
+}
+
+/**
+ * The heading line's words before the print date: "Draft grid check", then " · Sat 14 June" when the grid's day
+ * column holds exactly one day.
+ */
+export function draftHeading(day: string | null | undefined): string {
+  return day ? `${DRAFT_HEADING} · ${day}` : DRAFT_HEADING;
+}
+
+/**
+ * " · printed 20 Oct 2026", read from the browser's clock when the brief is drawn and again as printing starts
+ * (`beforeprint`), written straight into its own empty span so the date on paper is the day it was printed.
+ * Never stored and never sent; the server's render has no date.
+ */
+function PrintedOn() {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const stamp = () => {
+      if (ref.current) ref.current.textContent = ` · printed ${printedDate(new Date())}`;
+    };
+    stamp();
+    window.addEventListener("beforeprint", stamp);
+    return () => window.removeEventListener("beforeprint", stamp);
+  }, []);
+  return <span ref={ref} data-printed-date="" />;
+}
 
 export const BRIEF_FOOTER = "Computed in your browser from the pasted grid.";
 
@@ -96,10 +138,12 @@ function Capped({ items }: { items: readonly string[] }) {
 }
 
 /**
- * The draft brief "Print draft brief" prints (one page or more for a long grid): the checked snapshot,
- * counts, settings, applied changes, rule breaks, decisions and the compared overlaps when there are
- * any. Print only; with `preview` the same sheet is drawn on screen as a small paper thumbnail, a sheet
- * with the 14px panel corner. In print it is the page itself, with no corner of its own.
+ * The draft brief "Print draft brief" prints (one page or more for a long grid): its heading line (the
+ * grid's day when it has one, and the print date), the checked snapshot, counts, settings, applied changes,
+ * rule breaks, decisions, the compared overlaps when there are any, and the sign-off block. Print only; with
+ * `preview` the same sheet is drawn on screen as a small paper thumbnail, a sheet with the 14px panel corner,
+ * without the heading line and the sign-off (they are on paper only). In print it is the page itself, with no
+ * corner of its own.
  */
 export function CheckBrief({
   report,
@@ -145,7 +189,11 @@ export function CheckBrief({
       className={cn(preview ? "rounded-lg p-[22pt]" : "hidden print:block", "text-[9pt] leading-snug")}
       style={preview ? PAPER : undefined}
     >
-      <p className={cn("type-title text-[16pt]", !preview && "hidden print:block")}>{CHECK_COPY.printTitle}</p>
+      <p data-draft-heading="" className="type-kicker hidden text-[9pt] leading-snug text-muted-foreground print:block">
+        {draftHeading(report.day)}
+        <PrintedOn />
+      </p>
+      <p className={cn("type-title text-[16pt]", !preview && "hidden print:block", "print:mt-[2pt]")}>{CHECK_COPY.printTitle}</p>
       {sample ? <p className="mt-[2pt] font-semibold">{SAMPLE_LABEL}</p> : null}
       {published ? <p className="mt-[2pt] font-semibold">{published}</p> : null}
       <p className="mt-[2pt]">{snapshotLine({ sample, checkedAt, applied: applied.length, published: Boolean(published) })}</p>
@@ -213,6 +261,19 @@ export function CheckBrief({
       ) : null}
 
       <p className="mt-[8pt] border-t border-border pt-[3pt] text-[8pt]">{briefFooter(price, Boolean(published))}</p>
+      {/* Sign-off, on paper only: who prepared the draft and who reviewed it. Each label is followed by a line to
+          write on, a 1px rule in the control-edge ink (a mark, never text), as on the published-day brief. */}
+      <dl data-sign-off="" className="mt-[10pt] hidden flex-wrap gap-x-[18pt] gap-y-[6pt] text-[9pt] print:flex">
+        {DRAFT_SIGN_OFF.map((label) => (
+          <div key={label} className="flex min-w-0 items-end gap-[4pt]">
+            <dt className="font-semibold whitespace-nowrap">{label}</dt>
+            <dd
+              aria-label="blank, to fill in"
+              className={cn("h-[12pt] border-b border-border-strong", label === "Date" ? "w-[64pt]" : "w-[96pt]")}
+            />
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }

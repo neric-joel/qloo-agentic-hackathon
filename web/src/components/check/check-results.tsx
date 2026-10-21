@@ -21,6 +21,7 @@ import {
 import { breakDecisionId, pairDecisionId, pairLabel, type Decision, type Decisions } from "@/lib/check-decisions";
 import { PRICE_COPY } from "@/lib/check-price";
 import { targetOfBreak, targetOfPair, type TrialTarget } from "@/lib/check-trial";
+import { lockRuleHolds } from "@/lib/locks";
 import { cn } from "@/lib/utils";
 
 import { BreakStrip, rowsInOrder } from "./check-break-strip";
@@ -37,6 +38,25 @@ export const BOTH_LOCKED = "Both sets are locked, so this search would not move 
 export function lockNote(pair: Pick<SharedPair, "a" | "b">): string {
   if (pair.a.locked && pair.b.locked) return " (both are locked).";
   return pair.a.locked || pair.b.locked ? " (one is locked)." : ".";
+}
+
+/**
+ * What the read line says about locks, after "Read N sets on M stages": "." with none; on a pasted grid or the
+ * invented sample "; 5 marked locked."; on a published day loaded by "Check a published day", whose locks are
+ * this app's (neither festival marks a set as fixed), "; 5 locked by this app (the last set on each stage); the
+ * festival did not mark them." where the locked sets are exactly the last set on each stage (`lockRuleHolds`),
+ * else the same without the bracket.
+ */
+export function lockedClause(report: Pick<CheckReport, "sets" | "lockedCount">, published: boolean): string {
+  const count = report.lockedCount;
+  if (count === 0) return ".";
+  if (!published) return `; ${count} marked locked.`;
+  const holds = lockRuleHolds(
+    report.sets.map((set) => ({ stage: set.stageKey, day: 0, start: set.start, end: set.end, locked: set.locked })),
+  );
+  return holds
+    ? `; ${count} locked by this app (the last set on each stage); the festival did not mark them.`
+    : `; ${count} locked by this app; the festival did not mark them.`;
 }
 
 /** Ids of the result sections, for the jump links above them and in the draft review. */
@@ -88,6 +108,8 @@ type Props = {
    * or a working copy), so a number never points at the wrong row.
    */
   numbered?: boolean;
+  /** The grid on show is a published day, loaded by "Check a published day": its locks are this app's (`lockedClause`). */
+  published?: boolean;
 };
 
 // A break's rows in ascending row order, for display (defined beside the strip, which lays its lanes out in it).
@@ -390,6 +412,7 @@ export function CheckResults({
   selectedBreak = null,
   onSelectBreak,
   numbered = true,
+  published = false,
 }: Props) {
   const { breaks, shared, sets, stages, lockedCount } = report;
   // The one decided row left open; marking another row opens that one and folds this one away.
@@ -422,9 +445,10 @@ export function CheckResults({
         <p className="text-sm text-muted-foreground">
           Read {sets.length} {sets.length === 1 ? "set" : "sets"} on {stages.length}{" "}
           {stages.length === 1 ? "stage" : "stages"}
+          {lockedClause(report, published)}
           {lockedCount > 0
-            ? `; ${lockedCount} marked locked. Locked sets are still checked against your rules; they are only kept in place when you search for a change.`
-            : "."}
+            ? " Locked sets are still checked against your rules; they are only kept in place when you search for a change."
+            : null}
         </p>
         <nav aria-label="Results" className="mt-3 flex flex-wrap gap-2">
           <a href={`#${RESULT_IDS.rules}`} className={JUMP}>

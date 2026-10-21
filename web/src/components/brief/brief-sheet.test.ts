@@ -268,10 +268,17 @@ describe("the Hidden mark (round 34, R3)", () => {
       expect(cls).toBe("font-semibold whitespace-nowrap text-foreground print:text-[9pt]");
       expect(cls.split(" ").filter((name) => /^(tag|ring|bg-|border|rounded|shadow)/.test(name))).toEqual([]);
     }
-    // No hidden-clash ring glyph and no chip beside it: raspberry stays on shared minutes.
+    // No hidden-clash ring glyph and no chip beside it: raspberry stays on shared minutes. Since round 36 the sheet
+    // draws the day, whose hatch over shared minutes is the one raspberry on the sheet: none outside the drawing, and
+    // inside it only the hatch's pattern colour and the wash under it.
     expect(html).not.toContain('data-mark="hidden"');
     expect(html).not.toContain('class="tag');
-    expect(html).not.toMatch(/var\(--primary\)|text-primary|bg-primary/);
+    const figure = html.match(/<figure data-brief-figure=""[\s\S]*?<\/figure>/)?.[0] ?? "";
+    expect(figure).not.toBe("");
+    expect(html.replace(figure, "")).not.toMatch(/var\(--primary\)|text-primary|bg-primary/);
+    expect(figure.match(/text-primary/g)).toHaveLength(2);
+    expect(figure).toMatch(/<pattern [^>]*class="text-primary print:text-foreground"/);
+    expect(figure).not.toMatch(/var\(--primary\)|bg-primary|fill="currentColor"|text-primary(?! print:text-foreground)/);
     // The table's column still says what the word means, with the note under the table.
     expect(text(html)).toContain("Hidden clashes: the two acts’ main genre tags differ");
   });

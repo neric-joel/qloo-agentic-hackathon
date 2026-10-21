@@ -43,11 +43,11 @@ export function signalSentence(synthetic: boolean, strong: boolean): string {
   if (synthetic) {
     return strong
       ? "Strong signal: the day’s figures for both acts are complete."
-      : "Weak signal: the figures for at least one act are thin, so read this price as rough.";
+      : "Weak signal: the figures for at least one act are thin, so read this score as rough.";
   }
   return strong
     ? "Strong signal: Qloo has a strong signal for both acts."
-    : "Weak signal: Qloo's signal for at least one act is weak, so read this price as rough.";
+    : "Weak signal: Qloo's signal for at least one act is weak, so read this score as rough.";
 }
 
 /** The drawer's title over the pair's tags. */
@@ -162,7 +162,7 @@ export function formulaNote(synthetic: boolean): string {
 export function formulaNoteShort(synthetic: boolean): string {
   const { scaleFactor } = METHOD_FIGURES.price;
   return (
-    `Factors are on a ${scaleFactor[0]} to ${scaleFactor[1]} scale and rounded when printed, so they may not multiply to exactly the price. ` +
+    `Factors are on a ${scaleFactor[0]} to ${scaleFactor[1]} scale and rounded when printed, so they may not multiply to exactly the score. ` +
     `An act with no ${synthetic ? "popularity figure" : "Qloo popularity"} takes a stand-in draw by billing tier (see How we know).`
   );
 }

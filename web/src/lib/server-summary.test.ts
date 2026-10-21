@@ -91,13 +91,13 @@ describe("summarize", () => {
 
   it("writes the evidence sentence from the request records and coverage", () => {
     expect(summarize(parsePreset(rawTinyPreset())).evidence).toBe(
-      "Priced from 2 saved Qloo request records: 2 of 3 acts matched to Qloo artists; 1 not priced.",
+      "Scored from 2 saved Qloo request records: 2 of 3 acts matched to Qloo artists; 1 not scored.",
     );
     const full = rawTinyPreset() as Raw;
     full.report.coverage = { ...full.report.coverage, none: 0, unscored: [] };
     full.requests = full.requests.slice(0, 1);
     expect(summarize(parsePreset(full)).evidence).toBe(
-      "Priced from 1 saved Qloo request record: 2 of 2 acts matched to Qloo artists.",
+      "Scored from 1 saved Qloo request record: 2 of 2 acts matched to Qloo artists.",
     );
   });
 

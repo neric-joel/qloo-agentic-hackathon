@@ -116,7 +116,7 @@ export function BudgetDial({
         <p className="type-title mt-3">No index for this day</p>
         <p className="mt-2 text-sm text-muted-foreground">
           The random timetables it is measured against could not be sampled, so there is nothing
-          to compare with. Individual clash prices below still stand.
+          to compare with. Individual clash scores below still stand.
         </p>
       </div>
     );

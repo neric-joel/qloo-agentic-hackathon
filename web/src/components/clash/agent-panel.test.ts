@@ -45,6 +45,7 @@ import {
   pricedEveryPlace,
   recordedQloo,
   recordingsQlooLine,
+  replayScrollMargin,
   requestsLabel,
   runVersusCard,
   SEE_THAT_RUN,
@@ -426,6 +427,22 @@ describe("the agent section's two columns (A1)", () => {
     expect(playing.side).toBe(before.side);
     expect(before.pickerInner).toBe("");
     expect(playing.pickerInner).toBe("lg:sticky lg:top-32");
+    // While a run is on show the sticky picker's track reaches 3rem past the run's foot, so where the page ends just
+    // below a run its label stays clear of the sticky bars; before any run plays nothing is added (no box moves).
+    expect(before.pickerTrack).toBe("");
+    expect(playing.pickerTrack).toBe("lg:h-[calc(100%_+_3rem)]");
+  });
+
+  it("keeps the picker's longer track inside the section: the track wraps the picker, and the section's bottom padding is the same 3rem", () => {
+    const html = renderToStaticMarkup(createElement(AgentPanel, { preset: tiny, day: 0, agentStatus: "off" }));
+    // The track sits inside the picker's grid cell and holds the list; before a run plays it adds no class.
+    const cell = html.indexOf("data-agent-picker");
+    const track = html.indexOf("data-agent-picker-track", cell);
+    expect(track).toBeGreaterThan(cell);
+    expect(html.slice(track, html.indexOf(">", track))).toContain('class=""');
+    expect(html.indexOf('aria-label="Recorded runs"', track)).toBeGreaterThan(track);
+    // From 640 px the section's own bottom padding is 3rem (sm:py-12), so the 3rem the track adds never leaves it.
+    expect(html).toMatch(/<section id="agent"[^>]*><div class="[^"]*\bsm:py-12\b/);
   });
 
   it("lists the run that ends with a place to keep first, as the still transcript, and the run the rules refuse last", () => {
@@ -440,6 +457,36 @@ describe("the agent section's two columns (A1)", () => {
     const transcript = html.slice(html.indexOf("data-agent-run"), html.indexOf("data-agent-picker"));
     expect(transcript).toContain("Found legal places");
     expect(transcript).not.toContain("Tested a move");
+  });
+});
+
+describe("where a replayed run's question lands (the heading clear of the sticky bars)", () => {
+  // At 1440 x 900 the page's scroll padding is 82 px and the section's own scroll margin 34 px, so a jump lands the
+  // section's top at 116 px, 8 px under the sticky bars (the 64 px header and the 44 px nav); the first run's question
+  // sits 148 px below the section's top while the agent is off (the section's padding, the off notice and its gap).
+  const wide = { wide: true, sectionMargin: 34, padding: 82, viewport: 900 };
+
+  it("lands the section where the jump lands it from 1024 px, so its heading stays in view beside the question", () => {
+    const margin = replayScrollMargin({ ...wide, offset: 148 });
+    expect(margin).toBe(182);
+    // The question lands at the scroll padding plus its margin; the section's top lands where the jump puts it.
+    expect(wide.padding + (margin ?? 0)).toBe(264);
+    expect(wide.padding + (margin ?? 0) - 148).toBe(wide.padding + wide.sectionMargin);
+    // With the live agent on, the conversation opens the run column, level with the heading.
+    expect(replayScrollMargin({ ...wide, offset: 48 })).toBe(82);
+  });
+
+  it("keeps the item's own margin on one column, and for a run far down the conversation", () => {
+    // Below 1024 px the heading and the can/cannot list sit above the run: the question comes to the top.
+    expect(replayScrollMargin({ ...wide, wide: false, offset: 148 })).toBeNull();
+    // A later run, below an earlier one: bringing the section's top into view would leave its question low.
+    expect(replayScrollMargin({ ...wide, offset: 1400 })).toBeNull();
+  });
+
+  it("brings the section's top into view only while the question still lands in the upper half of the screen", () => {
+    // 82 + (334 + 34) = 450, the middle of a 900 px screen: still in; one more pixel and the item's margin stands.
+    expect(replayScrollMargin({ ...wide, offset: 334 })).toBe(368);
+    expect(replayScrollMargin({ ...wide, offset: 335 })).toBeNull();
   });
 });
 

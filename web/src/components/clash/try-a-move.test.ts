@@ -35,6 +35,11 @@ import { scaleRange } from "./budget-move";
 import { clashParts, clashWords, listedPlace, moveCheck, sharedMinutesByName, splitKept, type MoveCheck } from "./use-moves";
 import { ChangeCard, SAME_STAGE_FIRST, STAGE_SIGN_OFF, sameStageFirst } from "./keep-apart";
 import { ScratchPlan } from "./scratch-plan";
+import { ClashList, bothLockedLabel, lockedShareLine } from "./clash-list";
+import { ClashDetails, bothLockedNote } from "./clash-drawer";
+import { LockKey, TimetableLegend, legendSymbolCount } from "./timetable-legend";
+import { lockedSetsLine } from "./try-a-move";
+import { LOCK_GENERIC, LOCK_INVENTED, LOCK_SHORT, lockLabel, lockRuleHolds, type LockSlot } from "@/lib/locks";
 
 /** The visible words. */
 const text = (html: string) =>
@@ -1314,5 +1319,203 @@ describe("Keep two sets apart: a stage change says it needs sign-off", () => {
     expect(sameStageFirst([a, b, c, d])).toEqual([b, d, a, c]);
     expect(sameStageFirst([b, d])).toEqual([b, d]);
     expect(SAME_STAGE_FIRST).toContain("smallest changes first: fewest sets, then fewest minutes moved.");
+  });
+});
+
+describe("the lock words: this app's locks on a published day, the invented day's own (round 36)", () => {
+  type Raw = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+  // The tiny day: Main's one set (Ann Arbor) is locked; Side's last set (Bo Diddly Squat, 20:30) is not, so its
+  // locks are not exactly the last set on each stage. Locking Bo Diddly Squat makes them exactly that.
+  const day = (synthetic: boolean, lastLocked: boolean) => {
+    const raw = rawTinyPreset() as Raw;
+    raw.synthetic = synthetic;
+    if (lastLocked) raw.festival.timetable[1].locked = true;
+    return parsePreset(raw)!;
+  };
+  const holdsOf = (preset: Preset) =>
+    lockRuleHolds(
+      preset.festival.timetable
+        .filter((slot) => slot.day === 0)
+        .map((slot): LockSlot => ({ stage: slot.stage_id, day: slot.day, start: slot.start, end: slot.end, locked: slot.locked })),
+    );
+  const legend = (preset: Preset) =>
+    text(
+      renderToStaticMarkup(
+        createElement(TimetableLegend, { synthetic: preset.synthetic === true, holds: holdsOf(preset) }),
+      ),
+    );
+  const list = (preset: Preset, fixedShare: number) =>
+    text(
+      renderToStaticMarkup(
+        createElement(ClashList, {
+          clashes: topClashes(preset.report.clashes, 0, Number.POSITIVE_INFINITY),
+          slots: new Map(preset.festival.timetable.map((slot) => [slot.act_id, slot])),
+          stages: new Map(preset.festival.stages.map((stage) => [stage.id, stage])),
+          totalRanked: preset.report.clashes.length,
+          fixedShare,
+          isLocked: (actId: string) => preset.festival.timetable.some((slot) => slot.act_id === actId && slot.locked),
+          activeKeys: new Set<string>(),
+          dimmed: false,
+          onOpen: () => {},
+          onHighlight: () => {},
+          synthetic: preset.synthetic === true,
+        }),
+      ),
+    ).replace(/&#x27;|&rsquo;/g, "’");
+
+  it("labels the board's lock by the rule only where the locked sets are exactly the last set on each stage", () => {
+    expect(holdsOf(day(false, true))).toBe(true);
+    expect(legend(day(false, true))).toContain(LOCK_SHORT);
+    expect(LOCK_SHORT).toBe("Locked by this app: the last set on its stage stays in place.");
+    // A day whose locks are not exactly the stages' last sets: the generic words, never the rule.
+    expect(holdsOf(day(false, false))).toBe(false);
+    expect(legend(day(false, false))).toContain("Locked by this app: kept in place.");
+    expect(LOCK_GENERIC).toBe("Locked by this app: kept in place.");
+    expect(legend(day(false, false))).not.toContain("the last set on its stage");
+    // The old words, which read as the festival's own fact, are gone.
+    expect(legend(day(false, true))).not.toContain("Locked set: fixed slot");
+    // The key's row spells the lock's words in full beside its lock swatch, so whose lock it is needs no click
+    // (round 36 fix pass: the short name alone said it only after "How to read the board").
+    const html = renderToStaticMarkup(createElement(TimetableLegend, { synthetic: false, holds: true }));
+    expect(html).toContain(`<span data-legend-item="locked">${LOCK_SHORT}</span>`);
+    expect(html).not.toContain('<span data-legend-item="locked">Locked</span>');
+    expect(html).toContain("lucide-lock");
+  });
+
+  it("says whose lock it is in the key's row with no click, once: the reading under the row does not repeat it", () => {
+    for (const synthetic of [false, true])
+      for (const holds of [false, true]) {
+        const html = renderToStaticMarkup(createElement(TimetableLegend, { synthetic, holds }));
+        const label = lockLabel({ synthetic, holds });
+        // In the row (the key's list), as a sentence that may wrap on a narrow key, its glyph on the first line.
+        const row = html.slice(html.indexOf('aria-label="Timetable key"'), html.indexOf("</ul>"));
+        expect(row).toContain(`<li class="flex min-w-0 items-start gap-x-2">`);
+        expect(row).toContain(`<span data-legend-item="locked">${label}</span>`);
+        // Once in all: neither the toggled reading nor the folded one says it again.
+        expect(html.split(label)).toHaveLength(2);
+        expect(html.match(/data-legend-item="locked"/g)).toHaveLength(1);
+        // Every other symbol keeps its short name in the row and its reading below.
+        expect(row).toContain('<li class="flex items-center gap-x-2 whitespace-nowrap">');
+        expect(row).toContain('data-legend-item="no-signal"');
+      }
+  });
+
+  it("on a phone keeps the lock out of the folded key, on its own line above the fold, so it needs no tap", () => {
+    for (const synthetic of [false, true])
+      for (const holds of [false, true]) {
+        const line = renderToStaticMarkup(createElement(LockKey, { synthetic, holds }));
+        expect(line).toContain(`<span data-legend-item="locked">${lockLabel({ synthetic, holds })}</span>`);
+        expect(line).toContain("lucide-lock");
+        expect(line.includes("by this app")).toBe(!synthetic);
+        // The fold leaves the lock out and does not count it.
+        const fold = renderToStaticMarkup(createElement(TimetableLegend, { synthetic, holds, lockApart: true }));
+        expect(fold).not.toContain('data-legend-item="locked"');
+        expect(fold).not.toContain("lucide-lock");
+        expect(fold).not.toContain(lockLabel({ synthetic, holds }));
+        expect(fold).toContain('data-legend-item="no-signal"');
+      }
+    for (const planShown of [false, true])
+      expect(legendSymbolCount({ planShown, lockApart: true })).toBe(legendSymbolCount({ planShown }) - 1);
+    // In the page: the line sits above the phone's fold, hidden from 640 px, where the key's row says it.
+    const source = readFileSync(join(__dirname, "clash-control.tsx"), "utf8");
+    const lockKeys = source.match(/<LockKey\b[^>]*>/g) ?? [];
+    expect(lockKeys).toEqual(['<LockKey synthetic={synthetic} holds={holds} className="mt-4 sm:hidden" />']);
+    const fold = source.slice(source.indexOf("<LockKey"), source.indexOf("</MoreDetails>", source.indexOf("<LockKey")));
+    expect(fold).toContain('className="mt-3 mb-3 sm:hidden"');
+    expect(fold).toContain("legendSymbolCount({ planShown, lockApart: true })");
+    expect(fold).toContain("<TimetableLegend synthetic={synthetic} holds={holds} lockApart");
+  });
+
+  it("says whose locks they are on a clash between two locked sets, in its row and in its details", () => {
+    expect(bothLockedLabel(false)).toBe("Both sets locked by this app");
+    expect(bothLockedLabel(true)).toBe("Both sets locked");
+    expect(bothLockedNote(false)).toBe("This app locks both sets, so it suggests no move for this clash. It still counts in the day’s cost.");
+    expect(bothLockedNote(true)).toBe("Both sets are locked, so this clash cannot be moved. It still counts in the day’s cost.");
+    // The tiny day with both its clash's sets locked: the row's mark.
+    expect(list(day(false, true), 0)).toContain("Both sets locked by this app");
+    const invented = list(day(true, true), 0);
+    expect(invented).toContain("Both sets locked");
+    expect(invented).not.toContain("by this app");
+    // The details under the opening sentence.
+    for (const synthetic of [false, true]) {
+      const preset = day(synthetic, true);
+      const details = text(renderToStaticMarkup(createElement(ClashDetails, { preset, shown: preset.report.clashes[0] }))).replace(
+        /&#x27;|&rsquo;/g,
+        "’",
+      );
+      expect(details).toContain(bothLockedNote(synthetic));
+      expect(details.includes("cannot be moved")).toBe(synthetic);
+    }
+    // The drawer's chip reads the same words as the row.
+    const drawer = readFileSync(join(__dirname, "clash-drawer.tsx"), "utf8");
+    expect(drawer).toContain("{bothLockedLabel(preset.synthetic === true)}");
+    expect(drawer).not.toMatch(/>\s*Both sets locked\s*</);
+  });
+
+  it("gives the invented day its own lock words, never the published days' rule", () => {
+    for (const lastLocked of [false, true]) {
+      const plain = legend(day(true, lastLocked));
+      expect(plain).toContain("Locked: an invented fixed slot.");
+      expect(plain).not.toContain("the last set on its stage");
+      expect(plain).not.toContain("by this app");
+    }
+    expect(LOCK_INVENTED).toBe("Locked: an invented fixed slot.");
+  });
+
+  it("says whose the locks are in the costliest clashes' locked share, and that no move is suggested there", () => {
+    expect(lockedShareLine("8%", false)).toBe("8% of the day’s cost sits between two sets this app locks, so it suggests no move there.");
+    expect(lockedShareLine("8%", true)).toBe("8% of the day’s cost sits between two locked sets of the invented day.");
+    for (const lastLocked of [false, true]) {
+      const published = list(day(false, lastLocked), 0.08);
+      expect(published).toContain("8% of the day’s cost sits between two sets this app locks, so it suggests no move there.");
+      expect(published).not.toContain("which cannot move");
+      const invented = list(day(true, lastLocked), 0.08);
+      expect(invented).toContain("8% of the day’s cost sits between two locked sets of the invented day.");
+      expect(invented).not.toContain("this app locks");
+    }
+    // No locked share, no sentence.
+    expect(list(day(false, true), 0)).not.toContain("of the day’s cost sits between");
+  });
+
+  it("says in Try a move that the sets it keeps in place are this app's locks on a published day", () => {
+    expect(lockedSetsLine(false)).toBe("Sets this app locks stay put.");
+    expect(lockedSetsLine(true)).toBe("Locked sets stay put.");
+    for (const synthetic of [false, true]) {
+      const preset = day(synthetic, true);
+      const ranked = topClashes(preset.report.clashes, 0, Number.POSITIVE_INFINITY);
+      const plain = text(renderToStaticMarkup(createElement(TryAMove, { preset, day: 0, ranked, isLocked: () => false })));
+      expect(plain).toContain(
+        `Pick a set to see every legal place on the 5-minute grid, scored. Keep a move to stack the next one. ${lockedSetsLine(synthetic)}`,
+      );
+      expect(plain.includes("Sets this app locks stay put.")).toBe(!synthetic);
+    }
+  });
+
+  it("never says the locks are not the festival's, in any of the three places", () => {
+    const words = [
+      LOCK_SHORT,
+      LOCK_GENERIC,
+      LOCK_INVENTED,
+      lockedShareLine("8%", false),
+      lockedShareLine("8%", true),
+      lockedSetsLine(false),
+      lockedSetsLine(true),
+      bothLockedLabel(false),
+      bothLockedLabel(true),
+      bothLockedNote(false),
+      bothLockedNote(true),
+    ];
+    for (const line of words) expect(line).not.toMatch(/not by the festival/i);
+  });
+
+  it("works out once, in the page, whether the shown day's locks are the last sets, and hands it to every copy of the key", () => {
+    const source = readFileSync(join(__dirname, "clash-control.tsx"), "utf8");
+    expect(source).toContain('import { lockRuleHolds } from "@/lib/locks";');
+    expect(source.match(/lockRuleHolds\(/g)).toHaveLength(1);
+    expect(source).toMatch(/\.filter\(\(slot\) => slot\.day === day\)/);
+    // `[^>]` crosses line ends, so each match runs from the tag's name to its first ">".
+    const legends = source.match(/<TimetableLegend\b[^>]*>/g) ?? [];
+    expect(legends).toHaveLength(4);
+    for (const tag of legends) expect(tag).toContain("holds={holds}");
   });
 });

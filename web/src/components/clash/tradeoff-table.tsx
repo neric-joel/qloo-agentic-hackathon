@@ -14,7 +14,7 @@ const COMPACT_DROPS: ReadonlySet<TradeoffRow["id"]> = new Set(["flags", "costlie
 /** "then the costliest clash is A and B, 30 minutes, 9.5 index points", or that none is left. */
 function costliestClause(cell: string, then: boolean): string {
   const lead = then ? "then " : "";
-  if (cell === NO_PRICED_CLASH) return `${lead}no priced clash is left on this day`;
+  if (cell === NO_PRICED_CLASH) return `${lead}no scored clash is left on this day`;
   return `${lead}the costliest clash ${then ? "is" : "after is"} ${cell}`;
 }
 
@@ -49,7 +49,7 @@ export function consequenceLine(tradeoff: Tradeoff): string | null {
   if (costliest && same) {
     parts.push(
       costliest.move === NO_PRICED_CLASH
-        ? "either way no priced clash is left on this day"
+        ? "either way no scored clash is left on this day"
         : `either way the costliest clash after is ${costliest.move}`,
     );
   }

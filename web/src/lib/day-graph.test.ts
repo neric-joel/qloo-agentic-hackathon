@@ -8,8 +8,13 @@ import {
   EASE_OUT,
   keyLine,
   LAYOUT,
+  LEADER_MARKS,
+  LEADER_MAX,
+  leaderCandidates,
+  lockWords,
   MOVE_MS,
   PAN_MS,
+  planLeaders,
   setNote,
   settledAnnouncement,
   sideEffectText,
@@ -20,7 +25,19 @@ import {
   type DayGraphMove,
   type OverlapChange,
 } from "./day-graph";
-import { BANDS, HATCH_CLEAR, lineKeyAction, NOTE_GAP, notePlace, planDrawing, spotBox, strokeWidth } from "./day-graph-motion";
+import {
+  BANDS,
+  CASING,
+  HATCH_CLEAR,
+  lineKeyAction,
+  MARK_RADIUS,
+  NOTE_GAP,
+  notePlace,
+  planDrawing,
+  spotBox,
+  strokeWidth,
+  type LayoutPlan,
+} from "./day-graph-motion";
 import { NO_OTHER_LONGER, parseDecision, sideEffectsLine, type Decision } from "./decision";
 import { rawTinyPreset } from "./fixtures/tiny-preset";
 import { parsePreset, type Preset } from "./preset";
@@ -674,7 +691,8 @@ describe("the notes", () => {
   it("describes a set, its lock, a missing signal and the mover's two places", () => {
     const graph = moved();
     expect(setNote(graph, set(graph, "Fir"), "published")).toBe("Fir, Main, 14:00–15:00.");
-    expect(setNote(graph, set(graph, "Larch"), "moved")).toBe("Larch, Main, 12:00–13:00. Locked: this set stays put.");
+    // Larch is locked but plays before Fir and Juniper on Main, so the last-set rule is not stated.
+    expect(setNote(graph, set(graph, "Larch"), "moved")).toBe("Larch, Main, 12:00–13:00. Locked by this app: kept in place.");
     expect(setNote(graph, set(graph, "Kauri"), "published")).toBe("Kauri, Wood, 15:30–16:00. No Qloo signal: left out, not scored as zero.");
     expect(setNote(graph, set(graph, "Alder"), "published")).toBe("Alder, Wood, 14:00–15:00.");
     expect(setNote(graph, set(graph, "Alder"), "moved")).toBe("Alder, Wood, 14:15–15:15. Published 14:00–15:00; tested 14:15–15:15.");
@@ -686,6 +704,31 @@ describe("the notes", () => {
     const graph = model(makeDay({ synthetic: true }), decide(LATER));
     expect(setNote(graph, set(graph, "Kauri"), "published")).toBe("Kauri, Wood, 15:30–16:00. No taste signal: left out, not scored as zero.");
     expect(setNote(graph, set(graph, "Alder"), "moved")).toBe("Alder, Wood, 14:15–15:15. Before the move 14:00–15:00; tested 14:15–15:15.");
+  });
+
+  it("says whose lock it is: this app's, with the last-set rule where the day keeps it; on the invented day, an invented fixed slot", () => {
+    // As on both published days: the locked sets are exactly the last set on each of the five stages.
+    const last = ["Juniper", "Ivy", "Cedar", "Kauri", "Hazel"];
+    const published = model(makeDay({ sets: SETS.map((spec) => ({ ...spec, locked: last.includes(spec.name) })) }), decide(LATER));
+    expect(setNote(published, set(published, "Juniper"), "published")).toBe(
+      "Juniper, Main, 15:15–16:15. Locked by this app: the last set on its stage stays in place.",
+    );
+    expect(setNote(published, set(published, "Kauri"), "moved")).toBe(
+      "Kauri, Wood, 15:30–16:00. Locked by this app: the last set on its stage stays in place. No Qloo signal: left out, not scored as zero.",
+    );
+    expect(lockWords(published)).toBe("Locked by this app: the last set on its stage stays in place.");
+    // One more lock, before the last set on its stage, and the rule is no longer the day's.
+    expect(lockWords({ ...published, sets: published.sets.map((item) => (item.name === "Fir" ? { ...item, locked: true } : item)) })).toBe(
+      "Locked by this app: kept in place.",
+    );
+    // An unlocked last set breaks it too.
+    expect(lockWords({ ...published, sets: published.sets.map((item) => (item.name === "Hazel" ? { ...item, locked: false } : item)) })).toBe(
+      "Locked by this app: kept in place.",
+    );
+    const invented = model(makeDay({ synthetic: true }), decide(LATER));
+    expect(setNote(invented, set(invented, "Larch"), "published")).toBe("Larch, Main, 12:00–13:00. Locked: an invented fixed slot.");
+    const inventedLast = model(makeDay({ synthetic: true, sets: SETS.map((spec) => ({ ...spec, locked: last.includes(spec.name) })) }), decide(LATER));
+    expect(lockWords(inventedLast)).toBe("Locked: an invented fixed slot.");
   });
 });
 
@@ -965,5 +1008,235 @@ describe("the keyboard note", () => {
         }
       }
     }
+  });
+});
+
+describe("the leaders", () => {
+  type Box = { x0: number; x1: number; y0: number; y1: number };
+  type Point = { x: number; y: number };
+  const OUTSIDE = ["beside", "above", "below"];
+  const clamp = (value: number, from: number, to: number) => Math.min(to, Math.max(from, value));
+  const strictlyIn = (p: Point, box: Box) => p.x > box.x0 && p.x < box.x1 && p.y > box.y0 && p.y < box.y1;
+  const inset = (box: Box, by: number): Box => ({ x0: box.x0 + by, x1: box.x1 - by, y0: box.y0 + by, y1: box.y1 - by });
+  /** A point's distance from a box's edge (0 on it). */
+  const toBoxEdge = (p: Point, box: Box) => {
+    const dx = Math.max(box.x0 - p.x, 0, p.x - box.x1);
+    const dy = Math.max(box.y0 - p.y, 0, p.y - box.y1);
+    if (dx > 0 || dy > 0) return Math.hypot(dx, dy);
+    return Math.min(p.x - box.x0, box.x1 - p.x, p.y - box.y0, box.y1 - p.y);
+  };
+  /** A point's distance from a bar's edge, its corners rounded as the drawing rounds them. */
+  const toBarEdge = (p: Point, box: Box) => {
+    const r = Math.min(MARK_RADIUS, (box.x1 - box.x0) / 2, (box.y1 - box.y0) / 2);
+    const cx = clamp(p.x, box.x0 + r, box.x1 - r);
+    const cy = clamp(p.y, box.y0 + r, box.y1 - r);
+    return Math.abs(Math.hypot(p.x - cx, p.y - cy) - r);
+  };
+  /** The gap between a name's box and a bar with rounded corners: the length the shortest leader has. */
+  const gapToBar = (name: Box, box: Box) => {
+    const r = Math.min(MARK_RADIUS, (box.x1 - box.x0) / 2, (box.y1 - box.y0) / 2);
+    const core = inset(box, r);
+    const dx = Math.max(0, core.x0 - name.x1, name.x0 - core.x1);
+    const dy = Math.max(0, core.y0 - name.y1, name.y0 - core.y1);
+    return Math.max(0, Math.hypot(dx, dy) - r);
+  };
+
+  // Long invented names for most sets, so names sit outside their bars on a desktop too, as on the published days;
+  // Alder and Birch keep theirs, so the decision still names them.
+  const LONG: Record<string, string> = {
+    Larch: "Larch Hollow Ensemble",
+    Fir: "Fir Street Brass Collective",
+    Juniper: "Juniper and the Night Ferries",
+    Gum: "Gum Tree Choir",
+    Oak: "Oakhaven",
+    Ivy: "Ivy League of Strangers",
+    Cedar: "Cedar Lane Orchestra",
+    Kauri: "Kauri Sound System",
+    Hazel: "Hazel and the Lantern Parade",
+  };
+  const long = (name: string) => LONG[name] ?? name;
+  const longSets = SETS.map((spec) => ({ ...spec, name: long(spec.name) }));
+  const longDay = makeDay({
+    sets: longSets,
+    clashes: [
+      pair(3, long("Gum"), "Birch", 30, 0.55, {}, longSets),
+      pair(1, "Alder", "Birch", 45, 0.912, { label: "hidden" }, longSets),
+      pair(2, long("Fir"), "Alder", 60, 0.62, {}, longSets),
+      pair(4, "Elm", long("Gum"), 40, 0.4, {}, longSets),
+      pair(5, long("Oak"), "Alder", 10, 0.804, {}, longSets),
+      pair(6, long("Fir"), "Birch", 45, 0.3, {}, longSets),
+      pair(7, long("Cedar"), long("Juniper"), 45, 0.2, {}, longSets),
+      pair(8, "Elm", "Alder", 10, 0.25, {}, longSets),
+    ],
+  });
+  // The Riot Fest shape of "the overlap a move ends", invented.
+  const riotSets: SetSpec[] = [
+    { name: "The Formats", stage: "roots", start: "17:10", end: "18:10" },
+    { name: "Amaryllis Morrow", stage: "roots", start: "19:20", end: "20:20", locked: true },
+    { name: "Twin Pines", stage: "rebel", start: "18:30", end: "19:30" },
+    { name: "Good Riddle", stage: "radical", start: "18:15", end: "18:55" },
+    { name: "Bowls for Supper", stage: "radical", start: "19:25", end: "20:05" },
+    { name: "Inkcap Clown Posse", stage: "radical", start: "20:55", end: "21:55" },
+  ];
+  const riotDay = makeDay({
+    sets: riotSets,
+    stages: [
+      ["roots", "Roots"],
+      ["rebel", "Rebel"],
+      ["radical", "Radical"],
+    ],
+    clashes: [pair(1, "Amaryllis Morrow", "Bowls for Supper", 40, 0.88, {}, riotSets), pair(2, "Twin Pines", "Good Riddle", 25, 0.5, {}, riotSets)],
+  });
+  const riotMove: Raw = {
+    ...LATER,
+    act_id: "bowls for supper",
+    act: "Bowls for Supper",
+    from: "Radical 19:25-20:05",
+    stage_id: "radical",
+    stage: "Radical",
+    start: "19:45",
+    end: "20:25",
+    minutes_moved: 20,
+    minutes_shared_after: 35,
+  };
+
+  const fixtures: [string, DayGraphModel][] = [
+    ["the day, moved later", moved()],
+    ["the day, moved to Hill", model(makeDay(), decide(TO_HILL))],
+    ["the day, no move", model(makeDay(), decide(null))],
+    ["the day, no decision", model(makeDay(), null)],
+    ["the invented day", model(makeDay({ synthetic: true }), decide(LATER))],
+    ["long names, moved later", model(longDay, decide(LATER))],
+    ["long names, moved to Hill", model(longDay, decide(TO_HILL))],
+    ["long names, no move", model(longDay, decide(null))],
+    ["the Riot Fest shape", model(riotDay, decide(riotMove, { a_id: "amaryllis morrow", b_id: "bowls for supper", rank: 1, minutes: 40 }))],
+  ];
+  const plansOf = (graph: DayGraphModel): LayoutPlan[] =>
+    (["desktop", "phone", "short"] as const).flatMap((layout) => BANDS[layout].map((band) => planDrawing(graph, layout, band.track)));
+
+  it("joins every name drawn outside its bar to that bar with one leader of at most 24px, from the nearest point of its box to the nearest point of the bar's edge, crossing no other bar, name, tag, window or line", () => {
+    let drawn = 0;
+    let dropped = 0;
+    for (const [label, graph] of fixtures) {
+      for (const plan of plansOf(graph)) {
+        const leaders = planLeaders(graph, plan);
+        const x = (minute: number) => (minute - plan.track.start) * plan.scale;
+        const barBox = (place: { span: { start: number; end: number }; top: number }): Box => ({
+          x0: x(place.span.start),
+          x1: x(place.span.end),
+          y0: place.top,
+          y1: place.top + LAYOUT[plan.layout].bar,
+        });
+        for (const view of ["published", "moved"] as const) {
+          const where = `${label}, ${plan.layout} at ${plan.reference}px, ${view}`;
+          const vp = plan.views[view];
+          const outside = Object.entries(vp.labels)
+            .filter(([, spot]) => OUTSIDE.includes(spot.kind))
+            .map(([id]) => id);
+          const { leaders: lines, dropped: none } = leaders[view];
+          expect([...lines.map((leader) => leader.id), ...none].sort(), `${where}: one leader or one drop per name outside its bar`).toEqual([...outside].sort());
+          expect(none.length, `${where}: dropped ${none.join(", ")}`).toBeLessThanOrEqual(2);
+          drawn += lines.length;
+          dropped += none.length;
+          for (const leader of lines) {
+            const spot = vp.labels[leader.id];
+            const own = vp.bars.find((item) => item.set.actId === leader.id);
+            if (!own) throw new Error(`${where}: ${leader.id} has a leader and no bar`);
+            const name = spotBox(plan, spot);
+            const bar = barBox(own);
+            const base = x(spot.anchor);
+            expect(leader.anchor).toBe(spot.anchor);
+            const a = { x: base + leader.x0, y: leader.y0 };
+            const b = { x: base + leader.x1, y: leader.y1 };
+            const length = Math.hypot(b.x - a.x, b.y - a.y);
+            expect(length, `${where}: ${leader.id}`).toBeLessThanOrEqual(LEADER_MAX);
+            expect(length).toBeGreaterThan(0);
+            expect(leader.length).toBeCloseTo(length, 6);
+            expect(toBoxEdge(a, name), `${where}: ${leader.id} starts on its name's box`).toBeLessThanOrEqual(1);
+            expect(toBarEdge(b, bar), `${where}: ${leader.id} ends on its bar's edge`).toBeLessThanOrEqual(1);
+            expect(length, `${where}: ${leader.id} takes the shortest way`).toBeCloseTo(gapToBar(name, bar), 2);
+            // What it may not cross: every other set's bar (and the published slot, except for the mover's own
+            // leader, which may meet it only along the edge it shares with the moved bar), every other name, tag
+            // and plate box inset 1px, every window, and every line's stroke.
+            const walls: [string, Box][] = [
+              ...vp.bars.filter((item) => item.set.actId !== leader.id).map((item): [string, Box] => [`the bar of ${item.set.name}`, barBox(item)]),
+              ...(vp.ghost ? [["the published slot", vp.ghost.set.actId === leader.id ? inset(barBox(vp.ghost), 0.5) : barBox(vp.ghost)] as [string, Box]] : []),
+              ...Object.entries(vp.labels)
+                .filter(([id]) => id !== leader.id)
+                .map(([id, other]): [string, Box] => [`the name of ${id}`, inset(spotBox(plan, other), 1)]),
+              ...vp.tags.map((tag): [string, Box] => [`the tag ${tag.text}`, inset(spotBox(plan, tag.spot), 1)]),
+              ...[...(vp.hatch ? [vp.hatch] : []), ...vp.created].map((window): [string, Box] => [
+                `the window ${window.key}`,
+                { x0: x(window.window.start), x1: x(window.window.end), y0: window.top, y1: window.bottom },
+              ]),
+              ...vp.lines.map((line): [string, Box] => {
+                const at = x(line.mid) + line.off;
+                return [`the line ${line.key}`, { x0: at - line.width / 2, x1: at + line.width / 2, y0: line.top, y1: line.bottom }];
+              }),
+            ];
+            const steps = Math.ceil(length / 0.25);
+            for (let i = 0; i <= steps; i += 1) {
+              const p = { x: a.x + ((b.x - a.x) * i) / steps, y: a.y + ((b.y - a.y) * i) / steps };
+              for (const [what, box] of walls) expect(strictlyIn(p, box), `${where}: the leader of ${leader.id} crosses ${what}`).toBe(false);
+            }
+          }
+          // A name inside its bar has none.
+          for (const [id, spot] of Object.entries(vp.labels)) {
+            if (!OUTSIDE.includes(spot.kind)) expect(lines.some((leader) => leader.id === id), `${where}: ${id} sits inside its bar`).toBe(false);
+          }
+        }
+      }
+    }
+    // The fixtures put names outside their bars at every width, and every one of them gets its leader.
+    expect(drawn).toBeGreaterThan(300);
+    expect(dropped).toBe(0);
+  });
+
+  it("gives a name that keeps its place in both views the same leader in both, so a leader only travels with its name", () => {
+    let kept = 0;
+    for (const [label, graph] of fixtures) {
+      if (!graph.move) continue;
+      for (const plan of plansOf(graph)) {
+        const leaders = planLeaders(graph, plan);
+        for (const leader of leaders.published.leaders) {
+          if (leader.id === graph.move.actId) continue;
+          const a = plan.views.published.labels[leader.id];
+          const b = plan.views.moved.labels[leader.id];
+          if (!b || JSON.stringify(a) !== JSON.stringify(b)) continue;
+          expect(leaders.moved.leaders.find((other) => other.id === leader.id), `${label}, ${plan.layout} at ${plan.reference}px: ${leader.id}`).toEqual(leader);
+          kept += 1;
+        }
+      }
+    }
+    expect(kept).toBeGreaterThan(50);
+  });
+
+  it("places a leader straight down from under a name's middle, straight across at a bar's middle, or from a corner to the rounded corner", () => {
+    const bar = { x0: 0, x1: 100, y0: 18, y1: 44 };
+    // On a plate above the bar's straight edge: from under the name's middle, 3px down.
+    expect(leaderCandidates({ x0: 10, x1: 50, y0: 0, y1: 15 }, bar)[0]).toEqual({ x0: 30, y0: 15, x1: 30, y1: 18 });
+    // Below it, the same way up.
+    expect(leaderCandidates({ x0: 10, x1: 50, y0: 47, y1: 62 }, bar)[0]).toEqual({ x0: 30, y0: 47, x1: 30, y1: 44 });
+    // A plate hanging past the bar's end: where the bar's straight edge stops, short of its rounded corner.
+    expect(leaderCandidates({ x0: 90, x1: 130, y0: 0, y1: 15 }, bar)[0]).toEqual({ x0: 94, y0: 15, x1: 94, y1: 18 });
+    // Beside the bar: straight across at the bar's middle, 4px.
+    expect(leaderCandidates({ x0: 104, x1: 150, y0: 23.5, y1: 38.5 }, bar)[0]).toEqual({ x0: 104, y0: 31, x1: 100, y1: 31 });
+    // Past the bar's corner: from the name's corner to the nearest point of the rounded corner.
+    const corner = leaderCandidates({ x0: 101, x1: 140, y0: 0, y1: 15 }, bar);
+    expect(corner).toHaveLength(1);
+    expect(Math.hypot(corner[0].x1 - 94, corner[0].y1 - 24)).toBeCloseTo(MARK_RADIUS, 6);
+    expect(Math.hypot(corner[0].x1 - corner[0].x0, corner[0].y1 - corner[0].y0)).toBeCloseTo(Math.hypot(7, 9) - MARK_RADIUS, 6);
+    // Every place offered for one name is as short as the first.
+    for (const ends of leaderCandidates({ x0: 10, x1: 50, y0: 0, y1: 15 }, bar)) expect(ends.y1 - ends.y0).toBe(3);
+    // A name on its bar needs none; only places the reader sees are offered.
+    expect(leaderCandidates({ x0: 10, x1: 50, y0: 20, y1: 35 }, bar)).toEqual([]);
+    expect(leaderCandidates({ x0: 10, x1: 50, y0: 0, y1: 15 }, bar, 40, 200).every((ends) => ends.x0 >= 40.5)).toBe(true);
+    expect(leaderCandidates({ x0: 104, x1: 150, y0: 23.5, y1: 38.5 }, bar, 0, 99)).toEqual([]);
+  });
+
+  it("keeps clear of the marks as the drawing draws them", () => {
+    expect(LEADER_MARKS.corner).toBe(MARK_RADIUS);
+    expect(LEADER_MARKS.casing).toBe(CASING);
+    expect(LEADER_MAX).toBe(24);
   });
 });

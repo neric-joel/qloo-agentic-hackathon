@@ -39,7 +39,7 @@ export const TEXT_TOGGLE_CLASS =
 
 /**
  * How much of the lineup Qloo could speak for, as one sentence over the board: the label, then
- * "36 of 39 acts scored · 3 left out, not scored as zero", where the second part is the one link, an
+ * "36 of 39 sets scored · 3 left out, not scored as zero", where the second part is the one link, an
  * underlined toggle. They are left out of every price
  * and never counted as zero taste overlap; the toggle's panel names them and gives the strong, weak
  * and no-signal breakdown. The panel is in the HTML either way (and prints), so it never depends on
@@ -77,7 +77,7 @@ export function CoverageMeter({ coverage, metrics, synthetic = false, legend, cl
           </span>
           <p className="text-sm">
             <span className="font-mono tabular-nums">{coverage.scored_acts}</span> of{" "}
-            <span className="font-mono tabular-nums">{total}</span> acts scored
+            <span className="font-mono tabular-nums">{total}</span> sets scored
             {unscored.length > 0 ? (
               <>
                 {" "}

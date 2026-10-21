@@ -313,9 +313,9 @@ export function TasteLens({
           {apartLine(lenses.apart)}.
         </p>
         <p className="text-muted-foreground">
-          Taste overlap only costs something when two sets share time, so these pairs price at zero.{" "}
+          Taste overlap only costs something when two sets share time, so these pairs score zero.{" "}
           <Link href="/method#price" className={linkClass}>
-            How the price works
+            How the score works
           </Link>
         </p>
       </div>

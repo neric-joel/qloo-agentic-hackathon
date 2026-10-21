@@ -895,6 +895,21 @@ export function firstPublishedDay(json: unknown): PublishedDay | null {
   return null;
 }
 
+/** Every day of `GET /api/presets` that is not the invented one, in the API's order; empty when none answers. */
+export function publishedDays(json: unknown): PublishedDay[] {
+  if (!Array.isArray(json)) return [];
+  return json.flatMap((item) => {
+    const day = firstPublishedDay([item]);
+    return day ? [day] : [];
+  });
+}
+
+/** "Check a published day": every day to offer, from `GET /api/presets`, in its order; null when none answers. */
+export async function loadPublishedDays(signal?: AbortSignal): Promise<PublishedDay[] | null> {
+  const days = publishedDays(await getJson("/api/presets", signal));
+  return days.length > 0 ? days : null;
+}
+
 /** "Check a published day": which day to offer, from `GET /api/presets`; null when none answers. */
 export async function loadPublishedDay(signal?: AbortSignal): Promise<PublishedDay | null> {
   return firstPublishedDay(await getJson("/api/presets", signal));

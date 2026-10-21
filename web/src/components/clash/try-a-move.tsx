@@ -1096,6 +1096,16 @@ function PlanError({ onRetry, onStartOver }: { onRetry: () => void; onStartOver:
 }
 
 /**
+ * The intro's last sentence, on locked sets. On a published day the locks are this app's, so the words say
+ * so; the invented day keeps its own words. The short form, on every published day: the rule itself (the
+ * last set on each stage) is stated in the board's key, on /method and in the brief, so the intro keeps its
+ * height.
+ */
+export function lockedSetsLine(synthetic: boolean): string {
+  return synthetic ? "Locked sets stay put." : "Sets this app locks stay put.";
+}
+
+/**
  * "Try a move": the visitor picks a set and sees every legal place it could go, priced by the
  * timetable engine, with the Clash Budget move and the clashes it ends and adds for the place they
  * choose. A place can be kept, and the next set is then priced on top of the kept moves; the plan
@@ -1587,8 +1597,8 @@ export function TryAMove({
             Move a set and see what it costs
           </h2>
           <p className="mt-2 max-w-prose text-[0.9375rem] leading-relaxed">
-            Pick a set to see every legal place on the 5-minute grid, scored. Keep a move to stack the next one.
-            Locked sets stay put.
+            Pick a set to see every legal place on the 5-minute grid, scored. Keep a move to stack the next one.{" "}
+            {lockedSetsLine(preset.synthetic === true)}
           </p>
         </div>
 

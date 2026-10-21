@@ -1203,7 +1203,8 @@ function ExchangeView({
 
   return (
     // Brought to the top when it starts, below the page's own scroll padding and, from 768 px, clear of the
-    // sticky section nav, so its question and Skip are in view.
+    // sticky section nav, so its question and Skip are in view (from 1024 px the first run's margin is set as it
+    // starts, so the section's heading beside it stays in view too: `replayScrollMargin`).
     <li id={`agent-${exchange.id}`} className="scroll-mt-3 space-y-4 md:scroll-mt-10">
       <div>
         {/* A replay's label shares its line with Skip, in a line that keeps Skip's height once it goes, so the
@@ -1349,15 +1350,49 @@ export function AgentLimits({ synthetic = false }: { synthetic?: boolean }) {
  * run, picker). In every state the side column (heading, can/cannot list) sits top left, the run picker under
  * it on the left, and the run (the still transcript, or the replay) spans both rows on the right, so the
  * picker never changes column when a run starts or ends. While and after a run plays (`playing`) the picker
- * stays in view as the answer scrolls, sticky under the site header (64 px) and the section nav (44 px).
+ * stays in view as the answer scrolls, sticky under the site header (64 px) and the section nav (44 px). Its track
+ * (`pickerTrack`) then reaches 3rem past the run's foot, into the section's own bottom padding (3rem from 640 px),
+ * so where the page ends just below a run the picker can stay that much lower and its label clears the sticky
+ * bars instead of riding up under them; it never reaches past the section.
  */
-export function agentLayout(playing: boolean, aside = true): { side: string; run: string; picker: string; pickerInner: string } {
+export function agentLayout(
+  playing: boolean,
+  aside = true,
+): { side: string; run: string; picker: string; pickerTrack: string; pickerInner: string } {
   return {
     side: "min-w-0 lg:col-span-6 lg:col-start-1 lg:row-start-1",
     run: cn("min-w-0 lg:col-span-6 lg:col-start-7 lg:row-span-2 lg:row-start-1 lg:mt-0", aside ? "mt-8" : "mt-5"),
     picker: "mt-8 min-w-0 lg:col-span-6 lg:col-start-1 lg:row-start-2 lg:mt-4 lg:self-stretch",
+    pickerTrack: playing ? "lg:h-[calc(100%_+_3rem)]" : "",
     pickerInner: playing ? "lg:sticky lg:top-32" : "",
   };
+}
+
+/**
+ * Where a run's question lands when it starts: the scroll margin (px) to give its item, or null to keep the item's
+ * own (`scroll-mt-3 md:scroll-mt-10`). From 1024 px (`wide`) the section's heading sits in the column beside the run,
+ * so while the question is near enough to the section's top (`offset`, px) to land in the upper half of the screen,
+ * the margin grows by that distance and the section lands where the "Agent runs" jump lands it (`sectionMargin`, its
+ * own scroll margin, past the page's scroll padding `padding`): the heading clear of the sticky bars, the question
+ * beside it. On one column, or for a later run far down the conversation, the heading is not beside the question
+ * and the item's own margin stands.
+ */
+export function replayScrollMargin({
+  wide,
+  offset,
+  sectionMargin,
+  padding,
+  viewport,
+}: {
+  wide: boolean;
+  offset: number;
+  sectionMargin: number;
+  padding: number;
+  viewport: number;
+}): number | null {
+  if (!wide) return null;
+  const margin = Math.round(offset + sectionMargin);
+  return padding + margin <= viewport / 2 ? margin : null;
 }
 
 /** Why the live agent is off, said plainly wherever the panel stands in for it. */
@@ -1545,9 +1580,24 @@ export function AgentPanel({
 
   useEffect(() => {
     if (!current) return;
+    const item = document.getElementById(`agent-${current.id}`);
+    if (!item) return;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // From 1024 px the first run's question lands with the section's heading in view beside it, clear of the sticky
+    // bars, as the "Agent runs" jump lands it (`replayScrollMargin`); otherwise the item keeps its own margin.
+    const section = document.getElementById("agent");
+    const margin = section
+      ? replayScrollMargin({
+          wide: window.matchMedia("(min-width: 64rem)").matches,
+          offset: item.getBoundingClientRect().top - section.getBoundingClientRect().top,
+          sectionMargin: Number.parseFloat(getComputedStyle(section).scrollMarginTop) || 0,
+          padding: Number.parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0,
+          viewport: window.innerHeight,
+        })
+      : null;
+    item.style.scrollMarginTop = margin === null ? "" : `${margin}px`;
     // Bring the question to the top so the answer streams into view below it, not below the fold.
-    document.getElementById(`agent-${current.id}`)?.scrollIntoView({
+    item.scrollIntoView({
       block: "start",
       behavior: reduce ? "auto" : "smooth",
     });
@@ -1691,18 +1741,20 @@ export function AgentPanel({
   const picker =
     mode !== "checking" && runs.length > 0 ? (
       <div data-agent-picker data-beside-run={playing ? "" : undefined} className={layout.picker}>
-        <div className={layout.pickerInner}>
-          {mode === "live" ? recorded : recordedOff}
-          {/* From 1024 px the line takes the column's full measure, so the pointer adds at most one line. */}
-          {mode === "live" ? (
-            qlooLine ? <p className="mt-3 max-w-prose text-sm text-muted-foreground lg:max-w-none">{qlooLine}</p> : null
-          ) : (
-            <p className="mt-3 max-w-prose text-sm text-muted-foreground lg:max-w-none">
-              {qlooLine}
-              {/* After the pointer's link, the closing sentence starts its own line, so the link ends the line it closes. */}
-              {pointer ? <span className="block">{NEVER_CHANGES}</span> : `${qlooLine ? " " : ""}${NEVER_CHANGES}`}
-            </p>
-          )}
+        <div data-agent-picker-track className={layout.pickerTrack}>
+          <div className={layout.pickerInner}>
+            {mode === "live" ? recorded : recordedOff}
+            {/* From 1024 px the line takes the column's full measure, so the pointer adds at most one line. */}
+            {mode === "live" ? (
+              qlooLine ? <p className="mt-3 max-w-prose text-sm text-muted-foreground lg:max-w-none">{qlooLine}</p> : null
+            ) : (
+              <p className="mt-3 max-w-prose text-sm text-muted-foreground lg:max-w-none">
+                {qlooLine}
+                {/* After the pointer's link, the closing sentence starts its own line, so the link ends the line it closes. */}
+                {pointer ? <span className="block">{NEVER_CHANGES}</span> : `${qlooLine ? " " : ""}${NEVER_CHANGES}`}
+              </p>
+            )}
+          </div>
         </div>
       </div>
     ) : null;

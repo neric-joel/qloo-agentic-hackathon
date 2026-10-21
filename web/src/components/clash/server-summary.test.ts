@@ -38,7 +38,7 @@ describe("SummaryScore and SummaryBoard", () => {
     expect(html).toContain("104");
     expect(html).toContain(`${summary.vsRandom}.`);
     expect(html).toContain("Lower is better.");
-    expect(html).toContain("Priced from 2 saved Qloo request records: 2 of 3 acts matched to Qloo artists; 1 not priced.");
+    expect(html).toContain("Scored from 2 saved Qloo request records: 2 of 3 acts matched to Qloo artists; 1 not scored.");
   });
 
   it("set the index open on the paper under one hairline rule, as the loaded Index block is", () => {

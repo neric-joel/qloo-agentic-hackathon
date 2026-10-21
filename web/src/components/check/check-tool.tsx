@@ -58,7 +58,7 @@ import {
   SCORE_COPY,
   SCORE_LIMIT,
   defaultOrder,
-  loadPublishedDay,
+  loadPublishedDays,
   loadPublishedTimetable,
   loadServableDays,
   matchServableDay,
@@ -204,6 +204,22 @@ function publishedRun(published: PublishedInput, outcome: CheckOutcome): Pick<Ru
     : 0;
   const line = outcome.ok ? publishedPairsLine(outcome.report.shared.length, published.pairCounts ?? null, withoutSignal) : null;
   return { published: line ? `${published.label} ${line}` : published.label, publishedLabel: published.label, pairsLine: line };
+}
+
+/**
+ * The published day "Check a published day" offers, from the days this app's API names in its order: the first,
+ * or, while the day loaded from `onShow` is on show as loaded, the one after it (the first again after the
+ * last), so each published day is one press from the one on show. Null when the API names none; undefined
+ * until it answers.
+ */
+export function offeredDay(
+  days: readonly PublishedDay[] | null | undefined,
+  onShow: string | null,
+): PublishedDay | null | undefined {
+  if (!days) return days;
+  if (days.length === 0) return null;
+  const at = onShow === null ? -1 : days.findIndex((day) => day.id === onShow);
+  return days[(at + 1) % days.length];
 }
 
 /** Minutes from local midnight now. */
@@ -996,11 +1012,12 @@ export function CheckTool({
   const removedSince = useRef<string[]>([]);
   // Whether this server prices live; unknown counts as off, so the page never offers what it would refuse.
   const [live, setLive] = useState(false);
-  // The published day "Check a published day" offers (none until this app's API names one; undefined until it
-  // answers), and the one loaded.
-  const [publishedDay, setPublishedDay] = useState<PublishedDay | null | undefined>(undefined);
+  // The published days this app's API names, in its order (null when it names none; undefined until it
+  // answers), the one loaded and the id it was loaded from.
+  const [publishedDays, setPublishedDays] = useState<readonly PublishedDay[] | null | undefined>(undefined);
   const publishedRef = useRef<PublishedInput | null>(null);
   const [published, setPublished] = useState<PublishedInput | null>(null);
+  const [publishedFrom, setPublishedFrom] = useState<string | null>(null);
   const [publishedNote, setPublishedNote] = useState("");
   // The published days a pasted grid may be on, read once after the first pasted grid is checked (never on
   // load, for the sample or for a published day): which pairs the saved server can serve. GETs of this app's
@@ -1020,6 +1037,8 @@ export function CheckTool({
   );
   const editingSample = isSampleInput(input);
   const editingPublished = isPublishedInput(input, published);
+  // The day "Check a published day" offers: the first the API names, or the next one while a published day is on show.
+  const publishedDay = offeredDay(publishedDays, editingPublished ? publishedFrom : null);
   const [run, setRun] = useState<Run | null>(() =>
     startWithSample
       ? {
@@ -1126,14 +1145,14 @@ export function CheckTool({
   }, [focusGrid]);
 
   // Two reads of this app's own API, carrying nothing of the visitor's: whether live pricing is on, and
-  // which published day to offer. Neither reaches Qloo; a failure leaves live off and the offer hidden.
+  // which published days to offer. Neither reaches Qloo; a failure leaves live off and the offer hidden.
   useEffect(() => {
     const controller = new AbortController();
     void priceGridLive(controller.signal).then((on) => {
       if (!controller.signal.aborted) setLive(on);
     });
-    void loadPublishedDay(controller.signal).then((day) => {
-      if (!controller.signal.aborted) setPublishedDay(day);
+    void loadPublishedDays(controller.signal).then((days) => {
+      if (!controller.signal.aborted) setPublishedDays(days);
     });
     return () => controller.abort();
   }, []);
@@ -1361,8 +1380,9 @@ export function CheckTool({
    */
   async function loadPublished() {
     if (!publishedDay) return;
+    const from = publishedDay.id;
     setPublishedNote("Loading the published timetable.");
-    const day = publishedDayInput(await loadPublishedTimetable(publishedDay.id));
+    const day = publishedDayInput(await loadPublishedTimetable(from));
     if (!day) {
       setPublishedNote("The published timetable did not load. Your fields are unchanged.");
       return;
@@ -1370,6 +1390,7 @@ export function CheckTool({
     setPublishedNote("");
     publishedRef.current = day;
     setPublished(day);
+    setPublishedFrom(from);
     setInput(day.input);
     setSampleRules([]);
     removedSince.current = [];
@@ -2015,9 +2036,9 @@ export function CheckTool({
             <RuledDetails summary="Format and midnight examples" className="mt-3 text-sm leading-relaxed text-muted-foreground">
               <p className="pb-3">
                 With a header row, the columns can come in any order, a day column is read (one day at a
-                time) and other columns are ignored. Times as 18:00, 6:00 PM or 6pm; after midnight also
-                as 12:30 AM. A set that ends before 06:00 and before it starts is read as ending the next
-                day.
+                time) and other columns are ignored. Times as 18:00, 18.00, 1800, 6:00 PM or 6pm; after
+                midnight also as 12:30 AM. A set that ends before 06:00 and before it starts is read as
+                ending the next day.
               </p>
             </RuledDetails>
             {linkNote ? (
@@ -2133,6 +2154,8 @@ export function CheckTool({
                 selectedBreak={picked?.id ?? null}
                 onSelectBreak={selectBreak}
                 numbered={!working && !stale}
+                // A published day's locks are this app's, and the read line says so.
+                published={Boolean(run.published)}
                 // The published day's overlaps against the clashes its page ranks: only for that day as loaded.
                 countNote={working ? null : (run.pairsLine ?? null)}
                 between={

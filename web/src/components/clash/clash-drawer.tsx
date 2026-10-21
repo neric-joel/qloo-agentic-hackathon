@@ -43,6 +43,7 @@ import type { Act, PairClash, Preset, Receipt, SetSlot, Stage } from "@/lib/pres
 import { formatRange, overlapWindow } from "@/lib/timetable";
 
 
+import { bothLockedLabel } from "./clash-list";
 import { LiveRecheck } from "./live-recheck";
 import { LabelBadge, Meter } from "./marks";
 
@@ -171,7 +172,7 @@ function PairTags({
     return (
       <>
         <p className="text-sm text-muted-foreground">
-          No genre or theme tags are saved for this pair, so its price rests on the taste-overlap
+          No genre or theme tags are saved for this pair, so its score rests on the taste-overlap
           ranking alone.
         </p>
         <p className="mt-2 text-sm text-muted-foreground">
@@ -201,6 +202,17 @@ function PairTags({
       </p>
     </>
   );
+}
+
+/**
+ * Under the opening sentence of a clash whose two sets are both locked. A published day's locks are this
+ * app's, so it says so and that no move is suggested, in the costliest-clashes line's words; the invented
+ * day's fixed slots cannot move.
+ */
+export function bothLockedNote(synthetic: boolean): string {
+  return synthetic
+    ? "Both sets are locked, so this clash cannot be moved. It still counts in the day’s cost."
+    : "This app locks both sets, so it suggests no move for this clash. It still counts in the day’s cost.";
 }
 
 /** What the details need, and nothing about the sheet around them. */
@@ -275,8 +287,7 @@ export function ClashDetails({
       </Description>
       {fixed ? (
         <p className="mt-3 max-w-prose text-[0.9375rem] leading-relaxed text-muted-foreground">
-          Both sets are locked, so this clash cannot be moved. It still counts in the day&rsquo;s
-          cost.
+          {bothLockedNote(synthetic)}
         </p>
       ) : null}
 
@@ -298,7 +309,7 @@ export function ClashDetails({
         />
       )}
 
-      <Section title="The price">
+      <Section title="The score">
         <dl className="grid grid-cols-2 gap-x-5 gap-y-5">
           <Figure
             label="Taste overlap"
@@ -324,12 +335,12 @@ export function ClashDetails({
           <Figure
             label="Share of day's cost"
             value={formatShare(shown.regret_share)}
-            note="This clash's price over the sum of every scored clash today."
+            note="This clash's score over the sum of every scored clash today."
             chip={<ProvenanceChip provenance="derived" size="sm" synthetic={synthetic} />}
           />
         </dl>
         <p className="mt-5 rounded-md bg-background px-3 py-2.5 font-mono text-xs leading-relaxed">
-          price = taste overlap {shown.audience_overlap.toFixed(3)} &times; share of the shorter set{" "}
+          score = taste overlap {shown.audience_overlap.toFixed(3)} &times; share of the shorter set{" "}
           {shown.concurrency.toFixed(3)} &times; combined draw {shown.draw.toFixed(3)}
           {rarityFactor !== null ? ` × rarity factor ${rarityFactor.toFixed(3)}` : ""} ={" "}
           {shown.regret.toFixed(3)}
@@ -497,7 +508,7 @@ export function ClashDrawer({
             {fixed ? (
               <span className="tag text-foreground">
                 <Lock aria-hidden="true" className="size-3" />
-                Both sets locked
+                {bothLockedLabel(preset.synthetic === true)}
               </span>
             ) : null}
             <span className="tag text-foreground">

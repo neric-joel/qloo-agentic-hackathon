@@ -56,8 +56,8 @@ export function SummaryBoard({ summary }: { summary: ServerSummary }) {
       {summary.clashes.length === 0 ? (
         <p className="mt-4 rounded-md border border-dotted border-border-strong p-4 text-sm text-muted-foreground">
           {summary.synthetic
-            ? "No priced clashes on this day: no two priced acts play at the same time."
-            : "No priced clashes on this day: no two acts with a Qloo signal play at the same time."}
+            ? "No scored clashes on this day: no two scored acts play at the same time."
+            : "No scored clashes on this day: no two acts with a Qloo signal play at the same time."}
         </p>
       ) : (
         <ol className="divide-y divide-border">

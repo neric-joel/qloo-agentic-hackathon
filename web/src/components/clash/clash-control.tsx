@@ -25,6 +25,7 @@ import { buildDayGraph, type DayGraphModel, type GraphView } from "@/lib/day-gra
 import { buildDecisionCopy, decisionDay, requestDecision, type Decision } from "@/lib/decision";
 import { pluralize } from "@/lib/format";
 import { drawerRank, drawerRankOf } from "@/lib/lenses";
+import { lockRuleHolds } from "@/lib/locks";
 import { MOCK_STREAM_ENABLED } from "@/lib/mock-stream";
 import { parsePreset, type Evidence, type PairClash, type Preset, type PresetSummary } from "@/lib/preset";
 import type { RulePreview } from "@/lib/rule-fix";
@@ -46,7 +47,7 @@ import { PresetSources } from "./preset-sources";
 import { SummaryBoard, SummaryScore } from "./server-summary";
 import { BoardSkeleton, ScoreSkeleton } from "./skeletons";
 import { TimetableGrid } from "./timetable-grid";
-import { TimetableLegend, legendSymbolCount } from "./timetable-legend";
+import { LockKey, TimetableLegend, legendSymbolCount } from "./timetable-legend";
 import { TimetableList } from "./timetable-list";
 import { TRY_A_MOVE_ID, TryAMove, type SeedStep } from "./try-a-move";
 import { TasteSection, WHAT_QLOO_ID, concurrentPairs, whatChangesTitle } from "./why-qloo";
@@ -935,6 +936,16 @@ function PresetView({
     const locked = new Set(festival.timetable.filter((slot) => slot.locked).map((slot) => slot.act_id));
     return (actId: string) => locked.has(actId);
   }, [festival]);
+  // Whether the shown day's locked sets are exactly the last set on each stage, so the board's key may say so.
+  const holds = useMemo(
+    () =>
+      lockRuleHolds(
+        festival.timetable
+          .filter((slot) => slot.day === day)
+          .map((slot) => ({ stage: slot.stage_id, day: slot.day, start: slot.start, end: slot.end, locked: slot.locked })),
+      ),
+    [festival, day],
+  );
   const hero = useMemo(() => heroClash(ranked, preset.evidence, isLocked), [ranked, preset.evidence, isLocked]);
   // The share of the day's cost that sits between two locked sets, over every ranked clash.
   const fixedShare = useMemo(
@@ -1284,6 +1295,7 @@ function PresetView({
                       inline
                       planShown={planShown}
                       synthetic={synthetic}
+                      holds={holds}
                       className="max-md:hidden"
                       note={
                         <>
@@ -1296,18 +1308,21 @@ function PresetView({
                 />
                 {/* Below 768 px: the key, then the board itself in a sideways scroller that snaps to the stage
                     columns, then the start-order list behind a summary. Under 640 px the key folds into one
-                    closed summary unless a tested place is on the board, when its warning must show. */}
+                    closed summary unless a tested place is on the board, when its warning must show; the
+                    lock's reading stays out of the fold, on its own line above it, so whose lock it is needs
+                    no tap. */}
                 {planShown ? (
-                  <TimetableLegend planShown synthetic={synthetic} className="mt-4 mb-3 md:hidden" />
+                  <TimetableLegend planShown synthetic={synthetic} holds={holds} className="mt-4 mb-3 md:hidden" />
                 ) : (
                   <>
+                    <LockKey synthetic={synthetic} holds={holds} className="mt-4 sm:hidden" />
                     <MoreDetails
-                      className="mt-4 mb-3 sm:hidden"
-                      summary={`How to read the board (${pluralize(legendSymbolCount({ planShown }), "symbol")})`}
+                      className="mt-3 mb-3 sm:hidden"
+                      summary={`How to read the board (${pluralize(legendSymbolCount({ planShown, lockApart: true }), "symbol")})`}
                     >
-                      <TimetableLegend synthetic={synthetic} className="mt-3 px-1" />
+                      <TimetableLegend synthetic={synthetic} holds={holds} lockApart className="mt-3 px-1" />
                     </MoreDetails>
-                    <TimetableLegend synthetic={synthetic} className="mt-4 mb-3 hidden sm:flex md:hidden" />
+                    <TimetableLegend synthetic={synthetic} holds={holds} className="mt-4 mb-3 hidden sm:flex md:hidden" />
                   </>
                 )}
                 <p className="mb-3 text-xs text-muted-foreground md:hidden">Scroll sideways to see every stage.</p>

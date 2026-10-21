@@ -23,7 +23,9 @@ import {
   EASE_OUT,
   keyLine,
   LAYOUT,
+  lockWords,
   PAN_MS,
+  planLeaders,
   setNote,
   settledAnnouncement,
   sideEffectText,
@@ -34,7 +36,9 @@ import {
   type DayGraphThread,
   type DrawingLayout,
   type GraphView,
+  type Leader,
   type Span,
+  type ViewLeaders,
 } from "@/lib/day-graph";
 import {
   BANDS,
@@ -171,6 +175,16 @@ export function DayGraph(props: {
     },
     [plans],
   );
+  // Each band's leaders, from its plan: placed once with the names, so the server frame draws them too.
+  const leaders = useMemo(
+    () =>
+      Object.fromEntries(LAYOUTS.map((layout) => [layout, plans[layout].map((plan) => planLeaders(model, plan))])) as Record<
+        DrawingLayout,
+        Record<GraphView, ViewLeaders>[]
+      >,
+    [model, plans],
+  );
+  const lockTitle = useMemo(() => lockWords(model), [model]);
   const modelKey = [model.presetId, model.day, model.synthetic, model.builtAt, model.move?.label ?? "", model.sets.length, model.threads.length].join("|");
 
   const [seen, setSeen] = useState(modelKey);
@@ -387,6 +401,7 @@ export function DayGraph(props: {
 
   const ctx: Ctx = {
     model,
+    lockTitle,
     uid,
     drawn,
     shown,
@@ -470,8 +485,8 @@ export function DayGraph(props: {
       </p>
       {LAYOUTS.map((layout) => (
         <div key={layout} data-layout={layout} className={LAYOUT_CLASS[layout]} style={{ height: drawingHeight(model, layout) }}>
-          {plans[layout].map((plan) => (
-            <Drawing key={plan.reference} plan={plan} ctx={ctx} className={BAND_CLASS[plan.reference]} />
+          {plans[layout].map((plan, index) => (
+            <Drawing key={plan.reference} plan={plan} leaders={leaders[layout][index]} ctx={ctx} className={BAND_CLASS[plan.reference]} />
           ))}
         </div>
       ))}
@@ -484,6 +499,8 @@ export function DayGraph(props: {
 
 type Ctx = {
   model: DayGraphModel;
+  /** The words a lock carries on this day (`lockWords`): whose lock it is. */
+  lockTitle: string;
   uid: string;
   drawn: GraphView;
   shown: GraphView;
@@ -502,7 +519,7 @@ type Ctx = {
 };
 
 /** One band of one layout: the stage names, the time track (panning on a phone), the overview strip and the note layer. */
-function Drawing({ plan, ctx, className }: { plan: LayoutPlan; ctx: Ctx; className?: string }) {
+function Drawing({ plan, leaders, ctx, className }: { plan: LayoutPlan; leaders: Record<GraphView, ViewLeaders>; ctx: Ctx; className?: string }) {
   const { model } = ctx;
   const { layout } = plan;
   const height = drawingHeight(model, layout);
@@ -526,7 +543,7 @@ function Drawing({ plan, ctx, className }: { plan: LayoutPlan; ctx: Ctx; classNa
           style={trackStyle}
         >
           <Axis layout={layout} plan={plan} />
-          <Marks plan={plan} ctx={ctx} />
+          <Marks plan={plan} leaders={leaders} ctx={ctx} />
           <Hits plan={plan} ctx={ctx} />
         </div>
       </div>
@@ -629,7 +646,7 @@ function SetBar({
         <span data-anim={wash.key} className="absolute inset-y-0 left-0 w-full origin-left bg-shared-wash" style={{ transform: wash.transform }} />
       ) : null}
       {set.locked ? (
-        <span title="Locked: this set stays put" className="absolute top-1/2 left-[5px] z-[1] flex -translate-y-1/2">
+        <span title={ctx.lockTitle} className="absolute top-1/2 left-[5px] z-[1] flex -translate-y-1/2">
           <Lock aria-hidden="true" className="size-3" strokeWidth={2.25} />
         </span>
       ) : null}
@@ -644,12 +661,15 @@ function SpotLabel({
   shift = 0,
   className,
   data,
+  dropped = false,
 }: {
   spot: Spot;
   track: Span;
   shift?: number;
   className?: string;
   data?: Record<string, string>;
+  /** A name outside its bar whose leader could not be drawn clear of the other marks (`planLeaders`). */
+  dropped?: boolean;
 }) {
   // The box is exactly as wide as the plan measured it (a hair over the text), so what the plan kept clear and
   // over its own bar is what the page draws.
@@ -665,9 +685,33 @@ function SpotLabel({
       {...data}
       className={cn("pointer-events-none absolute whitespace-nowrap", spot.plate && "rounded-sm bg-background px-0.5", className)}
       style={style}
+      data-leader-dropped={dropped ? "" : undefined}
     >
       {spot.lines.length === 1 ? spot.lines[0] : spot.lines.map((line) => <span key={line} className="block">{line}</span>)}
     </span>
+  );
+}
+
+/**
+ * A leader: the 1px hairline from a name drawn outside its bar to that bar's edge, in the ink of the drawing's
+ * quietest marks (the bars' edges and the axis ticks). A mark, not a control: no text, no focus, no pointer. Placed
+ * from its name's anchor minute, so it rides with the name (`shift` minutes off it on the mover's layer) and swaps
+ * with it as the drawing settles.
+ */
+function LeaderMark({ leader, track, shift = 0, swap }: { leader: Leader; track: Span; shift?: number; swap?: "in" | "out" | null }) {
+  return (
+    <svg
+      data-leader={leader.id}
+      data-swap={swap ?? undefined}
+      aria-hidden="true"
+      focusable="false"
+      width={1}
+      height={1}
+      className="pointer-events-none absolute top-0 overflow-visible"
+      style={{ left: pct(trackPct(track, leader.anchor - shift)) }}
+    >
+      <line x1={leader.x0} y1={leader.y0} x2={leader.x1} y2={leader.y1} stroke="var(--border-strong)" strokeWidth={1} />
+    </svg>
   );
 }
 
@@ -803,10 +847,10 @@ function MovingWindow({
 
 /**
  * Everything drawn on the track, in paint order: windows (behind the bars), the ghost, the lines that pass
- * beneath the bars, the bars and the mover, the lines drawn over the bars, the end dots, then the names (inside
- * the bars, beside them and on their paper plates) and the tags.
+ * beneath the bars, the bars and the mover, the lines drawn over the bars, the end dots, then the leaders from the
+ * names outside their bars, then the names (inside the bars, beside them and on their paper plates) and the tags.
  */
-function Marks({ plan, ctx }: { plan: LayoutPlan; ctx: Ctx }) {
+function Marks({ plan, leaders, ctx }: { plan: LayoutPlan; leaders: Record<GraphView, ViewLeaders>; ctx: Ctx }) {
   const { model, flight, drawn, swap } = ctx;
   const { track, layout } = plan;
   const move = model.move;
@@ -994,7 +1038,7 @@ function Marks({ plan, ctx }: { plan: LayoutPlan; ctx: Ctx }) {
     incoming = new Set(showing.filter((item) => !beforeIds.has(item.sig)).map((item) => item.sig));
     outgoing = before.filter((item) => !afterIds.has(item.sig));
   }
-  const renderItem = (item: Item, shift: number, mark: "in" | "out" | null) => {
+  const renderItem = (item: Item, view: GraphView, shift: number, mark: "in" | "out" | null) => {
     const set = nameOf(item.id);
     const inBar = item.spot.kind === "inside" || item.spot.kind === "prefix";
     return (
@@ -1003,6 +1047,7 @@ function Marks({ plan, ctx }: { plan: LayoutPlan; ctx: Ctx }) {
         spot={item.spot}
         track={track}
         shift={shift}
+        dropped={!item.tag && leaders[view].dropped.includes(item.id)}
         className={cn(
           item.tag || set?.featured ? "font-semibold" : "font-medium",
           item.tag && "text-primary",
@@ -1021,6 +1066,34 @@ function Marks({ plan, ctx }: { plan: LayoutPlan; ctx: Ctx }) {
   const leavingMover = outgoing.filter((item) => item.mover);
   const leavingFixed = outgoing.filter((item) => !item.mover);
   const slots = plan.views[labelView].slots;
+
+  // --- leaders: like the names, the resting view's while in flight, the mover's on the mover's layer; one that
+  // differs between the views swaps with the names as the drawing settles.
+  type LeaderItem = { key: string; leader: Leader; mover: boolean; sig: string };
+  const leadersAt = (view: GraphView): LeaderItem[] =>
+    leaders[view].leaders.map((leader) => {
+      const isMover = leader.id === move?.actId;
+      const at = isMover ? leader.anchor - shiftOf(view) : leader.anchor;
+      const sig = `${leader.id}|${[at, leader.x0, leader.y0, leader.x1, leader.y1].map((value) => Math.round(value * 100)).join("|")}`;
+      return { key: `leader:${leader.id}`, leader, mover: isMover, sig };
+    });
+  const showingLeaders = leadersAt(labelView);
+  let incomingLeaders = new Set<string>();
+  let outgoingLeaders: LeaderItem[] = [];
+  if (swap && !flying) {
+    const before = leadersAt(swap.from);
+    const beforeSigs = new Set(before.map((item) => item.sig));
+    const afterSigs = new Set(showingLeaders.map((item) => item.sig));
+    incomingLeaders = new Set(showingLeaders.filter((item) => !beforeSigs.has(item.sig)).map((item) => item.sig));
+    outgoingLeaders = before.filter((item) => !afterSigs.has(item.sig));
+  }
+  const renderLeader = (item: LeaderItem, shift: number, mark: "in" | "out" | null) => (
+    <LeaderMark key={`${mark ?? "on"}-${item.sig}`} leader={item.leader} track={track} shift={shift} swap={mark} />
+  );
+  const fixedLeaders = showingLeaders.filter((item) => !item.mover);
+  const moverLeaders = showingLeaders.filter((item) => item.mover);
+  const leavingMoverLeaders = outgoingLeaders.filter((item) => item.mover);
+  const leavingFixedLeaders = outgoingLeaders.filter((item) => !item.mover);
 
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0">
@@ -1089,8 +1162,9 @@ function Marks({ plan, ctx }: { plan: LayoutPlan; ctx: Ctx }) {
         <LineDots key={`dots-${item.key}`} line={item.line} synthetic={model.synthetic} transform={item.transform} animKey={item.key} opacity={item.opacity} />
       ))}
 
-      {fixedItems.map((item) => renderItem(item, 0, incoming.has(item.sig) ? "in" : null))}
-      {move && moverItems.length
+      {fixedLeaders.map((item) => renderLeader(item, 0, incomingLeaders.has(item.sig) ? "in" : null))}
+      {fixedItems.map((item) => renderItem(item, labelView, 0, incoming.has(item.sig) ? "in" : null))}
+      {move && (moverItems.length || moverLeaders.length)
         ? moverCopies
             .filter((copy) => !crossfade || copy.key === (labelView === "moved" ? "mover@1" : "mover@0"))
             .map((copy) => (
@@ -1100,17 +1174,20 @@ function Marks({ plan, ctx }: { plan: LayoutPlan; ctx: Ctx }) {
                 className="pointer-events-none absolute inset-0"
                 style={{ transform: moverTransform(track, move, p), opacity: copy.opacity }}
               >
-                {moverItems.map((item) => renderItem(item, shiftOf(labelView), incoming.has(item.sig) ? "in" : null))}
+                {moverLeaders.map((item) => renderLeader(item, shiftOf(labelView), incomingLeaders.has(item.sig) ? "in" : null))}
+                {moverItems.map((item) => renderItem(item, labelView, shiftOf(labelView), incoming.has(item.sig) ? "in" : null))}
               </div>
             ))
         : null}
-      {move && swap && leavingMover.length ? (
-        // The mover's old name rides the mover's layer, now at the new view's place, so it stays on its bar.
+      {move && swap && (leavingMover.length || leavingMoverLeaders.length) ? (
+        // The mover's old name and leader ride the mover's layer, now at the new view's place, so they stay on its bar.
         <div className="pointer-events-none absolute inset-0" style={{ transform: moverTransform(track, move, p) }}>
-          {leavingMover.map((item) => renderItem(item, shiftOf(swap.from), "out"))}
+          {leavingMoverLeaders.map((item) => renderLeader(item, shiftOf(swap.from), "out"))}
+          {leavingMover.map((item) => renderItem(item, swap.from, shiftOf(swap.from), "out"))}
         </div>
       ) : null}
-      {leavingFixed.map((item) => renderItem(item, 0, "out"))}
+      {leavingFixedLeaders.map((item) => renderLeader(item, 0, "out"))}
+      {leavingFixed.map((item) => renderItem(item, swap?.from ?? labelView, 0, "out"))}
     </div>
   );
 }

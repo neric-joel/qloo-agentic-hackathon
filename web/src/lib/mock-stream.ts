@@ -160,8 +160,8 @@ function overlapRequests(recorded: boolean, fromCache = false): QlooRequestRecor
 
 const SUMMARY_TEXT =
   "Neon Meridian and The Salt Lines have the highest taste overlap, so that clash has the " +
-  "highest price. Aurora Vale and Kite & Compass overlap less in taste but still carry a " +
-  "sizeable price. Moving Aurora Vale 45 minutes earlier would clear the second clash without " +
+  "highest score. Aurora Vale and Kite & Compass overlap less in taste but still carry a " +
+  "sizeable score. Moving Aurora Vale 45 minutes earlier would clear the second clash without " +
   "creating a new one.";
 
 const BASELINE_TEXT =
@@ -269,7 +269,7 @@ function summaryResult(recorded: boolean): AgentEvent {
     headline: {
       label: "of the clash cost is in the costliest pair",
       value: "31%",
-      note: "The costliest pair's price over the sum of every priced clash.",
+      note: "The costliest pair's score over the sum of every scored clash.",
       provenance: "derived",
     },
     rows: [

@@ -21,10 +21,10 @@ import {
 
 import { RULE_LABELS } from "@/lib/check";
 
-import { BOTH_LOCKED, CheckResults, RESULT_IDS, breakMarks, lockNote, nextStep } from "./check-results";
+import { BOTH_LOCKED, CheckResults, RESULT_IDS, breakMarks, lockNote, lockedClause, nextStep } from "./check-results";
 import { CheckPrice } from "./check-price";
 import { CheckBrief } from "./check-brief";
-import { CheckReview, comparedLine, ruleBreaksValue } from "./check-review";
+import { CheckReview, comparedLine, openLine, ruleBreaksValue } from "./check-review";
 import { BreakStrip } from "./check-break-strip";
 import {
   BreakItem,
@@ -34,6 +34,7 @@ import {
   SharedPreview,
   escapeClears,
   foldedLines,
+  offeredDay,
   pairFixes,
   pairLineOf,
   remedyAnchor,
@@ -1549,7 +1550,8 @@ describe("round 31: Check a published day (C8)", () => {
     expect(source0).toContain('{publishedDay ? <span aria-hidden="true" className="basis-full lg:hidden" /> : null}');
     // Undefined until the API answers; null (no published day) leaves no line, and a day replaces it with the action.
     const source = readFileSync(fileURLToPath(new URL("./check-tool.tsx", import.meta.url)), "utf8");
-    expect(source).toContain("useState<PublishedDay | null | undefined>(undefined)");
+    // (Fix pass: the days are a list, and the offered one passes undefined and null through: `offeredDay`.)
+    expect(source).toContain("useState<readonly PublishedDay[] | null | undefined>(undefined)");
     expect(source).toMatch(/\) : publishedDay === undefined \? \(/);
   });
 });
@@ -1956,8 +1958,9 @@ describe("round 35: a real paste survives first contact", () => {
     expect(html).not.toContain("The grid was not checked.");
     const notice = html.match(/<div data-skipped="" class="([^"]*)">([\s\S]*?)<\/div>/);
     expect(notice?.[1]).toBe("rounded-md border border-border-strong bg-card p-4 text-sm leading-relaxed print:hidden");
-    expect(text(notice?.[2] ?? "")).toBe(
-      "1 line skipped and not checked: line 4. The other 11 sets were checked. Line 4: the start time is not a time such as 18:00, 24:30, 6:00 PM or 6pm (hours up to 47).",
+    // The quoted value is HTML-escaped in markup; read it as the page shows it.
+    expect(text(notice?.[2] ?? "").replace(/&quot;/g, '"')).toBe(
+      '1 line skipped and not checked: line 4. The other 11 sets were checked. Line 4 (Glass Harbour): the start time "25:70" is not a time such as 18:00, 18.00, 1800, 24:30, 6:00 PM or 6pm.',
     );
     // First in the results, right under their header line.
     expect(html.indexOf("data-skipped=")).toBeLessThan(html.indexOf("Read 11 sets on 3 stages."));
@@ -2007,12 +2010,18 @@ describe("round 35: a real paste survives first contact", () => {
   });
 
   it("adds the separator hint once after the line messages when the lines look separated by semicolons", () => {
-    const html = tool(MESSY.split(",").join(";"));
+    // Under a comma header (the first line sets the separator); a grid read by semicolons from line 1 reads.
+    const html = tool(`act,stage,start,end\n${MESSY.split(",").join(";")}`);
     const alert = html.slice(html.indexOf('role="alert"'), html.indexOf("</ul>", html.indexOf('role="alert"')) + 200);
     expect(alert).toContain("The grid was not checked.");
     expect(alert).toMatch(/<\/ul><p data-separator-hint="" class="mt-2 break-words">These lines look separated by semicolons\. Use commas or tabs between act, stage, start and end\.<\/p>/);
     expect(html.split("These lines look separated by semicolons.").length - 1).toBe(1);
     expect(tool(MESSY)).not.toContain("separated by semicolons");
+    // Fix pass: the whole messy paste in semicolons is checked like the comma one: 11 sets, line 4 skipped, no hint.
+    const semicolons = tool(MESSY.split(",").join(";"));
+    expect(semicolons).not.toContain("The grid was not checked.");
+    expect(text(semicolons)).toContain("1 line skipped and not checked: line 4. The other 11 sets were checked.");
+    expect(semicolons).not.toContain("separated by semicolons");
   });
 
   it("measures the rule check of every check a visitor runs, says it in the results header, and never keeps or sends it", () => {
@@ -2034,5 +2043,120 @@ describe("round 35: a real paste survives first contact", () => {
   it("scrolls to the results' top only once the preview reads the checked text, so nothing above moves after the scroll", () => {
     expect(source).toMatch(/if \(!scrollPending\.current \|\| previewInput !== input\) return;/);
     expect(source).toContain("(workingRef.current ?? resultsTopRef.current ?? headingRef.current)?.scrollIntoView({ block: \"start\" });");
+  });
+});
+
+describe("round 36: the rail splits rule breaks from overlaps, a published day's locks are this app's, a header is named", () => {
+  const source = readFileSync(fileURLToPath(new URL("./check-tool.tsx", import.meta.url)), "utf8");
+  const tool = (grid: string) =>
+    renderToStaticMarkup(createElement(CheckTool, { initial: { grid, changeover: "", curfew: "", pairs: "" }, checkOnLoad: true }));
+  const counts = { sets: 25, stages: 4, breaks: 4, breaksReviewed: 0, pairs: 35, pairsDecided: 0, kept: 0, notChanging: 0, changed: 0, openBreaks: 4, openPairs: 35 };
+  const review = (over: Partial<typeof counts>) =>
+    text(
+      renderToStaticMarkup(
+        createElement(CheckReview, {
+          counts: { ...counts, ...over },
+          sample: false,
+          price: { phase: "idle" },
+          searched: 0,
+          applied: 0,
+          stale: false,
+          onPrint: () => {},
+          onCopy: () => {},
+          onDownload: () => {},
+          canShare: true,
+          share: null,
+        }),
+      ),
+    );
+
+  it("says what is open as rule breaks to review and overlaps to decide, singular at 1, a part left out at 0", () => {
+    expect(openLine({ openBreaks: 4, openPairs: 35 })).toBe("4 rule breaks to review · 35 overlaps to decide");
+    expect(openLine({ openBreaks: 1, openPairs: 1 })).toBe("1 rule break to review · 1 overlap to decide");
+    expect(openLine({ openBreaks: 0, openPairs: 2 })).toBe("2 overlaps to decide");
+    expect(openLine({ openBreaks: 3, openPairs: 0 })).toBe("3 rule breaks to review");
+    expect(openLine({ openBreaks: 0, openPairs: 0 })).toBeNull();
+    // The heading's line and the Open row say the same; with nothing open, the all-decided text and None.
+    expect(review({})).toMatch(/^Draft review 4 rule breaks to review · 35 overlaps to decide /);
+    expect(review({})).toContain("Open 4 rule breaks to review · 35 overlaps to decide");
+    expect(review({ openBreaks: 0, openPairs: 0 })).toMatch(/^Draft review Every finding decided /);
+    expect(review({ openBreaks: 0, openPairs: 0 })).toContain("Open None");
+    expect(review({})).not.toMatch(/\d+ open\b/);
+  });
+
+  it("says a published day's locks are this app's: the last set on each stage where that holds, else the plain form", () => {
+    const grid = (lastLocked: boolean) =>
+      [
+        "act,stage,start,end,locked",
+        "Amber Kite,Big Top,18:30,20:00,",
+        `Basalt Choir,Big Top,21:00,22:30,${lastLocked ? "yes" : ""}`,
+        `Copper Field,Barn,19:00,20:30,${lastLocked ? "" : "yes"}`,
+        "Dune Signal,Barn,21:30,23:20,yes",
+      ].join("\n");
+    const holds = runCheck({ grid: grid(true), changeover: "", curfew: "", pairs: "" });
+    const not = runCheck({ grid: grid(false), changeover: "", curfew: "", pairs: "" });
+    if (!holds.ok || !not.ok) throw new Error("refused");
+    expect(lockedClause(holds.report, true)).toBe("; 2 locked by this app (the last set on each stage); the festival did not mark them.");
+    // The locks are not exactly the stages' last sets (one is earlier on its stage, one stage's last is free).
+    expect(lockedClause(not.report, true)).toBe("; 2 locked by this app; the festival did not mark them.");
+    // A pasted grid or the sample keeps its own words, and no locks say nothing.
+    expect(lockedClause(holds.report, false)).toBe("; 2 marked locked.");
+    expect(lockedClause({ sets: [], lockedCount: 0 }, true)).toBe(".");
+    const render = (published: boolean) =>
+      text(
+        renderToStaticMarkup(
+          createElement(CheckResults, { report: holds.report, decisions: new Map(), onDecide: () => {}, showAll: false, onShowAll: () => {}, nonce: 1, published }),
+        ),
+      );
+    expect(render(true)).toContain(
+      "Read 4 sets on 2 stages; 2 locked by this app (the last set on each stage); the festival did not mark them. Locked sets are still checked against your rules; they are only kept in place when you search for a change.",
+    );
+    expect(render(false)).toContain("Read 4 sets on 2 stages; 2 marked locked. Locked sets are still checked against your rules;");
+    for (const page of [render(true), render(false)]) expect(page).not.toMatch(/not by the festival/i);
+    // The page passes the flag only for a published day as loaded.
+    expect(source).toContain("published={Boolean(run.published)}");
+  });
+
+  it("shows a header it cannot read as one message, and reads a time-range column and dotted times with no refusal", () => {
+    const refused = tool("Act,Stage,Start,Endzeit\nTidal Fields,Main,18:00,19:00\nCobalt Rows,Side,xx,20:00");
+    const alert = refused.slice(refused.indexOf('role="alert"'), refused.indexOf("</ul>", refused.indexOf('role="alert"')));
+    expect(alert.match(/<li>/g)).toHaveLength(1);
+    expect(text(alert).replace(/&quot;/g, '"')).toContain(
+      'Line 1: no column reads as end. Not read: "Endzeit". For end this check reads: end, end time, ends, finish, finish time, finishes, until, to, set end.',
+    );
+    for (const grid of [
+      "Act,Stage,Set time\nTidal Fields,Main,18:00-19:00\nCobalt Rows,Side,6pm to 7:15pm",
+      [
+        "Tidal Fields,Main,6.30pm,7.30 pm",
+        "Cobalt Rows,Side,6.30 pm,19:30",
+        "Paper Lanterns,Tent,18.30,1930",
+        "Saltmarsh,Field,1830,19:45",
+        "Quiet Engine,Barn,18h30,20h00",
+        "Lowland Kites,Dome,6:30p,7:30p",
+      ].join("\n"),
+    ]) {
+      const html = tool(grid);
+      expect(html).not.toContain("The grid was not checked.");
+      expect(html).not.toContain("data-skipped=");
+    }
+  });
+
+  // Fix pass: every published day the API names is one press from the one on show, through the one button.
+  it("offers the first published day, then the next one while a published day is on show as loaded", () => {
+    const glastonbury = { id: "glastonbury-2025-sun", title: "Glastonbury 2025, Sunday" };
+    const riot = { id: "riot-fest-2026-sun", title: "Riot Fest 2026, Sunday" };
+    const days = [glastonbury, riot];
+    expect(offeredDay(days, null)).toBe(glastonbury);
+    expect(offeredDay(days, glastonbury.id)).toBe(riot);
+    expect(offeredDay(days, riot.id)).toBe(glastonbury);
+    // A day no longer named, one day only, none and not yet answered.
+    expect(offeredDay(days, "gone")).toBe(glastonbury);
+    expect(offeredDay([glastonbury], glastonbury.id)).toBe(glastonbury);
+    expect(offeredDay([], null)).toBeNull();
+    expect(offeredDay(null, null)).toBeNull();
+    expect(offeredDay(undefined, null)).toBeUndefined();
+    // The page passes the loaded day's id only while its fields are as loaded; the one button keeps its words.
+    expect(source).toContain("const publishedDay = offeredDay(publishedDays, editingPublished ? publishedFrom : null);");
+    expect(source.match(/Check a published day: \{publishedDay\.title\}/g)).toHaveLength(1);
   });
 });

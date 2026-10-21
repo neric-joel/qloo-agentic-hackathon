@@ -238,7 +238,7 @@ describe("buildDecisionCopy", () => {
 
   it("names the costlier clashes it passed over", () => {
     const copy = buildDecisionCopy(preset(), parseDecision(rawDecision({ skipped_locked: 2, skipped_no_place: 1 })))!;
-    expect(copy.clashLine).toContain("The 2 costlier clashes are between locked sets.");
+    expect(copy.clashLine).toContain("The 2 costlier clashes are between sets this app locks.");
     expect(copy.clashLine).toContain("One costlier clash has no legal place that lowers the index.");
   });
 
@@ -533,7 +533,7 @@ describe("the side-by-side comparison", () => {
     const tradeoff = buildTradeoff(parseDecision(raw))!;
     const row = (id: string) => tradeoff.rows.find((item) => item.id === id)!;
     expect(row("sets").rule).toBe("2 (Bo Diddly Squat and Ann Arbor)");
-    expect(row("costliest").move).toBe("No priced clash left on this day");
+    expect(row("costliest").move).toBe("No scored clash left on this day");
   });
 
   it("leaves out a row the route did not send for both changes, and prints nothing it cannot read", () => {

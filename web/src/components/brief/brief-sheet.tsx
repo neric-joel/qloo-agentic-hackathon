@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, Lock, Printer } from "lucide-react";
 
+import { BriefDayFigure } from "@/components/brief/brief-day-figure";
 import { otherHalfPair } from "@/components/clash/taste-lens";
 import { TradeoffTable } from "@/components/clash/tradeoff-table";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,9 @@ import {
   READING_NOTE,
   TO_DECIDE,
   bandSentence,
+  briefFigure,
   briefIntro,
+  briefLockLine,
   briefRows,
   baselineNote,
   briefSteps,
@@ -29,6 +32,7 @@ import {
   clashesTitle,
   coverageSentence,
   dayFigures,
+  figureOnPaper,
   figuresAttribution,
   hiddenNames,
   hiddenSentence,
@@ -609,12 +613,14 @@ export function BriefContent({
   const withMoves = steps.length > 0;
   const twoColumns = steps.length > 3;
   const columns = twoColumns ? 2 : 1;
+  // The drawing of the day prints on a sheet with no kept step, and beside the comparison for one single move.
+  const figurePrinted = figureOnPaper(steps, columns, tradeoff !== null);
   // A long plan shortens the published-day table to three clashes so the sheet stays on one page.
   const limit = withMoves ? tableClashes(steps, columns, tradeoff !== null) : BRIEF_CLASHES;
   const rows = briefRows(preset, day, limit);
   // A tall plan with the comparison on the sheet has no room for the published day's one-row table on paper:
   // the comparison names the same clash and says what each change leaves of it. It stays on the screen.
-  const tableOnPage = !withMoves || tableOnPaper(steps, columns, tradeoff !== null);
+  const tableOnPage = !withMoves || tableOnPaper(steps, columns, tradeoff !== null, figurePrinted);
   const tableTitle = clashesTitle(rows.length, withMoves);
   const planLines = plan && withMoves ? planClashLines(plan) : [];
   const verdict = plan && withMoves ? planVerdictSentence(plan, figures.range) : null;
@@ -630,7 +636,11 @@ export function BriefContent({
   // The minutes line and the decision lines are the first things a full sheet leaves off paper (they stay on the
   // screen, where the decision line is not shown at all): the minutes line first, then the decision lines. Without
   // the minutes line, its second sentence (what the plan adds outside the ranked clashes) still prints.
-  const paper = onPaper(steps, columns, tradeoff !== null);
+  const paper = onPaper(steps, columns, tradeoff !== null, figurePrinted);
+  // The day, drawn: as the plan leaves it, or as published; partners only where the sheet names them.
+  const figure = briefFigure(preset, day, dayLabel, withMoves ? plan : null, { pair: tradeoff?.pair ?? null, minutes });
+  // Under the table, once: whose locks the "both locked" rows are, only when a shown row has the mark.
+  const lockLine = briefLockLine(preset, day, rows);
 
   // On paper the coverage sentence runs on after the band sentence, in the room its last line leaves.
   const dayBlock = (
@@ -654,7 +664,18 @@ export function BriefContent({
           </p>
           <ClashTable rows={rows} captionId={tableCaption} />
           <ClashCards rows={rows} />
-          <p className="mt-2 text-sm text-muted-foreground print:mt-[3pt] print:text-[9pt]">
+          {lockLine ? (
+            <p data-lock-rule className="mt-2 text-sm text-muted-foreground print:mt-[2pt] print:text-[9pt] print:leading-[1.17]">
+              {lockLine}
+            </p>
+          ) : null}
+          <p
+            className={
+              lockLine
+                ? "mt-1 text-sm text-muted-foreground print:mt-[1pt] print:text-[9pt]"
+                : "mt-2 text-sm text-muted-foreground print:mt-[3pt] print:text-[9pt]"
+            }
+          >
             {HIDDEN_NOTE} {READING_NOTE}
           </p>
           {candidate ? (
@@ -668,7 +689,7 @@ export function BriefContent({
   );
 
   // On paper the comparison takes the room of the list of hidden clashes, which the table's own marks repeat.
-  const hiddenOnPaper = !(tradeoff || (withMoves && heavyPlan(steps, twoColumns ? 2 : 1)));
+  const hiddenOnPaper = !(tradeoff || (withMoves && heavyPlan(steps, columns)));
   const hiddenBlock = hidden ? (
     <Block title="Hidden clashes" quietInPrint className={hiddenOnPaper ? undefined : "print:hidden"}>
       <p className="print:text-[9pt]">{hidden}</p>
@@ -838,6 +859,9 @@ export function BriefContent({
         {festival} {dayLabel}: {BRIEF_HEADING_TAIL}
       </h1>
       <p className="mt-2 text-muted-foreground print:mt-[3pt]">{briefIntro(festival, synthetic)}</p>
+      {figure ? (
+        <BriefDayFigure figure={figure} className={cn("mt-5 print:mt-[3pt]", !figurePrinted && "print:hidden")} />
+      ) : null}
 
       {withMoves ? (
         <>
@@ -865,7 +889,7 @@ export function BriefContent({
           line to write on, a 1px rule in the control-edge ink (a mark, never text). */}
       <dl
         data-sign-off
-        className="mt-6 flex flex-wrap gap-x-8 gap-y-4 text-sm print:mt-[10pt] print:gap-x-[18pt] print:text-[9pt]"
+        className="mt-6 flex flex-wrap gap-x-8 gap-y-4 text-sm print:mt-[7pt] print:gap-x-[18pt] print:text-[9pt]"
       >
         {SIGN_OFF.map((label) => (
           // On a phone each label takes its own row and its line runs to the edge; from 640px and on paper the three

@@ -2,13 +2,25 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
+import { SIGN_OFF } from "@/components/brief/brief-sheet";
 import { runCheck } from "@/lib/check";
 import { decisionLine, pairDecisionId, pairLabel, type Decision } from "@/lib/check-decisions";
 import { parsePriceAnswer, priceRequest, type PriceRequest } from "@/lib/check-price";
 import { SAMPLE_GRID, SAMPLE_SETTINGS, publishedLabel } from "@/lib/check-sample";
 import { findChange, targetOfBreak } from "@/lib/check-trial";
 
-import { BRIEF_FOOTER, BRIEF_FOOTER_PUBLISHED, BRIEF_ROWS, CheckBrief, briefFooter, snapshotLine } from "./check-brief";
+import {
+  BRIEF_FOOTER,
+  BRIEF_FOOTER_PUBLISHED,
+  BRIEF_ROWS,
+  CheckBrief,
+  DRAFT_HEADING,
+  DRAFT_SIGN_OFF,
+  briefFooter,
+  draftHeading,
+  printedDate,
+  snapshotLine,
+} from "./check-brief";
 
 // Every name below is invented for the test.
 
@@ -167,5 +179,49 @@ describe("round 35: a brief of a partial check says what it left out", () => {
     if (!whole.ok) throw new Error("refused");
     const sample = text(renderToStaticMarkup(createElement(CheckBrief, { report: whole.report, applied: [], decisions: [], price: null })));
     expect(sample).not.toMatch(/skipped|not checked/);
+  });
+});
+
+describe("round 36: the printed draft has a heading, the day, the print date and a sign-off block", () => {
+  const sample = runCheck({ grid: SAMPLE_GRID, ...SAMPLE_SETTINGS });
+  if (!sample.ok) throw new Error("refused");
+  const html = renderToStaticMarkup(createElement(CheckBrief, { report: sample.report, applied: [], decisions: [], price: null }));
+
+  it("signs off with the published-day brief's three labels, so the two cannot drift", () => {
+    expect([...DRAFT_SIGN_OFF]).toEqual([...SIGN_OFF]);
+    const block = html.match(/<dl data-sign-off="" class="([^"]*)">([\s\S]*?)<\/dl>/);
+    // On paper only: hidden on screen, a flex row in print, after the footer.
+    expect(block?.[1].split(" ")).toEqual(expect.arrayContaining(["hidden", "print:flex"]));
+    expect(html.indexOf("data-sign-off")).toBeGreaterThan(html.indexOf(BRIEF_FOOTER));
+    expect([...(block?.[2] ?? "").matchAll(/<dt[^>]*>([^<]*)<\/dt>/g)].map((m) => m[1])).toEqual([...DRAFT_SIGN_OFF]);
+    // Each label has a line to write on: an empty 1px rule in the control-edge ink.
+    const lines = [...(block?.[2] ?? "").matchAll(/<dd aria-label="blank, to fill in" class="([^"]*)"><\/dd>/g)].map((m) => m[1]);
+    expect(lines).toHaveLength(3);
+    for (const line of lines) expect(line).toContain("border-b border-border-strong");
+  });
+
+  it("starts the page with the heading, the grid's day when it has exactly one, then the print date", () => {
+    const heading = html.match(/<p data-draft-heading="" class="([^"]*)">([\s\S]*?)<\/p>/);
+    expect(heading?.[1].split(" ")).toEqual(expect.arrayContaining(["hidden", "print:block"]));
+    // First on the page, before the title; the server's render has no date (the browser writes it in its own span).
+    expect(text(html).startsWith(`${DRAFT_HEADING} Draft check, not a verdict`)).toBe(true);
+    expect(heading?.[2]).toBe(`${DRAFT_HEADING}<span data-printed-date=""></span>`);
+    expect(draftHeading(null)).toBe("Draft grid check");
+    expect(draftHeading("Sat 14 June")).toBe("Draft grid check · Sat 14 June");
+    expect(printedDate(new Date(2026, 9, 20, 23, 59))).toBe("20 Oct 2026");
+    expect(printedDate(new Date(2027, 0, 3))).toBe("3 Jan 2027");
+    const withDay = runCheck({ grid: "Day,Act,Stage,Start,End\nSat 14 June,A,Main,18:00,19:00", changeover: "", curfew: "", pairs: "" });
+    if (!withDay.ok) throw new Error("refused");
+    const dated = renderToStaticMarkup(createElement(CheckBrief, { report: withDay.report, applied: [], decisions: [], price: null }));
+    expect(text(dated)).toMatch(/^Draft grid check · Sat 14 June Draft check, not a verdict/);
+  });
+
+  it("adds nothing on screen: the preview thumbnail draws neither the heading nor the sign-off", () => {
+    const preview = renderToStaticMarkup(createElement(CheckBrief, { report: sample.report, applied: [], decisions: [], price: null, preview: true }));
+    for (const hook of ["data-draft-heading", "data-sign-off"]) {
+      const opening = preview.match(new RegExp(`<[a-z]+ ${hook}="" class="([^"]*)"`))?.[1] ?? "";
+      expect(opening.split(" ")).toContain("hidden");
+      expect(opening).toMatch(/print:(block|flex)/);
+    }
   });
 });

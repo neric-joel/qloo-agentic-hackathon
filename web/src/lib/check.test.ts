@@ -164,12 +164,12 @@ describe("parser", () => {
   });
 
   it("refuses a quote that is not closed", () => {
-    expect(errors('"Smith,Main,18:00,19:00')[0]).toMatch(/Line 1: a quote is not closed/);
+    expect(errors('"Smith,Main,18:00,19:00')[0]).toMatch(/^Line 1 \(Smith\): a quote is not closed/);
   });
 
   it("skips a duplicate row, checks the rest and says which line it repeats", () => {
     const r = report("A,Main,18:00,19:00\nB,Side,18:00,19:00\n a ,main,18:00,19:00");
-    expect(skippedOf(r)).toEqual(["Line 3: the same set as line 1 (same act, stage and times)."]);
+    expect(skippedOf(r)).toEqual(["Line 3 (a): the same set as line 1 (same act, stage and times)."]);
     expect(r.sets.map((s) => s.row)).toEqual([1, 2]);
   });
 
@@ -189,13 +189,13 @@ describe("parser", () => {
     });
 
     it("refuses an end before its start that is 06:00 or later", () => {
-      expect(errors("A,Main,20:00,19:00")[0]).toMatch(/Line 1: the set ends before it starts/);
+      expect(errors("A,Main,20:00,19:00")[0]).toMatch(/^Line 1 \(A\): the set ends before it starts/);
       expect(errors("A,Main,20:00,06:00")[0]).toMatch(/ends before it starts/);
     });
 
     it("skips a start before 06:00 when other sets start in the afternoon, rather than guess", () => {
       const e = skippedOf(report("A,Main,18:00,19:00\nB,Main,00:30,01:15"));
-      expect(e[0]).toMatch(/Line 2: starts before 06:00/);
+      expect(e[0]).toMatch(/^Line 2 \(B\): starts before 06:00/);
       expect(e[0]).toMatch(/24:30/);
     });
 
@@ -212,7 +212,9 @@ describe("parser", () => {
 
   it("reads a header row and refuses one that is not the expected header", () => {
     expect(report("ACT, Stage ,Start,END,Locked\nA,Main,18:00,19:00").sets).toHaveLength(1);
-    expect(errors("name,place,start,end\nA,Main,18:00,19:00")[0]).toMatch(/header should read/);
+    expect(errors("name,place,start,end\nA,Main,18:00,19:00")).toEqual([
+      'Line 1: no column reads as act or stage. Not read: "name", "place". For act this check reads: act, act name, artist, artist name, band, performer. For stage this check reads: stage, stage name, venue, tent, area.',
+    ]);
   });
 
   it("refuses a locked value that is not yes, no or blank", () => {
@@ -307,7 +309,9 @@ describe("spreadsheet and copy-paste tolerance", () => {
     ]) {
       expect(report(`${header}\nA,Main,18:00,19:00`).sets).toHaveLength(1);
     }
-    expect(errors("act,stage,begin,end\nA,Main,18:00,19:00")[0]).toMatch(/header should read/);
+    expect(errors("act,stage,kickoff,end\nA,Main,18:00,19:00")[0]).toMatch(/^Line 1: no column reads as start\. Not read: "kickoff"\./);
+    // "Begin" is one of the start words now.
+    expect(report("act,stage,begin,end\nA,Main,18:00,19:00").sets).toHaveLength(1);
   });
 
   it("keeps zero-width joiners and non-joiners in names and strips soft hyphens", () => {
@@ -563,7 +567,9 @@ describe("pastes from spreadsheets and other tools", () => {
       [690, 735],
       [1440, 1500],
     ]);
-    expect(errors("A,Main,13:00 PM,14:00")[0]).toMatch(/start time is not a time such as 18:00, 24:30, 6:00 PM or 6pm/);
+    expect(errors("A,Main,13:00 PM,14:00")[0]).toBe(
+      'Line 1 (A): the start time "13:00 PM" is not a time such as 18:00, 18.00, 1800, 24:30, 6:00 PM or 6pm.',
+    );
     expect(errors("A,Main,0:30 AM,1:00 AM")[0]).toMatch(/start time/);
   });
 
@@ -584,7 +590,7 @@ describe("pastes from spreadsheets and other tools", () => {
     // Both written in 12-hour time still move together.
     expect(report("Evening,Main,22:00,23:30\nNight,Other,12:30 AM,1:15 AM").sets[1]).toMatchObject({ start: 1470, end: 1515 });
     // An end at or before the moved start is not read (its line is skipped), never stretched into a second day.
-    expect(skippedOf(report("Evening,Main,22:00,23:30\nNight,Other,12:30 AM,24:15"))[0]).toMatch(/Line 2: the set ends before it starts/);
+    expect(skippedOf(report("Evening,Main,22:00,23:30\nNight,Other,12:30 AM,24:15"))[0]).toMatch(/^Line 2 \(Night\): the set ends before it starts/);
   });
 
   it("reads columns by their header in any order, ignores the ones it does not know and says so", () => {
@@ -605,7 +611,9 @@ describe("pastes from spreadsheets and other tools", () => {
   });
 
   it("refuses a header that misses a column or names one twice", () => {
-    expect(errors("act,stage,start\nA,Main,18:00")[0]).toMatch(/header should read act, stage, start, end/);
+    expect(errors("act,stage,start\nA,Main,18:00")).toEqual([
+      "Line 1: no column reads as end. For end this check reads: end, end time, ends, finish, finish time, finishes, until, to, set end.",
+    ]);
     expect(errors("act,act,stage,start,end\nA,A,Main,18:00,19:00")[0]).toMatch(/header should read/);
     expect(errors("act,stage,start,end,notes\nA,Main,18:00,19:00,x,extra")[0]).toMatch(
       /the header has 5 columns, but this line has 6 fields/,
@@ -698,10 +706,11 @@ const MESSY_LINES = [
 ];
 
 describe("round 35: a bad line is skipped and listed, and the rest is checked", () => {
-  const LINE_4 = "Line 4: the start time is not a time such as 18:00, 24:30, 6:00 PM or 6pm (hours up to 47).";
+  const LINE_4 = 'Line 4 (Glass Harbour): the start time "25:70" is not a time such as 18:00, 18.00, 1800, 24:30, 6:00 PM or 6pm.';
 
   it("checks the 11 readable sets of the messy paste and lists line 4 with its message", () => {
-    for (const delimiter of [",", "\t"]) {
+    // A semicolon grid (the CSV a spreadsheet writes where the comma is the decimal mark) reads the same.
+    for (const delimiter of [",", "\t", ";"]) {
       const grid = MESSY_LINES.map((line) => line.split(",").join(delimiter)).join("\n");
       const r = report(grid);
       expect(r.sets).toHaveLength(11);
@@ -728,25 +737,25 @@ describe("round 35: a bad line is skipped and listed, and the rest is checked", 
     expect(r.sets.map((s) => s.row)).toEqual([3, 6]);
     expect(r.skipped?.map((item) => item.line)).toEqual([5, 7]);
     expect(skippedOf(r)).toEqual([
-      "Line 5: the start time is not a time such as 18:00, 24:30, 6:00 PM or 6pm (hours up to 47).",
-      "Line 7: the same set as line 3 (same act, stage and times).",
+      'Line 5 (B): the start time "25:70" is not a time such as 18:00, 18.00, 1800, 24:30, 6:00 PM or 6pm.',
+      "Line 7 (A): the same set as line 3 (same act, stage and times).",
     ]);
     expect(skippedSentence(r.skipped ?? [], r.sets.length)).toBe(
       "2 lines skipped and not checked: line 5, line 7. The other 2 sets were checked.",
     );
   });
 
-  it("skips each kind of line fault on its own line and keeps today's line-numbered message", () => {
+  it("skips each kind of line fault on its own line, its message naming the line, the act and any rejected value", () => {
     const good = "Good,Main,12:00,13:00";
     const cases: [string, RegExp][] = [
-      ['"Open,Side,18:00,19:00', /^Line 2: a quote is not closed/],
-      ["Short,Side,18:00", /^Line 2: expected act, stage, start, end \(and locked\), but found 3 fields\.$/],
+      ['"Open,Side,18:00,19:00', /^Line 2 \(Open\): a quote is not closed/],
+      ["Short,Side,18:00", /^Line 2 \(Short\): expected act, stage, start, end \(and locked\), but found 3 fields\.$/],
       [",Side,18:00,19:00", /^Line 2: the act and the stage cannot be blank\.$/],
       [`${"x".repeat(300)},Side,18:00,19:00`, /^Line 2: a name is longer than 80 characters\.$/],
-      ["Late,Side,18:00,48:00", /^Line 2: the end time is not a time/],
-      ["Back,Side,20:00,19:00", /^Line 2: the set ends before it starts/],
-      ["Zero,Side,18:00,18:00", /^Line 2: the set must end after it starts\.$/],
-      ["Lock,Side,18:00,19:00,maybe", /^Line 2: the locked column should be yes, no or blank\.$/],
+      ["Late,Side,18:00,48:00", /^Line 2 \(Late\): the end time "48:00" is not a time/],
+      ["Back,Side,20:00,19:00", /^Line 2 \(Back\): the set ends before it starts/],
+      ["Zero,Side,18:00,18:00", /^Line 2 \(Zero\): the set must end after it starts\.$/],
+      ["Lock,Side,18:00,19:00,maybe", /^Line 2 \(Lock\): the locked column should be yes, no or blank, not "maybe"\.$/],
     ];
     for (const [line, message] of cases) {
       const r = report(`${good}\n${line}`);
@@ -773,8 +782,8 @@ describe("round 35: a bad line is skipped and listed, and the rest is checked", 
     expect(outcome.ok).toBe(false);
     if (outcome.ok) return;
     expect(outcome.errors).toEqual([
-      "Line 1: the start time is not a time such as 18:00, 24:30, 6:00 PM or 6pm (hours up to 47).",
-      "Line 2: expected act, stage, start, end (and locked), but found 2 fields.",
+      'Line 1 (A): the start time "25:70" is not a time such as 18:00, 18.00, 1800, 24:30, 6:00 PM or 6pm.',
+      "Line 2 (Only): expected act, stage, start, end (and locked), but found 2 fields.",
     ]);
     expect(outcome.errors.join(" ")).not.toMatch(/No sets found/);
     expect(announcement(outcome)).toBe("The grid was not checked. 2 problems listed.");
@@ -782,8 +791,8 @@ describe("round 35: a bad line is skipped and listed, and the rest is checked", 
 
   it("still refuses the whole grid for a fault of the whole input, whatever lines read", () => {
     const readable = "A,Main,18:00,19:00\nB,Side,18:30,19:30\nC,Tent,xx,20:00";
-    // A header that does not read.
-    expect(errors(`name,place,start,end\n${readable}`)[0]).toMatch(/header should read/);
+    // A header that does not read: its one message, and none for any line after it.
+    expect(errors(`name,place,start,end\n${readable}`)).toEqual([expect.stringMatching(/^Line 1: no column reads as act or stage\./)]);
     // Over 8 KB.
     expect(errors(`${readable}\n${"a,Main,18:00,19:00\n".repeat(500)}`)[0]).toMatch(/up to 8 KB/);
     // An unreadable character anywhere.
@@ -806,7 +815,7 @@ describe("round 35: a bad line is skipped and listed, and the rest is checked", 
     const changeover = errors(readable, { changeover: "abc" });
     expect(changeover).toContain("Changeover should be a whole number of minutes from 0 to 240.");
     // The line that would be skipped is named with it.
-    expect(changeover[0]).toMatch(/^Line 3: the start time/);
+    expect(changeover[0]).toMatch(/^Line 3 \(C\): the start time "xx"/);
     expect(errors(readable, { curfew: "late" })).toContain("Curfew should be a time as H:MM or HH:MM, or blank for none.");
     expect(errors(readable, { pairs: "A and B" })).toContain("Pair line 1: write two names with a bar between them, as Act A | Act B.");
   });
@@ -848,7 +857,9 @@ describe("round 35: a bad line is skipped and listed, and the rest is checked", 
   });
 
   it("hints at semicolons only when two or more unreadable lines read as one field holding one", () => {
-    const semicolon = MESSY_LINES.map((line) => line.split(",").join(";")).join("\n");
+    // The first line sets the separator, so the lines under a comma header that use semicolons cannot be read.
+    const semi = (line: string) => line.split(",").join(";");
+    const semicolon = ["act,stage,start,end", ...MESSY_LINES.map(semi)].join("\n");
     const outcome = runCheck(input(semicolon));
     expect(outcome.ok).toBe(false);
     if (outcome.ok) return;
@@ -856,7 +867,14 @@ describe("round 35: a bad line is skipped and listed, and the rest is checked", 
       "These lines look separated by semicolons. Use commas or tabs between act, stage, start and end.",
     );
     expect(outcome.errors).toHaveLength(6);
-    expect(outcome.errors[0]).toBe("Line 1: expected act, stage, start, end (and locked), but found 1 field.");
+    expect(outcome.errors[0]).toBe("Line 2: the header has 4 columns, but this line has 1 field.");
+    // Without a header the same: a comma first line, then lines that use semicolons.
+    const mixed = report([MESSY_LINES[0], ...MESSY_LINES.slice(1).map(semi)].join("\n"));
+    expect(mixed.sets.map((s) => s.act)).toEqual(["Tidal Fields"]);
+    expect(skippedOf(mixed)[0]).toBe("Line 2: expected act, stage, start, end (and locked), but found 1 field.");
+    expect(separatorHint(mixed.skipped)).toBe(CHECK_COPY.separatorHint);
+    // A grid read by semicolons from its first line never gets the hint.
+    expect(separatorHint(report(MESSY_LINES.map(semi).join("\n")).skipped)).toBeNull();
     // One such line among readable ones is not enough; a semicolon inside a readable name is not one.
     const one = report(`${MESSY_LINES.slice(0, 3).join("\n")}\nGlass;Tent;19:00;19:30`);
     expect(separatorHint(one.skipped)).toBeNull();
@@ -877,5 +895,188 @@ describe("round 35: a bad line is skipped and listed, and the rest is checked", 
     expect(line).not.toMatch(/saved|faster|instead of/i);
     expect(pastedLine(`${MESSY_LINES.join("\n")}\n`)).toBe("Pasted 12 lines into the CSV editor. Press Check the grid.");
     expect(pastedLine("one line")).toBe("Pasted 1 line into the CSV editor. Press Check the grid.");
+  });
+});
+
+// Round 36: a real spreadsheet survives the first paste. Header words, one time-range column, dotted and
+// compact times; a header it cannot read is named in one message; a skip names the act and quotes the value.
+describe("round 36: real headers and times, and what was not read", () => {
+  const FORMS = "18:00, 18.00, 1800, 24:30, 6:00 PM or 6pm";
+
+  it("reads every header word for each column, in any case and with underscores for spaces", () => {
+    const words: Record<string, string[]> = {
+      act: ["act", "act name", "artist", "artist name", "band", "performer"],
+      stage: ["stage", "stage name", "venue", "tent", "area"],
+      start: ["start", "start time", "starts", "begin", "begins", "from", "set start"],
+      end: ["end", "end time", "ends", "finish", "finish time", "finishes", "until", "to", "set end"],
+      locked: ["locked", "lock", "fixed"],
+      day: ["day", "date"],
+    };
+    const base: Record<string, string> = { act: "Act", stage: "Stage", start: "Start", end: "End", locked: "Locked", day: "Day" };
+    const order = ["day", "act", "stage", "start", "end", "locked"];
+    for (const [column, list] of Object.entries(words)) {
+      for (const word of list) {
+        for (const written of [word, word.toUpperCase().replace(/ /g, "_")]) {
+          const header = order.map((key) => (key === column ? written : base[key])).join(",");
+          const r = report(`${header}\nSat,A,Main,18:00,19:00,yes`);
+          expect(r.sets).toEqual([expect.objectContaining({ act: "A", stage: "Main", start: 1080, end: 1140, locked: true })]);
+          expect(r.notes).toEqual([]);
+          expect(r.skipped).toEqual([]);
+        }
+      }
+    }
+  });
+
+  it("checks an Artist, Stage, Start, Finish header with 6 rows and reads every line", () => {
+    const grid = [
+      "Artist,Stage,Start,Finish",
+      "Tidal Fields,Main Stage,14:00,15:00",
+      "Cobalt Rows,Side Stage,14:15,15:15",
+      "Paper Lanterns,Tent,14:30,15:15",
+      "Saltmarsh,Main Stage,15:30,16:30",
+      "Quiet Engine,Side Stage,15:45,16:45",
+      "Lowland Kites,Tent,16:00,16:45",
+    ].join("\n");
+    const r = report(grid);
+    expect(r.sets).toHaveLength(6);
+    expect(r.skipped).toEqual([]);
+    expect(r.notes).toEqual([]);
+  });
+
+  it("reads one column of ranges into start and end: a hyphen, an en dash or 'to', each side by the same time rules", () => {
+    const r = report(
+      ["Act,Stage,Set time", "A,Main,18:00-19:00", "B,Side,6pm to 7:15pm", "C,Tent,18:30–19:30", "D,Main,19.15 - 20h00", "E,Side,2330-0030"].join("\n"),
+    );
+    expect(r.sets.map((s) => [s.act, s.start, s.end])).toEqual([
+      ["A", 1080, 1140],
+      ["B", 1080, 1155],
+      ["C", 1110, 1170],
+      ["D", 1155, 1200],
+      ["E", 1410, 1470],
+    ]);
+    expect(r.skipped).toEqual([]);
+    for (const name of ["time", "Times", "SET_TIME", "set times", "Slot"]) {
+      expect(report(`act,stage,${name}\nA,Main,18:00-19:00`).sets).toEqual([expect.objectContaining({ start: 1080, end: 1140 })]);
+    }
+  });
+
+  it("skips a range cell that is not a range, or whose side is not a time, naming the act and quoting the value", () => {
+    const r = report("Act,Stage,Slot\nA,Main,18:00-19:00\nB,Side,18:00\nC,Tent,25:99-26:00");
+    expect(r.sets.map((s) => s.act)).toEqual(["A"]);
+    expect(skippedOf(r)).toEqual([
+      'Line 3 (B): the set time "18:00" is not a range such as 18:00-19:00 or 6pm to 7:15pm.',
+      `Line 4 (C): the start time "25:99" is not a time such as ${FORMS}.`,
+    ]);
+  });
+
+  it("reads a range column only when the header names no start and no end, and only one such column", () => {
+    expect(errors("Act,Stage,Start,Time\nA,Main,18:00,18:00-19:00")).toEqual([
+      'Line 1: no column reads as end. Not read: "Time". For end this check reads: end, end time, ends, finish, finish time, finishes, until, to, set end.',
+    ]);
+    expect(errors("Act,Stage,Time,Slot\nA,Main,18:00-19:00,18:00-19:00")).toEqual([
+      'Line 1: no column reads as start or end. Not read: "Time", "Slot". For start this check reads: start, start time, starts, begin, begins, from, set start. For end this check reads: end, end time, ends, finish, finish time, finishes, until, to, set end. Or one column of ranges such as 18:00-19:00, headed time, times, set time, set times or slot.',
+    ]);
+  });
+
+  it("refuses an Act, Stage, Start, Endzeit header in one message that names end and quotes Endzeit, and nothing else", () => {
+    const outcome = runCheck(input("Act,Stage,Start,Endzeit\nA,Main,18:00,19:00\nB,Side,xx,20:00\nOnly,two"));
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.errors).toEqual([
+      'Line 1: no column reads as end. Not read: "Endzeit". For end this check reads: end, end time, ends, finish, finish time, finishes, until, to, set end.',
+    ]);
+    expect(outcome.skipped ?? []).toEqual([]);
+    expect(announcement(outcome)).toBe("The grid was not checked. 1 problem listed.");
+  });
+
+  it("treats a first line as a header only when two or more of its cells name a column", () => {
+    // One column word in a title line: that line is skipped as a line, and the grid under it is read.
+    const r = report("Running order,Stage\nA,Main,18:00,19:00\nB,Side,18:30,19:30");
+    expect(r.sets).toHaveLength(2);
+    expect(skippedOf(r)).toEqual(["Line 1 (Running order): expected act, stage, start, end (and locked), but found 2 fields."]);
+  });
+
+  it("reads dotted, compact and h times, and a single a or p after a 12-hour time", () => {
+    const r = report(
+      [
+        "A,Main,6.30pm,7.30 pm",
+        "B,Side,18.30,1930",
+        "C,Tent,18h30,19H45",
+        "D,Main,6:30p,8.00p",
+        "E,Side,23:30,0030",
+        "F,Tent,20:00,2430",
+        "G,Side,6.30 PM,7:45P",
+      ].join("\n"),
+    );
+    expect(r.sets.map((s) => [s.act, s.start, s.end])).toEqual([
+      ["A", 1110, 1170],
+      ["B", 1110, 1170],
+      ["C", 1110, 1185],
+      ["D", 1110, 1200],
+      ["E", 1410, 1470],
+      ["F", 1200, 1470],
+      ["G", 1110, 1185],
+    ]);
+    expect(report("A,Main,11.30a,12:15p").sets[0]).toMatchObject({ start: 690, end: 735 });
+    // A bare number of one to three digits is still not a time, and hours stop at 47.
+    for (const value of ["6", "18", "630"]) {
+      expect(errors(`A,Main,${value},19:00`)).toEqual([`Line 1 (A): the start time "${value}" is not a time such as ${FORMS}.`]);
+    }
+    expect(errors("A,Main,18:00,4800")).toEqual([`Line 1 (A): the end time "4800" is not a time such as ${FORMS}.`]);
+    expect(errors("A,Main,18.75,19:00")[0]).toMatch(/start time "18\.75"/);
+  });
+
+  it("names the act and quotes the rejected value in a skip, and keeps the act for the line's mark and pair rules", () => {
+    const r = report("Tidal Fields,Main,18:00,19:00\nCobalt Rows,Side,18:30,19:30\nPaper Lanterns,Tent,19:00,20:00\nMystery Booking TBC,Tent,25:99,26:30");
+    expect(skippedOf(r)).toEqual([`Line 4 (Mystery Booking TBC): the start time "25:99" is not a time such as ${FORMS}.`]);
+    expect(r.skipped?.map((item) => [item.line, item.act])).toEqual([[4, "Mystery Booking TBC"]]);
+    // The guard's grid (the round-35 messy paste): line 4's message, word for word.
+    expect(skippedOf(report(MESSY_LINES.join("\n")))[0]).toBe(
+      'Line 4 (Glass Harbour): the start time "25:70" is not a time such as 18:00, 18.00, 1800, 24:30, 6:00 PM or 6pm.',
+    );
+  });
+
+  it("carries the day column's one value, and none without a day column", () => {
+    expect(report("Day,Act,Stage,Start,End\nSat 14 June,A,Main,18:00,19:00\nsat 14 june,B,Side,18:30,19:30").day).toBe("Sat 14 June");
+    expect(report("A,Main,18:00,19:00").day).toBeNull();
+    expect(report("Day,Act,Stage,Start,End\n,A,Main,18:00,19:00").day).toBeNull();
+  });
+
+  // Fix pass: a semicolon grid, the CSV a spreadsheet writes where the comma is the decimal mark, reads on the
+  // first paste; the first non-blank line decides, as it does for a tab.
+  it("reads a grid separated by semicolons when its first line is, and keeps a comma grid whose name holds one", () => {
+    // A header in a spreadsheet's own words, an unquoted comma in a name, a quoted semicolon, trailing separators.
+    const r = report(
+      [
+        "Artist;Stage;Start;Finish;",
+        "Earth, Wind & Fire;Pyramid;18:00;19:15;",
+        '"Rock; Roll";Other Stage;18.30;19.30;',
+        "Mystery Booking;Park;25:99;26:30;",
+        "Zola;Park;1900;2000;",
+      ].join("\r\n"),
+    );
+    expect(r.sets.map((s) => [s.act, s.stage, s.start, s.end])).toEqual([
+      ["Earth, Wind & Fire", "Pyramid", 1080, 1155],
+      ["Rock; Roll", "Other Stage", 1110, 1170],
+      ["Zola", "Park", 1140, 1200],
+    ]);
+    expect(skippedOf(r)).toEqual([`Line 4 (Mystery Booking): the start time "25:99" is not a time such as ${FORMS}.`]);
+    expect(separatorHint(r.skipped)).toBeNull();
+    // Positional, a locked column and a day column read the same way.
+    expect(report("A;Main;18:00;19:00;yes\nB;Side;18:30;19:30;").sets.map((s) => [s.act, s.locked])).toEqual([
+      ["A", true],
+      ["B", false],
+    ]);
+    expect(report("Day;Act;Stage;Start;End\nSat;A;Main;18:00;19:00").day).toBe("Sat");
+    // A header it cannot read by semicolons is named in the same one message.
+    expect(errors("Act;Stage;Start;Endzeit\nA;Main;18:00;19:00")).toEqual([
+      'Line 1: no column reads as end. Not read: "Endzeit". For end this check reads: end, end time, ends, finish, finish time, finishes, until, to, set end.',
+    ]);
+    // Commas outnumber semicolons on the first line: a comma grid, its semicolon kept in the name.
+    expect(report("Rock; Roll,Main,18:00,19:00\nB,Side,18:30,19:30").sets.map((s) => s.act)).toEqual(["Rock; Roll", "B"]);
+    // A semicolon inside a quoted field does not count towards the choice.
+    expect(report('"A;B;C",Main,18:00,19:00').sets.map((s) => s.act)).toEqual(["A;B;C"]);
+    // A tab on the first line still means tab.
+    expect(report("A;x\tMain\t18:00\t19:00").sets.map((s) => s.act)).toEqual(["A;x"]);
   });
 });

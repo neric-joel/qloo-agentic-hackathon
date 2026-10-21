@@ -39,6 +39,19 @@ export function comparedLine(state: PriceState): { value: string; done: boolean 
   return { value: `${pairs} · asked Qloo just now`, done: true };
 }
 
+/**
+ * What is still open, rule breaks apart from ordinary overlaps: "4 rule breaks to review · 35 overlaps to
+ * decide", each part in the singular at 1 and left out at 0; null when nothing is open.
+ */
+export function openLine(counts: Pick<ReviewCounts, "openBreaks" | "openPairs">): string | null {
+  const { openBreaks, openPairs } = counts;
+  const parts = [
+    openBreaks > 0 ? `${openBreaks} ${openBreaks === 1 ? "rule break" : "rule breaks"} to review` : null,
+    openPairs > 0 ? `${openPairs} ${openPairs === 1 ? "overlap" : "overlaps"} to decide` : null,
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
 /** The "Rule breaks" row: "3 · 1 of 3 reviewed", or "0" when there is nothing to review. */
 export function ruleBreaksValue(counts: Pick<ReviewCounts, "breaks" | "breaksReviewed">): string {
   return counts.breaks === 0 ? "0" : `${counts.breaks} · ${counts.breaksReviewed} of ${counts.breaks} reviewed`;
@@ -91,20 +104,20 @@ export function CheckReview({
   preview?: ReactNode;
 }) {
   const compared = comparedLine(price);
-  const open = counts.openBreaks + counts.openPairs;
+  const open = openLine(counts);
   return (
     <section
       id={RESULT_IDS.review}
       aria-labelledby="check-review-heading"
       className="scroll-mt-24 overflow-hidden rounded-lg border border-surface-edge bg-card print:hidden"
     >
-      <div className="mx-5 flex items-baseline justify-between gap-3 border-b border-border pt-4 pb-3.5">
+      {/* The heading, and what is still open beside it; the open line takes its own line under the heading when
+          the two do not fit the rail side by side. */}
+      <div className="mx-5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 border-b border-border pt-4 pb-3.5">
         <h2 id="check-review-heading" className="text-[0.9375rem] leading-6 font-semibold text-foreground">
           {REVIEW_COPY.heading}
         </h2>
-        <p className="text-[0.8125rem] text-muted-foreground">
-          {open === 0 ? REVIEW_COPY.allDecided : `${open} open`}
-        </p>
+        <p className="text-[0.8125rem] leading-5 text-muted-foreground">{open ?? REVIEW_COPY.allDecided}</p>
       </div>
 
       <div className="px-5 pt-4 pb-3">
@@ -161,15 +174,8 @@ export function CheckReview({
           </Row>
           <Row label="Kept on purpose">{counts.kept}</Row>
           <Row label="Not changing">{counts.notChanging}</Row>
-          <Row label="Open" strong={open > 0}>
-            {open === 0
-              ? "None"
-              : [
-                  counts.openBreaks > 0 ? `${counts.openBreaks} rule ${counts.openBreaks === 1 ? "break" : "breaks"}` : null,
-                  counts.openPairs > 0 ? pairCountLabel(counts.openPairs) : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
+          <Row label="Open" strong={open !== null}>
+            {open ?? "None"}
           </Row>
         </dl>
         {stale ? <p className="mt-2 text-sm font-semibold text-warning">These counts are for the grid as last checked.</p> : null}

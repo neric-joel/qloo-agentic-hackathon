@@ -189,7 +189,7 @@ const RANK_SCALE = "Both ranks run 0 to 100 within that day’s clashes, not on 
  * pair of priced acts on the bill.
  */
 export const HIDDEN_DEFINITION =
-  "On the timetable, Hidden means the acts’ main genre tags differ while their taste overlap is in the top tenth of the bill’s priced pairs.";
+  "On the timetable, Hidden means the acts’ main genre tags differ while their taste overlap is in the top tenth of the bill’s scored pairs.";
 
 /** The sourced examples go further than the label: no genre tag in common at all, and called out in public. */
 export const WALL_LEAD =

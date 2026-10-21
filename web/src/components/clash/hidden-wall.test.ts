@@ -378,7 +378,7 @@ describe("HiddenWall: one definition of Hidden, the day's count, no lift figure"
 
   it("defines the board's label once, true to clash_label: main genre tags differ, taste overlap in the bill's top tenth", () => {
     expect(HIDDEN_DEFINITION).toBe(
-      "On the timetable, Hidden means the acts’ main genre tags differ while their taste overlap is in the top tenth of the bill’s priced pairs.",
+      "On the timetable, Hidden means the acts’ main genre tags differ while their taste overlap is in the top tenth of the bill’s scored pairs.",
     );
     const html = renderToStaticMarkup(createElement(HiddenWall, { evidence: evidence(8, 13), day: five }));
     const plain = text(html);

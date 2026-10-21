@@ -9,8 +9,11 @@
  */
 
 import { buildSetViews, formatOverlap, topClashes } from "./clashes";
+// Types only: day-graph-motion imports this module's values, so a value import back would be a cycle.
+import type { LayoutPlan, Spot } from "./day-graph-motion";
 import { NO_OTHER_LONGER, type Decision } from "./decision";
 import { pluralize } from "./format";
+import { lockLabel, lockRuleHolds } from "./locks";
 import { clockMinutes } from "./moves";
 import { growthClauses } from "./overlap-words";
 import type { PairClash, Preset } from "./preset";
@@ -454,6 +457,252 @@ export function buildDayGraph(preset: Preset, decision: Decision | null, day: nu
   }
 }
 
+/**
+ * The words beside a locked set on this day (`lockLabel`): the invented day's own sentence; on a published day,
+ * whose lock it is, with the last-set rule only when `lockRuleHolds` proves it on the day's slots (every set of the
+ * day, on its stage row, at its published times).
+ */
+export function lockWords(model: Pick<DayGraphModel, "day" | "sets" | "synthetic">): string {
+  const slots = model.sets.map((set) => ({ stage: String(set.stageIndex), day: model.day, start: set.start, end: set.end, locked: set.locked }));
+  return lockLabel({ synthetic: model.synthetic, holds: lockRuleHolds(slots) });
+}
+
+// ------------------------------------------------------------------------------------ the leaders
+
+/** The farthest a name drawn outside its bar may sit from that bar and still be joined to it (px). */
+export const LEADER_MAX = 24;
+
+/**
+ * The marks a leader keeps clear of, as the drawing draws them (px): a bar's corner (`MARK_RADIUS`, `rounded-xs`),
+ * a line's paper casing each side of its stroke (`CASING`), a line's end dot's radius (8px on the chosen clash, 6px
+ * on any other), and how far in from a name box's ends a leader leaves it when the box allows (a plate's padding).
+ */
+export const LEADER_MARKS = { corner: 6, casing: 2, litDot: 4, dot: 3, inset: 2 } as const;
+
+/**
+ * A leader: one straight 1px hairline from a name drawn outside its bar (beside it, or on a plate above or below it)
+ * to that bar, from the nearest point of the name's box edge to the nearest point of the bar's rounded edge. Its ends
+ * are px across from the name's own anchor minute, so it rides with the name (on the mover's layer too), and px down
+ * the track: (x0, y0) on the name's box, (x1, y1) on the bar's edge.
+ */
+export type Leader = { id: string; anchor: number; x0: number; y0: number; x1: number; y1: number; length: number };
+
+/**
+ * One view's leaders, and the names drawn outside their bars that get none (`dropped`): every place a leader could
+ * take would cross another set's bar, a name, a tag or plate, a window or a line, or would reach past `LEADER_MAX`.
+ */
+export type ViewLeaders = { leaders: Leader[]; dropped: string[] };
+
+type LeaderBox = { x0: number; x1: number; y0: number; y1: number };
+type LeaderEnds = { x0: number; y0: number; x1: number; y1: number };
+type LeaderBlock = { box: LeaderBox } | { dot: { x: number; y: number; r: number } };
+
+/** Half the leader's 1px width: what its stroke reaches either side of the line it is drawn along. */
+const LEADER_HALF = 0.5;
+
+/** Places along `[from, to]`, `preferred` first, then 1px steps out from it on alternate sides, then the two ends. */
+function stepsOut(preferred: number, from: number, to: number): number[] {
+  const out = [preferred];
+  for (let step = 1; preferred - step >= from || preferred + step <= to; step += 1) {
+    if (preferred - step >= from) out.push(preferred - step);
+    if (preferred + step <= to) out.push(preferred + step);
+  }
+  for (const end of [from, to]) if (!out.some((at) => Math.abs(at - end) < 1e-6)) out.push(end);
+  return out;
+}
+
+const clampTo = (value: number, from: number, to: number) => Math.min(to, Math.max(from, value));
+
+/**
+ * The shortest segments from a name's box `name` to its bar `bar` (a box with rounded corners of `LEADER_MARKS.corner`),
+ * the most natural first, every one of the same length: straight down or up from under the name's middle when the
+ * name sits over the bar's straight edge; straight across at the bar's middle when it sits beside it; else from the
+ * name's nearest corner to the nearest point of the bar's rounded corner. Only places inside `[left, right]` (what
+ * the reader sees of the track) are offered. None when the name touches its bar.
+ */
+export function leaderCandidates(name: LeaderBox, bar: LeaderBox, left = Number.NEGATIVE_INFINITY, right = Number.POSITIVE_INFINITY): LeaderEnds[] {
+  const r = Math.max(0, Math.min(LEADER_MARKS.corner, (bar.x1 - bar.x0) / 2, (bar.y1 - bar.y0) / 2));
+  const core = { x0: bar.x0 + r, x1: bar.x1 - r, y0: bar.y0 + r, y1: bar.y1 - r };
+  const above = name.y1 <= bar.y0 + 1e-6;
+  const below = name.y0 >= bar.y1 - 1e-6;
+  const after = name.x0 >= bar.x1 - 1e-6;
+  const before = name.x1 <= bar.x0 + 1e-6;
+  if (!(above || below || after || before)) return [];
+  if (above || below) {
+    const from = Math.max(name.x0, core.x0, left + LEADER_HALF);
+    const to = Math.min(name.x1, core.x1, right - LEADER_HALF);
+    if (from <= to) {
+      const inner = [Math.max(from, name.x0 + LEADER_MARKS.inset), Math.min(to, name.x1 - LEADER_MARKS.inset)];
+      const [a, b] = inner[0] <= inner[1] ? inner : [from, to];
+      const y0 = above ? name.y1 : name.y0;
+      const y1 = above ? bar.y0 : bar.y1;
+      return stepsOut(clampTo((name.x0 + name.x1) / 2, a, b), a, b).map((x) => ({ x0: x, y0, x1: x, y1 }));
+    }
+  }
+  if (after || before) {
+    const from = Math.max(name.y0, core.y0);
+    const to = Math.min(name.y1, core.y1);
+    const x0 = after ? name.x0 : name.x1;
+    const x1 = after ? bar.x1 : bar.x0;
+    if (from <= to && Math.min(x0, x1) >= left - 1e-6 && Math.max(x0, x1) <= right + 1e-6) {
+      return stepsOut(clampTo((bar.y0 + bar.y1) / 2, from, to), from, to).map((y) => ({ x0, y0: y, x1, y1: y }));
+    }
+  }
+  // The nearest corner: the closest points of the name's box and the bar's straight core, then out by the corner's radius.
+  const nearest = (a0: number, a1: number, c0: number, c1: number): [number, number] => {
+    if (a1 < c0) return [a1, c0];
+    if (a0 > c1) return [a0, c1];
+    const mid = (Math.max(a0, c0) + Math.min(a1, c1)) / 2;
+    return [mid, mid];
+  };
+  const [nx, cx] = nearest(name.x0, name.x1, core.x0, core.x1);
+  const [ny, cy] = nearest(name.y0, name.y1, core.y0, core.y1);
+  const reach = Math.hypot(nx - cx, ny - cy);
+  if (reach <= r + 1e-6) return [];
+  const x1 = cx + ((nx - cx) / reach) * r;
+  const y1 = cy + ((ny - cy) / reach) * r;
+  if (Math.min(nx, x1) < left || Math.max(nx, x1) > right) return [];
+  return [{ x0: nx, y0: ny, x1, y1 }];
+}
+
+/** Whether a 1px leader along `ends` crosses any of `blocks` (sampled every quarter px along its length). */
+function leaderCrosses(ends: LeaderEnds, blocks: readonly LeaderBlock[]): boolean {
+  const length = Math.hypot(ends.x1 - ends.x0, ends.y1 - ends.y0);
+  const steps = Math.max(1, Math.ceil(length / 0.25));
+  for (let i = 0; i <= steps; i += 1) {
+    const x = ends.x0 + ((ends.x1 - ends.x0) * i) / steps;
+    const y = ends.y0 + ((ends.y1 - ends.y0) * i) / steps;
+    for (const block of blocks) {
+      if ("box" in block) {
+        const { box } = block;
+        if (x > box.x0 - LEADER_HALF && x < box.x1 + LEADER_HALF && y > box.y0 - LEADER_HALF && y < box.y1 + LEADER_HALF) return true;
+      } else if (Math.hypot(x - block.dot.x, y - block.dot.y) < block.dot.r + LEADER_HALF) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * The leaders of one band's drawing, in each view: for every name drawn outside its bar (slot b beside it, slot c on
+ * a plate above or below it), the first of `leaderCandidates` that crosses nothing: no other set's bar or the
+ * published slot (kept 1px off), no name, tag or plate box, no window, and no line's stroke, paper casing or end dot
+ * (kept 1px off its dot). A name with a place for its leader in both views takes the same one in both, so a leader
+ * only travels with its name. Nothing moves: the names, bars and lines stay where `planDrawing` put them. A name
+ * inside its bar gets none; a name whose every place crosses a mark, or whose bar is farther than `LEADER_MAX`, is
+ * dropped. A phone offers only places inside its detail window.
+ */
+export function planLeaders(model: Pick<DayGraphModel, "focus">, plan: LayoutPlan): Record<GraphView, ViewLeaders> {
+  const { track, scale, layout } = plan;
+  const x = (minute: number) => (minute - track.start) * scale;
+  const barHeight = LAYOUT[layout].bar;
+  const desktop = layout === "desktop";
+  const left = x(desktop ? track.start : Math.max(track.start, model.focus.start));
+  const right = x(desktop ? track.end : Math.min(track.end, model.focus.end));
+  const boxOf = (spot: Spot): LeaderBox => {
+    const at = x(spot.anchor) + spot.dx;
+    const x0 = spot.align === "start" ? at : spot.align === "end" ? at - spot.width : at - spot.width / 2;
+    return { x0, x1: x0 + spot.width, y0: spot.top, y1: spot.top + spot.height };
+  };
+  const barOf = (span: Span, top: number): LeaderBox => ({ x0: x(span.start), x1: x(span.end), y0: top, y1: top + barHeight });
+  const grow = (box: LeaderBox, by: number): LeaderBox => ({ x0: box.x0 - by, x1: box.x1 + by, y0: box.y0 - by, y1: box.y1 + by });
+  const outside = (spot: Spot) => spot.kind === "beside" || spot.kind === "above" || spot.kind === "below";
+
+  const views: GraphView[] = plan.views.moved === plan.views.published ? ["published"] : ["published", "moved"];
+  /** Every mark a leader in each view keeps off, each with the set it belongs to (a bar, a name), else null. */
+  const marks = new Map<GraphView, { owner: string | null; block: LeaderBlock }[]>();
+  for (const view of views) {
+    const vp = plan.views[view];
+    const list: { owner: string | null; block: LeaderBlock }[] = [];
+    for (const item of vp.bars) list.push({ owner: item.set.actId, block: { box: grow(barOf(item.span, item.top), 1) } });
+    for (const [owner, spot] of Object.entries(vp.labels)) list.push({ owner, block: { box: boxOf(spot) } });
+    for (const tag of vp.tags) list.push({ owner: null, block: { box: boxOf(tag.spot) } });
+    for (const window of [...(vp.hatch ? [vp.hatch] : []), ...vp.created]) {
+      list.push({ owner: null, block: { box: { x0: x(window.window.start), x1: x(window.window.end), y0: window.top, y1: window.bottom } } });
+    }
+    for (const line of vp.lines) {
+      const at = x(line.mid) + line.off;
+      const reach = line.width / 2 + LEADER_MARKS.casing;
+      const r = (line.thread.lit ? LEADER_MARKS.litDot : LEADER_MARKS.dot) + 1;
+      list.push(
+        { owner: null, block: { box: { x0: at - reach, x1: at + reach, y0: line.top, y1: line.bottom } } },
+        { owner: null, block: { dot: { x: at, y: line.top, r } } },
+        { owner: null, block: { dot: { x: at, y: line.bottom, r } } },
+      );
+    }
+    marks.set(view, list);
+  }
+  /** What a leader of the set `id` in `view` keeps off: every mark but its own bar and name. */
+  const blocksOf = (view: GraphView, id: string): LeaderBlock[] => {
+    const vp = plan.views[view];
+    const blocks = (marks.get(view) ?? []).filter((mark) => mark.owner !== id).map((mark) => mark.block);
+    // The published slot is another set's to every other name; to the mover's own, it is its old place, which its
+    // leader may meet only along the edge it shares with the moved bar, never cross.
+    if (vp.ghost) blocks.push({ box: grow(barOf(vp.ghost.span, vp.ghost.top), vp.ghost.set.actId === id ? -(LEADER_HALF + 0.01) : 1) });
+    return blocks;
+  };
+
+  /** A place for a leader, and whether it crosses nothing, worked out only when asked. */
+  type Option = { ends: LeaderEnds; key: string; clear: () => boolean };
+  const optionsOf = (view: GraphView, id: string, spot: Spot): Option[] => {
+    const own = plan.views[view].bars.find((item) => item.set.actId === id);
+    if (!own) return [];
+    const name = boxOf(spot);
+    let blocks: LeaderBlock[] | null = null;
+    const base = x(spot.anchor);
+    const round = (value: number) => Math.round(value * 100);
+    return leaderCandidates(name, barOf(own.span, own.top), left, right)
+      .filter((ends) => Math.hypot(ends.x1 - ends.x0, ends.y1 - ends.y0) <= LEADER_MAX + 1e-6)
+      .map((ends) => {
+        let known: boolean | null = null;
+        return {
+          ends,
+          key: [ends.x0 - base, ends.y0, ends.x1 - base, ends.y1].map(round).join("|"),
+          clear: () => {
+            if (known === null) {
+              blocks ??= blocksOf(view, id);
+              known = !leaderCrosses(ends, blocks);
+            }
+            return known;
+          },
+        };
+      });
+  };
+
+  const out = Object.fromEntries(views.map((view) => [view, { leaders: [], dropped: [] }])) as unknown as Record<GraphView, ViewLeaders>;
+  const ids = new Set(views.flatMap((view) => Object.entries(plan.views[view].labels).filter(([, spot]) => outside(spot)).map(([id]) => id)));
+  for (const id of ids) {
+    const options = new Map<GraphView, Option[]>();
+    for (const view of views) {
+      const spot = plan.views[view].labels[id];
+      if (spot && outside(spot)) options.set(view, optionsOf(view, id, spot));
+    }
+    const drawn = [...options.keys()];
+    // One place for both views when one is clear in both; else each view its own first clear place.
+    const shared =
+      drawn.length > 1
+        ? options.get(drawn[0])?.find((option) => option.clear() && drawn.every((view) => options.get(view)?.some((other) => other.key === option.key && other.clear())))
+        : undefined;
+    for (const view of drawn) {
+      const list = options.get(view) ?? [];
+      const pick = shared ? list.find((option) => option.key === shared.key) : list.find((option) => option.clear());
+      const spot = plan.views[view].labels[id];
+      if (!pick || !spot) {
+        out[view].dropped.push(id);
+        continue;
+      }
+      // To the hundredth of a px, as the drawing writes every other offset.
+      const base = x(spot.anchor);
+      const round = (value: number) => Math.round(value * 100) / 100 || 0;
+      const [x0, y0, x1, y1] = [pick.ends.x0 - base, pick.ends.y0, pick.ends.x1 - base, pick.ends.y1].map(round);
+      out[view].leaders.push({ id, anchor: spot.anchor, x0, y0, x1, y1, length: Math.hypot(x1 - x0, y1 - y0) });
+    }
+  }
+  if (views.length === 1) out.moved = out.published;
+  return out;
+}
+
 // ------------------------------------------------------------------------------------ the words
 
 /**
@@ -523,7 +772,7 @@ export function setNote(model: DayGraphModel, set: DayGraphSet, view: GraphView)
   const move = view === "moved" && model.move?.actId === set.actId ? model.move : null;
   const place = move ? move.to : set;
   const parts = [`${set.name}, ${model.stages[place.stageIndex]?.name ?? ""}, ${formatRange(place)}.`];
-  if (set.locked) parts.push("Locked: this set stays put.");
+  if (set.locked) parts.push(lockWords(model));
   if (set.unscored) {
     parts.push(model.synthetic ? "No taste signal: left out, not scored as zero." : "No Qloo signal: left out, not scored as zero.");
   }

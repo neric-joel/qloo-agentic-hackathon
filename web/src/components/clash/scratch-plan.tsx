@@ -183,7 +183,7 @@ export function ScratchPlan({
             Costliest clashes with these moves
           </h4>
           {plan.clashes.length === 0 ? (
-            <p className="mt-1.5 text-sm text-muted-foreground">None priced.</p>
+            <p className="mt-1.5 text-sm text-muted-foreground">None scored.</p>
           ) : (
             <ul aria-labelledby={clashesId} className="mt-1.5 space-y-1 text-sm">
               {plan.clashes.map((clash) => (

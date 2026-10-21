@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     # Recorded agent runs per preset (Qloo-derived, same rule): replayed by the web app without a model call
     recordings_dir: Path | None = Path(__file__).resolve().parent.parent / "presets" / "recordings"
 
-    # LLM access: "gateway" (Vercel AI Gateway) or "anthropic" (direct API key). "none" disables runs.
+    # Agent provider: a gateway or a direct key (the values below); "none" disables runs.
     llm_provider: Literal["none", "gateway", "anthropic"] = "none"
     anthropic_api_key: str | None = None
     ai_gateway_api_key: str | None = None

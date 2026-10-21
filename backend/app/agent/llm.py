@@ -1,6 +1,6 @@
 """LLM backends for the agent loop.
 
-``AnthropicBackend`` talks to Claude either directly or through the Vercel AI Gateway (same
+The provider backend talks to the model provider either directly or through the hosting gateway (same
 Messages API, different base URL and credentials). ``ScriptedBackend`` replays a fixed sequence
 of assistant turns; it exists for tests and offline UI work and is never used in production.
 """
@@ -45,7 +45,7 @@ FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 
 def supports_effort(model: str) -> bool:
-    """Haiku 4.5 rejects ``output_config.effort``; current Sonnet and Opus models accept it."""
+    """Some smaller models reject ``output_config.effort``; the default models accept it."""
     return "haiku" not in model
 
 
@@ -146,7 +146,7 @@ class ScriptedBackend:
 
 
 def gateway_token(settings: Settings, request_headers: dict[str, str] | None = None) -> str | None:
-    """AI Gateway credential: explicit key, else the deployment's OIDC token (header first, then env)."""
+    """Gateway credential: explicit key, else the deployment's OIDC token (header first, then env)."""
     if settings.ai_gateway_api_key:
         return settings.ai_gateway_api_key
     if request_headers and (token := request_headers.get("x-vercel-oidc-token")):

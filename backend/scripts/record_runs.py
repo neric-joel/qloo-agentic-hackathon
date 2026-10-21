@@ -52,7 +52,7 @@ OUT = Path(__file__).resolve().parents[2] / "_private" / "presets" / "recordings
 NOT_CONFIGURED = "The LLM is not configured: set LLM_PROVIDER and a key in backend/.env"
 MAX_QLOO_PER_RUN = 4
 MAX_ELAPSED_MS = 40_000
-# List price per million tokens of the production model (Sonnet 5.5). Cached input is counted at the full
+# List price per million tokens of the production model. Cached input is counted at the full
 # input price, so this estimate errs high; it is not a bill.
 PRICE_IN, PRICE_OUT = 2.0, 10.0
 # On top of the app's claim patterns: wording the recordings' acceptance check reads for
@@ -76,6 +76,20 @@ class PlanEntry:
 
 # Facts below were checked offline on the built presets (engine and tool handlers only, no model, no Qloo).
 PLAN = [
+    # Sprints (Woodsies 14:00-15:00) and Katy J Pearson (The Park 14:00-14:45) overlap 45 minutes, the top
+    # clash in clash_report (the day's index is 116.7). Both have a Qloo id and signal: explain_clash makes
+    # one live /v2/analysis/compare request. try_move for Sprints to Woodsies 14:15 is allowed with no rule
+    # broken (116.7 to 114.3, the best of find_moves' 6 legal places) and makes no Qloo request; afterwards
+    # the pair overlap 30 minutes and Sprints gains a 15-minute overlap with Joy Crookes (Other 15:00-15:45).
+    PlanEntry(
+        "hero-pair-explain-and-test",
+        "glastonbury-2025-sun",
+        "Explain the clash at the top of the page and test its move",
+        "Why do Sprints and Katy J Pearson clash? "
+        "Test moving Sprints to Woodsies at 14:15 against the rules.",
+        "live_qloo",
+        ("Sprints", "Katy J Pearson"),
+    ),
     # Nadine Shah (Other 12:30-13:15) and Gurriers (Woodsies 12:30-13:30) overlap 45 minutes. Both have a Qloo
     # id and signal: explain_clash makes one live compare request. find_moves for Gurriers: 6 legal places,
     # best Woodsies 12:45 (116.7 to 114.8).
@@ -568,7 +582,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--dry-run", action="store_true", help="check and print the plan only")
     ap.add_argument("--force", action="store_true", help="save runs that fail the gates")
     ap.add_argument("--attempts", type=int, default=3, help="tries per question before giving up (default 3)")
-    ap.add_argument("--model", default=None, help="model id (default: the production model, Sonnet 5.5)")
+    ap.add_argument("--model", default=None, help="model id (default: the production model)")
     ap.add_argument("--effort", default="low", choices=["low", "medium", "high"])
     ap.add_argument("--max-qloo", type=int, default=10, help="most Qloo requests in all (default 10)")
     ap.add_argument("--max-cost", type=float, default=0.30, help="estimated dollars to stop at (0.30)")

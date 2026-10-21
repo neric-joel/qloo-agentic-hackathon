@@ -560,10 +560,10 @@ async def test_a_scripted_run_is_recorded_whole_and_passes_the_gates(tmp_path):
 
 
 @needs_presets
-def test_the_plan_builds_five_valid_run_requests_on_the_real_presets():
+def test_the_plan_builds_six_valid_run_requests_on_the_real_presets():
     presets = get_presets(Settings(presets_dir=PRESETS, _env_file=None))
     planned = record_runs.build_requests(record_runs.PLAN, presets)
-    assert len(planned) == 5 and len({entry.id for entry, _ in planned}) == 5
+    assert len(planned) == 6 and len({entry.id for entry, _ in planned}) == 6
     assert {entry.expects for entry, _ in planned} == {"live_qloo", "rules", "refusal", "abstain", "clean"}
     for entry, request in planned:
         assert isinstance(request, RunRequest) and request.scenario == "clash"
@@ -614,6 +614,14 @@ async def test_each_plan_question_can_pass_its_gate_on_the_real_presets():
     glastonbury, rules = session("glastonbury-2025-sun"), session("glastonbury-2025-sun")
     riot = session("riot-fest-2026-sun")
     try:
+        a, b = plan["hero-pair-explain-and-test"].acts
+        assert minutes_concurrent(glastonbury, a, b) > 0
+        acts = {act.name: act for act in glastonbury.state["festival"].acts}
+        for name in (a, b):  # a Qloo id and signal on both, so explain_clash makes its live compare request
+            assert acts[name].qloo_id and glastonbury.state["matrix"].coverage_of(acts[name].id) != "none"
+        move = await content(TRY_MOVE, {"act": a, "stage": "Woodsies", "start": "14:15"}, glastonbury)
+        assert move["allowed"] is True
+
         a, b = plan["hidden-clash-and-move"].acts
         assert minutes_concurrent(glastonbury, a, b) > 0
         assert (await content(FIND_MOVES, {"act": b}, glastonbury))["legal_places"] >= 1

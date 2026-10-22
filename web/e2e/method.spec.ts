@@ -342,8 +342,8 @@ test.describe("how we know (/method)", () => {
   test("the contents links jump to their sections and mark the current one", async ({ page }) => {
     const contents = page.getByRole("navigation", { name: "On this page" });
     // Labels only: no numerals.
-    await expect(contents.getByRole("link")).toHaveText(["What the score is", "What we tested it against", "What taste overlap cannot tell you", "How the rest works"]);
-    for (const [label, id] of [["What we tested it against", "tested"], ["What taste overlap cannot tell you", "limits"], ["How the rest works", "the-rest"], ["What the score is", "price"]] as const) {
+    await expect(contents.getByRole("link")).toHaveText(["What the score is", "What we tested it against", "What taste overlap cannot tell you", "What people ask about clashes", "How long this takes", "How the rest works"]);
+    for (const [label, id] of [["What we tested it against", "tested"], ["What taste overlap cannot tell you", "limits"], ["What people ask about clashes", "asked"], ["How long this takes", "how-long"], ["How the rest works", "the-rest"], ["What the score is", "price"]] as const) {
       const link = contents.getByRole("link", { name: label });
       await link.click();
       await expect(page).toHaveURL(new RegExp(`#${id}$`));
@@ -384,5 +384,56 @@ test.describe("how we know (/method)", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Which clash is worth moving?" })).toBeVisible();
     // The home page's honesty lines, for completeness of the journey.
     await expect(page.getByRole("region", { name: "Which clash is worth moving?" })).toContainText(HONESTY.neither);
+  });
+
+  test("what people ask about clashes: counts pages, not people, with the three claims, the questions as closed disclosures and the sources behind one click (round 38)", async ({ page }) => {
+    const asked = page.locator("#asked");
+    await expect(asked.getByRole("heading", { level: 2, name: "What people ask about clashes" })).toBeVisible();
+    const intro = asked.locator("[data-evidence-intro]");
+    await expect(intro).toBeVisible();
+    await expect(intro).toContainText("Nobody was asked anything.");
+    await expect(intro).toContainText("It counts pages, not people");
+    await expect(asked.locator("[data-evidence-claims] > li")).toHaveCount(3);
+    await expect(asked.locator("[data-evidence-claims]")).toBeVisible();
+    // The questions: twelve closed disclosures, each opening to what the pages show, how it helps, where it does not.
+    const questions = asked.locator("[data-evidence-questions] details");
+    await expect(questions).toHaveCount(12);
+    for (let i = 0; i < 12; i++) await expect(questions.nth(i)).toHaveJSProperty("open", false);
+    const first = questions.first();
+    await first.locator("summary").click();
+    await expect(first).toHaveJSProperty("open", true);
+    await expect(first).toContainText("What the pages show.");
+    await expect(first).toContainText("How Clash Control helps.");
+    await expect(first).toContainText("Where it does not.");
+    await expect(first.getByRole("link")).toHaveCount(3);
+    await expect(asked.locator("[data-evidence-method]")).toBeVisible();
+    await expect(asked.locator("[data-evidence-limits]")).toBeVisible();
+    const sources = asked.getByRole("group").filter({ has: page.locator("summary", { hasText: /^Sources for this analysis/ }) });
+    await expect(sources).toHaveJSProperty("open", false);
+    await sources.locator("summary").click();
+    await expect(sources.getByRole("link")).toHaveCount(113);
+    await expect(sources.getByRole("link").first()).toHaveAttribute("target", "_blank");
+    await expect(asked).not.toContainText(/survey|poll|people we asked|respondents/i);
+  });
+
+  test("how long this takes: the by-hand route is estimated, not measured; Clash Control's figure waits for the demo; never a survey or a time saved (round 38)", async ({ page }) => {
+    const timing = page.locator("#how-long");
+    await expect(timing.getByRole("heading", { level: 2, name: "How long this takes" })).toBeVisible();
+    const manual = timing.locator("[data-timing-manual]");
+    await expect(manual).toBeVisible();
+    await expect(manual).toHaveText(/^Estimated, not measured: /);
+    await expect(manual).toContainText("Nobody was timed.");
+    const steps = timing.locator("[data-timing-steps] > li");
+    await expect(steps).toHaveCount(5);
+    for (let i = 0; i < 5; i++) await expect(steps.nth(i)).toContainText("(estimated)");
+    // Clash Control's figure is a placeholder until the demo recording measures it: machine time, no number yet.
+    const machine = timing.locator("[data-timing-machine] > li");
+    await expect(machine).toHaveCount(5);
+    for (let i = 0; i < 5; i++) {
+      await expect(machine.nth(i)).toContainText("Machine time on production");
+      await expect(machine.nth(i)).toContainText("measured on production during the final demo recording");
+    }
+    await expect(timing.locator("[data-timing-note]")).toContainText("never set against the estimate");
+    await expect(timing).not.toContainText(/survey|poll|people we asked|respondents|time saved|minutes saved|times faster/i);
   });
 });

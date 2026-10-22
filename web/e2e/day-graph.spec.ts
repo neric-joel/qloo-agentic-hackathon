@@ -927,7 +927,7 @@ test.describe("the day graph", () => {
     }
   });
 
-  test("the hero says what it needs in at most 160 visible words at 1440 and 131 at 390", async ({ page, isPhone }) => {
+  test("the hero says what it needs in at most 166 visible words at 1440 and 144 at 390", async ({ page, isPhone }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
@@ -956,8 +956,11 @@ test.describe("the day graph", () => {
     });
     // Round 35 (R1): the lede gained the frame, so the budget moved from 120 and 117 to 125 and 122. Round 37 (AO2,
     // NEXT.md 5.4): the desktop note (why this move, two sets, near 100) and the key's lock and dotted words move it to
-    // the count measured after the build, 160 at 1440 and 131 at 390, inside the decided caps of 170 and 131.
-    const budget = isPhone ? 131 : 160;
+    // the count measured after the build, 160 at 1440 and 131 at 390, inside the decided caps of 170 and 131. Round 38
+    // (22 Oct 2026, owner-approved judge ask, lane H): the hero's three-rung ladder (CHARTER section 8, caps 175 and
+    // 145) moves it to the count measured after the build, 173 at 1440 and 144 at 390. Round 38 reconcile: from 1280 px
+    // the ladder is one line in the left column (CHARTER section 8 now caps 1440 at 168), measured 166 at 1440.
+    const budget = isPhone ? 144 : 166;
     test.info().annotations.push({ type: `hero words at ${isPhone ? 390 : 1440}`, description: String(counted.length) });
     expect(counted.length, `visible hero words: ${counted.join(" ")}`).toBeLessThanOrEqual(budget);
     // The guarded lines are never trimmed to fit.
@@ -1248,4 +1251,114 @@ test.describe("the day graph on the invented day", () => {
       expect(await page.evaluate((id) => document.getElementById(id ?? "")?.textContent ?? "", name)).not.toMatch(/published/i);
     }
   });
+});
+
+/**
+ * Round 38 (lane D): names inside their own bars on the desktop's 32 px bars (70 px rows), one or two lines, and the
+ * sets with no Qloo signal drawn plainly: a dotted ink outline on the paper, the name in ink like every other.
+ */
+const INSIDE_SIZES = [
+  { width: 1440, height: 900, outside: { [DAYS.glastonbury.id]: 4, [DAYS.riot.id]: 13 } },
+  { width: 390, height: 844, outside: { [DAYS.glastonbury.id]: 1, [DAYS.riot.id]: 3 } },
+] as const;
+
+/** In the band on show: the sets in the window whose name is drawn outside their bar, and names in slot a that leave it. */
+function measureInside(names: Record<string, string>): { outside: string[]; leaking: string[]; inside: number } {
+  const graph = document.querySelector("[data-day-graph]") as HTMLElement;
+  const band = [...graph.querySelectorAll<HTMLElement>("[data-band]")].find((element) => element.getClientRects().length > 0) as HTMLElement;
+  const clip = band.children[1].getBoundingClientRect();
+  const bars = [...band.querySelectorAll<HTMLElement>("[data-set]")].filter((element) => {
+    const box = element.getBoundingClientRect();
+    return Math.min(box.right, clip.right) - Math.max(box.left, clip.left) > 0.5;
+  });
+  const outside: string[] = [];
+  const leaking: string[] = [];
+  let inside = 0;
+  for (const bar of bars) {
+    const id = bar.dataset.set ?? "";
+    const name = names[id] ?? id;
+    // Slot e is a set with no name drawn (a phone's window edge); the names test above holds where that may happen.
+    if (bar.dataset.slot === "e") continue;
+    if (bar.dataset.slot !== "a") {
+      outside.push(`${name} (slot ${bar.dataset.slot})`);
+      continue;
+    }
+    const label = band.querySelector<HTMLElement>(`[data-label="${CSS.escape(id)}"]`);
+    if (!label) {
+      leaking.push(`${name}: slot a with no name drawn`);
+      continue;
+    }
+    inside += 1;
+    const [b, l] = [bar.getBoundingClientRect(), label.getBoundingClientRect()];
+    if (l.left < b.left - 0.5 || l.right > b.right + 0.5 || l.top < b.top - 0.5 || l.bottom > b.bottom + 0.5) {
+      leaking.push(`${name}: name ${l.left.toFixed(1)}-${l.right.toFixed(1)} x ${l.top.toFixed(1)}-${l.bottom.toFixed(1)} leaves its bar ${b.left.toFixed(1)}-${b.right.toFixed(1)} x ${b.top.toFixed(1)}-${b.bottom.toFixed(1)}`);
+    }
+  }
+  return { outside, leaking, inside };
+}
+
+test.describe("the day graph's names inside their bars (round 38)", () => {
+  test.beforeEach(async ({ page }) => requireSavedDays(page));
+
+  for (const day of Object.values(DAYS)) {
+    test(`on ${day.title}, in both views: names sit inside their own bars, at most the measured few outside, and no line crosses a name (1440 on a desktop, 390 on a phone)`, async ({ page, isPhone }) => {
+      const names = await actNames(page, day.id);
+      const home = new HomePage(page);
+      for (const size of INSIDE_SIZES.filter((item) => (item.width < 640) === isPhone)) {
+        await page.setViewportSize({ width: size.width, height: size.height });
+        await home.goto(day.id);
+        for (const view of ["moved", "published"] as const) {
+          if (view === "published") await home.chooseView("As published");
+          await expect(home.graph).toHaveAttribute("data-view", view);
+          const where = `${size.width} x ${size.height}, ${view} view`;
+          const found = await page.evaluate(measureInside, names);
+          test.info().annotations.push({ type: `inside at ${size.width}, ${view}`, description: `${found.inside} inside; outside ${found.outside.length}: ${found.outside.join("; ")}` });
+          expect(found.leaking, `${where}: names drawn inside that leave their bar`).toEqual([]);
+          expect(found.outside.length, `${where}: names outside their bar: ${found.outside.join("; ")}`).toBeLessThanOrEqual(size.outside[day.id]);
+          const lines = await page.evaluate(measureLabels, names);
+          expect(lines.strokeHits, `${where}: lines painted through names: ${lines.through.join("; ")}`).toBe(0);
+        }
+      }
+    });
+
+    test(`on ${day.title}, every set with no Qloo signal is a dotted ink outline on the paper, its name in ink, and no other set is dotted`, async ({ page }) => {
+      const response = await page.request.get(`/api/presets/${day.id}`);
+      expect(response.ok(), `GET /api/presets/${day.id}`).toBeTruthy();
+      const preset = (await response.json()) as { festival: { acts: { id: string; name: string; qloo_id: string | null }[] } };
+      const noSignal = preset.festival.acts.filter((act) => !act.qloo_id).map((act) => act.id);
+      expect(noSignal.length, "the saved day has sets with no Qloo signal").toBeGreaterThan(0);
+      const home = new HomePage(page);
+      await home.goto(day.id);
+      await expect(home.graphKey).toContainText("Dotted: no Qloo signal.");
+      const found = await page.evaluate((ids) => {
+        const graph = document.querySelector("[data-day-graph]") as HTMLElement;
+        const band = [...graph.querySelectorAll<HTMLElement>("[data-band]")].find((element) => element.getClientRects().length > 0) as HTMLElement;
+        const probe = document.createElement("span");
+        probe.className = "text-foreground bg-background";
+        band.appendChild(probe);
+        const ink = getComputedStyle(probe).color;
+        const paper = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return [...band.querySelectorAll<HTMLElement>("[data-set]")].map((bar) => {
+          const style = getComputedStyle(bar);
+          const label = band.querySelector<HTMLElement>(`[data-label="${CSS.escape(bar.dataset.set ?? "")}"]`);
+          return {
+            id: bar.dataset.set ?? "",
+            noSignal: ids.includes(bar.dataset.set ?? ""),
+            dotted: [style.borderTopStyle, style.borderRightStyle, style.borderBottomStyle, style.borderLeftStyle].every((item) => item === "dotted"),
+            edgeInk: style.borderTopColor === ink,
+            onPaper: style.backgroundColor === paper,
+            nameInk: label ? getComputedStyle(label).color === ink : null,
+          };
+        });
+      }, noSignal);
+      const drawn = found.filter((bar) => bar.noSignal);
+      expect(drawn.length, "the sets with no Qloo signal are drawn").toBeGreaterThan(0);
+      for (const bar of drawn) {
+        expect(bar, `${bar.id}: a dotted ink outline on the paper`).toMatchObject({ dotted: true, edgeInk: true, onPaper: true });
+        if (bar.nameInk !== null) expect(bar.nameInk, `${bar.id}: its name in ink, not muted`).toBe(true);
+      }
+      expect(found.filter((bar) => !bar.noSignal && bar.dotted).map((bar) => bar.id), "sets with a signal are not dotted").toEqual([]);
+    });
+  }
 });

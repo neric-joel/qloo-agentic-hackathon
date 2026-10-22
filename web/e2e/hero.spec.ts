@@ -863,3 +863,103 @@ test.describe("the hero's desktop note, the date and the keep offer (round 37: L
     }
   });
 });
+
+/**
+ * Round 38 (lanes H and reconcile): the decision's clash ranked three ways in the hero, a three-step ladder. From
+ * 1280 px it is one line in the left column under the dateline; from 1024 to 1279 px it sits in the decision group
+ * above Keep with taste's sentence; on a phone it sits under Keep's confirmation room, before the paste. Exactly one
+ * ladder shows at any width, the ranks are the ones "What Qloo changes" prints, and the taste rung is credited with
+ * its own step only.
+ */
+test.describe("the hero's ladder", () => {
+  test.beforeEach(async ({ page }) => requireSavedDays(page));
+
+  /** The ladders drawn on the page: the left column's one line and the group's, by whether each has a box. */
+  async function shownLadders(page: import("@playwright/test").Page) {
+    return page.evaluate(() => {
+      const drawn = (element: Element | null) => Boolean(element && element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden");
+      const box = (element: Element | null) => {
+        if (!element) return null;
+        const rect = element.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, top: rect.top + window.scrollY, bottom: rect.bottom + window.scrollY, height: rect.height };
+      };
+      const line = document.querySelector("[data-hero-ladder-room] [data-hero-ladder-line]");
+      const group = document.querySelector("[data-hero-group] [data-hero-ladder]");
+      return {
+        line: drawn(line) ? box(line) : null,
+        group: drawn(group) ? box(group) : null,
+        groupBox: box(document.querySelector("[data-hero-group]")),
+      };
+    });
+  }
+
+  const LADDERS = [
+    { day: DAYS.glastonbury, time: "Time alone #23", draw: "+ Qloo popularity #18", taste: "+ taste overlap #1 of 68", sentence: "Adding taste moves this pair from #18 to #1." },
+    { day: DAYS.riot, time: "Time alone #5", draw: "+ Qloo popularity #1", taste: "+ taste overlap #1 of 47", sentence: "Adding taste leaves this pair at #1." },
+  ] as const;
+
+  for (const ladder of LADDERS) {
+    test(`on ${ladder.day.title}: one line in the left column at 1440, in the group above Keep at 1024, under Keep at 390`, async ({ page, isPhone }) => {
+      const home = new HomePage(page);
+      if (!isPhone) {
+        await home.goto(ladder.day.id);
+        const line = home.hero.locator("[data-hero-ladder-room] [data-hero-ladder-line]");
+        await expect(line.locator('[data-rung="time"]')).toContainText(ladder.time);
+        await expect(line.locator('[data-rung="draw"]')).toContainText(ladder.draw);
+        await expect(line.locator('[data-rung="taste"]')).toContainText(ladder.taste);
+        // The time rung prints its rank alone, and the count closes the last rung only.
+        await expect(line.locator('[data-rung="time"]')).not.toContainText(" of ");
+        await expect(line.locator('[data-rung="draw"]')).not.toContainText(" of ");
+        // Taste is a rank, never attendance; the arrows are drawn only.
+        await expect(line).not.toContainText(/attend|fans|people/i);
+        await expect(line.locator('[aria-hidden="true"]')).toHaveText(["→", "→"]);
+        const at1440 = await shownLadders(page);
+        expect(at1440.group, "1440: the group shows no ladder").toBeNull();
+        expect(at1440.line, "1440: the one-line ladder is drawn").not.toBeNull();
+        expect(at1440.line!.height, "1440: the ladder is one line").toBeLessThanOrEqual(20);
+        expect(at1440.line!.right, "1440: the ladder sits in the left column, clear of the group").toBeLessThanOrEqual(at1440.groupBox!.left);
+        await expect(line, "1440: the ladder is on the first screen").toBeInViewport({ ratio: 1 });
+
+        await page.setViewportSize({ width: 1024, height: 768 });
+        await home.goto(ladder.day.id);
+        const inGroup = home.group.locator("[data-hero-ladder]");
+        await expect(inGroup.locator('[data-rung="time"]')).toHaveText(new RegExp(`^${literal(ladder.time).replace(/ /g, String.raw`\s*`)}$`));
+        await expect(inGroup.locator('[data-rung="taste"]')).toHaveText(new RegExp(`^${literal(ladder.taste).replace(/ /g, String.raw`\s*`)}$`));
+        await expect(inGroup.locator("[data-ladder-line]")).toHaveText(ladder.sentence);
+        const at1024 = await shownLadders(page);
+        expect(at1024.line, "1024: no one-line ladder in the left column").toBeNull();
+        expect(at1024.group, "1024: the group shows the ladder").not.toBeNull();
+        const keep = await home.keepMove.boundingBox();
+        expect(at1024.group!.bottom, "1024: the ladder sits above Keep").toBeLessThanOrEqual((keep?.y ?? 0) + 0.5);
+        await expect(inGroup, "1024: the ladder is on the first screen").toBeInViewport({ ratio: 1 });
+      } else {
+        await home.goto(ladder.day.id);
+        const inGroup = home.group.locator("[data-hero-ladder]");
+        await expect(inGroup.locator('[data-rung="taste"]')).toHaveText(new RegExp(`^${literal(ladder.taste).replace(/ /g, String.raw`\s*`)}$`));
+        await expect(inGroup.locator("[data-ladder-line]")).toHaveText(ladder.sentence);
+        const at390 = await shownLadders(page);
+        expect(at390.line, "390: no one-line ladder").toBeNull();
+        expect(at390.group, "390: the group shows the ladder").not.toBeNull();
+        const [keep, slot, paste] = await Promise.all([home.keepMove.boundingBox(), home.keptSlot.boundingBox(), home.pasteLink.boundingBox()]);
+        const scroll = await page.evaluate(() => window.scrollY);
+        expect(at390.group!.top - scroll, "390: the ladder sits under Keep").toBeGreaterThanOrEqual((keep?.y ?? 0) + (keep?.height ?? 0) - 0.5);
+        expect(at390.group!.top - scroll, "390: the ladder sits under Keep's confirmation room").toBeGreaterThanOrEqual((slot?.y ?? 0) + (slot?.height ?? 0) - 0.5);
+        expect(at390.group!.bottom - scroll, "390: the ladder sits before the paste").toBeLessThanOrEqual((paste?.y ?? 0) + 0.5);
+        // Keep keeps its place on the first screen (DECISION budget: bottom at most 787 px at 390 x 844).
+        expect((keep?.y ?? 0) + (keep?.height ?? 0) + scroll, "390: Keep's bottom").toBeLessThanOrEqual(787);
+      }
+    });
+  }
+
+  test("on a short desktop (1366 x 768) the one-line ladder and the whole drawing are on the first screen", async ({ page, isPhone }) => {
+    test.skip(isPhone, "a desktop band");
+    await page.setViewportSize({ width: 1366, height: 768 });
+    const home = new HomePage(page);
+    await home.goto(DAYS.glastonbury.id);
+    const line = home.hero.locator("[data-hero-ladder-room] [data-hero-ladder-line]");
+    await expect(line.locator('[data-rung="taste"]')).toContainText("+ taste overlap #1 of 68");
+    await expect(line).toBeInViewport({ ratio: 1 });
+    const drawing = await home.graph.locator(":scope > [data-layout]").filter({ visible: true }).first().boundingBox();
+    expect((drawing?.y ?? 0) + (drawing?.height ?? 0), "1366 x 768: the drawing's bottom").toBeLessThanOrEqual(768);
+  });
+});

@@ -151,6 +151,25 @@ test.describe("what Qloo changes: its height and the index card's lines beside i
 test.describe("who has complained, and what nobody has tested", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
 
+  test("says what the public pages show, that it counts pages and not people, with no click, and links to the sources on /method (round 38)", async ({ page }) => {
+    const home = new HomePage(page);
+    await home.goto(DAYS.glastonbury.id);
+    const claim = home.whyThisMatters.locator("[data-why-public]");
+    await expect(claim).toBeVisible();
+    expect(await claim.evaluate((element) => element.closest("details:not([open])") === null), "open, with no click").toBe(true);
+    await expect(claim).toContainText(
+      "Our analysis of 70 public press articles, fan-post summaries and one artist statement from 17 festivals (2015 to 2026) found 325 named set-time clashes, covering 538 distinct pairs of acts.",
+    );
+    await expect(claim).toContainText("It counts pages, not people, so it shows the complaint keeps coming back, not how many people mind.");
+    await expect(claim).not.toContainText(/survey|poll|people we asked|respondents/i);
+    const link = claim.getByRole("link", { name: "Sources and limits" });
+    await expect(link).toHaveAttribute("href", "/method#asked");
+    await expect(link).not.toHaveAttribute("target", "_blank");
+    await link.click();
+    await expect(page).toHaveURL(/\/method#asked$/);
+    await expect(page.getByRole("heading", { level: 2, name: "What people ask about clashes" })).toBeInViewport();
+  });
+
   test("opens on the stake and the moment of use, with no click", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);

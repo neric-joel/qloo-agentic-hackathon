@@ -1,0 +1,154 @@
+name: browser (invented day)
+
+# Run by hand only: Actions, "browser (invented day)", Run workflow. It never runs on a push or a pull request, so it
+# cannot change the status of main.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A clean clone: no saved festival day (backend/presets is not in the repository), no secret, key or token, and none
+# of the live switches. The API serves its invented example day and can reach neither Qloo nor the agent's provider.
+#
+# 1. The journey: three specs that run whole on the invented day, in both projects (1440 x 900 and 390 x 844).
+#    - e2e/invented-day.spec.ts is written for the invented day: the browser's day requests are answered from fixtures
+#      made by the backend's own generator, and the server's summary is the same invented day.
+#    - e2e/theme.spec.ts reads only the theme control and the page ground, on /method, /check and /, on any day.
+#    - e2e/check.spec.ts checks the invented sample and pasted grids in the browser. Its three tests named "Check a
+#      published day" need a published day, so they are left out by title; every other test in it runs.
+#    The real-day specs skip themselves on a clean clone (web/e2e/helpers.ts requireSavedDays), so the gate fails the
+#    job if any test was skipped, or if fewer than JOURNEY_MINIMUM passed (53 tests per project when this was written).
+# 2. The hero without the server's decision: a stub between a second web server and the API strips the decision from
+#    the server's preset answer and holds its decision request past the server's 4 s wait, on every load; the check
+#    then measures the hero's first frame against its settled frame.
+
+jobs:
+  browser:
+    name: journey on the invented day, then the hero without the server's decision
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      JOURNEY_MINIMUM: "106"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          python-version: "3.12"
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install the API
+        working-directory: backend
+        run: uv sync --frozen
+
+      - name: Start the API on the invented day
+        id: api
+        working-directory: backend
+        env:
+          # The agent stays off.
+          LLM_PROVIDER: none
+        run: |
+          test ! -e presets
+          nohup uv run uvicorn app.main:app --port 8000 > "$RUNNER_TEMP/api.log" 2>&1 &
+          curl -sf -o /dev/null --retry 60 --retry-delay 1 --retry-connrefused http://localhost:8000/api/health
+          node -e '
+            const get = (path) => fetch(`http://localhost:8000${path}`).then((response) => response.json());
+            Promise.all([get("/api/health"), get("/api/presets")]).then(([health, days]) => {
+              console.log(JSON.stringify(health));
+              console.log(JSON.stringify(days.map((day) => ({ id: day.id, synthetic: day.synthetic }))));
+              const off = health.status === "ok" && !health.qloo_key_configured && !health.llm_configured && !health.pair_check && !health.price_grid_live;
+              const invented = days.length === 1 && days[0].synthetic === true;
+              if (!off || !invented) {
+                console.error("Expected the invented day only, with no Qloo key and every live switch off.");
+                process.exit(1);
+              }
+            });
+          '
+
+      - name: Install the web app
+        working-directory: web
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Chromium
+        id: browsers
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
+      - name: Journey on the invented day
+        id: journey
+        working-directory: web
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-results.json
+          PLAYWRIGHT_HTML_OPEN: never
+        # The config's webServer starts the dev server on :3000, which reads the API at its default, :8000.
+        run: >-
+          npx playwright test e2e/invented-day.spec.ts e2e/theme.spec.ts e2e/check.spec.ts
+          --grep-invert "Check a published day"
+          --reporter=list,json,html
+
+      - name: Journey gate (no skipped test, at least JOURNEY_MINIMUM passed)
+        if: ${{ !cancelled() && steps.journey.outcome != 'skipped' }}
+        working-directory: web
+        run: node ../.github/scripts/journey-gate.mjs playwright-results.json "$JOURNEY_MINIMUM"
+
+      - name: Keep the journey's report
+        if: ${{ failure() && steps.journey.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: journey-report
+          path: |
+            web/playwright-report
+            web/test-results
+            web/playwright-results.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Start the decision stub on :8001
+        id: stub
+        if: ${{ !cancelled() && steps.api.outcome == 'success' && steps.browsers.outcome == 'success' }}
+        run: |
+          nohup node .github/scripts/decision-stub.mjs --log "$RUNNER_TEMP/decision-stub.log" > "$RUNNER_TEMP/decision-stub.out" 2>&1 &
+          curl -sf -o /dev/null --retry 30 --retry-delay 1 --retry-connrefused http://127.0.0.1:8001/api/health
+
+      - name: Start a second web dev server on :3001 that reads the API through the stub
+        id: web3001
+        if: ${{ !cancelled() && steps.stub.outcome == 'success' }}
+        working-directory: web
+        env:
+          BACKEND_URL: http://127.0.0.1:8001
+        run: |
+          # The journey's dev server has stopped with Playwright; Next runs one dev server per folder at a time.
+          for attempt in $(seq 1 30); do curl -s -o /dev/null http://localhost:3000 || break; sleep 1; done
+          nohup npx next dev -p 3001 > "$RUNNER_TEMP/web-3001.log" 2>&1 &
+          # The first request compiles the page and meets the held decision, so it takes more than 4 s.
+          curl -sf -o /dev/null --retry 60 --retry-delay 2 --retry-connrefused --max-time 180 http://localhost:3001/
+          # That request's held decision is answered after 6 s; the measured loads start after it.
+          sleep 8
+
+      - name: Hero without the server's decision (1440 x 900 and 390 x 844, CPU 4x)
+        if: ${{ !cancelled() && steps.web3001.outcome == 'success' }}
+        run: node .github/scripts/hero-fallback.cjs http://localhost:3001 "$RUNNER_TEMP/decision-stub.log" "$RUNNER_TEMP/hero-fallback.json"
+
+      - name: Keep the logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-logs
+          path: |
+            ${{ runner.temp }}/api.log
+            ${{ runner.temp }}/decision-stub.log
+            ${{ runner.temp }}/decision-stub.out
+            ${{ runner.temp }}/web-3001.log
+            ${{ runner.temp }}/hero-fallback.json
+          if-no-files-found: ignore
+          retention-days: 14

@@ -223,7 +223,7 @@ async def explain_clash(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
     if matrix.coverage_of(a_id) == "none" or matrix.coverage_of(b_id) == "none":
         data["taste_overlap"] = view["taste_overlap_out_of_100"] = None
         data["note"] = view["note"] = (
-            "Qloo has no usable audience signal for one of these acts, so the clash is not priced."
+            "Qloo has no usable audience signal for one of these acts, so the clash is not scored."
         )
         return ToolOutput(content=_compact(view), summary="No Qloo signal for one act")
     data["taste_overlap"] = round(matrix.value(a_id, b_id), 2)
@@ -791,7 +791,7 @@ FIND_MOVES = Tool(
     description=(
         "Where could one set go? Checks every start on a 5-minute grid in the free time it may use (a "
         "stage it may play, inside its start window; it keeps its length) and lists the places that break "
-        "no rule, each priced with the Clash Budget after the move, best first. Use it before try_move "
+        "no rule, each scored with the Clash Budget after the move, best first. Use it before try_move "
         "instead of guessing times. Does not change the timetable."
     ),
     input_schema={
@@ -970,7 +970,7 @@ async def reslot(args: dict[str, Any], ctx: ToolContext) -> ToolOutput:
         view["rule_breaks_after_plan"] = remaining
         if remaining:
             view["note"] = (
-                "This search found no plan that ends these rule breaks (it moves priced sets only and keeps "
+                "This search found no plan that ends these rule breaks (it moves scored sets only and keeps "
                 "only moves that lower the index); say so, name them, and say a person may still find a "
                 "legal change: " + "; ".join(remaining)
             )

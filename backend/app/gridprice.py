@@ -114,11 +114,11 @@ SEARCH = "/search"
 
 SCOPE_NOTES = {
     "saved_day": (
-        "Priced from a saved festival day. No Qloo request was sent. A rank among the acts on that day, "
+        "Compared using a saved festival day. No Qloo request was sent. A rank among the acts on that day, "
         "not attendance."
     ),
     "invented_day": (
-        "Priced from the invented example day: its acts and affinities are invented, not Qloo data. "
+        "Compared using the invented example day: its acts and affinities are invented, not Qloo data. "
         "No Qloo request was sent."
     ),
     "qloo_live": (
@@ -134,15 +134,16 @@ SAME_ACT_PAIR = "A pair must name two different acts."
 DUPLICATE_PAIR = "Each pair can be sent once."
 NOT_A_SAVED_DAY = "These acts are not on a saved festival day."
 NO_SAVED_DAY = (
-    "These acts are not on a saved festival day, and live pricing is off on this server, so nothing was "
-    "compared. No Qloo request was sent."
+    "These acts are not on a saved festival day, and the live comparison is off on this server, so nothing "
+    "was compared. No Qloo request was sent."
 )
-TOO_FEW_FOUND = "Qloo matched fewer than 4 of these acts, so nothing was priced."
-SWITCHED_OFF = "Live pricing is switched off on this server. A saved day still prices."
+TOO_FEW_FOUND = "Qloo matched fewer than 4 of these acts, so nothing was compared."
+SWITCHED_OFF = "The live comparison is switched off on this server. A saved day still compares."
 PAUSED = (
-    "Live pricing is paused to protect this demo's monthly Qloo allowance. Your rule results are unchanged."
+    "The live comparison is paused to protect this demo's monthly Qloo allowance. Your rule results are "
+    "unchanged."
 )
-NO_ANSWER = "Qloo did not answer in time; nothing was priced."
+NO_ANSWER = "Qloo did not answer in time; nothing was compared."
 LIVE_TOO_MANY = f"A live answer takes at most {MAX_ACTS} acts and {MAX_PAIRS} pairs."
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=NAME_LENGTH)]

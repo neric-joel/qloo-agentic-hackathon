@@ -10,6 +10,7 @@ instead (``synthetic: true``), generated here from a set seed: invented acts and
 from __future__ import annotations
 
 import json
+import logging
 import threading
 from functools import lru_cache
 from pathlib import Path
@@ -24,6 +25,7 @@ from .schedule.models import Festival, OverlapMatrix
 from .schedule.synthetic import synthetic_festival
 
 router = APIRouter(prefix="/api/presets", tags=["presets"])
+log = logging.getLogger(__name__)
 
 # Presets change only on redeploy, so let the CDN serve them.
 CACHE_CONTROL = "public, s-maxage=3600, stale-while-revalidate=86400"
@@ -65,6 +67,24 @@ class Preset(BaseModel):
     overlap_notes: list[str] = []
     evidence: dict[str, Any] | None = Field(
         default=None, description="Sourced examples: hidden-clash wall, clash receipts, same-size twins."
+    )
+    matched_names: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "{act id: the name Qloo's /search returned for the act's entity id}, read from the saved /search "
+            "responses by scripts/enrich_matched_names.py (no request sent). Empty when the preset was not "
+            "enriched, and on the invented day."
+        ),
+    )
+
+
+class PresetResponse(Preset):
+    decision: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "The worked decision for the preset's first day with sets, exactly as GET "
+            "/api/presets/{id}/decision answers it for that day; null when the engine has none."
+        ),
     )
 
 
@@ -165,15 +185,29 @@ def list_presets(presets: Presets, response: Response) -> list[PresetSummary]:
     return [summarize(p) for p in presets.values()]
 
 
-@router.get("/{preset_id}", response_model=Preset, response_model_exclude={"matrix"})
-def get_preset(preset_id: str, presets: Presets, response: Response) -> Preset:
+@router.get("/{preset_id}", response_model=PresetResponse, response_model_exclude={"matrix"})
+def get_preset(preset_id: str, presets: Presets, response: Response) -> PresetResponse:
     """A preset festival day with its score report and the Qloo requests behind it.
 
     The full overlap matrix stays on the server (the agent's tools read it); the page needs only the scores.
     Popularity is served to 4 decimals; the engine keeps the full values.
+
+    ``decision`` is the engine's own answer for the first day with sets, read from its cache (filled at
+    startup), so the page gets the preset and its decision in one response. It is computed from the loaded
+    preset, never from the public copy: the cache keys on the loaded object. It is null when no day has sets
+    or the engine fails; the preset is served either way.
     """
+    from .decision import decision as decide  # app.decision imports this module
+
     preset = presets.get(preset_id)
     if preset is None:
         raise HTTPException(status_code=404, detail=f"No preset {preset_id!r}.")
     response.headers["Cache-Control"] = CACHE_CONTROL
-    return public_copy(preset)
+    days = {slot.day for slot in preset.festival.timetable}
+    answer: dict[str, Any] | None = None
+    if days:
+        try:
+            answer = decide(preset, min(days))
+        except Exception:
+            log.exception("decision for preset %s failed; served without it", preset_id)
+    return PresetResponse(**dict(public_copy(preset)), decision=answer)

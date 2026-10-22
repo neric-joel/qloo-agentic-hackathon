@@ -1,4 +1,5 @@
 import json
+import re
 
 import httpx
 import pytest
@@ -250,8 +251,19 @@ async def test_an_act_without_qloo_signal_is_explained_as_unpriced():
     ctx.state["matrix"] = matrix.model_copy(update={"coverage": {tent_closer: "none"}})
     out = await EXPLAIN_CLASH.handler({"act_a": "Tent Closer", "act_b": "Headliner"}, ctx)
     content = json.loads(out.content)
-    assert content["taste_overlap_out_of_100"] is None and "not priced" in content["note"]
+    assert content["taste_overlap_out_of_100"] is None and "not scored" in content["note"]
+    assert content["note"] == (
+        "Qloo has no usable audience signal for one of these acts, so the clash is not scored."
+    )
     assert out.data is None and out.summary == "No Qloo signal for one act"
+
+
+def test_the_tool_descriptions_say_scored_not_priced():
+    assert "lists the places that break no rule, each scored with the Clash Budget after the move" in (
+        " ".join(FIND_MOVES.description.split())
+    )
+    for tool in (LIST_TIMETABLE, CLASH_REPORT, EXPLAIN_CLASH, FIND_MOVES, TRY_MOVE, ADD_CONSTRAINT, RESLOT):
+        assert not re.search(r"\bpric(e|ed|es|ing)\b", tool.description, re.IGNORECASE), tool.name
 
 
 async def test_budgets_the_model_reads_have_one_decimal():
@@ -698,7 +710,7 @@ async def test_when_no_place_ends_the_break_the_tools_say_so_plainly():
     plan = json.loads((await RESLOT.handler({"objective": 1, "move_budget": 4}, ctx)).content)
     assert plan["rule_breaks_now"] == plan["rule_breaks_after_plan"] == [BREAK_TEXT]
     assert plan["note"] == (
-        "This search found no plan that ends these rule breaks (it moves priced sets only and keeps only "
+        "This search found no plan that ends these rule breaks (it moves scored sets only and keeps only "
         "moves that lower the index); say so, name them, and say a person may still find a legal change: "
         + BREAK_TEXT
     )

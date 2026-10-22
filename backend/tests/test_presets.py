@@ -1,4 +1,5 @@
 import json
+import logging
 
 from fastapi.testclient import TestClient
 
@@ -8,8 +9,8 @@ from app.schedule.metrics import score_festival
 from app.schedule.synthetic import synthetic_festival
 
 
-def write_preset(directory, preset_id: str, title: str) -> None:
-    festival, matrix = synthetic_festival(3, days=1, acts=12)
+def write_preset(directory, preset_id: str, title: str, *, days: int = 1) -> None:
+    festival, matrix = synthetic_festival(3, days=days, acts=12 * days)
     report = score_festival(festival, matrix)
     preset = {
         "id": preset_id,
@@ -142,3 +143,133 @@ def test_a_preset_says_where_its_rankings_were_located_or_null_for_a_global_read
     assert global_day["location"] is None
     assert local_day["location"] == "Lantern City"
     assert "matrix" not in local_day
+
+
+INVENTED_ID = "synthetic-lanternfield-friday"
+
+
+def first_day(body: dict) -> int:
+    return min(slot["day"] for slot in body["festival"]["timetable"])
+
+
+def test_the_invented_day_carries_its_decision_as_the_decision_route_answers_it(tmp_path):
+    try:
+        with client_for(tmp_path / "absent") as client:
+            served = client.get(f"/api/presets/{INVENTED_ID}")
+            worked = client.get(f"/api/presets/{INVENTED_ID}/decision")
+    finally:
+        app.dependency_overrides.clear()
+    assert served.status_code == 200 and worked.status_code == 200
+    body = served.json()
+    assert body["synthetic"] is True and "matrix" not in body
+    assert body["decision"] == worked.json()
+    assert body["decision"]["kind"] == "decision" and body["decision"]["day"] == first_day(body)
+    assert body["decision"]["clash"] is not None and body["decision"]["move"] is not None
+
+
+def test_a_built_preset_carries_the_decision_of_its_lowest_day_with_sets(tmp_path):
+    write_preset(tmp_path, "one-day", "One Day")
+    write_preset(tmp_path, "two-days", "Two Days", days=2)
+    try:
+        with client_for(tmp_path) as client:
+            one = client.get("/api/presets/one-day").json()
+            one_worked = client.get("/api/presets/one-day/decision").json()
+            two = client.get("/api/presets/two-days").json()
+            days = sorted({slot["day"] for slot in two["festival"]["timetable"]})
+            by_default = client.get("/api/presets/two-days/decision").json()
+            lowest = client.get("/api/presets/two-days/decision", params={"day": days[0]}).json()
+            highest = client.get("/api/presets/two-days/decision", params={"day": days[-1]}).json()
+    finally:
+        app.dependency_overrides.clear()
+    assert "matrix" not in one and "matrix" not in two
+    assert one["decision"] == one_worked and one["decision"]["day"] == first_day(one)
+    assert len(days) == 2
+    assert two["decision"] == by_default == lowest
+    assert two["decision"]["day"] == days[0] and highest["day"] == days[-1]
+    assert two["decision"] != highest  # the field is the lowest day's answer, not any day's
+
+
+def test_a_second_preset_request_reads_the_decision_from_the_engines_cache(tmp_path, monkeypatch):
+    import app.decision as engine
+
+    computed: list[int] = []
+    compute = engine.compute_decision
+
+    def counting(preset, day):
+        if preset.id == "cached-day":
+            computed.append(day)
+        return compute(preset, day)
+
+    monkeypatch.setattr(engine, "compute_decision", counting)
+    write_preset(tmp_path, "cached-day", "Cached Day")
+    try:
+        client = client_for(tmp_path)  # no startup warm: the first request computes, as on a cold cache
+        first = client.get("/api/presets/cached-day").json()
+        second = client.get("/api/presets/cached-day").json()
+        worked = client.get("/api/presets/cached-day/decision").json()
+    finally:
+        app.dependency_overrides.clear()
+    assert computed == [first_day(first)]  # once, for the first day with sets
+    assert first["decision"] == second["decision"] == worked
+
+
+def test_the_startup_warm_fills_the_cache_the_preset_response_reads(tmp_path, monkeypatch):
+    import app.decision as engine
+
+    computed: list[int] = []
+    compute = engine.compute_decision
+
+    def counting(preset, day):
+        if preset.id == "warm-day":
+            computed.append(day)
+        return compute(preset, day)
+
+    monkeypatch.setattr(engine, "compute_decision", counting)
+    write_preset(tmp_path, "warm-day", "Warm Day")
+    try:
+        with client_for(tmp_path) as client:  # the lifespan warms every preset day first
+            assert len(computed) == 1
+            served = client.get("/api/presets/warm-day").json()
+            again = client.get("/api/presets/warm-day").json()
+    finally:
+        app.dependency_overrides.clear()
+    assert len(computed) == 1 and served["decision"] == again["decision"]
+    assert served["decision"]["day"] == computed[0] == first_day(served)
+
+
+def test_a_preset_whose_engine_fails_is_served_with_a_null_decision(tmp_path, monkeypatch, caplog):
+    import app.decision as engine
+
+    def failing(preset, day):
+        raise RuntimeError("engine failed")
+
+    monkeypatch.setattr(engine, "compute_decision", failing)
+    write_preset(tmp_path, "broken-day", "Broken Day")
+    try:
+        client = client_for(tmp_path)
+        with caplog.at_level(logging.ERROR, logger="app.presets"):
+            response = client.get("/api/presets/broken-day")
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200
+    body = response.json()
+    assert "decision" in body and body["decision"] is None
+    assert body["id"] == "broken-day" and len(body["festival"]["timetable"]) == 12 and "matrix" not in body
+    assert response.headers["cache-control"].startswith("public, s-maxage=")
+    failed = [r for r in caplog.records if r.name == "app.presets" and r.levelno == logging.ERROR]
+    assert len(failed) == 1 and failed[0].exc_info and "broken-day" in failed[0].getMessage()
+
+
+def test_a_preset_with_no_day_of_sets_is_served_with_a_null_decision(tmp_path):
+    write_preset(tmp_path, "empty-day", "Empty Day")
+    raw = json.loads((tmp_path / "empty-day.json").read_text(encoding="utf-8"))
+    raw["festival"]["timetable"] = []
+    (tmp_path / "empty-day.json").write_text(json.dumps(raw), encoding="utf-8")
+    try:
+        client = client_for(tmp_path)
+        response = client.get("/api/presets/empty-day")
+        worked = client.get("/api/presets/empty-day/decision")
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200 and response.json()["decision"] is None
+    assert worked.status_code == 422  # the decision route has no day to answer for either

@@ -223,6 +223,10 @@ def test_the_invented_day_prices_with_no_qloo_request_and_no_limiter_slot(tmp_pa
     assert body["mode"] == "saved" and body["source"] == "invented_day" and body["requests_used"] == 0
     assert body["preset_id"] == preset.id and body["fetched_at"] is None
     assert "invented" in body["scope_note"]
+    assert body["scope_note"] == (
+        "Compared using the invented example day: its acts and affinities are invented, not Qloo data. "
+        "No Qloo request was sent."
+    )
     assert body["coverage"] == {
         "acts": 10,
         "matched": 10,
@@ -290,6 +294,10 @@ def test_with_live_off_no_saved_day_is_a_200_answer_with_no_request(tmp_path):
         "requests_used": 0,
         "message": gridprice.NO_SAVED_DAY,
     }
+    assert response.json()["message"] == (
+        "These acts are not on a saved festival day, and the live comparison is off on this server, so "
+        "nothing was compared. No Qloo request was sent."
+    )
     assert "Nobody" not in response.text  # no name is echoed
 
 
@@ -383,6 +391,10 @@ def test_a_real_day_prices_only_the_pairs_its_page_shows(tmp_path):
     assert_allowlisted(body)
     assert body["source"] == "saved_day" and body["preset_id"] == "real-day"
     assert body["fetched_at"] == "2026-06-01T10:00:00Z" and "saved festival day" in body["scope_note"]
+    assert body["scope_note"] == (
+        "Compared using a saved festival day. No Qloo request was sent. A rank among the acts on that day, "
+        "not attendance."
+    )
     assert body["comparator"] == {"kind": "saved_day", "acts": 11}  # 12 acts, the last with no signal
     shown_pair, hidden_pair = body["pairs"]
     assert shown_pair["status"] == "priced"
@@ -871,7 +883,7 @@ def test_live_is_off_by_default_and_refused_before_qloo_or_the_limiter(tmp_path)
     assert response.status_code == 503 and no_store(response)
     assert response.json()["detail"] == {
         "code": "live_off",
-        "message": "Live pricing is switched off on this server. A saved day still prices.",
+        "message": "The live comparison is switched off on this server. A saved day still compares.",
     }
     assert health["price_grid_live"] is False
 
@@ -1063,7 +1075,7 @@ def test_fewer_than_4_matched_is_a_422_after_the_searches_only(tmp_path):
     assert response.status_code == 422 and no_store(response)
     assert response.json()["detail"] == {
         "code": "too_few_found",
-        "message": "Qloo matched fewer than 4 of these acts, so nothing was priced.",
+        "message": "Qloo matched fewer than 4 of these acts, so nothing was compared.",
     }
     assert fake.paths() == ["/search"] * 5 and qloo._reserved == 0
 
@@ -1079,7 +1091,7 @@ def test_a_failed_request_is_never_retried_and_nothing_is_priced(tmp_path, path)
     assert response.status_code == 503 and no_store(response)
     assert response.json()["detail"] == {
         "code": "no_answer",
-        "message": "Qloo did not answer in time; nothing was priced.",
+        "message": "Qloo did not answer in time; nothing was compared.",
     }
     expected = 5 if path == "/search" else 5 + 2
     assert len(fake.seen) == expected  # one request per call, no retry
@@ -1123,6 +1135,10 @@ def test_below_the_floor_live_is_paused_before_the_limiter_and_costs_nothing(tmp
         response = price(client, names, pairs, mode="live")
     assert response.status_code == 503 and no_store(response)
     assert code(response) == "paused" and fake.seen == [] and qloo._reserved == 0
+    assert response.json()["detail"]["message"] == (
+        "The live comparison is paused to protect this demo's monthly Qloo allowance. Your rule results are "
+        "unchanged."
+    )
 
 
 def test_the_caps_refuse_before_qloo_with_the_stated_message_and_give_the_reservation_back(tmp_path):
@@ -1138,13 +1154,17 @@ def test_the_caps_refuse_before_qloo_with_the_stated_message_and_give_the_reserv
     assert first.status_code == 200 and sent == 6
     assert second.status_code == 429 and no_store(second) and len(fake.seen) == sent
     assert second.json()["detail"] == {"code": "limit", "message": PRICE_GRID_MESSAGES.hour}
+    assert PRICE_GRID_MESSAGES.hour == (
+        "The live comparison has reached this hour's limit. Your rule results are unchanged, and a saved day "
+        "compares without a limit."
+    )
     assert qloo._reserved == 0
     assert (
         PRICE_GRID_MESSAGES.day
         == PRICE_GRID_MESSAGES.global_day
         == (
-            "Live pricing has reached today's limit. Your rule results are unchanged, and a saved day prices "
-            "without a limit."
+            "The live comparison has reached today's limit. Your rule results are unchanged, and a saved "
+            "day compares without a limit."
         )
     )
     everyone = RunLimiter(10, 10, 0, messages=PRICE_GRID_MESSAGES)

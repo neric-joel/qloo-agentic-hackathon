@@ -47,13 +47,13 @@ PAIR_MESSAGES = LimitMessages(
 )
 
 _PRICE_GRID_TODAY = (
-    "Live pricing has reached today's limit. Your rule results are unchanged, and a saved day prices without "
-    "a limit."
+    "The live comparison has reached today's limit. Your rule results are unchanged, and a saved day "
+    "compares without a limit."
 )
 PRICE_GRID_MESSAGES = LimitMessages(
     hour=(
-        "Live pricing has reached this hour's limit. Your rule results are unchanged, and a saved day prices "
-        "without a limit."
+        "The live comparison has reached this hour's limit. Your rule results are unchanged, and a saved "
+        "day compares without a limit."
     ),
     day=_PRICE_GRID_TODAY,
     global_day=_PRICE_GRID_TODAY,

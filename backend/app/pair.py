@@ -80,7 +80,7 @@ SWITCHED_OFF = "Live checks are switched off on this server."
 NOT_ON_THIS_DAY = "That set is not on this festival day."
 SAME_SET = "Pick two different sets."
 NOT_PRICED = (
-    "Qloo has no usable signal for one of these acts, so this pair is not priced and cannot be re-checked."
+    "Qloo has no usable signal for one of these acts, so this pair is not scored and cannot be re-checked."
 )
 NOT_ON_THE_PAGE = "That pair is not one of this day's ranked clashes, so it cannot be re-checked."
 NO_SAVED_ROWS = "This pair's saved audience rankings are not available, so it cannot be re-checked."

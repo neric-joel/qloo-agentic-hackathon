@@ -359,7 +359,7 @@ def test_a_pair_that_is_not_priced_is_422(tmp_path, day, which):
         forward = check(client, getattr(day, which), day.ids[0])
         backward = check(client, day.ids[0], getattr(day, which))
     expected = (
-        "Qloo has no usable signal for one of these acts, so this pair is not priced "
+        "Qloo has no usable signal for one of these acts, so this pair is not scored "
         "and cannot be re-checked."
     )
     for response in (forward, backward):

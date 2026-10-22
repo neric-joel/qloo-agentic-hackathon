@@ -31,7 +31,9 @@ import {
   tagCapSentence,
   tasteInPriceReading,
 } from "./method-figures";
+import * as PUBLIC_EVIDENCE from "./public-evidence";
 import { PUBLIC_SOURCES } from "./public-sources";
+import * as TIMING_FIGURES from "./timing-figures";
 
 const { backtest, complaints, coverage, exploratory, index, liveCheck, moves, price, scale, symmetry } =
   METHOD_FIGURES;
@@ -79,6 +81,10 @@ function allowedNumerals(): Set<string> {
   FIGURE_TICKS.forEach(add);
   // Round 35: the control acts' limit is the build's own, from the shared control-acts module, never typed on the page.
   add(CONTROL_RANK_LIMIT);
+  // Round 38: the analysis of public pages and the timing block print only what their own typed modules hold
+  // (public-evidence.ts with its source rows, timing-figures.ts), each pinned word for word by public-evidence.test.ts.
+  walk(Object.values(PUBLIC_EVIDENCE).filter((v) => typeof v !== "function"));
+  walk(Object.values(TIMING_FIGURES).filter((v) => typeof v !== "function"));
   return allowed;
 }
 
@@ -656,7 +662,8 @@ describe("/method page", () => {
   });
 
   it("uses the word that denies prediction exactly once", () => {
-    expect(pageText().match(/predict/gi)).toHaveLength(1);
+    // Round 38: CrowdPredict is a product's name in the evidence sources, not a word about this result.
+    expect(pageText().replace(/CrowdPredict/g, "").match(/predict/gi)).toHaveLength(1);
   });
 });
 
@@ -720,7 +727,7 @@ describe("/method exploratory result", () => {
   it("uses none of the words the page must not use about this result", () => {
     const text = pageText();
     expect(text).not.toMatch(/significan|validat|bprovenb|outperform|beats popularity|optimi[sz]|improve|recommend/i);
-    expect(text.match(/predict/gi)).toHaveLength(1);
+    expect(text.replace(/CrowdPredict/g, "").match(/predict/gi)).toHaveLength(1);
     expect(textOf(block())).not.toMatch(/confirm|demonstrat|proves|works/i);
   });
 

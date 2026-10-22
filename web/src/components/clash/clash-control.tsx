@@ -40,7 +40,7 @@ import { ClashList, liveClashRow } from "./clash-list";
 import { CoverageMeter } from "./coverage-meter";
 import { DayGraph, DayGraphKey } from "./day-graph";
 import { builtDate, DecisionDetails, isHiddenDecision } from "./decision-card";
-import { HERO_CELL_MIN, HeroDecision, HeroDecisionSkeleton, HeroNote, heroNote } from "./hero-decision";
+import { HERO_CELL_MIN, HeroDecision, HeroDecisionSkeleton, HeroLadderRoom, HeroNote, heroNote } from "./hero-decision";
 import { HiddenWall, type HiddenDay } from "./hidden-wall";
 import { MoreDetails } from "./more-details";
 import { PresetSources } from "./preset-sources";
@@ -50,7 +50,7 @@ import { TimetableGrid } from "./timetable-grid";
 import { LockKey, TimetableLegend, legendSymbolCount } from "./timetable-legend";
 import { TimetableList } from "./timetable-list";
 import { TRY_A_MOVE_ID, TryAMove, type SeedStep } from "./try-a-move";
-import { TasteSection, WHAT_QLOO_ID, concurrentPairs, whatChangesTitle } from "./why-qloo";
+import { TasteSection, WHAT_QLOO_ID, concurrentPairs, threeReadings, whatChangesTitle } from "./why-qloo";
 import { WHY_THIS_MATTERS_ID, WhyThisMatters } from "./why-this-matters";
 import { useAgentStatus } from "./use-agent-status";
 import { useDecision } from "./use-decision";
@@ -241,9 +241,11 @@ function HeroLayout({
   return (
     <section aria-labelledby="pitch-heading" aria-busy={busy || undefined}>
       {/* From 1024 px on a screen 790 px tall or less (1366 x 768) the top padding and the drawing's top margin
-          tighten (32 to 16 px, 24 to 12 px), so the whole drawing fits above the fold; no text gets smaller. From
+          tighten (32 to 16 px, 24 to 8 px), as the group's spaces do (`HERO_ROWS`), so the whole drawing fits above the fold; no text gets smaller. From
           1024 px the key sits 4 px above the section nav (whose 44 px row centres its links), so a key that takes a
-          second line still leaves the nav on a 900 px first screen. */}
+          second line still leaves the nav on a 900 px first screen. From 1280 px (round 38, integrate) the drawing sits
+          8 px under the toggle and the key right under the drawing (its last row keeps 19 px under its bars), which
+          gives back the 28 px the taller 32/70 rows took, so the section nav still ends inside 900 px. */}
       <div className="container-page pt-4 pb-8 sm:pt-6 lg:pt-8 lg:pb-1 lg:[@media(max-height:790px)]:pt-4">
         <div
           data-hero=""
@@ -251,11 +253,11 @@ function HeroLayout({
         >
           <div className="min-w-0 lg:[grid-area:pitch]">{intro}</div>
           {reserve ? <div aria-hidden="true" data-hero-room="" className={cn("hidden lg:block lg:[grid-area:group]", HERO_CELL_MIN)} /> : null}
-          {day ? <div className="mt-2 min-w-0 lg:mt-6 lg:[grid-area:day]">{day}</div> : null}
-          {toggle ? <div className="mt-2 min-w-0 lg:mt-6 lg:self-end lg:[grid-area:toggle]">{toggle}</div> : null}
-          {graph ? <div className="mt-1 min-w-0 lg:mt-6 lg:[@media(max-height:790px)]:mt-3 lg:[grid-area:graph]">{graph}</div> : null}
+          {day ? <div className="mt-2 min-w-0 lg:mt-6 xl:mt-4 lg:[grid-area:day]">{day}</div> : null}
+          {toggle ? <div className="mt-2 min-w-0 lg:mt-6 xl:mt-2 lg:self-end lg:[grid-area:toggle]">{toggle}</div> : null}
+          {graph ? <div className="mt-1 min-w-0 lg:mt-6 xl:mt-2 lg:[@media(max-height:790px)]:mt-2 lg:[grid-area:graph]">{graph}</div> : null}
           {group ? <div className="mt-2 min-w-0 lg:mt-0 lg:self-start lg:[grid-area:group]">{group}</div> : null}
-          {graphKey ? <div className="mt-4 min-w-0 lg:mt-3 lg:[grid-area:key]">{graphKey}</div> : null}
+          {graphKey ? <div className="mt-4 min-w-0 lg:mt-3 xl:mt-0 lg:[grid-area:key]">{graphKey}</div> : null}
         </div>
       </div>
     </section>
@@ -736,6 +738,7 @@ function LoadingView({
             {picker}
             <HeroDateline model={model} synthetic={synthetic} location={summary?.location} />
             <HeroNote text={model ? heroNote(summary?.decisionData ?? null, synthetic) : null} />
+            {model ? <HeroLadderRoom synthetic={synthetic} /> : null}
           </>
         }
         toggle={model ? model.move ? <ViewToggle model={model} view="moved" /> : <ToggleRoom /> : null}
@@ -1391,6 +1394,12 @@ function PresetView({
     [decisionCopy, decisionClash],
   );
   const lensRank = useMemo(() => drawerRank(lenses), [lenses]);
+  // The hero's ladder: the card's clash ranked three ways, read as "What Qloo changes" reads it, once the lens data
+  // is in; until then the hero holds the ladder's room empty.
+  const heroLadder = useMemo(
+    () => (decisionClash && lenses ? threeReadings(lenses, sharedPairs, decisionClash.aId, decisionClash.bId) : null),
+    [decisionClash, lenses, sharedPairs],
+  );
   const actName = (id: string) => festival.acts.find((act) => act.id === id)?.name ?? id;
   const agentLink = agentJump(agentStatus, recordings);
   // The published days, for the agent section's pointer to the run that asked Qloo, from the list this page
@@ -1474,7 +1483,15 @@ function PresetView({
   const heroGroup = loadingDecision ? (
     <HeroDecisionSkeleton />
   ) : model ? (
-    <HeroDecision model={model} copy={decisionCopy} view={shownView} onOpenMove={openMove} plan={keptSteps} kept={cardKept} />
+    <HeroDecision
+      model={model}
+      copy={decisionCopy}
+      view={shownView}
+      onOpenMove={openMove}
+      plan={keptSteps}
+      kept={cardKept}
+      ladder={heroLadder}
+    />
   ) : null;
 
   return (
@@ -1486,6 +1503,7 @@ function PresetView({
             {picker}
             <HeroDateline model={model} synthetic={synthetic} location={preset.location} />
             <HeroNote text={model ? heroNote(decision, synthetic) : null} />
+            {model ? <HeroLadderRoom readings={heroLadder} synthetic={synthetic} /> : null}
           </>
         }
         toggle={

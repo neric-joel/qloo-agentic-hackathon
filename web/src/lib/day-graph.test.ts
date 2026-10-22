@@ -246,7 +246,7 @@ describe("buildDayGraph: the day", () => {
     expect(graph.stages.map((stage) => stage.name)).toEqual(["Main", "Hill", "Barn", "Wood", "Lake"]);
     expect(graph.sets.find((set) => set.name === "Hazel")?.stageIndex).toBe(4);
     expect(graph.move?.from.stageIndex).toBe(3);
-    expect(drawingHeight(graph, "desktop")).toBe(22 + 64 * 5);
+    expect(drawingHeight(graph, "desktop")).toBe(22 + 70 * 5);
   });
 
   it("carries the synthetic flag", () => {
@@ -888,19 +888,19 @@ describe("drawingHeight and the motion constants", () => {
   it("adds the axis to one row per stage on a desktop and one row per phone row below, with a phone's label lane under its last row", () => {
     const graph = moved();
     expect(drawingHeight(graph, "desktop")).toBe(LAYOUT.desktop.axis + LAYOUT.desktop.row * 5);
-    expect(drawingHeight(graph, "desktop")).toBe(342);
+    expect(drawingHeight(graph, "desktop")).toBe(372);
     expect(drawingHeight(graph, "phone")).toBe(172);
     expect(drawingHeight(graph, "short")).toBe(140);
     const tiny = buildDayGraph(parsePreset(rawTinyPreset()), null, 0)!;
     expect(tiny.phoneRows).toEqual([0, 1]);
-    expect(drawingHeight(tiny, "desktop")).toBe(22 + 64 * 2);
+    expect(drawingHeight(tiny, "desktop")).toBe(22 + 70 * 2);
     expect(drawingHeight(tiny, "phone")).toBe(14 + 3 + 14 + 42 * 2 + 15);
     expect(drawingHeight(tiny, "short")).toBe(14 + 37 * 2 + 15);
   });
 
   it("keeps the layout and the motion system's values", () => {
     expect(LAYOUT).toEqual({
-      desktop: { axis: 22, row: 64, bar: 26 },
+      desktop: { axis: 22, row: 70, bar: 32 },
       phone: { overview: 14, gap: 3, axis: 14, row: 42, bar: 18, foot: 15 },
       short: { axis: 14, row: 37, bar: 15, foot: 15 },
     });
@@ -1215,8 +1215,9 @@ describe("the leaders", { timeout: 30_000 }, () => {
         }
       }
     }
-    // The fixtures put names outside their bars at every width, and every one of them gets its leader.
-    expect(drawn).toBeGreaterThan(300);
+    // The fixtures put names outside their bars at every width (fewer since a desktop's bars hold two lines: 222 in
+    // round 38, 300 and more before), and every one of them gets its leader.
+    expect(drawn).toBeGreaterThan(200);
     expect(dropped).toBe(0);
   });
 

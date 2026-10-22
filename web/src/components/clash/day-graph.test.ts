@@ -387,17 +387,21 @@ describe("DayGraph: the server frame", () => {
     expect(html).not.toMatch(/\btext-(xs|2xs)\b/);
   });
 
-  it("names each featured set in full outside its bar and every other in the first place that fits, inside its bar when it fits", () => {
+  it("names each featured set in full, inside its bar where it fits, and every other in the first place that fits, inside its bar when it fits", () => {
     const html = render(moved, "moved");
     for (const track of BANDS.desktop.map((band) => band.track)) {
       const band = bandOf(html, "desktop", track);
       for (const set of moved.sets.filter((item) => item.featured)) {
-        // Whole, at weight 600, beside its bar or on a plate above or below it; never inside it.
-        expect(decode(band)).toMatch(new RegExp(`<span data-label="${set.actId}" data-slot="[bc]" class="[^"]*font-semibold[^"]*"[^>]*>${set.name}</span>`));
+        // Whole, at weight 600: inside its bar (on one line or two), beside it or on a plate above or below it; never cut.
+        const found = decode(band).match(
+          new RegExp(`<span data-label="${set.actId}" data-slot="([abc])" class="[^"]*font-semibold[^"]*"[^>]*>((?:<span class="block">[^<]*</span>)+|[^<]*)</span>`),
+        );
+        expect(found, `${set.name} at ${track}`).not.toBeNull();
+        expect(found?.[2].replace(/<\/span><span class="block">/g, " ").replace(/<[^>]+>/g, "")).toBe(set.name);
       }
       // An unfeatured name that fits sits inside its bar, whole, at weight 500.
       expect(band).toMatch(/<span data-label="fir" data-slot="a" class="[^"]*font-medium[^"]*"[^>]*>Fir<\/span>/);
-      expect(band).not.toMatch(/data-label="birch" data-slot="[ade]"/);
+      expect(band).not.toMatch(/data-label="birch" data-slot="[de]"/);
     }
     // A set whose name is cut or not drawn keeps its whole name as its bar's title.
     for (const [, id, title] of html.matchAll(/<div data-set="([^"]+)" data-slot="[de]" title="([^"]*)"/g)) {
@@ -429,13 +433,17 @@ describe("DayGraph: the server frame", () => {
     }
   });
 
-  it("marks a locked set with its lock and an unscored one with a muted fill and a dotted edge, never a dashed one", () => {
+  it("marks a locked set with its lock and an unscored one plainly, with a dotted outline on the paper and its name in ink, never a grey fill or a dashed edge", () => {
     const html = layoutOf(render(moved, "published"), "desktop");
     // Larch is locked but is not the last set on Main, so its lock does not state the last-set rule.
     expect(html).toMatch(/data-set="larch"[^>]*>.*?title="Locked by this app: kept in place\."/);
-    expect(html).toMatch(/data-set="kauri"[^>]*? class="[^"]*\bbg-muted\b/);
-    // A 1px dotted edge in the bars' edge ink, on the bar's own 6px corners (dashed keeps its one meaning).
-    expect(html).toMatch(/data-set="kauri"[^>]*? class="[^"]*\bborder border-dotted border-border-strong\b/);
+    expect(html).not.toMatch(/data-set="kauri"[^>]*? class="[^"]*\bbg-muted\b/);
+    expect(html).toMatch(/data-set="kauri"[^>]*? class="[^"]*\bbg-background\b/);
+    // A 1.5px dotted outline in the ink, on the bar's own 6px corners (dashed keeps its one meaning).
+    expect(html).toMatch(/data-set="kauri"[^>]*? class="[^"]*\bborder-\[1\.5px\] border-dotted border-foreground bg-background\b/);
+    // Its name is in the ink every other name takes, never the muted grey.
+    expect(html).toMatch(/data-label="kauri"/);
+    expect(html).not.toMatch(/data-label="kauri"[^>]*? class="[^"]*\btext-muted-foreground\b/);
     expect(html).toMatch(/data-set="kauri"[^>]*? class="[^"]*\brounded-xs\b/);
     expect(html).not.toMatch(/data-set="kauri"[^>]*? class="[^"]*\bborder-dashed\b/);
     // A scored bar keeps its solid hairline.
@@ -521,15 +529,31 @@ describe("DayGraph: the server frame", () => {
           }
         }
       }
-      // Each featured name sits outside its bar, so each has its leader; Fir's name sits inside its bar and has none.
+      // Each featured name outside its bar has its leader, and one inside its bar has none; Fir's name sits inside its bar and has none.
       const desktop = bandOf(html, "desktop", 1104);
-      for (const set of moved.sets.filter((item) => item.featured)) expect(desktop).toContain(`data-leader="${set.actId}"`);
+      for (const set of moved.sets.filter((item) => item.featured)) {
+        const slot = desktop.match(new RegExp(`data-label="${set.actId}" data-slot="([a-e])"`))?.[1];
+        if (slot === "b" || slot === "c") expect(desktop).toContain(`data-leader="${set.actId}"`);
+        else expect(desktop).not.toContain(`data-leader="${set.actId}"`);
+      }
       expect(desktop).not.toContain('data-leader="fir"');
       expect(html).not.toContain("data-leader-dropped");
     }
-    // The mover's leader rides the mover's layer with its name.
-    const moverLayer = bandOf(render(moved, "moved"), "desktop", 1104).match(/<div data-anim="mover" class="pointer-events-none absolute inset-0"[^>]*>(.*?)<span data-label="alder"/)?.[1] ?? "";
-    expect(moverLayer).toContain('data-leader="alder"');
+    // The mover's name rides the mover's layer at every band, and so does its leader wherever the name sits outside its
+    // bar: Alder's fits inside its bar; under a name too long for two lines there, it sits outside it with its leader.
+    let riding = 0;
+    const long = { ...moved, sets: moved.sets.map((set) => (set.actId === "alder" ? { ...set, name: "Alder Hornbeam Whitebeam Sycamore Orchestra" } : set)) };
+    for (const [m, track] of [moved, long].flatMap((item) => BANDS.desktop.map((band) => [item, band.track] as const))) {
+      const layer = bandOf(render(m, "moved"), "desktop", track).match(/<div data-anim="mover" class="pointer-events-none absolute inset-0"[^>]*>(.*?)<span data-label="alder" data-slot="([a-e])"/);
+      expect(layer, `at ${track}`).not.toBeNull();
+      if (layer?.[2] === "b" || layer?.[2] === "c") {
+        expect(layer[1]).toContain('data-leader="alder"');
+        riding += 1;
+      } else {
+        expect(layer?.[1]).not.toContain('data-leader="alder"');
+      }
+    }
+    expect(riding).toBeGreaterThan(0);
   });
 
   it("draws a mover that changes stage on its own row in each view", () => {

@@ -7,6 +7,7 @@ import { CHECK_LIVE } from "@/lib/check-flag";
 
 import { DEMAND, DO_NOT_USE, PILOT_CONTACT, PILOT_TERMS, type Demand } from "@/lib/demand";
 import { METHOD_FIGURES, formatPct, methodRow, numberWord, type MethodId } from "@/lib/method-figures";
+import { EVIDENCE_ID, HOME_EVIDENCE, HOME_EVIDENCE_LINK } from "@/lib/public-evidence";
 import { PUBLIC_SOURCES } from "@/lib/public-sources";
 import { cn } from "@/lib/utils";
 
@@ -523,6 +524,14 @@ export function WhyThisMatters({
             <Fold className="mt-2" summary={`How the lists lean (${complaints.pairsVerified} verified pairs)`}>
               <p className="pb-3">Press lists lean toward headliners, which flatters any taste-based method.</p>
             </Fold>
+            {/* Round 38: the wider public record, from the analysis of public pages on /method#asked. It counts
+                pages, never people, and says so in the same paragraph; the link opens its sources, method and limits. */}
+            <p data-why-public className="mt-4">
+              {HOME_EVIDENCE}{" "}
+              <Link href={`/method#${EVIDENCE_ID}`} className={LINK}>
+                {HOME_EVIDENCE_LINK}
+              </Link>
+            </p>
           </div>
 
           <div data-why-col="unknown" className="min-w-0 lg:col-span-7 lg:col-start-6 lg:row-start-1">
@@ -531,7 +540,8 @@ export function WhyThisMatters({
             <Fold className="mt-2" summary="Festival Pro and Lineup Ninja">
               <p className="pb-3">
                 Both check double bookings and changeovers. We found none that reads audience overlap (our search,
-                October 2026).
+                October 2026). Setline sells organisers clash analysis from attendee interest once set times are
+                live.
               </p>
             </Fold>
             <DemandLine demand={demand} />

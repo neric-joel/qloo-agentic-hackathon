@@ -33,10 +33,13 @@ import {
   numberWord,
   tagCapSentence,
 } from "@/lib/method-figures";
+import { EVIDENCE_ID, EVIDENCE_TITLE } from "@/lib/public-evidence";
 import { PUBLIC_SOURCES } from "@/lib/public-sources";
+import { TIMING_ID, TIMING_TITLE } from "@/lib/timing-figures";
 import { cn } from "@/lib/utils";
 
 import { ContentsRail } from "./contents-rail";
+import { AskedBody, TimingBody } from "./evidence";
 
 export const metadata = {
   title: "How we know",
@@ -954,6 +957,8 @@ const CONTENTS: readonly { id: string; title: string }[] = [
   { id: "price", title: "What the score is" },
   { id: "tested", title: "What we tested it against" },
   { id: "limits", title: "What taste overlap cannot tell you" },
+  { id: EVIDENCE_ID, title: EVIDENCE_TITLE },
+  { id: TIMING_ID, title: TIMING_TITLE },
   { id: "the-rest", title: "How the rest works" },
 ];
 
@@ -1152,6 +1157,17 @@ export default function MethodPage() {
           <li>{LOCK_RULE}</li>
           <li>{DO_NOT_USE}</li>
         </ul>
+      </Section>
+
+      {/* Round 38: the analysis of public pages (what people ask, how the app helps and where it does not, the
+          method, the limits and every source), then the timing block. Data in lib/public-evidence.ts and
+          lib/timing-figures.ts. */}
+      <Section id={EVIDENCE_ID} title={EVIDENCE_TITLE}>
+        <AskedBody />
+      </Section>
+
+      <Section id={TIMING_ID} title={TIMING_TITLE}>
+        <TimingBody />
       </Section>
 
       <Section

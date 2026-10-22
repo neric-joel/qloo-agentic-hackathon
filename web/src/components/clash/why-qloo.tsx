@@ -357,6 +357,22 @@ function ReadingsFigure({ steps }: { steps: readonly TriptychStep[] }) {
   );
 }
 
+/**
+ * The three rungs' names, cumulative, each adding one reading to the one above it: here in full, and `compact` for the
+ * hero's short ladder (the same three readings, each named by what it adds). The third rung is the index used here,
+ * which this app calculates from Qloo data; on the invented day no rung names Qloo.
+ */
+export function rungLabels(synthetic: boolean, compact = false): Record<keyof ThreeReadings, string> {
+  if (compact) {
+    return synthetic
+      ? { time: "Time alone", draw: "+ invented popularity", taste: "+ invented taste" }
+      : { time: "Time alone", draw: "+ Qloo popularity", taste: "+ taste overlap" };
+  }
+  return synthetic
+    ? { time: "Time alone", draw: "Time + draw", taste: "+ invented taste overlap" }
+    : { time: "Time alone", draw: "Time + Qloo popularity", taste: "+ taste overlap from Qloo data" };
+}
+
 type TriptychStep = { key: keyof ThreeReadings; label: string; gloss: string; reading: ReadingRank };
 
 /** Everything the three readings print for one clash, read once so every layout says the same. */
@@ -381,17 +397,18 @@ function triptychParts(
     .join(" ");
   // Cumulative rungs: each adds one reading to the one above it. The third is the index used here, which
   // this app calculates from Qloo data, so it never reads as Qloo's own rank.
+  const labels = rungLabels(synthetic);
   const steps: TriptychStep[] = [
-    { key: "time", label: "Time alone", gloss: "Minutes shared", reading: readings.time },
+    { key: "time", label: labels.time, gloss: "Minutes shared", reading: readings.time },
     {
       key: "draw",
-      label: synthetic ? "Time + draw" : "Time + Qloo popularity",
+      label: labels.draw,
       gloss: synthetic ? "Draw is invented popularity" : "Draw is Qloo popularity, 0 to 100",
       reading: readings.draw,
     },
     {
       key: "taste",
-      label: synthetic ? "+ invented taste overlap" : "+ taste overlap from Qloo data",
+      label: labels.taste,
       gloss: "Taste overlap added: the index used here",
       reading: readings.taste,
     },

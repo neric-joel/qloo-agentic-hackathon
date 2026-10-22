@@ -1,0 +1,906 @@
+[
+ {
+  "id": "G01",
+  "url": "https://www.standard.co.uk/culture/music/glastonbury-festival/glastonbury-2025-clashes-music-sets-charli-xcx-b1230980.html",
+  "outlet": "The Standard (London)",
+  "festival": "Glastonbury",
+  "year": 2025,
+  "date": "2025-06-03"
+ },
+ {
+  "id": "G03",
+  "url": "https://www.somersetlive.co.uk/whats-on/music-nightlife/glastonbury-festival-goers-despair-share-10239851",
+  "outlet": "Somerset Live",
+  "festival": "Glastonbury",
+  "year": 2025,
+  "date": "2025-06-05"
+ },
+ {
+  "id": "G04",
+  "url": "https://www.huffingtonpost.co.uk/entry/glastonbury-2025-line-up-clashes-biggest_uk_6841a138e4b0280f75191a29",
+  "outlet": "HuffPost UK",
+  "festival": "Glastonbury",
+  "year": 2025,
+  "date": "2025-06-05"
+ },
+ {
+  "id": "G05",
+  "url": "https://www.indy100.com/news/glastonbury-line-up-2025-all-the-clashes-2672439032",
+  "outlet": "indy100",
+  "festival": "Glastonbury",
+  "year": 2025,
+  "date": "2025-06-26"
+ },
+ {
+  "id": "G06",
+  "url": "https://faroutmagazine.co.uk/glastonbury-2025-why-do-festivals-have-so-many-stage-clashes/",
+  "outlet": "Far Out Magazine",
+  "festival": "Glastonbury",
+  "year": 2025,
+  "date": "2025-06-24"
+ },
+ {
+  "id": "G07",
+  "url": "https://thred.com/culture/how-festival-organisers-are-preparing-for-overcrowding-this-summer/",
+  "outlet": "Thred",
+  "festival": "Glastonbury",
+  "year": 2025,
+  "date": "2025-06-25"
+ },
+ {
+  "id": "G08",
+  "url": "https://www.thesun.co.uk/tvandshowbiz/33717897/glastonbury-fans-fuming-charli-xcx-docheii-clash/",
+  "outlet": "The Sun",
+  "festival": "Glastonbury",
+  "year": 2025,
+  "date": "2025-03-06"
+ },
+ {
+  "id": "G09",
+  "url": "https://www.nme.com/features/music-features/glastonbury-2024-set-clash-guide-3766391",
+  "outlet": "NME",
+  "festival": "Glastonbury",
+  "year": 2024,
+  "date": "2024-06-18"
+ },
+ {
+  "id": "G10",
+  "url": "https://www.nme.com/news/music/fans-react-as-full-glastonbury-2024-line-up-and-schedule-reveals-new-names-and-clashes-3762343",
+  "outlet": "NME",
+  "festival": "Glastonbury",
+  "year": 2024,
+  "date": "2024-06-04"
+ },
+ {
+  "id": "G11",
+  "url": "https://www.standard.co.uk/culture/music/set-clashes-glastonbury-2024-coldplay-sza-avril-lavigne-cyndi-lauper-b1166467.html",
+  "outlet": "The Standard (London)",
+  "festival": "Glastonbury",
+  "year": 2024,
+  "date": "2024-06-25"
+ },
+ {
+  "id": "G12",
+  "url": "https://www.manchestereveningnews.co.uk/whats-on/music-nightlife-news/glastonbury-fans-say-clashes-give-29290046",
+  "outlet": "Manchester Evening News",
+  "festival": "Glastonbury",
+  "year": 2024,
+  "date": "2024-06-04"
+ },
+ {
+  "id": "G13",
+  "url": "https://metro.co.uk/2024/06/04/glastonbury-2024s-line-up-completed-festival-announces-three-icons-20968579/",
+  "outlet": "Metro",
+  "festival": "Glastonbury",
+  "year": 2024,
+  "date": "2024-06-04"
+ },
+ {
+  "id": "G14",
+  "url": "https://www.lep.co.uk/whats-on/glastonbury-2024-reviews-set-clashes-avril-lavigne-sza-4685260",
+  "outlet": "Lancashire Evening Post (National World, syndicated)",
+  "festival": "Glastonbury",
+  "year": 2024,
+  "date": "2024-07-01"
+ },
+ {
+  "id": "G15",
+  "url": "https://www.glamourmagazine.co.uk/article/glastonbury-2024-female-headliners-let-down",
+  "outlet": "Glamour UK",
+  "festival": "Glastonbury",
+  "year": 2024,
+  "date": "2024-07-01"
+ },
+ {
+  "id": "G16",
+  "url": "https://rockshotmagazine.com/glastonbury-2024-full-line-up-stage-times-released/",
+  "outlet": "Rockshot Magazine",
+  "festival": "Glastonbury",
+  "year": 2024,
+  "date": "2024-06-04"
+ },
+ {
+  "id": "G17",
+  "url": "https://inews.co.uk/culture/glastonbury-2022-line-up-paul-mccartney-olivia-rodrigo-acts-festival-highlights-1696288",
+  "outlet": "i (inews)",
+  "festival": "Glastonbury",
+  "year": 2022,
+  "date": "2022-06-20"
+ },
+ {
+  "id": "G19",
+  "url": "https://www.nme.com/blogs/nme-blogs/glastonbury-2017-line-up-stage-time-clashes-2081131",
+  "outlet": "NME",
+  "festival": "Glastonbury",
+  "year": 2017,
+  "date": "2017-05-30"
+ },
+ {
+  "id": "G20",
+  "url": "https://www.nme.com/blogs/nme-blogs/glastonbury-festival-2019-lineup-set-times-clashes-2502571",
+  "outlet": "NME",
+  "festival": "Glastonbury",
+  "year": 2019,
+  "date": "2019-05-29"
+ },
+ {
+  "id": "G21",
+  "url": "https://www.nme.com/news/music/emily-eavis-glastonbury-festival-interview-performance-plans-2503403",
+  "outlet": "NME",
+  "festival": "Glastonbury",
+  "year": 2019,
+  "date": "2019-05-31"
+ },
+ {
+  "id": "G22",
+  "url": "https://www.bbc.co.uk/news/newsbeat-40367106",
+  "outlet": "BBC Newsbeat",
+  "festival": "Glastonbury",
+  "year": 2017,
+  "date": "2017-06-23"
+ },
+ {
+  "id": "G23",
+  "url": "https://www.nme.com/news/music/glastonbury-50-1224561",
+  "outlet": "NME",
+  "festival": "Glastonbury",
+  "year": 2015,
+  "date": "2015-06-03"
+ },
+ {
+  "id": "C02",
+  "url": "https://www.sfgate.com/sf-culture/article/best-worst-coachella-22204235.php",
+  "outlet": "SFGATE",
+  "festival": "Coachella",
+  "year": 2026,
+  "date": "2026-04-13"
+ },
+ {
+  "id": "C05",
+  "url": "https://www.laweekly.com/coachella-2017s-5-worst-scheduling-conflicts/",
+  "outlet": "LA Weekly",
+  "festival": "Coachella",
+  "year": 2017,
+  "date": "2017-04-12"
+ },
+ {
+  "id": "C06",
+  "url": "https://www.mirror.co.uk/3am/us-celebrity-news/coachella-2024-set-time-conflicts-32550809",
+  "outlet": "The Mirror (US)",
+  "festival": "Coachella",
+  "year": 2024,
+  "date": "2024-04-09"
+ },
+ {
+  "id": "C07",
+  "url": "https://www.billboard.com/culture/events/coachella-2016-set-time-schedule-conflicts-7333891/",
+  "outlet": "Billboard",
+  "festival": "Coachella",
+  "year": 2016,
+  "date": "2016-04-14"
+ },
+ {
+  "id": "C08",
+  "url": "https://consequence.net/2022/04/coachella-set-times-2022-conflicts/",
+  "outlet": "Consequence",
+  "festival": "Coachella",
+  "year": 2022,
+  "date": "2022-04-14"
+ },
+ {
+  "id": "C09",
+  "url": "https://www.billboard.com/culture/events/set-time-conflicts-coachella-2019-8506676/",
+  "outlet": "Billboard",
+  "festival": "Coachella",
+  "year": 2019,
+  "date": "2019-04-10"
+ },
+ {
+  "id": "C10",
+  "url": "https://pitchfork.com/news/coachella-2023-lineup-and-schedule-all-the-set-times-you-need-to-know/",
+  "outlet": "Pitchfork",
+  "festival": "Coachella",
+  "year": 2023,
+  "date": "2023-04-13"
+ },
+ {
+  "id": "C11",
+  "url": "https://pitchfork.com/news/coachella-2019-lineup-and-schedule-all-the-set-times-you-need-to-know/",
+  "outlet": "Pitchfork",
+  "festival": "Coachella",
+  "year": 2019,
+  "date": "2019-04-10"
+ },
+ {
+  "id": "L01",
+  "url": "https://blockclubchicago.org/2026/05/12/lollapalooza-drops-daily-schedule-for-nearly-sold-out-2026-festival/",
+  "outlet": "Block Club Chicago",
+  "festival": "Lollapalooza",
+  "year": 2026,
+  "date": "2026-05-12"
+ },
+ {
+  "id": "L04",
+  "url": "https://www.musictimes.com/articles/112445/20260730/lollapalooza-2026-day-1-puts-lorde-john-summit-direct-headliner-conflict.htm",
+  "outlet": "Music Times",
+  "festival": "Lollapalooza",
+  "year": 2026,
+  "date": "2026-07-30"
+ },
+ {
+  "id": "L05",
+  "url": "https://www.timeout.com/chicago/blog/the-7-worst-conflicts-on-the-lollapalooza-schedule",
+  "outlet": "Time Out Chicago",
+  "festival": "Lollapalooza",
+  "year": 2015,
+  "date": "2015-05-19"
+ },
+ {
+  "id": "L07",
+  "url": "https://consequence.net/2017/05/lollapalooza-reveals-2017-set-times-and-weve-resolved-all-the-messy-conflicts/amp/",
+  "outlet": "Consequence",
+  "festival": "Lollapalooza",
+  "year": 2017,
+  "date": "2017-05-09"
+ },
+ {
+  "id": "L08",
+  "url": "https://www.brooklynvegan.com/lollapalooza-2025-set-times-olivia-rodrigo-tyler-the-creator-sabrina-carpenter-korn-aap-rocky-doechii-more/",
+  "outlet": "BrooklynVegan",
+  "festival": "Lollapalooza",
+  "year": 2025,
+  "date": "2025-05-15"
+ },
+ {
+  "id": "L09",
+  "url": "https://seatgeek.com/blog/lollapalooza-set-times-daily-schedule-full-lineup-and-stages",
+  "outlet": "SeatGeek blog",
+  "festival": "Lollapalooza",
+  "year": 2026,
+  "date": "2026-06-25"
+ },
+ {
+  "id": "G27",
+  "url": "https://www.mirror.co.uk/3am/celebrity-news/sza-glastonbury-leaves-fans-divided-33142162",
+  "outlet": "The Mirror",
+  "festival": "Glastonbury",
+  "year": 2024,
+  "date": "2024-07-01"
+ },
+ {
+  "id": "G28",
+  "url": "https://www.dazeddigital.com/music/article/63004/1/sza-glastonbury-2024-audience-pyramid-stage",
+  "outlet": "Dazed",
+  "festival": "Glastonbury",
+  "year": 2024,
+  "date": "2024-07-01"
+ },
+ {
+  "id": "G30",
+  "url": "https://inews.co.uk/culture/glastonbury-wrong-acts-wrong-states-favourites-missed-3142057",
+  "outlet": "i (inews)",
+  "festival": "Glastonbury",
+  "year": 2024,
+  "date": "2024-07-01"
+ },
+ {
+  "id": "G32",
+  "url": "https://www.thesun.co.uk/tvandshowbiz/28863727/glastonbury-fans-abandon-sza-sunday-headliner/",
+  "outlet": "The Sun",
+  "festival": "Glastonbury",
+  "year": 2024,
+  "date": "2024-07-01"
+ },
+ {
+  "id": "G33",
+  "url": "https://metro.co.uk/2025/06/25/major-glastonbury-stage-clashes-need-know-23485946/",
+  "outlet": "Metro",
+  "festival": "Glastonbury",
+  "year": 2025,
+  "date": "2025-06-25"
+ },
+ {
+  "id": "G34",
+  "url": "https://mixmag.net/read/glastonbury-reveals-full-line-up-set-times-stage-splits-2025-news",
+  "outlet": "Mixmag",
+  "festival": "Glastonbury",
+  "year": 2025,
+  "date": "2025-06-06"
+ },
+ {
+  "id": "G36",
+  "url": "https://www.timeout.com/uk/news/glastonbury-2025-review-contemporary-pop-ruled-the-weekend-but-special-guests-have-lost-their-cool-063025",
+  "outlet": "Time Out UK",
+  "festival": "Glastonbury",
+  "year": 2025,
+  "date": "2025-06-30"
+ },
+ {
+  "id": "O01",
+  "url": "https://www.sfgate.com/music/article/Outside-Lands-releases-set-times-conflict-8401609.php",
+  "outlet": "SFGATE",
+  "festival": "Outside Lands",
+  "year": 2016,
+  "date": "2016-07-21"
+ },
+ {
+  "id": "O02",
+  "url": "https://sfstandard.com/2023/08/01/outside-lands-2023-schedule-dropped-and-people-are-already-upset-about-conflicts/",
+  "outlet": "The San Francisco Standard",
+  "festival": "Outside Lands",
+  "year": 2023,
+  "date": "2023-08-01"
+ },
+ {
+  "id": "A01",
+  "url": "https://www.lonestarlive.com/life/2024/09/acl-fests-newly-added-indie-artist-pleads-with-fans-after-landing-competing-set-with-chappell-roan.html",
+  "outlet": "lonestarlive.com",
+  "festival": "Austin City Limits",
+  "year": 2024,
+  "date": "2024-09-13"
+ },
+ {
+  "id": "A02",
+  "url": "https://wire.extrachill.com/festival-wire/acl-2025-schedule-released-key-artist-conflicts-stage-hot-takes/",
+  "outlet": "Extra Chill News Wire",
+  "festival": "Austin City Limits",
+  "year": 2025,
+  "date": "2025-08-05"
+ },
+ {
+  "id": "A03",
+  "url": "https://do512.com/p/the-toughest-choices-you-ll-make-at-acl-fest",
+  "outlet": "Do512",
+  "festival": "Austin City Limits",
+  "year": 2025,
+  "date": "2025"
+ },
+ {
+  "id": "A04",
+  "url": "https://austin.culturemap.com/news/entertainment/acl-fest-2026-schedule/",
+  "outlet": "CultureMap Austin",
+  "festival": "Austin City Limits",
+  "year": 2026,
+  "date": "2026-08-17"
+ },
+ {
+  "id": "A06",
+  "url": "https://www.brooklynvegan.com/acl-fest-announces-2019-schedule-guns-n-roses-vs-tame-impala/",
+  "outlet": "BrooklynVegan",
+  "festival": "Austin City Limits",
+  "year": 2019,
+  "date": "2019"
+ },
+ {
+  "id": "A07",
+  "url": "https://www.brooklynvegan.com/acl-festival-announces-2017-set-times-2/",
+  "outlet": "BrooklynVegan",
+  "festival": "Austin City Limits",
+  "year": 2017,
+  "date": "2017-08-18"
+ },
+ {
+  "id": "R01",
+  "url": "https://www.brooklynvegan.com/riot-fest-announces-2025-set-times/",
+  "outlet": "BrooklynVegan",
+  "festival": "Riot Fest",
+  "year": 2025,
+  "date": "2025-06-12"
+ },
+ {
+  "id": "R02",
+  "url": "https://www.brooklynvegan.com/riot-fest-2022-set-times-misfits-vs-sunny-day-real-estate/",
+  "outlet": "BrooklynVegan",
+  "festival": "Riot Fest",
+  "year": 2022,
+  "date": "2022-08-25"
+ },
+ {
+  "id": "R03",
+  "url": "https://www.brooklynvegan.com/riot-fest-2018-set-times-blondie-vs-superchunk-vs-dillinger-four-and-more/",
+  "outlet": "BrooklynVegan",
+  "festival": "Riot Fest",
+  "year": 2018,
+  "date": "2018-09-11"
+ },
+ {
+  "id": "R04",
+  "url": "https://chicagoist.com/2015/08/19/riot_fest_releases_daily_schedules.php",
+  "outlet": "Chicagoist",
+  "festival": "Riot Fest",
+  "year": 2015,
+  "date": "2015-08-19"
+ },
+ {
+  "id": "B01",
+  "url": "https://www.boston.com/culture/music/2017/05/11/the-boston-calling-set-times-are-here/",
+  "outlet": "Boston.com",
+  "festival": "Boston Calling",
+  "year": 2017,
+  "date": "2017-05-11"
+ },
+ {
+  "id": "B02",
+  "url": "https://loudwire.com/fans-sound-off-2024-sick-new-world-festival-set-times/",
+  "outlet": "Loudwire",
+  "festival": "Sick New World",
+  "year": 2024,
+  "date": "2024-04-23"
+ },
+ {
+  "id": "N01",
+  "url": "https://eastof8th.com/2026/05/19/bonnaroo-2026-updates-schedule-superjam-late-night-more/",
+  "outlet": "East of 8th",
+  "festival": "Bonnaroo",
+  "year": 2026,
+  "date": "2026-05-19"
+ },
+ {
+  "id": "N02",
+  "url": "https://wire.extrachill.com/festival-wire/lost-lands-2026-set-times-spark-heavy-bass-conflicts-for-wednesday-and-thursday/",
+  "outlet": "Extra Chill News Wire",
+  "festival": "Lost Lands",
+  "year": 2026,
+  "date": "2026-09-11"
+ },
+ {
+  "id": "D01",
+  "url": "https://www.yorkshireeveningpost.co.uk/whats-on/download-2025-timetable-where-to-download-set-clashes-set-times-5126529",
+  "outlet": "Yorkshire Evening Post",
+  "festival": "Download",
+  "year": 2025,
+  "date": "2025-05-13"
+ },
+ {
+  "id": "D02",
+  "url": "https://www.ladbible.com/entertainment/music/download-festival-lineup-ticket-prices-stage-times-025553-20260225",
+  "outlet": "LADbible",
+  "festival": "Download",
+  "year": 2026,
+  "date": "2026-02-25"
+ },
+ {
+  "id": "U01",
+  "url": "https://www.ukfestivalguides.com/news/27082026/reading-2026-clashes-155-sets-and-you-can-only-see-45/",
+  "outlet": "UK Festival Guides",
+  "festival": "Reading",
+  "year": 2026,
+  "date": "2026-08-27"
+ },
+ {
+  "id": "E01",
+  "url": "https://www.thejournal.ie/electric-picnic-overcrowding-duke-dumont-stage-move-7179723-Oct2026/",
+  "outlet": "The Journal (Ireland)",
+  "festival": "Electric Picnic",
+  "year": 2026,
+  "date": "2026-10-04"
+ },
+ {
+  "id": "P01",
+  "url": "https://www.nme.com/features/music-features/splendour-in-the-grass-2022-set-clashes-yeah-yeah-yeahs-yungblud-jack-harlow-3263702",
+  "outlet": "NME",
+  "festival": "Splendour in the Grass",
+  "year": 2022,
+  "date": "2022-07-07"
+ },
+ {
+  "id": "P02",
+  "url": "https://themusic.com.au/news/laneway-festival-announces-controversial-set-times-clashes-galore/2AXAys3Mz84/17-01-23",
+  "outlet": "The Music (Australia)",
+  "festival": "Laneway",
+  "year": 2023,
+  "date": "2023-01-17"
+ },
+ {
+  "id": "P03",
+  "url": "https://www.nme.com/features/music-features/laneway-festival-2023-set-times-clashes-joji-phoebe-bridgers-3382556",
+  "outlet": "NME",
+  "festival": "Laneway",
+  "year": 2023,
+  "date": "2023-01-18"
+ },
+ {
+  "id": "P04",
+  "url": "https://boilerroom.substack.com/p/fans-say-laneways-new-timetable-is",
+  "outlet": "The Boiler Room (Substack)",
+  "festival": "Laneway",
+  "year": 2026,
+  "date": "2026-01-14"
+ },
+ {
+  "id": "E03",
+  "url": "https://consequence.net/2018/05/primavera-sound-2018-scheduling-conflicts",
+  "outlet": "Consequence",
+  "festival": "Primavera Sound",
+  "year": 2018,
+  "date": "2018-05-31"
+ },
+ {
+  "id": "E04",
+  "url": "https://www.indieofilo.com/en/news/live-shows/the-timetable-for-primavera-sound-2026-has-now-been-released",
+  "outlet": "Indieofilo",
+  "festival": "Primavera Sound",
+  "year": 2026,
+  "date": "2026-05-19"
+ },
+ {
+  "id": "E05",
+  "url": "https://www.indieofilo.com/en/news/live-shows/the-sonar-2026-timetable-has-been-published",
+  "outlet": "Indieofilo",
+  "festival": "Sonar",
+  "year": 2026,
+  "date": "2026-05-21"
+ },
+ {
+  "id": "E06",
+  "url": "https://www.watson.de/unterhaltung/musik/940685062-zeitplan-geaendert-rock-am-ring-2026-ueberrascht-mit-kurzfristiger-massnahme",
+  "outlet": "watson.de",
+  "festival": "Rock am Ring",
+  "year": 2026,
+  "date": "2026-06-05"
+ },
+ {
+  "id": "C13",
+  "url": "https://consequence.net/2026/04/coachella-2026-set-times/",
+  "outlet": "Consequence",
+  "festival": "Coachella",
+  "year": 2026,
+  "date": "2026-04-07"
+ },
+ {
+  "id": "C15",
+  "url": "https://www.npr.org/2026/04/10/nx-s1-5777664/coachella-2026-guide",
+  "outlet": "NPR",
+  "festival": "Coachella",
+  "year": 2026,
+  "date": "2026-04-10"
+ },
+ {
+  "id": "O03",
+  "url": "https://sfist.com/2026/07/30/outside-lands-set-times-revealed/",
+  "outlet": "SFist",
+  "festival": "Outside Lands",
+  "year": 2026,
+  "date": "2026-07-30"
+ },
+ {
+  "id": "O04",
+  "url": "https://www.dailycal.org/arts/music/inside-the-highs-and-lows-of-2026-outside-lands-festival/article_dd3d1e41-55cd-4044-9937-ecf9b37dae7c.html",
+  "outlet": "The Daily Californian",
+  "festival": "Outside Lands",
+  "year": 2026,
+  "date": "2026-08-12"
+ },
+ {
+  "id": "R05",
+  "url": "https://blockclubchicago.org/2026/08/06/riot-fest-drops-daily-schedules-with-iggy-pop-the-pixies-and-gwar-having-overlapping-set-times/",
+  "outlet": "Block Club Chicago",
+  "festival": "Riot Fest",
+  "year": 2026,
+  "date": "2026-08-06"
+ },
+ {
+  "id": "R06",
+  "url": "https://www.theprp.com/2026/08/06/news/the-2026-riot-fest-daily-schedules-pit-tool-against-nas-more/",
+  "outlet": "Theprp.com",
+  "festival": "Riot Fest",
+  "year": 2026,
+  "date": "2026-08-06"
+ },
+ {
+  "id": "R07",
+  "url": "https://metal-stop.com/riot-fest-2026-reveals-set-times-fans-face-brutal-headliner-clashes/",
+  "outlet": "Metal-Stop",
+  "festival": "Riot Fest",
+  "year": 2026,
+  "date": "2026-08-07"
+ },
+ {
+  "id": "T01",
+  "url": "https://www.newyorker.com/magazine/2017/04/17/the-mastermind-behind-coachella",
+  "outlet": "The New Yorker",
+  "festival": "Coachella",
+  "year": 2017,
+  "date": "2017-04-10"
+ },
+ {
+  "id": "T02",
+  "url": "https://www.billboard.com/pro/coachella-paul-tollett-beychella-lineup-panel/",
+  "outlet": "Billboard",
+  "festival": "Coachella",
+  "year": 2019,
+  "date": "2019-11"
+ },
+ {
+  "id": "T03",
+  "url": "https://www.thewrap.com/coachella-2020-lineup-95-percent-booked/",
+  "outlet": "TheWrap",
+  "festival": "Coachella",
+  "year": 2019,
+  "date": "2019-11-06"
+ },
+ {
+  "id": "T04",
+  "url": "https://archive.junkee.com/man-behind-coachella-just-spilled-festivals-secrets/101836",
+  "outlet": "Junkee (archive)",
+  "festival": "Coachella",
+  "year": 2017,
+  "date": "2017-04-13"
+ },
+ {
+  "id": "T05",
+  "url": "https://www.concordia.ca/cunews/offices/vpaer/aar/2016/06/08/the-man-behind-osheaga.html",
+  "outlet": "Concordia University News",
+  "festival": "Osheaga",
+  "year": 2016,
+  "date": "2016-06-08"
+ },
+ {
+  "id": "T07",
+  "url": "https://glidemagazine.com/164840/quebec-city-summer-festival-home-shareable-wristband-q-programming-director-louis-bellavance-interview/",
+  "outlet": "Glide Magazine",
+  "festival": "Festival d'ete de Quebec",
+  "year": 2016,
+  "date": "2016-06-30"
+ },
+ {
+  "id": "T08",
+  "url": "https://entertainmenttoday.net/music/20326/2019/09/how-does-kaaboo-choose-and-schedule-the-artists-lets-talk-to-the-guy-who-does-it/",
+  "outlet": "Entertainment Today",
+  "festival": "KAABOO",
+  "year": 2019,
+  "date": "2019-09-06"
+ },
+ {
+  "id": "T09",
+  "url": "https://americana-uk.com/interview-rupert-orton-red-rooster-festival",
+  "outlet": "Americana UK",
+  "festival": "Red Rooster",
+  "year": 2018,
+  "date": "2018-05-11"
+ },
+ {
+  "id": "T10",
+  "url": "https://www.billboard.com/music/concerts/portola-2026-danny-bell-interview-san-francisco-dom-dolla-1236069579/",
+  "outlet": "Billboard",
+  "festival": "Portola",
+  "year": 2025,
+  "date": "2025"
+ },
+ {
+  "id": "T11",
+  "url": "https://magneticmag.com/2024/04/sol-fest-2024-the-strategy-behind-their-no-overlap-festival-schedule/",
+  "outlet": "Magnetic Magazine",
+  "festival": "Sol Fest",
+  "year": 2024,
+  "date": "2024-04-18"
+ },
+ {
+  "id": "T12",
+  "url": "https://www.cantgetmuchhigher.com/p/how-to-build-a-festival-a-conversation",
+  "outlet": "Can't Get Much Higher (Substack)",
+  "festival": "Multiple",
+  "year": 2025,
+  "date": "2025-06-08"
+ },
+ {
+  "id": "T15",
+  "url": "https://brokk-sindre.dk/en/cases/smukfest-crowdflow",
+  "outlet": "Brokk & Sindre (case study)",
+  "festival": "Smukfest",
+  "year": 2025,
+  "date": "2025"
+ },
+ {
+  "id": "T16",
+  "url": "https://www.linkedin.com/posts/phildye_glastonbury-data-activity-7344302343917633536-KJNk",
+  "outlet": "LinkedIn (Phil Dye post)",
+  "festival": "Glastonbury",
+  "year": 2025,
+  "date": "2025-06-27"
+ },
+ {
+  "id": "T18",
+  "url": "https://www.festivalpro.com/festival-management/2068/news/2022/9/6/Utilising-Music-Festival-App-Data-For-Decision-Making.html",
+  "outlet": "FestivalPro (vendor blog)",
+  "festival": "Multiple",
+  "year": 2022,
+  "date": "2022-09-06"
+ },
+ {
+  "id": "T19",
+  "url": "https://www.festivalpro.com/festival-management/4198/news/2025/10/6/Managing-the-Complexities-of-Artist-Scheduling-for-Music-Festivals.html",
+  "outlet": "FestivalPro (vendor blog)",
+  "festival": "Multiple",
+  "year": 2025,
+  "date": "2025-10-06"
+ },
+ {
+  "id": "V01",
+  "url": "https://www.ticketfairy.com/blog/the-art-of-the-festival-running-order-mastering-set-times-and-stage-scheduling",
+  "outlet": "Ticket Fairy (promoter blog)",
+  "festival": "Multiple",
+  "year": null,
+  "date": "n.d."
+ },
+ {
+  "id": "V02",
+  "url": "https://www.ticketfairy.com/blog/data-driven-festival-scheduling-using-data-and-algorithms-to-optimize-your-lineup",
+  "outlet": "Ticket Fairy (promoter blog)",
+  "festival": "Multiple",
+  "year": 2025,
+  "date": "2025-10-24"
+ },
+ {
+  "id": "V03",
+  "url": "https://www.ticketfairy.com/blog/fairness-in-festival-scheduling-protecting-fans-from-painful-clashes.md",
+  "outlet": "Ticket Fairy (promoter blog)",
+  "festival": "Multiple",
+  "year": 2025,
+  "date": "2025-08-24"
+ },
+ {
+  "id": "V04",
+  "url": "https://www.ticketfairy.com/blog/music-festivals-coordinating-multi-stage-productions",
+  "outlet": "Ticket Fairy (promoter blog)",
+  "festival": "Multiple",
+  "year": null,
+  "date": "n.d."
+ },
+ {
+  "id": "V05",
+  "url": "https://chronolio.com/blog/festival-stage-schedule-changeovers-curfews",
+  "outlet": "Chronolio (scheduling-software blog)",
+  "festival": "Multiple",
+  "year": 2026,
+  "date": "2026-09-25"
+ },
+ {
+  "id": "V06",
+  "url": "https://tickts.co.uk/blog/how-to-coordinate-multiple-stages-festival",
+  "outlet": "Tickts (ticketing blog)",
+  "festival": "Multiple",
+  "year": 2026,
+  "date": "2026-01-17"
+ },
+ {
+  "id": "V07",
+  "url": "https://maximschunk.com/news/festival-set-times-explained",
+  "outlet": "maximschunk.com (personal blog)",
+  "festival": "Multiple",
+  "year": 2026,
+  "date": "2026-09-03"
+ },
+ {
+  "id": "K01",
+  "url": "https://clashfinder.com/",
+  "outlet": "Clashfinder",
+  "festival": "n/a",
+  "year": null,
+  "date": "2026-10-20"
+ },
+ {
+  "id": "K02",
+  "url": "https://setlineapp.com/app",
+  "outlet": "Setline",
+  "festival": "n/a",
+  "year": null,
+  "date": "n.d."
+ },
+ {
+  "id": "K03",
+  "url": "https://setlineapp.com/organisers",
+  "outlet": "Setline",
+  "festival": "n/a",
+  "year": null,
+  "date": "n.d."
+ },
+ {
+  "id": "K04",
+  "url": "https://fline.live/",
+  "outlet": "FLINE",
+  "festival": "n/a",
+  "year": null,
+  "date": "n.d."
+ },
+ {
+  "id": "K05",
+  "url": "https://festmates.com/",
+  "outlet": "FestMates",
+  "festival": "n/a",
+  "year": null,
+  "date": "n.d."
+ },
+ {
+  "id": "K06",
+  "url": "https://timetable.lol/",
+  "outlet": "Timetable.lol",
+  "festival": "n/a",
+  "year": null,
+  "date": "n.d."
+ },
+ {
+  "id": "K07",
+  "url": "https://festivalpilot.app/en/festivals/sziget-festival-2026/",
+  "outlet": "festivalpilot",
+  "festival": "n/a",
+  "year": null,
+  "date": "n.d."
+ },
+ {
+  "id": "K08",
+  "url": "https://www.fesnova.com/lollapalooza-2026/schedule",
+  "outlet": "Fesnova",
+  "festival": "n/a",
+  "year": null,
+  "date": "n.d."
+ },
+ {
+  "id": "K09",
+  "url": "https://github.com/porkcharsui/clashfinder",
+  "outlet": "GitHub: clashfinder feed tools",
+  "festival": "n/a",
+  "year": null,
+  "date": "n.d."
+ },
+ {
+  "id": "K10",
+  "url": "https://festival.productions/en/modules/programma/",
+  "outlet": "festival.productions",
+  "festival": "n/a",
+  "year": null,
+  "date": "n.d."
+ },
+ {
+  "id": "K11",
+  "url": "https://withflux.app/",
+  "outlet": "Flux",
+  "festival": "n/a",
+  "year": null,
+  "date": "n.d."
+ },
+ {
+  "id": "K12",
+  "url": "https://crowdpredict.io/",
+  "outlet": "CrowdPredict",
+  "festival": "n/a",
+  "year": null,
+  "date": "n.d."
+ },
+ {
+  "id": "K13",
+  "url": "https://www.ukfestivalguides.com/news/27082026/reading-2026-clash-finder/",
+  "outlet": "UK Festival Guides",
+  "festival": "Reading",
+  "year": 2026,
+  "date": "2026-08-27"
+ },
+ {
+  "id": "T20",
+  "url": "https://shoutlouderpunk.wordpress.com/2019/03/30/diyrootsofmpf/",
+  "outlet": "SHOUT LOUDER (blog)",
+  "festival": "Manchester Punk Festival",
+  "year": 2019,
+  "date": "2019-03-30"
+ }
+]

@@ -36,6 +36,9 @@ import {
   HERO_ROWS,
   HeroDecision,
   HeroDecisionSkeleton,
+  HeroLadder,
+  HeroLadderLine,
+  HeroLadderRoom,
   HeroNote,
   heroNote,
   KEPT_LABEL,
@@ -47,6 +50,7 @@ import {
   offerPartToShow,
   tasteLineText,
 } from "./hero-decision";
+import { rungLabels, tasteHeading, type ThreeReadings } from "./why-qloo";
 
 // Every name and figure below is invented for the test.
 
@@ -435,7 +439,8 @@ describe("one row geometry for every state the hero group can be painted in (rou
       const skeleton = renderToStaticMarkup(createElement(HeroDecisionSkeleton));
 
       // One ordered list of rows, with the same rooms and the same space above each, in all three.
-      expect(HERO_ROWS.map((row) => row.name)).toEqual(["lead", "readout", "side-effects", "taste", "attribution", "actions", "notice"]);
+      // Round 38 (H): the ladder's room follows the confirmation's, inside the actions row.
+      expect(HERO_ROWS.map((row) => row.name)).toEqual(["lead", "readout", "side-effects", "taste", "attribution", "actions", "notice", "ladder"]);
       for (const html of [settled, pending, skeleton]) expect(rowsOf(html)).toEqual(expected);
       // Every room is a min-height, never a fixed height that could clip a longer line.
       for (const row of HERO_ROWS) expect(`${row.min} ${row.space}`).not.toMatch(/(^|\s|:)(h-|max-h-|overflow|line-clamp|truncate)/);
@@ -498,7 +503,8 @@ describe("one row geometry for every state the hero group can be painted in (rou
     const at = (classes: string, screens: readonly string[], kind: "min-h" | "mt") => {
       let found = 0;
       for (const token of classes.split(" ").filter(Boolean)) {
-        const [screen, name] = token.includes(":") ? token.split(":") : ["", token];
+        const cut = token.lastIndexOf(":");
+        const [screen, name] = cut === -1 ? ["", token] : [token.slice(0, cut), token.slice(cut + 1)];
         if (name.startsWith(`${kind}-`) && screens.includes(screen)) found = px(name);
       }
       return found;
@@ -506,11 +512,24 @@ describe("one row geometry for every state the hero group can be painted in (rou
     const total = (screens: readonly string[]) =>
       HERO_ROWS.reduce((sum, row) => sum + at(row.space, screens, "mt") + Math.max(at(row.min, screens, "min-h"), 0), 0);
     // From 1024 px the paste sits beside Keep, so the actions row is Keep's 48 px and the confirmation's room under it.
+    // Round 38 (H): the ladder's 80 px room above Keep (68 px of rungs and sentence, 12 px under them) adds to 1024 px.
+    // Round 38 (reconcile): from 1280 px the ladder is one line in the left column (`HeroLadderRoom`), so the group's
+    // ladder room is 0 there; on a screen 790 px tall or less, from 1024 px, the spaces above the readout, the side
+    // effects, the taste line and the attribution tighten from 8 to 4 px, the space above Keep from 16 to 8 px and
+    // the readout's words from a 28 to a 24 px line (28 px in all), so a 1366 x 768 screen holds the whole drawing.
+    const short = "[@media(max-height:790px)]";
     const lg = total(["", "sm", "md", "lg"]);
     const xl = total(["", "sm", "md", "lg", "xl"]);
-    expect(lg).toBeCloseTo(354.8, 5);
+    const lgShort = total(["", "sm", "md", "lg", `lg:${short}`]);
+    const xlShort = total(["", "sm", "md", "lg", "xl", `lg:${short}`, `xl:${short}`]);
+    expect(lg).toBeCloseTo(354.8 + 80, 5);
     expect(xl).toBeCloseTo(332.8, 5);
-    expect(HERO_CELL_MIN).toBe(`lg:min-h-[${+(lg / 16).toFixed(4)}rem] xl:min-h-[${+(xl / 16).toFixed(4)}rem]`);
+    expect(lgShort).toBeCloseTo(354.8 + 80 - 28, 5);
+    expect(xlShort).toBeCloseTo(332.8 - 28, 5);
+    const rem = (value: number) => +(value / 16).toFixed(4);
+    expect(HERO_CELL_MIN).toBe(
+      `lg:min-h-[${rem(lg)}rem] xl:min-h-[${rem(xl)}rem] lg:${short}:min-h-[${rem(lgShort)}rem] xl:${short}:min-h-[${rem(xlShort)}rem]`,
+    );
     // The layout holds it in an empty room in the group's cell, second in the hero's DOM, right after the pitch:
     // before the dateline, the toggle, the drawing and the group, so it is there from the first bytes the browser
     // paints, whatever state the group streams in (a decision, or none and the skeleton).
@@ -685,9 +704,9 @@ describe("Keep this move on a plan that already holds steps (P1)", () => {
 
   it("draws the offer where Keep, its room and the paste are, holding their places unseen, so nothing moves", () => {
     const source = readFileSync(join(__dirname, "hero-decision.tsx"), "utf8");
-    // The actions grid has no row of its own for the offer.
-    expect(source).toContain("[grid-template-areas:'keep'_'notice'_'paste']");
-    expect(source).toContain("lg:[grid-template-areas:'keep_paste'_'notice_notice']");
+    // The actions grid has no row of its own for the offer (round 38: the ladder's room follows the confirmation's).
+    expect(source).toContain("[grid-template-areas:'keep'_'notice'_'ladder'_'paste']");
+    expect(source).toContain("lg:[grid-template-areas:'ladder_ladder'_'keep_paste'_'notice_notice']");
     expect(source).not.toContain("grid-area:offer");
     // Keep and the paste stay in the layout while the offer is up, unseen (not display: none).
     expect(source).toContain('offerShown && "invisible"');
@@ -695,7 +714,7 @@ describe("Keep this move on a plan that already holds steps (P1)", () => {
     expect(source).not.toMatch(/offerShown && "hidden"/);
     // Below 380 px, while the offer shows, the paste's row comes up under Keep's: Replace (in the paste's place) sits
     // directly under Add (in Keep's), with no control between them, and the words in the confirmation's room follow.
-    expect(source).toContain(`showKeep && offerShown && "max-[379px]:[grid-template-areas:'keep'_'paste'_'notice']"`);
+    expect(source).toContain(`showKeep && offerShown && "max-[379px]:[grid-template-areas:'keep'_'paste'_'notice'_'ladder']"`);
     // Escape puts the offer away and hands focus back to Keep; the whole offer under the fold (Add, Replace and
     // the words in the confirmation's room) comes into view by the least scroll, at once under reduced motion.
     expect(source).toContain("onDismiss={dismissOffer}");
@@ -1113,5 +1132,92 @@ describe("the desktop note under the dateline", () => {
       `<p data-hero-note="" class="mt-1 hidden max-w-[44rem] text-[0.8125rem] leading-5 text-muted-foreground xl:[@media(min-height:791px)]:block">${NOTE_LOWEST}</p>`,
     );
     expect(renderToStaticMarkup(createElement(HeroNote, { text: null }))).toBe("");
+  });
+});
+
+describe("the hero's ladder (round 38, H): the decision's clash ranked three ways, in the first screen's group", () => {
+  const moved: ThreeReadings = { time: { rank: 23, of: 68, tied: 18 }, draw: { rank: 18, of: 68 }, taste: { rank: 1, of: 68 } };
+  const unmoved: ThreeReadings = { time: { rank: 5, of: 47 }, draw: { rank: 1, of: 47 }, taste: { rank: 1, of: 47 } };
+
+  it("names each rung by what it adds and credits taste with its own step only, #18 to #1, never #23 to #18", () => {
+    const html = renderToStaticMarkup(createElement(HeroLadder, { readings: moved, synthetic: false }));
+    expect(text(html)).toBe("Time alone #23 + Qloo popularity #18 + taste overlap #1 of 68 Adding taste moves this pair from #18 to #1.");
+    // The sentence is the section's own heading, word for word, so the two never disagree.
+    expect(text(html)).toContain(`${tasteHeading(moved)}.`);
+    expect(text(html)).not.toMatch(/taste[^.]*#23|from #23/);
+    // The rungs' names are the section's own helper's, short.
+    const labels = rungLabels(false, true);
+    for (const key of ["time", "draw", "taste"] as const) expect(html).toContain(`data-rung="${key}"`);
+    for (const key of ["time", "draw", "taste"] as const) expect(html).toContain(`>${labels[key]}</span>`);
+    // Ink only: no raspberry (shared time) and no teal (Qloo) on a rank.
+    expect(html).not.toMatch(/text-primary|text-qloo|bg-primary|text-teal|raspberry/);
+  });
+
+  it("says taste leaves the pair where it was when it does, in the section's words", () => {
+    const html = renderToStaticMarkup(createElement(HeroLadder, { readings: unmoved, synthetic: false }));
+    expect(text(html)).toBe("Time alone #5 + Qloo popularity #1 + taste overlap #1 of 47 Adding taste leaves this pair at #1.");
+  });
+
+  it("names no Qloo on the invented day, and prints each rung's own count when they rank different numbers", () => {
+    const html = renderToStaticMarkup(createElement(HeroLadder, { readings: { ...moved, draw: { rank: 18, of: 60 } }, synthetic: true }));
+    expect(text(html)).toBe("Time alone #23 of 68 + invented popularity #18 of 60 + invented taste #1 of 68 Adding taste moves this pair from #18 to #1.");
+    expect(text(html)).not.toMatch(/Qloo/);
+  });
+
+  it("sits in the group after Keep's confirmation room and before the paste, its room held empty until the readings come", () => {
+    vi.stubEnv("NEXT_PUBLIC_CHECK_LIVE", "1");
+    const settled = hero({ ladder: moved });
+    const at = (needle: string) => settled.indexOf(needle);
+    expect(at("data-hero-ladder")).toBeGreaterThan(at("data-kept-notice"));
+    expect(at("data-hero-ladder")).toBeLessThan(at('href="/check"'));
+    // Every guarded line stays beside its number with the ladder in.
+    expect(text(settled)).toContain("(a rank, not attendance)");
+    expect(text(settled)).toContain("Selected and scored by this app’s index. A reading, not a verdict.");
+    expect(text(settled)).toContain("Adding taste moves this pair from #18 to #1.");
+    // Phone: Keep, its confirmation, the ladder, the paste; from 1024 px the ladder runs above Keep.
+    const markup = settled.replace(/&#x27;/g, "'");
+    expect(markup).toContain("[grid-template-areas:'keep'_'notice'_'ladder'_'paste']");
+    expect(markup).toContain("lg:[grid-template-areas:'ladder_ladder'_'keep_paste'_'notice_notice']");
+    for (const html of [hero(), hero({ ladder: { ...moved, draw: undefined } })]) {
+      expect(html).toMatch(/<div data-hero-row="ladder" aria-hidden="true" class="[^"]*"><\/div>/);
+      expect(html).not.toContain("data-hero-ladder");
+    }
+    vi.unstubAllEnvs();
+  });
+
+  it("from 1280 px is one line in the left column, under the dateline and the note, its room held empty until the readings come (round 38, reconcile)", () => {
+    const line = renderToStaticMarkup(createElement(HeroLadderLine, { readings: moved, synthetic: false }));
+    // The same rungs, ranks and count as the group's ladder; the arrows are drawn only.
+    expect(text(line)).toBe("Time alone #23 → + Qloo popularity #18 → + taste overlap #1 of 68");
+    expect(line.match(/<span aria-hidden="true"[^>]*>→<\/span>/g)).toHaveLength(2);
+    expect(text(line)).not.toMatch(/taste[^→]*#23|from #23|attend/);
+    expect(line).not.toMatch(/text-primary|text-qloo|bg-primary|text-teal|raspberry/);
+    expect(text(renderToStaticMarkup(createElement(HeroLadderLine, { readings: unmoved, synthetic: false })))).toBe(
+      "Time alone #5 → + Qloo popularity #1 → + taste overlap #1 of 47",
+    );
+    const invented = text(renderToStaticMarkup(createElement(HeroLadderLine, { readings: { ...moved, draw: { rank: 18, of: 60 } }, synthetic: true })));
+    expect(invented).toBe("Time alone #23 of 68 → + invented popularity #18 of 60 → + invented taste #1 of 68");
+    expect(invented).not.toMatch(/Qloo/);
+    // The room: 18 px from 1280 px only, empty and hidden from assistive tech without the readings.
+    const room = '<div data-hero-ladder-room="" aria-hidden="true" class="mt-1.5 hidden min-h-[1.125rem] xl:block"></div>';
+    expect(renderToStaticMarkup(createElement(HeroLadderRoom, { synthetic: false }))).toBe(room);
+    expect(renderToStaticMarkup(createElement(HeroLadderRoom, { readings: { ...moved, draw: undefined }, synthetic: false }))).toBe(room);
+    const filled = renderToStaticMarkup(createElement(HeroLadderRoom, { readings: moved, synthetic: false }));
+    expect(filled).toMatch(/^<div data-hero-ladder-room="" class="mt-1.5 hidden min-h-\[1.125rem\] xl:block"><ol data-hero-ladder-line=""/);
+    // The group's ladder is hidden from 1280 px, where its room is 0, so only one ladder shows at any width.
+    const group = hero({ ladder: moved });
+    expect(group).toMatch(/<div data-hero-row="ladder" class="[^"]* xl:min-h-0 [^"]* xl:hidden">/);
+    // Both hero paths hold the room right after the note, in the day's slot.
+    const source = readFileSync(join(__dirname, "clash-control.tsx"), "utf8");
+    expect(source).toContain("{model ? <HeroLadderRoom synthetic={synthetic} /> : null}");
+    expect(source).toContain("{model ? <HeroLadderRoom readings={heroLadder} synthetic={synthetic} /> : null}");
+    expect(source.match(/<HeroNote [^\n]*\n\s*\{model \? <HeroLadderRoom /g)).toHaveLength(2);
+  });
+
+  it("prints nothing without the readings that carry draw", () => {
+    expect(renderToStaticMarkup(createElement(HeroLadder, { readings: { ...moved, draw: undefined }, synthetic: false }))).toBe("");
+    expect(renderToStaticMarkup(createElement(HeroLadder, { readings: { ...moved, taste: null }, synthetic: false }))).toBe("");
+    expect(renderToStaticMarkup(createElement(HeroLadderLine, { readings: { ...moved, draw: undefined }, synthetic: false }))).toBe("");
+    expect(renderToStaticMarkup(createElement(HeroLadderLine, { readings: { ...moved, taste: null }, synthetic: false }))).toBe("");
   });
 });

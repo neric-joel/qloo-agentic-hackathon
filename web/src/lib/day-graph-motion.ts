@@ -551,6 +551,12 @@ export const WIDE_GAP = 6;
 export const WIDE_GAP_TWO = 4;
 /** The line box of each line of a name set on two lines (px): closer than one line's 15px, so the two read as one name. */
 export const TWO_LINE_LEADING = 13;
+/** The least clear space above and below a name set on two lines inside its bar (px), its 1px edge included. */
+export const INSIDE_PAD = 3;
+/** Whether a layout's bars are tall enough to hold a name on two lines inside them: a desktop's 32px bars are. */
+export function insideTwo(layout: DrawingLayout): boolean {
+  return LAYOUT[layout].bar >= 2 * TWO_LINE_LEADING + 2 * INSIDE_PAD;
+}
 /** How far a desktop's names may reach past the axis's foot and past the drawing's foot (px). */
 export const WIDE_REACH = 2;
 /** How many times farther from every other bar than from its own a name outside its bar sits wherever the drawing has the room. */
@@ -661,7 +667,8 @@ export function threadKey(thread: Pick<DayGraphThread, "aId" | "bId">): string {
 // ------------------------------------------------------------------------------------ the plan
 
 /**
- * Where a set's name is drawn, in the order a name tries them: (a) whole inside its bar; (b) whole on the row's
+ * Where a set's name is drawn, in the order a name tries them: (a) whole inside its bar, on two lines at a word break
+ * when one is too wide and the bar is tall enough (`insideTwo`); (b) whole on the row's
  * paper just past its bar's end; (c) whole on a paper plate in the row gap directly above or below its bar (on
  * two lines on a desktop when one is too wide); (d) a prefix of at least 8 characters inside its bar, ending in
  * an ellipsis; (e) not drawn (only from the narrowest desktop band down, and only as a last resort), the bar
@@ -1223,31 +1230,38 @@ function planOnce(
   const inline = (place: PlanBar) => place.top + (bar - LABEL_LINE) / 2;
   const lead = (set: DayGraphSet) => NAME_INSET + (set.locked ? LOCK_INSET : 0);
 
-  /** Slot a or d: the whole name inside the bar's seen part, or its longest prefix of 8 characters or more. */
+  /**
+   * Slot a or d: the whole name inside the bar's seen part (on one line, or on two at a word break where the bar is
+   * tall enough, `insideTwo`), or its longest prefix of 8 characters or more.
+   */
   const insideOf = (place: PlanBar, weight: LabelWeight): Candidate | null => {
     const shown = seen(place.span);
     if (!shown) return null;
     const room = (shown.end - shown.start) * scale - lead(place.set) - NAME_INSET;
     const name = place.set.name;
-    const make = (slot: NameSlot, text: string): Candidate => ({
-      slot,
-      sig: `${slot}|${text}`,
-      spot: {
+    const make = (slot: NameSlot, lines: string[]): Candidate => {
+      const two = lines.length > 1;
+      const height = two ? TWO_LINE_LEADING * lines.length : LABEL_LINE;
+      const spot: Spot = {
         kind: slot === "a" ? "inside" : "prefix",
         slot,
         anchor: shown.start,
         dx: lead(place.set),
         align: "start",
-        top: inline(place),
-        width: textWidth(text, LABEL_SIZE, weight),
-        height: LABEL_LINE,
-        lines: [text],
+        top: place.top + (bar - height) / 2,
+        width: Math.max(...lines.map((line) => textWidth(line, LABEL_SIZE, weight))),
+        height,
+        lines,
         plate: false,
-      },
-    });
-    if (textWidth(name, LABEL_SIZE, weight) <= room) return make("a", name);
+      };
+      if (two) spot.leading = TWO_LINE_LEADING;
+      return { slot, sig: `${slot}|${lines.join("/")}`, spot };
+    };
+    if (textWidth(name, LABEL_SIZE, weight) <= room) return make("a", [name]);
+    const split = insideTwo(layout) ? twoLines(name, weight) : null;
+    if (split && Math.max(...split.map((line) => textWidth(line, LABEL_SIZE, weight))) <= room) return make("a", split);
     const prefix = namePrefix(name, room + NAME_INSET - PREFIX_END, weight);
-    return prefix ? make("d", prefix) : null;
+    return prefix ? make("d", [prefix]) : null;
   };
 
   /** Slot b: the name on the row's paper, starting just past the bar's end. */
@@ -1390,10 +1404,11 @@ function planOnce(
   /** The weight a set's name is drawn in: a featured set's heavier, wherever it is placed. */
   const weightOf = (set: DayGraphSet): LabelWeight => (set.featured ? 600 : 500);
 
-  // Featured names first: the mover, its partner, then every set whose overlap grows; always whole and outside the
-  // bar, at every width: above it, below it (a phone's bottom row has its label lane) or beside it, plainly its
-  // own; then anywhere outside it that is clear and nearer its own bar than any other; then, so a featured name is
-  // never cut or left out, the first place above or below that is on the drawing and plainly its own.
+  // Featured names first: the mover, its partner, then every set whose overlap grows; always whole, at every width:
+  // inside the bar where the whole name fits (on one line, or on two on a desktop); else outside it, above it, below
+  // it (a phone's bottom row has its label lane) or beside it, plainly its own; then anywhere outside it that is
+  // clear and nearer its own bar than any other; then, so a featured name is never cut or left out, the first place
+  // above or below that is on the drawing and plainly its own.
   const order = [...model.sets]
     .filter((set) => featuredHere(set))
     .sort((a, b) => rank(a) - rank(b) || a.stageIndex - b.stageIndex || a.start - b.start);
@@ -1567,6 +1582,8 @@ function planOnce(
 
   for (const set of order) {
     settle(set, (view, place) => {
+      const whole = insideOf(place, 600);
+      const inside = whole?.slot === "a" ? [{ candidate: whole, ok: true }] : [];
       const outside = [...platesOf(view, place, "above", [set.name], 600), ...platesOf(view, place, "below", [set.name], 600)];
       const beside = besideOf(place, 600);
       // Of the places that keep every rule, those that leave a phone's tags a place together, and every other name a
@@ -1588,7 +1605,7 @@ function planOnce(
         candidate: { ...candidate, sig: `forced|${candidate.sig}` },
         ok: candidate.spot !== null && within(boxOf(candidate.spot)) && ownedBy(view, boxOf(candidate.spot), set.actId, true),
       }));
-      return [...strict, ...loose, ...forced, { candidate: none, ok: true }];
+      return [...inside, ...strict, ...loose, ...forced, { candidate: none, ok: true }];
     });
   }
 

@@ -178,8 +178,8 @@ describe("the reading column's alignment and measure (round 10b)", () => {
 
   it("starts the column at the page container's left edge instead of centring it", () => {
     const columns = [...html.matchAll(/class="(max-w-\[52rem\][^"]*)"/g)].map((m) => m[1]);
-    // The header and each of the four sections share the one column.
-    expect(columns.length).toBe(5);
+    // The header and each of the six sections share the one column (round 38: the evidence and timing sections).
+    expect(columns.length).toBe(7);
     for (const column of columns) expect(column).not.toMatch(/\bmx-auto\b/);
     expect(html).not.toMatch(/class="[^"]*\bmx-auto\b[^"]*max-w-\[52rem\]/);
     expect(html).not.toContain("max-w-[48rem]");
@@ -531,15 +531,17 @@ describe("the short version and the contents card (round 19)", () => {
     // Each entry is one link holding the title alone, in the order of the four section headings (round 34, audit
     // M7: no numeral, since the sections are not steps; the list's order is the page's order).
     const entries = [...order.matchAll(/<a href="#([a-z-]+)" class="([^"]*)"><span class="([^"]*)">([^<]+)<\/span><\/a>/g)];
-    expect(entries).toHaveLength(4);
-    expect(order.match(/<a /g)).toHaveLength(4);
+    expect(entries).toHaveLength(6);
+    expect(order.match(/<a /g)).toHaveLength(6);
     expect(order).not.toMatch(/data-order-numeral|type-numeral|aria-hidden/);
     expect(text(order)).not.toMatch(/\d/);
-    expect(entries.map((m) => m[1])).toEqual(["price", "tested", "limits", "the-rest"]);
+    expect(entries.map((m) => m[1])).toEqual(["price", "tested", "limits", "asked", "how-long", "the-rest"]);
     expect(entries.map((m) => m[4])).toEqual([
       "What the score is",
       "What we tested it against",
       "What taste overlap cannot tell you",
+      "What people ask about clashes",
+      "How long this takes",
       "How the rest works",
     ]);
     // A 44px hit area: 6px above and below a 32px line. Inactive entries are muted (the server HTML marks none
@@ -612,9 +614,9 @@ describe("hanging heads from 1280px (round 26)", () => {
       "mt-5 max-w-[76ch] text-[0.9375rem] leading-[1.55] sm:text-base",
     ]);
     // Each section and sub-block body measures its paragraphs, lists and folds from xl (round 35: two more sub-blocks,
-    // why Qloo and the control acts).
+    // why Qloo and the control acts; round 38: two more sections, the evidence and the timing block).
     const bodies = bare.filter((cls) => cls.includes("xl:max-w-none"));
-    expect(bodies).toHaveLength(11);
+    expect(bodies).toHaveLength(13);
     for (const cls of bodies) {
       for (const child of ["p", "ul", "ol", "details"]) expect(cls).toContain(`xl:[&amp;&gt;${child}]:max-w-[76ch]`);
     }

@@ -32,7 +32,7 @@ export type DayGraphSet = {
   end: number;
   locked: boolean;
   unscored: boolean;
-  /** The mover, its partner and every set whose overlap grows: their names sit whole outside the bar at every width. */
+  /** The mover, its partner and every set whose overlap grows: their names are drawn whole at every width, inside the bar where they fit. */
   featured: boolean;
 };
 
@@ -122,14 +122,15 @@ export type DayGraphModel = {
 export type DrawingLayout = "desktop" | "phone" | "short";
 
 /**
- * Each layout's heights (px). A phone and a short phone keep a `foot` under their last row, a label lane where a
+ * Each layout's heights (px). A desktop's 32px bars hold a name on two lines (`TWO_LINE_LEADING` apart) inside the
+ * bar, and keep the 38px row gap they had at 26px, so a name on a plate and a tag keep their room. A phone and a short phone keep a `foot` under their last row, a label lane where a
  * featured name sits whole under the bottom bar; the phone pays for it with a thinner overview strip and gap, the
  * short phone with thinner bars, so both drawings stay as tall as before. A phone's 18px bars leave a 24px gap
  * between rows, room for a name 3px off its own bar and twice as far from the bar across the gap; a short phone's
  * 15px bars leave 22px, room for a name in its 13px line box (`NAME_LINE`) with the same 3px and 6px.
  */
 export const LAYOUT = {
-  desktop: { axis: 22, row: 64, bar: 26 },
+  desktop: { axis: 22, row: 70, bar: 32 },
   phone: { overview: 14, gap: 3, axis: 14, row: 42, bar: 18, foot: 15 },
   short: { axis: 14, row: 37, bar: 15, foot: 15 },
 } as const;

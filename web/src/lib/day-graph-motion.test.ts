@@ -541,7 +541,20 @@ describe("planDrawing", () => {
             ...[vp.hatch, ...vp.created].flatMap((w) => (w ? [{ id: "window", box: { x0: x(w.window.start), x1: x(w.window.end), y0: w.top, y1: w.bottom } }] : [])),
           ];
           for (const label of labels) {
-            for (const other of obstacles) if (other.id !== label.id) expect(hit(label.box, other.box), `${layout} ${view} x${stretch}: ${label.id} on ${other.id}`).toBe(false);
+            // A name inside its own bar is drawn over the windows that bar covers (the bars are drawn over the windows), so
+            // it keeps clear of every other bar and label; a name or tag on the paper keeps clear of the windows too.
+            const kind = vp.labels[label.id]?.kind;
+            const inBar = kind === "inside" || kind === "prefix";
+            for (const other of obstacles) {
+              if (other.id === label.id || (inBar && other.id === "window")) continue;
+              expect(hit(label.box, other.box), `${layout} ${view} x${stretch}: ${label.id} on ${other.id}`).toBe(false);
+            }
+            if (inBar) {
+              const own = vp.bars.find((item) => item.set.actId === label.id);
+              if (!own) throw new Error(`no bar for ${label.id}`);
+              const ownBox = { x0: x(own.span.start), x1: x(own.span.end), y0: own.top, y1: own.top + bar };
+              expect(label.box.x0 >= ownBox.x0 - 1e-6 && label.box.x1 <= ownBox.x1 + 1e-6 && label.box.y0 >= ownBox.y0 && label.box.y1 <= ownBox.y1, `${layout} ${view} x${stretch}: ${label.id} inside its bar`).toBe(true);
+            }
             for (const other of labels) if (other !== label) expect(hit(label.box, other.box), `${layout} ${view}: ${label.id} on ${other.id}`).toBe(false);
             // On a phone every name and tag sits inside the detail window the drawing opens on.
             if (layout !== "desktop") {
@@ -714,7 +727,7 @@ describe("planDrawing: lines clear of the names they cross", () => {
     }
   });
 
-  it("clears a lock at the start of a bar it crosses, and never meets a featured name inside a bar: those sit outside it", () => {
+  it("clears a lock at the start of a bar it crosses, and never meets a featured name: whole inside its bar where it fits, else outside it", () => {
     const locked = model(LATER, false, [{ name: "Yew", stage: "barn", start: "14:20", end: "14:50", locked: true }]);
     let checked = 0;
     for (const layout of ["desktop", "phone", "short"] as const) {
@@ -727,7 +740,9 @@ describe("planDrawing: lines clear of the names they cross", () => {
         for (const set of locked.sets.filter((item) => item.featured)) {
           const bar = plan.views[view].bars.find((item) => item.set.actId === set.actId);
           if (!bar || (layout !== "desktop" && (bar.span.end <= locked.focus.start || bar.span.start >= locked.focus.end))) continue;
-          expect(["above", "below", "beside"], `${layout} ${view}: ${set.name}`).toContain(plan.views[view].labels[set.actId]?.kind);
+          const spot = plan.views[view].labels[set.actId];
+          expect(["inside", "above", "below", "beside"], `${layout} ${view}: ${set.name}`).toContain(spot?.kind);
+          expect(spot?.lines.join(" "), `${layout} ${view}: ${set.name}`).toBe(set.name);
         }
       }
     }
@@ -866,7 +881,7 @@ function problemsOf(m: DayGraphModel, plan: LayoutPlan, stretch = 1): string[] {
       const own = vp.bars.find((item) => item.set.actId === set.actId);
       if (!own || Math.min(x(own.span.end), hi) - Math.max(x(own.span.start), lo) <= 0) continue;
       const slot = vp.slots[set.actId];
-      if (slot !== "b" && slot !== "c") out.push(`${view}: featured ${set.name} in slot ${slot ?? "none"}`);
+      if (slot !== "a" && slot !== "b" && slot !== "c") out.push(`${view}: featured ${set.name} in slot ${slot ?? "none"}`);
       const text = vp.labels[set.actId]?.lines.join(" ");
       if (text !== set.name) out.push(`${view}: featured ${set.name} reads "${text ?? ""}"`);
     }
@@ -914,6 +929,8 @@ function problemsOf(m: DayGraphModel, plan: LayoutPlan, stretch = 1): string[] {
       }
       if (spot.slot !== "d" && spot.lines.join(" ") !== who) out.push(`${view}: ${who} reads "${spot.lines.join(" / ")}"`);
       if (inBar && (box.x0 < ownBox.x0 - 1e-6 || box.x1 > ownBox.x1 + 1e-6)) out.push(`${view}: ${who} runs out of its bar`);
+      // A name inside its bar, on one line or two, stays inside it top to bottom.
+      if (inBar && (box.y0 < ownBox.y0 - 1e-6 || box.y1 > ownBox.y1 + 1e-6)) out.push(`${view}: ${who} runs over its bar's edge`);
     }
     for (const line of vp.lines) {
       const cx = x(line.mid) + line.off;
@@ -1155,9 +1172,9 @@ describe("planDrawing: featured names are always whole", () => {
           for (const view of ["published", "moved"] as const) {
             for (const set of model.sets.filter((item) => item.featured)) {
               const spot = plan.views[view].labels[set.actId];
-              expect(plan.views[view].slots[set.actId], `${layout} at ${band.from}px, ${view}: ${set.name}`).toMatch(/^[bc]$/);
+              expect(plan.views[view].slots[set.actId], `${layout} at ${band.from}px, ${view}: ${set.name}`).toMatch(/^[abc]$/);
               expect(spot?.lines.join(" ")).toBe(set.name);
-              expect(["above", "below", "beside"]).toContain(spot?.kind);
+              expect(["inside", "above", "below", "beside"]).toContain(spot?.kind);
             }
           }
           // Clear of every other bar, window and label by 2px, 1px from its own bar, at the band's track and up to the next band's.
@@ -1207,8 +1224,16 @@ describe("planDrawing: each name in the first slot that fits", () => {
     // (b) Yarrow Ensemble's ten minutes cannot hold it, but the row is empty until Fir.
     expect(pub.slots["yarrow-ensemble"]).toBe("b");
     expect(pub.labels["yarrow-ensemble"]?.kind).toBe("beside");
-    // (c) The three packed sets have no room inside or beside their bars: plates above and below them, at 1280px.
-    for (const spec of CROWDED) expect(wide.views.published.slots[idOf(spec.name)], spec.name).toBe("c");
+    // (a) At 1280px the three packed sets' bars are tall and wide enough for their names on two lines inside them.
+    for (const spec of CROWDED) {
+      const spot = wide.views.published.labels[idOf(spec.name)];
+      expect(wide.views.published.slots[idOf(spec.name)], spec.name).toBe("a");
+      expect(spot?.kind, spec.name).toBe("inside");
+      expect(spot?.lines.length, spec.name).toBe(2);
+      expect(spot?.lines.join(" "), spec.name).toBe(spec.name);
+    }
+    // (c) At 1024px they have no room inside or beside their bars, even on two lines: plates above and below them.
+    for (const spec of [CROWDED[0], CROWDED[2]]) expect(pub.slots[idOf(spec.name)], spec.name).toBe("c");
     // (e) At 1024px the middle one of them finds no place clear of its neighbours' plates, and is left out.
     expect(pub.slots["dogwood-brass-quartet"]).toBe("e");
     // (d) On a 390px phone the long name has no plate at least half over its bar and no room beside it: a prefix,

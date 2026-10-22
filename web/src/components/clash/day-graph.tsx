@@ -762,7 +762,8 @@ function SetBar({
       title={slot === "d" || slot === "e" ? set.name : undefined}
       className={cn(
         "pointer-events-auto absolute overflow-hidden rounded-xs",
-        set.unscored ? "border border-dotted border-border-strong bg-muted text-muted-foreground" : "border border-border-strong bg-card",
+        // A set with no Qloo signal is drawn plainly: a dotted outline on the paper, its name in ink like every other.
+        set.unscored ? "border-[1.5px] border-dotted border-foreground bg-background" : "border border-border-strong bg-card",
         className,
       )}
       style={{ left: pct(trackPct(track, span.start)), width: spanPct(track, span), ...style }}
@@ -1194,7 +1195,6 @@ function Marks({ plan, leaders, ctx }: { plan: LayoutPlan; leaders: Record<Graph
   }
   const renderItem = (item: Item, view: GraphView, shift: number, mark: "in" | "out" | null) => {
     const set = nameOf(item.id);
-    const inBar = item.spot.kind === "inside" || item.spot.kind === "prefix";
     return (
       <SpotLabel
         key={`${mark ?? "on"}-${item.key}-${item.spot.lines.join("/")}`}
@@ -1205,7 +1205,6 @@ function Marks({ plan, leaders, ctx }: { plan: LayoutPlan; leaders: Record<Graph
         className={cn(
           item.tag || set?.featured ? "font-semibold" : "font-medium",
           item.tag && "text-primary",
-          !item.tag && inBar && set?.unscored && "text-muted-foreground",
         )}
         data={{
           [item.tag ? "data-shared-tag" : "data-label"]: item.id,

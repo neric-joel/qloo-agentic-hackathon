@@ -1377,3 +1377,13 @@ describe("round 37: one 46.8% on the first screen, the tag cap and the no-signal
     expect(visible).toContain("did not establish that taste adds to time and draw");
   });
 });
+
+describe("what an index above 100 means (round 37, a judge's question)", () => {
+  it("says it in one plain sentence beside the index's definition, as a reading and not a verdict", () => {
+    const plain = text(renderToStaticMarkup(createElement(MethodPage)));
+    const sentence =
+      "An index above 100 means that, by this reading, the day's shared minutes cost more than they would in the average random valid timetable of the same lineup; below 100, less. It is a reading of one kind of cost, not a verdict on how the festival was programmed.";
+    expect(plain).toContain(sentence);
+    expect(plain.indexOf("Lower is better.")).toBeLessThan(plain.indexOf(sentence));
+  });
+});

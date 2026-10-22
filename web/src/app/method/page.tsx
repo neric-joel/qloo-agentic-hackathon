@@ -1049,7 +1049,10 @@ export default function MethodPage() {
               divided by the mean total of {index.baselineSamples} sampled random valid timetables of the
               same lineup, in which each set stays inside its allowed window and stages and locked sets
               stay put. Lower
-              is better. {COUNTS_ONLY_NEUTRAL}
+              is better. An index above 100 means that, by this reading, the day&rsquo;s shared minutes cost
+              more than they would in the average random valid timetable of the same lineup; below 100, less.
+              It is a reading of one kind of cost, not a verdict on how the festival was programmed.{" "}
+              {COUNTS_ONLY_NEUTRAL}
             </p>
           </div>
         </MoreDetails>
@@ -1176,7 +1179,7 @@ export default function MethodPage() {
           <p>{tagCapSentence()}</p>
           <p>
             The cards show the timetable&rsquo;s own requests. Live calls come only from the re-check route, the
-            pasted-grid route in live mode and the agent route, each limited per visitor; their Qloo requests
+            pasted-grid route in live mode and the agent route, each limited per visitor and in total per day, so a busy day can use them up; their Qloo requests
             pause when the monthly Qloo allowance runs low. The page never offers the agent&rsquo;s general explore
             tools, and the API refuses them unless the deployment switches them on.
             The pair re-check sends exactly three requests and never reads a saved answer as live.

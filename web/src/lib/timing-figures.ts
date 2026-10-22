@@ -6,8 +6,7 @@
  * - the by-hand route, estimated with a Keystroke-Level Model (estimated, not measured: nobody was timed);
  * - what existing tools say on their public pages (no time for this job anywhere);
  * - Clash Control's steps, timed by the demo driver as machine time on production (system response, not a
- *   person's time). Until the driver's figures are written into `PRODUCTION_TIMING`, each step says when it
- *   will be measured and prints no number.
+ *   person's time), in `PRODUCTION_TIMING`; without figures, each step says when it will be measured.
  */
 
 import { evidenceSource } from "./public-evidence";
@@ -114,10 +113,14 @@ export type ProductionTiming = {
 };
 
 /**
- * THE placeholder the orchestrator fills from the demo driver's real timing before commit. While it is null,
- * every step prints `TIMING_PENDING` and no number.
+ * The demo driver's timing script on production (`_private/demo/final/machine-timing.json`): each step from the
+ * action to its result on screen, the median of 10 warm runs after one discarded warm-up, every live route
+ * blocked. While this is null, every step prints `TIMING_PENDING` and no number.
  */
-export const PRODUCTION_TIMING: ProductionTiming | null = null;
+export const PRODUCTION_TIMING: ProductionTiming | null = {
+  measured: "Measured on 22 Oct 2026 on build 0d328cb: the median of 10 warm runs, each step from the action to its result on screen.",
+  steps: { load: "0.8 s", open: "0.2 s", move: "0.1 s", keep: "0.4 s", print: "0.9 s" },
+};
 
 /** What a step says until the driver's figures are in. */
 export const TIMING_PENDING = "measured on production during the final demo recording";

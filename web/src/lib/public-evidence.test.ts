@@ -327,9 +327,11 @@ describe("How long this takes on /method (round 38)", () => {
     expect(TOOL_LINKS[5].url).toBe(evidenceSource("V02").url);
   });
 
-  it("prints Clash Control's steps as machine time on production, with no number until the demo driver's figures are in", () => {
-    expect(PRODUCTION_TIMING).toBeNull();
-    expect(TIMING_PENDING).toBe("measured on production during the final demo recording");
+  it("prints Clash Control's steps as the machine time measured on production, and nothing pending", () => {
+    expect(PRODUCTION_TIMING).toEqual({
+      measured: "Measured on 22 Oct 2026 on build 0d328cb: the median of 10 warm runs, each step from the action to its result on screen.",
+      steps: { load: "0.8 s", open: "0.2 s", move: "0.1 s", keep: "0.4 s", print: "0.9 s" },
+    });
     const plain = text(section);
     expect(MACHINE_STEPS.map((s) => s.step)).toEqual([
       "Load the day",
@@ -339,15 +341,27 @@ describe("How long this takes on /method (round 38)", () => {
       "Print the brief",
     ]);
     for (const { id, step } of MACHINE_STEPS) {
-      expect(machineTimeLine(id)).toBe(`${MACHINE_LABEL}: ${TIMING_PENDING}`);
-      expect(plain).toContain(`${step}. Machine time on production: measured on production during the final demo recording.`);
+      expect(machineTimeLine(id)).toBe(`${MACHINE_LABEL}: ${PRODUCTION_TIMING!.steps[id]}`);
+      expect(plain).toContain(`${step}. Machine time on production: ${PRODUCTION_TIMING!.steps[id]}.`);
     }
-    const machine = text(section.slice(section.indexOf(">", section.indexOf("data-timing-machine")) + 1, section.indexOf("<p data-timing-note")));
-    expect(machine).not.toMatch(/\d/);
+    expect(plain).toContain(PRODUCTION_TIMING!.measured);
+    expect(plain).not.toContain(TIMING_PENDING);
     expect(MACHINE_NOTE).toBe(
       "Machine time is how long the site took to respond, timed by a script. It is not a person's time, and it is never set against the estimate above. Listing pairs and checking rules is arithmetic any tool can do; what Qloo adds is a different way to rank the clashes, not speed.",
     );
     expect(plain).toContain(MACHINE_NOTE);
+  });
+
+  it("says when each step will be measured, with no number, when there are no figures", () => {
+    expect(TIMING_PENDING).toBe("measured on production during the final demo recording");
+    const html = renderToStaticMarkup(createElement(TimingBody, { timing: null }));
+    const plain = text(html);
+    for (const { id, step } of MACHINE_STEPS) {
+      expect(machineTimeLine(id, null)).toBe(`${MACHINE_LABEL}: ${TIMING_PENDING}`);
+      expect(plain).toContain(`${step}. Machine time on production: measured on production during the final demo recording.`);
+    }
+    const machine = text(html.slice(html.indexOf(">", html.indexOf("data-timing-machine")) + 1, html.indexOf("<p data-timing-note")));
+    expect(machine).not.toMatch(/\d/);
   });
 
   it("prints the driver's figures, still labelled machine time, once they are filled in", () => {

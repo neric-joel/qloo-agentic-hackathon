@@ -416,7 +416,7 @@ test.describe("how we know (/method)", () => {
     await expect(asked).not.toContainText(/survey|poll|people we asked|respondents/i);
   });
 
-  test("how long this takes: the by-hand route is estimated, not measured; Clash Control's figure waits for the demo; never a survey or a time saved (round 38)", async ({ page }) => {
+  test("how long this takes: the by-hand route is estimated, not measured; Clash Control's steps are machine time measured on production; never a survey or a time saved (round 38)", async ({ page }) => {
     const timing = page.locator("#how-long");
     await expect(timing.getByRole("heading", { level: 2, name: "How long this takes" })).toBeVisible();
     const manual = timing.locator("[data-timing-manual]");
@@ -426,13 +426,15 @@ test.describe("how we know (/method)", () => {
     const steps = timing.locator("[data-timing-steps] > li");
     await expect(steps).toHaveCount(5);
     for (let i = 0; i < 5; i++) await expect(steps.nth(i)).toContainText("(estimated)");
-    // Clash Control's figure is a placeholder until the demo recording measures it: machine time, no number yet.
+    // Clash Control's figures: machine time measured on production by the demo's timing script, in seconds.
     const machine = timing.locator("[data-timing-machine] > li");
     await expect(machine).toHaveCount(5);
     for (let i = 0; i < 5; i++) {
       await expect(machine.nth(i)).toContainText("Machine time on production");
-      await expect(machine.nth(i)).toContainText("measured on production during the final demo recording");
+      await expect(machine.nth(i)).toHaveText(/: \d\.\d s\.$/);
     }
+    await expect(timing).toContainText("the median of 10 warm runs");
+    await expect(timing).not.toContainText("measured on production during the final demo recording");
     await expect(timing.locator("[data-timing-note]")).toContainText("never set against the estimate");
     await expect(timing).not.toContainText(/survey|poll|people we asked|respondents|time saved|minutes saved|times faster/i);
   });

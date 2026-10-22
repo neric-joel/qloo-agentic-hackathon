@@ -16,7 +16,7 @@ export type StripDomain = { start: number; end: number; step: 30 | 60; ticks: nu
 const QUARTER = 15;
 
 /**
- * One time domain and one tick policy for every strip, so the hero, Try a move and Keep two sets apart
+ * One time domain and one tick policy for every strip (Keep two sets apart draws one; /check's break strip keeps a copy), so they all
  * draw comparable geometry: from the earliest start of all lanes floored to 15 minutes to the latest end
  * ceiled to 15 minutes (at least 15 minutes long). Ticks every 30 minutes when the span is 3 hours or
  * less, else every 60: every multiple of the step inside the domain, its ends included, and nothing else,
@@ -55,7 +55,7 @@ export type StripLane = StripSpan & {
   /** The second line of the label from 640px ("The Park", "Now · Woodsies"); inline after a middot under it. */
   meta?: ReactNode;
   /**
-   * The third line of the label, the lane's time range ("14:00–15:00"), set in mono. With `evenPitch` every
+   * The third line of the label, the lane's time range ("14:00–15:00"), set in tabular figures. With `evenPitch` every
    * lane's name, meta and range stack as three lines from 640px, and run as one line joined by middots
    * under it.
    */
@@ -152,10 +152,10 @@ export function bracketWords(minutes: number, wording: StripWording): string {
 }
 
 /**
- * Under an open lane that shares time with the staying set: the bracket 4px below the bar (1px vermilion,
- * round caps, 4px end ticks) and the minutes under it in 13px mono vermilion, centred on the window and held
- * inside the bar area. With no time shared, "no time shared" (or "0 min at the same time") in muted mono,
- * under the bar's start.
+ * Under an open lane that shares time with the staying set: the bracket 4px below the bar (1px raspberry,
+ * round caps, 4px end ticks) and the minutes under it in 13px raspberry tabular figures, centred on the window
+ * and held inside the bar area. With no time shared, "no time shared" (or "0 min at the same time") in muted
+ * tabular figures, under the bar's start.
  */
 function Bracket({
   domain,
@@ -182,7 +182,7 @@ function Bracket({
     );
   }
   const words = bracketWords(minutes, wording);
-  // The label's box: about half a rem per 13px mono character, plus a rem, centred on the window.
+  // The label's box: about half a rem per 13px character, plus a rem, centred on the window.
   const box = Math.ceil(words.length / 2) + 1;
   const left = stripX(domain, shared.start);
   const right = stripX(domain, shared.end);
@@ -225,7 +225,7 @@ const COLUMNS = "sm:grid sm:grid-cols-[9.5rem_minmax(0,1fr)]";
  * `OverlapEdges` from marks.tsx), with a bracket 4px under it and the minutes under the bracket. From
  * 640px a 9.5rem label column holds each act's name (14px semibold ink) over its meta (12px muted),
  * centred on its bar; under 640px the label sits 4px above the bar. Names wrap and are never cut. One
- * axis along the top: 12px mono muted times over 1px `var(--border-strong)` ticks, every tick with its
+ * axis along the top: 12px muted times in tabular figures over 1px `var(--border-strong)` ticks, every tick with its
  * time, each a whole step from the next. With `evenPitch` (the hero) every lane is one block of the same
  * height, its label three lines from 640px (name, meta, range) and one line joined by middots under it,
  * and its bar at the same offset inside it, so the bars sit on one pitch and a label that wraps grows
@@ -247,7 +247,7 @@ export function PairStrip({
   description: ReactNode | null;
   /** Whether the minutes print under each bracket. */
   minutes?: boolean;
-  /** The words after the minutes: "min shared" (the hero and Try a move) or "min at the same time" (Keep two sets apart). */
+  /** The words after the minutes: "min shared" (the default) or "min at the same time" (Keep two sets apart). */
   wording?: StripWording;
   motion?: StripMotion;
   /** Every lane one block of the same height, its label three lines from 640px (one under it), its bar at the same offset. */
@@ -374,7 +374,7 @@ export function PairStrip({
               >
                 {evenPitch ? (
                   // From 640px three lines in the label column: the name, the meta ("Now · Woodsies"), the
-                  // range in mono. Under 640px one line 4px over the bar: the name in 14px semibold ink, then
+                  // range in tabular figures. Under 640px one line 4px over the bar: the name in 14px semibold ink, then
                   // " · " and the meta, then " · " and the range, in 13px muted. The meta and the range never
                   // break inside, and each middot holds to the item before it, so a line too long for the
                   // strip wraps between items only.

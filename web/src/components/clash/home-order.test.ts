@@ -9,11 +9,19 @@ import { topClashes } from "@/lib/clashes";
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
 import type { Decision } from "@/lib/decision";
 import { parsePreset, type Evidence, type Preset, type PresetSummary } from "@/lib/preset";
+import { summarize } from "@/lib/server-summary";
 
 import {
+  boardFoldSummary,
+  carryBoardFold,
+  ClashControlFallback,
+  type BoardFoldCarry,
   HIDDEN_WALL_ID,
   HOME_ORDER,
   HomeSections,
+  pagePlace,
+  pagePlaceTarget,
+  type PagePlace,
   SOURCES_ID,
   agentJump,
   borrowsWall,
@@ -291,5 +299,367 @@ describe("switching festival day", () => {
     expect(ahead).toContain("fetch(`/api/presets/${encodeURIComponent(id)}`");
     expect(ahead).toContain("requestDecision(preset.id, day, signal)");
     expect(ahead).not.toMatch(/method:|whatif|price-grid|\/pair|\/runs/);
+  });
+});
+
+describe("the board behind one disclosure", () => {
+  const source = readFileSync(join(__dirname, "clash-control.tsx"), "utf8");
+  const boardSection = source.slice(source.indexOf("board={"), source.indexOf("move={", source.indexOf("board={")));
+
+  it("names what the opened board shows, and makes no claim about numbering", () => {
+    expect(boardFoldSummary(39, 5)).toBe("Show 39 sets on 5 stages");
+    expect(boardFoldSummary(1, 1)).toBe("Show 1 set on 1 stage");
+    expect(boardFoldSummary(39, 5)).not.toMatch(/number|rank|clash/i);
+    // The interactive board counts the set tiles it draws and the festival's stages.
+    expect(boardSection).toContain("summary={boardFoldSummary(views.length, festival.stages.length)}");
+  });
+
+  it("is closed in the server's frame too, a 44 px control in the 10 px button shape with the chevron", () => {
+    const preset = parsePreset(rawTinyPreset());
+    const html = renderToStaticMarkup(
+      createElement(ClashControlFallback, { intro: createElement("h1", { id: "pitch-heading" }, "Pitch"), summary: summarize(preset) }),
+    );
+    const fold = /<details data-board-fold=""[^>]*>/.exec(html)?.[0] ?? "";
+    expect(fold).not.toBe("");
+    expect(fold).not.toMatch(/\bopen\b/);
+    const summary = /<details data-board-fold=""[^>]*><summary class="([^"]*)">([\s\S]*?)<\/summary>/.exec(html);
+    expect(summary?.[2].replace(/<[^>]+>/g, "").trim()).toBe("Show 3 sets on 2 stages");
+    expect(summary?.[1].split(" ")).toEqual(expect.arrayContaining(["min-h-11", "rounded-md", "border", "cursor-pointer"]));
+    expect(summary?.[2]).toContain("<svg");
+    expect(html.match(/data-board-fold=""/g)).toHaveLength(1);
+  });
+
+  it("holds the board itself, and nothing else of the section: the scroll hint, the grid's scroller and the phone's start-order list", () => {
+    const fold = boardSection.slice(boardSection.indexOf("<BoardFold"), boardSection.indexOf("</BoardFold>"));
+    expect(fold).toContain("Scroll sideways to see every stage.");
+    expect(fold).toContain("<TimetableGrid");
+    expect(fold).toContain("<TimetableList");
+    // The header, the day control, coverage with its legend and caption, the phone's lock line and key, and the
+    // rail (the score and the costliest clashes) stay open, before it.
+    const before = boardSection.slice(0, boardSection.indexOf("<BoardFold"));
+    for (const open of ['id="board-heading"', "<SegmentedControl", "<CoverageMeter", "<TimetableLegend", "<LockKey", "<Scorecard", "<ClashList", "data-board-caption"]) {
+      expect(before).toContain(open);
+      expect(fold).not.toContain(open);
+    }
+  });
+
+  it("says, with no click, which lines the board draws and how its numbers differ from the drawing's lines", () => {
+    expect(boardSection).toMatch(
+      /<p data-board-caption=""[^>]*>\s*Lines join the \{links\.length\} costliest clashes\. Board numbers rank clash cost; drawing lines show taste overlap\.\s*<\/p>/,
+    );
+  });
+
+  it("opens on a press, and in the same render as the visitor's own preview, never in an effect, and never closes itself", () => {
+    expect(boardSection).toContain("open={boardOpen}");
+    expect(boardSection).toContain("onToggle={toggleBoard}");
+    const latch = source.slice(source.indexOf("const [boardOpen, setBoardOpen] = useState(boardOpenAtStart);"));
+    expect(latch).toMatch(
+      /^const \[boardOpen, setBoardOpen\] = useState\(boardOpenAtStart\);\s*const toggleBoard = useCallback\(\s*\(open: boolean\) => \{\s*setBoardOpen\(open\);\s*onBoardToggle\?\.\(open\);\s*\},\s*\[onBoardToggle\],\s*\);\s*const preview = planPreview \?\? rulePreview;\s*const \[previewSeen, setPreviewSeen\] = useState<PlanPreview \| RulePreview \| null>\(null\);\s*if \(preview !== previewSeen\) \{\s*setPreviewSeen\(preview\);\s*if \(preview !== null\) setBoardOpen\(true\);\s*\}/,
+    );
+    // Nothing else sets it, so it never closes on its own: the latch only opens, the press for a set's places in Try a
+    // move only opens (round 37 closeout), and the one other setter passes on the disclosure's own toggle (a press),
+    // wired nowhere but its `onToggle`.
+    expect(source.match(/setBoardOpen\(/g)).toHaveLength(3);
+    expect(source.match(/setBoardOpen\((?!true\)|open\))/g)).toBeNull();
+    expect(source.match(/setBoardOpen\(open\)/g)).toHaveLength(1);
+    expect(source.match(/\btoggleBoard\b/g)).toHaveLength(2);
+    expect(source).not.toMatch(/useEffect\([^;]*setBoardOpen/);
+    // The hand-over between folds only ever opens one.
+    const carry = source.slice(source.indexOf("export function carryBoardFold("), source.indexOf("function BoardFold("));
+    expect(carry).not.toBe("");
+    expect(carry).not.toMatch(/onToggle\??\.?\((?!true\))/);
+  });
+
+  it("opens where it is pressed: what is drawn after the board but sits before it in the source is never the scroll anchor (round 37 merge)", () => {
+    // Below 1280 px the score is drawn after the board (order-3), and below 768 px so is the list (order-2), though
+    // both come before it in the source; out of anchor selection there, a press opens the board under its summary.
+    expect(boardSection).toMatch(/<Scorecard className="order-3 [^"]*max-xl:\[overflow-anchor:none\][^"]*xl:order-1/);
+    expect(boardSection).toMatch(/<div className="order-2 min-w-0 max-md:\[overflow-anchor:none\] md:order-1 xl:order-2">\s*<ClashList/);
+    // Only there: the board's own column and the fold stay eligible, so the summary can anchor itself.
+    expect(boardSection.match(/overflow-anchor:none/g)).toHaveLength(2);
+    expect(boardSection.indexOf("max-xl:[overflow-anchor:none]")).toBeLessThan(boardSection.indexOf("<BoardFold"));
+  });
+
+  it("keeps Try a move where the visitor is when a tested place opens the fold above it, and never opens or closes the fold to do so (round 37 merge)", () => {
+    expect(source).toContain("onPlanChange={changePlan}");
+    expect(source).not.toContain("onPlanChange={setPlanPreview}");
+    const change = source.slice(source.indexOf("const holdPlace = useCallback("), source.indexOf("// A press for a set's places in Try a"));
+    expect(change).not.toBe("");
+    const all = source.slice(source.indexOf("const holdPlace = useCallback("), source.indexOf("// The decision card's buttons"));
+    // A place is noted only for a new plan, with the fold still closed and the section on screen or above it; the
+    // board's section leaves anchor selection for that commit and gets its own value back in the same layout effect.
+    expect(change).toMatch(/const fresh = plan !== lastPlan\.current;/);
+    expect(change).toMatch(/if \(fresh\) holdPlace\(plan !== null\);/);
+    expect(change).toMatch(/opening && fold !== null && !fold\.open && top !== undefined && top < window\.innerHeight/);
+    expect(change).toMatch(/board\.style\.overflowAnchor = "none";/);
+    expect(all).toMatch(/useLayoutEffect\(\(\) => \{[\s\S]*placeHold\.current = null;[\s\S]*hold\.board\.style\.overflowAnchor = "";\s*\}\);/);
+    // The fallback scroll is instant and only where the section really moved; nothing here touches the fold's state.
+    expect(all).toMatch(/Math\.abs\(top - hold\.top\) > 0\.5\) window\.scrollBy\(\{ top: top - hold\.top, behavior: "instant" \}\)/);
+    expect(change).not.toMatch(/setBoardOpen|toggleBoard|\.open = /);
+  });
+
+  it("opens the fold in the press for a set's places, holding Try a move where it is, so a late answer opens nothing above it (round 37 closeout)", () => {
+    expect(source).toContain("onPick={pickPress}");
+    const press = source.slice(source.indexOf("const pickPress = useCallback("), source.indexOf("useLayoutEffect(() => {", source.indexOf("const pickPress = useCallback(")));
+    expect(press).toMatch(/^const pickPress = useCallback\(\(\) => \{\s*holdPlace\(true\);\s*setBoardOpen\(true\);\s*setPlaceComing\(true\);\s*\}, \[holdPlace\]\);/);
+    // The inline key lists the tested slot from the press, and drops the "coming" mark only once a tested place shows.
+    expect(boardSection).toContain("planShown={planShown || placeComing}");
+    expect(source).toMatch(/if \(fresh && plan !== null\) setPlaceComing\(false\);/);
+    expect(source.match(/setPlaceComing\(/g)).toHaveLength(2);
+  });
+});
+
+/** A stand-in for the fold's `<details>`: its open state, its summary's focus and the page's focused element. */
+function foldStandIn(open: boolean) {
+  const page = { activeElement: null as unknown };
+  const focused: (FocusOptions | undefined)[] = [];
+  const summary = {
+    focus(options?: FocusOptions) {
+      focused.push(options);
+      page.activeElement = summary;
+    },
+  };
+  const node = { open, ownerDocument: page as unknown as Document, querySelector: (selector: "summary") => (selector === "summary" ? summary : null) };
+  return { node, summary, focused, page };
+}
+
+describe("a press on the board's fold is never undone when the page swaps folds (round 37, N2)", () => {
+  const source = readFileSync(join(__dirname, "clash-control.tsx"), "utf8");
+
+  it("reports a press made on the server's frame before the page was interactive, once the page takes the frame over", () => {
+    const carrier: { current: BoardFoldCarry | null } = { current: null };
+    const reported: boolean[] = [];
+    // The visitor opened the server's fold while React had not seen it yet.
+    const pressed = foldStandIn(true);
+    carryBoardFold(pressed.node, carrier, { onToggle: (open) => reported.push(open), takeOver: false });
+    expect(reported).toEqual([true]);
+    expect(pressed.node.open).toBe(true);
+    // An untouched fold reports nothing.
+    const untouched = foldStandIn(false);
+    carryBoardFold(untouched.node, carrier, { onToggle: (open) => reported.push(open), takeOver: false });
+    expect(reported).toEqual([true]);
+  });
+
+  it("hands the server's frame's open fold and its focused summary to the interactive board, before the browser paints", () => {
+    const carrier: { current: BoardFoldCarry | null } = { current: null };
+    const server = foldStandIn(false);
+    const leave = carryBoardFold(server.node, carrier, { takeOver: false });
+    // A press: the fold opens and its summary takes focus. Then the interactive board replaces it.
+    server.node.open = true;
+    server.page.activeElement = server.summary;
+    leave();
+    expect(carrier.current).toEqual({ open: true, focused: true });
+
+    const board = foldStandIn(false);
+    const opened: boolean[] = [];
+    carryBoardFold(board.node, carrier, { onToggle: (open) => opened.push(open), takeOver: true });
+    expect(board.node.open).toBe(true);
+    expect(opened).toEqual([true]);
+    expect(board.focused).toEqual([{ preventScroll: true }]);
+    // Taken once: the carrier is empty again.
+    expect(carrier.current).toBeNull();
+  });
+
+  it("leaves a board already drawn open as it is, still moving the focus over", () => {
+    const carrier: { current: BoardFoldCarry | null } = { current: { open: true, focused: true } };
+    const board = foldStandIn(true);
+    const opened: boolean[] = [];
+    carryBoardFold(board.node, carrier, { onToggle: (open) => opened.push(open), takeOver: true });
+    expect(opened).toEqual([]);
+    expect(board.node.open).toBe(true);
+    expect(board.focused).toHaveLength(1);
+  });
+
+  it("never opens a board nobody pressed, never closes one, and the server's frame takes nothing over", () => {
+    const opened: boolean[] = [];
+    const onToggle = (open: boolean) => opened.push(open);
+    // The server's frame left closed and unfocused: the board stays closed, focus stays where it is.
+    const closedCarrier: { current: BoardFoldCarry | null } = { current: { open: false, focused: false } };
+    const closed = foldStandIn(false);
+    carryBoardFold(closed.node, closedCarrier, { onToggle, takeOver: true });
+    expect(closed.node.open).toBe(false);
+    expect(closed.focused).toEqual([]);
+    // A closed carrier never shuts a board that is open.
+    const shutCarrier: { current: BoardFoldCarry | null } = { current: { open: false, focused: false } };
+    const open = foldStandIn(true);
+    carryBoardFold(open.node, shutCarrier, { onToggle, takeOver: true });
+    expect(open.node.open).toBe(true);
+    // Nothing in the carrier: nothing happens.
+    const empty = foldStandIn(false);
+    carryBoardFold(empty.node, { current: null }, { onToggle, takeOver: true });
+    expect(empty.node.open).toBe(false);
+    // The server's frame does not take a carrier over; it only empties it.
+    const stale: { current: BoardFoldCarry | null } = { current: { open: true, focused: true } };
+    const server = foldStandIn(false);
+    carryBoardFold(server.node, stale, { onToggle, takeOver: false });
+    expect(server.node.open).toBe(false);
+    expect(server.focused).toEqual([]);
+    expect(stale.current).toBeNull();
+    expect(opened).toEqual([]);
+  });
+
+  it("keeps one festival day's open board open on the next day's board", () => {
+    const carrier: { current: BoardFoldCarry | null } = { current: null };
+    const glastonbury = foldStandIn(true);
+    const leave = carryBoardFold(glastonbury.node, carrier, { onToggle: () => {}, takeOver: true });
+    leave();
+    expect(carrier.current).toEqual({ open: true, focused: false });
+    const riot = foldStandIn(false);
+    carryBoardFold(riot.node, carrier, { onToggle: () => {}, takeOver: true });
+    expect(riot.node.open).toBe(true);
+    expect(riot.focused).toEqual([]);
+  });
+
+  it("wires one carrier and one reported state through the server's frame, the interactive board and every festival day", () => {
+    const control = source.slice(source.indexOf("export function ClashControl("), source.indexOf("/** The festival-day tabs' group name"));
+    expect(control).toContain("const [foldOpen, setFoldOpen] = useState(false);");
+    expect(control).toContain("const foldCarryRef = useRef<BoardFoldCarry | null>(null);");
+    // The server's frame reports its fold; each festival day's board starts in the reported state and reports back.
+    const loading = control.slice(control.indexOf("<LoadingView"), control.indexOf("/>", control.indexOf("<LoadingView")));
+    expect(loading).toContain("onFoldToggle={setFoldOpen}");
+    expect(loading).toContain("foldCarryRef={foldCarryRef}");
+    const view = control.slice(control.indexOf("<PresetView"));
+    for (const prop of ["boardOpenAtStart={foldOpen}", "onBoardToggle={setFoldOpen}", "foldCarryRef={foldCarryRef}"]) expect(view).toContain(prop);
+    // The server's fold is never controlled (a press before the page is interactive stays), and only reports.
+    const frame = source.slice(source.indexOf("function LoadingView("), source.indexOf("export function ClashControlFallback("));
+    expect(frame).toMatch(
+      /<BoardFold\s+summary=\{boardFoldSummary\(model\.sets\.length, model\.stages\.length\)\}\s+onToggle=\{onFoldToggle\}\s+carryRef=\{foldCarryRef\}\s+inert=\{foldInert\}\s+className="mt-8"\s*>/,
+    );
+    // The interactive board takes the carrier over.
+    const boardSection = source.slice(source.indexOf("board={"), source.indexOf("move={", source.indexOf("board={")));
+    expect(boardSection).toContain("carryRef={foldCarryRef}");
+    // The fold's ref runs the hand-over; an uncontrolled fold does not report a press as a hydration mismatch.
+    const fold = source.slice(source.indexOf("function BoardFold("), source.indexOf("type JumpLink"));
+    expect(fold).toContain("const takeOver = open !== undefined;");
+    expect(fold).toContain("carryBoardFold(node, carryRef, { onToggle, takeOver })");
+    expect(fold).toContain("ref={carry}");
+    expect(fold).toContain("suppressHydrationWarning={!takeOver}");
+    // The server's frame drawn anew over the server's HTML opens if the copy it replaces was open: read from the page
+    // once, for the reporting fold only, never for the page's own board.
+    expect(fold).toContain("const [openOnPage] = useState(() => !takeOver && carryRef !== undefined && foldOpenOnPage());");
+    expect(fold).toContain("open={takeOver ? open : openOnPage || undefined}");
+    expect(source).toMatch(/function foldOpenOnPage\(\): boolean \{\s*return typeof document !== "undefined" && document\.querySelector<HTMLDetailsElement>\("details\[data-board-fold\]"\)\?\.open === true;\s*\}/);
+  });
+
+  it("gives the loading fallback's copy, which the streamed page swaps out before any script runs, no press to lose", () => {
+    const preset = parsePreset(rawTinyPreset());
+    const html = renderToStaticMarkup(
+      createElement(ClashControlFallback, { intro: createElement("h1", { id: "pitch-heading" }, "Pitch"), summary: summarize(preset) }),
+    );
+    const fold = /<details data-board-fold=""[^>]*>/.exec(html)?.[0] ?? "";
+    expect(fold).toMatch(/\binert=""/);
+    expect(fold).not.toMatch(/\bopen\b/);
+    // Only the fallback: ClashControl's own frame, which React takes over, stays pressable.
+    const fallback = source.slice(source.indexOf("export function ClashControlFallback("), source.indexOf("/** False in the server HTML"));
+    expect(fallback).toContain("foldInert");
+    const control = source.slice(source.indexOf("export function ClashControl("), source.indexOf("/** The festival-day tabs' group name"));
+    expect(control).not.toContain("foldInert");
+  });
+});
+
+describe("a visitor who scrolls on the server's frame keeps their place when the page replaces it (round 37, verify-2 N2)", () => {
+  const source = readFileSync(join(__dirname, "clash-control.tsx"), "utf8");
+  // A 1440 x 900 screen, scrolled on the frame (the hero, then the board; 1,504 px tall with the footer held back).
+  const view = { innerHeight: 900, scrollY: 604, scrollHeight: 1504 };
+  const off = { top: 1200, bottom: 1404 };
+
+  it("keeps nothing when the visitor has not scrolled, or mostly sees the hero, which both draw in one place", () => {
+    expect(pagePlace({ ...view, scrollY: 0 }, { fold: { top: 776, bottom: 820 }, board: { top: 260, bottom: 900 }, footer: null })).toBeNull();
+    // The board's top below the middle of the screen: the hero fills the upper half or more.
+    expect(pagePlace({ ...view, scrollY: 120 }, { fold: { top: 1100, bottom: 1144 }, board: { top: 451, bottom: 1300 }, footer: off })).toBeNull();
+  });
+
+  it("keeps the board's summary on its line of the screen when it is on screen, even in part, before anything else", () => {
+    expect(pagePlace(view, { fold: { top: 776, bottom: 820 }, board: { top: 227, bottom: 900 }, footer: null })).toEqual({ anchor: "fold", top: 776 });
+    expect(pagePlace(view, { fold: { top: -20, bottom: 24 }, board: { top: -600, bottom: 120 }, footer: null })).toEqual({ anchor: "fold", top: -20 });
+    expect(pagePlace(view, { fold: { top: 820, bottom: 864 }, board: { top: 300, bottom: 1000 }, footer: { top: 860, bottom: 900 } })).toEqual({
+      anchor: "fold",
+      top: 820,
+    });
+  });
+
+  it("keeps the page's end when the footer is on screen and the summary is not, and the board when it fills the lower half", () => {
+    expect(
+      pagePlace({ ...view, scrollHeight: 1708 }, { fold: { top: -300, bottom: -256 }, board: { top: -900, bottom: 500 }, footer: { top: 696, bottom: 900 } }),
+    ).toEqual({ anchor: "end", fromEnd: 1708 - 604 });
+    expect(pagePlace(view, { fold: { top: 950, bottom: 994 }, board: { top: 449, bottom: 1100 }, footer: off })).toEqual({ anchor: "board", top: 449 });
+    // Scrolled into the board with its summary still below the screen: the board's own top, above the screen.
+    expect(pagePlace({ ...view, innerHeight: 400 }, { fold: { top: 450, bottom: 494 }, board: { top: -300, bottom: 600 }, footer: off })).toEqual({
+      anchor: "board",
+      top: -300,
+    });
+  });
+
+  it("puts the kept summary or board top back on the same line, within the page's ends", () => {
+    // The page draws three sections before the board, so its summary is further down the page.
+    const page = { innerHeight: 900, scrollY: 604, scrollHeight: 5867 };
+    const fold: PagePlace = { anchor: "fold", top: 776 };
+    expect(pagePlaceTarget(fold, page, { fold: { top: 3076, bottom: 3120 }, board: { top: 2500, bottom: 3300 } })).toBe(604 + 3076 - 776);
+    const board: PagePlace = { anchor: "board", top: -300 };
+    expect(pagePlaceTarget(board, page, { fold: null, board: { top: 2000, bottom: 3200 } })).toBe(604 + 2000 + 300);
+    // Never past either end of the page.
+    expect(pagePlaceTarget(fold, page, { fold: { top: 9000, bottom: 9044 }, board: null })).toBe(5867 - 900);
+    expect(pagePlaceTarget(fold, { ...page, scrollY: 0 }, { fold: { top: 100, bottom: 144 }, board: null })).toBe(0);
+    // Nothing to keep on a page that draws no such box.
+    expect(pagePlaceTarget(fold, page, { fold: null, board: { top: 2000, bottom: 3200 } })).toBeNull();
+  });
+
+  it("never puts the summary under the section nav where it sticks, while the board's top keeps its line", () => {
+    const page = { innerHeight: 900, scrollY: 0, scrollHeight: 5867 };
+    expect(pagePlaceTarget({ anchor: "fold", top: 80 }, page, { fold: { top: 3000, bottom: 3044 }, board: null }, 108)).toBe(3000 - 108);
+    expect(pagePlaceTarget({ anchor: "fold", top: 400 }, page, { fold: { top: 3000, bottom: 3044 }, board: null }, 108)).toBe(3000 - 400);
+    expect(pagePlaceTarget({ anchor: "board", top: 40 }, page, { fold: null, board: { top: 3000, bottom: 4000 } }, 108)).toBe(3000 - 40);
+  });
+
+  it("keeps the same distance from the page's end", () => {
+    const page = { innerHeight: 900, scrollY: 0, scrollHeight: 5867 };
+    expect(pagePlaceTarget({ anchor: "end", fromEnd: 1104 }, page, { fold: null, board: null })).toBe(5867 - 1104);
+    expect(pagePlaceTarget({ anchor: "end", fromEnd: 600 }, page, { fold: null, board: null })).toBe(5867 - 900);
+  });
+
+  it("reads the place on the frame as it leaves, while it is still whole, and keeps it on the page in the same commit, before paint", () => {
+    const frame = source.slice(source.indexOf("function LoadingView("), source.indexOf("export function ClashControlFallback("));
+    // The frame's own layout effect: emptied when the frame is drawn, filled in its cleanup (React runs it before it
+    // takes any of the frame's nodes off the page), and emptied again once that commit is over.
+    expect(frame).toMatch(
+      /useLayoutEffect\(\(\) => \{\s*if \(!placeRef\) return;\s*placeRef\.current = null;\s*return \(\) => \{\s*placeRef\.current = readPagePlace\(\);\s*queueMicrotask\(\(\) => \{\s*placeRef\.current = null;\s*\}\);\s*\};\s*\}, \[placeRef\]\);/,
+    );
+    const control = source.slice(source.indexOf("export function ClashControl("), source.indexOf("/** The festival-day tabs' group name"));
+    expect(control).toContain("const pagePlaceRef = useRef<PagePlace | null>(null);");
+    // After every child's layout effect (the fold carried open first), with no dependency list: it runs in the commit
+    // that swaps the frame for the page.
+    expect(control).toMatch(
+      /useLayoutEffect\(\(\) => \{\s*const place = pagePlaceRef\.current;\s*if \(place === null\) return;\s*pagePlaceRef\.current = null;\s*keepPagePlace\(place\);\s*\}\);/,
+    );
+    const loading = control.slice(control.indexOf("<LoadingView"), control.indexOf("/>", control.indexOf("<LoadingView")));
+    expect(loading).toContain("placeRef={pagePlaceRef}");
+    // Only ClashControl's own frame records: the loading fallback is swapped for that frame by the streamed page itself.
+    const fallback = source.slice(source.indexOf("export function ClashControlFallback("), source.indexOf("/** False in the server HTML"));
+    expect(fallback).not.toContain("placeRef");
+    expect(control.slice(control.indexOf("<PresetView"))).not.toContain("placeRef");
+    // One instant scroll, only where the place really moved: no motion.
+    const keep = source.slice(source.indexOf("function keepPagePlace("), source.indexOf("function BoardFold("));
+    expect(keep).toContain('window.scrollTo({ top: target, behavior: "instant" })');
+    expect(keep).toContain("Math.abs(target - window.scrollY) > 0.5");
+    expect(keep.match(/scroll(To|By)\(/g)).toHaveLength(1);
+    // The frame's board and the page's board are found the same way.
+    expect(source).toMatch(/<section aria-label=\{label\} aria-labelledby=\{labelledBy\} data-board-frame="">/);
+    expect(source.match(/<BoardFrame /g)).toHaveLength(2);
+  });
+
+  it("holds the site's footer back under the frame while scripts run, and takes no room itself", () => {
+    const preset = parsePreset(rawTinyPreset());
+    const html = renderToStaticMarkup(
+      createElement(ClashControlFallback, { intro: createElement("h1", { id: "pitch-heading" }, "Pitch"), summary: summarize(preset) }),
+    );
+    expect(html).toMatch(/<section aria-label="Timetable" data-board-frame="">/);
+    const end = /<div hidden="" data-frame-end="" class="([^"]*)"><\/div>/.exec(html);
+    expect(end?.[1]).toBe("[@media(scripting:enabled)]:[main:has(&amp;)~footer]:hidden");
+    // After the frame's board, as its last node.
+    expect(html.indexOf("data-frame-end")).toBeGreaterThan(html.indexOf("data-board-fold"));
+    expect(html.slice(html.indexOf("data-frame-end"))).not.toMatch(/<section|<details/);
+    // The page itself has no such marker, so the footer shows as soon as the page replaces the frame.
+    expect(source.slice(source.indexOf("function PresetView("))).not.toContain("data-frame-end");
+    expect(source.match(/data-frame-end/g)).toHaveLength(1);
   });
 });

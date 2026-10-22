@@ -367,6 +367,18 @@ describe("type and the retired monospace", () => {
     expect(utility("type-title")).toMatch(/font-size: clamp\(1\.25rem, 1\.15rem \+ 0\.5vw, 1\.5rem\);/);
   });
 
+  it("sets the type floor: the text-xs role at 13px on its 16px line, and the .tag stamp at 13px", () => {
+    expect(themeDecls["text-xs"]).toBe("0.8125rem");
+    expect(themeDecls["text-xs--line-height"]).toBe("1rem");
+    expect(css).toMatch(/\.tag \{[^}]*font-size: 13px;/);
+    // No size the stylesheet sets itself is under 12.5px.
+    const sizes = [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/font-size:\s*([\d.]+)(px|rem)\b/g)].map(
+      ([, n, unit]) => Number(n) * (unit === "rem" ? 16 : 1),
+    );
+    expect(sizes.length).toBeGreaterThanOrEqual(3);
+    for (const px of sizes) expect(px).toBeGreaterThanOrEqual(12.5);
+  });
+
   it("points font-mono at the text face with tabular lining figures, and sets them on the body", () => {
     expect(themeDecls["font-mono"]).toBe("var(--font-archivo), ui-sans-serif, system-ui, sans-serif");
     expect(themeDecls["font-mono--font-feature-settings"]).toBe('"tnum" 1, "lnum" 1');

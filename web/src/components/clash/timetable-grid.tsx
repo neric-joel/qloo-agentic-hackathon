@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import { Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { noSignalLabel, weakSignalLabel } from "@/lib/credit";
 import { clashKey, formatDraw, formatShare, LABEL_META, partnerOf, type SetView } from "@/lib/clashes";
+import { lockLabel } from "@/lib/locks";
 import type { PairClash, Stage } from "@/lib/preset";
 import type { RulePreview } from "@/lib/rule-fix";
 import type { GhostSlot, PlanPreview } from "@/lib/stack";
@@ -33,9 +34,10 @@ const AXIS_WIDTH = 52;
  * A tile's rows, in px. A name of up to 22 characters is 14px semibold on a 17.5px line (leading-tight);
  * a longer one is 13px semibold on a 16.25px line. A name the measured board wraps to two lines or more
  * is set on a 1.2 line instead (16.8px, or 15.6px for a long name), so its lines read as one name. The
- * time is 12px mono on a 16px line, each line of the genre 12px on a 15px line, and the signal label at
- * the foot (no signal, or a weak one) 12px on a 16px line. A roomy tile has 8px of padding top and bottom
- * (4px in a short one), plus 2px for its 1px edge, and 4px over its foot.
+ * time is 13px tabular figures on a 16px line, each line of the genre 13px on a 15px line, and the signal
+ * label at the foot (no signal, or a weak one) 12.5px on a 16px line: "No Qloo signal" runs 86px at 13px,
+ * wider than a phone column's 85.6px inside its padding, and the label is never cut. A roomy tile has 8px
+ * of padding top and bottom (4px in a short one), plus 2px for its 1px edge, and 4px over its foot.
  */
 const NAME_LINE = 17.5;
 const LONG_NAME_LINE = 16.25;
@@ -45,7 +47,7 @@ const WRAPPED_LONG_NAME_LINE = 15.6;
 const LONG_NAME = 22;
 const TIME_LINE = 16;
 const GENRE_LINE = 15;
-/** The foot line ("No Qloo signal", or a weak signal's words or cue): 12px on a 16px line. */
+/** The foot line ("No Qloo signal", or a weak signal's words or cue): 12.5px on a 16px line. */
 const FOOT_LINE = 16;
 const FULL_CHROME = 16 + 2;
 const SHORT_CHROME = 8 + 2;
@@ -64,9 +66,9 @@ const MAX_NAME_LINES = 3;
 /** About how wide a character of a 14px (or 13px) semibold name runs, for counting the lines a name needs. */
 const NAME_CHAR_PX = 8;
 const LONG_NAME_CHAR_PX = 7.4;
-/** About how wide a character of the 12px genre runs: generous, so a genre is never counted short. */
-const GENRE_CHAR_PX = 7;
-/** About how wide a character of the 12px medium foot label runs (5.8px measured), generous. */
+/** About how wide a character of the 13px genre runs (6.7px measured on average): generous, so a genre is never counted short. */
+const GENRE_CHAR_PX = 7.6;
+/** About how wide a character of the 12.5px medium foot label runs (6.1px measured), generous. */
 const LABEL_CHAR_PX = 6.4;
 
 /**
@@ -136,7 +138,10 @@ export function cardRows(
   let left = box - (roomy ? FULL_CHROME : SHORT_CHROME);
   if (label) left -= footRow;
   const nameLines = Math.max(1, Math.min(lines, Math.floor(left / line)));
-  left -= nameLines * line;
+  // The name prints every line it needs even where the slot has room for fewer (it is never cut), so the
+  // rows under it count from its full height: a clamped name leaves no room for the time or the genre,
+  // which would only push the foot label out of the tile.
+  left -= lines * line;
   const time = left >= TIME_LINE;
   if (time) left -= TIME_LINE;
   const weakLine = weak && !label && time && left >= footRow;
@@ -176,6 +181,12 @@ type TimetableGridProps = {
   rulePreview?: RulePreview | null;
   /** The invented day: a set with no signal is "No taste signal", not "No Qloo signal". */
   synthetic?: boolean;
+  /**
+   * On a published day, the locked sets are exactly the last set on each stage (`lockRuleHolds`), so a
+   * locked tile's screen-reader words may state that rule; otherwise they say only that this app keeps
+   * the set in place.
+   */
+  holds?: boolean;
   className?: string;
 };
 
@@ -231,7 +242,7 @@ export function estimateNameLines(name: string, width: number): number {
   return wrapLines(name, width, isLongName(name) ? LONG_NAME_CHAR_PX : NAME_CHAR_PX);
 }
 
-/** About how many lines the 12px genre wraps to in `width` px (two before the columns are measured). */
+/** About how many lines the 13px genre wraps to in `width` px (two before the columns are measured). */
 function estimateGenreLines(genre: string, width: number): number {
   if (width <= 0) return 2;
   return wrapLines(genre, width, GENRE_CHAR_PX);
@@ -294,11 +305,46 @@ export function shortCueCount(views: readonly SetView[], columnWidths: readonly 
   return views.filter((view) => tileLayout(view, scale.y, columnWidths[view.col] ?? 0, synthetic).foot?.cue).length;
 }
 
-/** What a set block adds for screen readers after its visible text. */
-export function describeSetTail(view: SetView, moved: boolean, synthetic = false): string {
+/**
+ * The stage columns of a board `boardWidth` px across, as it lays them out once measured: the time axis
+ * and its gutter come off, then equal columns with the board's gutters between them. None while the
+ * width is unknown (0).
+ */
+export function boardColumnWidths(boardWidth: number, stageCount: number): number[] {
+  if (boardWidth <= 0) return [];
+  const gap = Math.max(columnGap(boardWidth), MIN_GUTTER);
+  return columnFrames(boardWidth - AXIS_WIDTH - gap, stageCount, gap).map((frame) => frame.width);
+}
+
+/**
+ * How wide a board shut in a closed fold will be once the fold opens: it fills the fold's content box
+ * (`foldWidth`), and never runs narrower than its own minimum width (760 px in the phone's sideways
+ * scroller).
+ */
+export function foldedBoardWidth(foldWidth: number, minWidth: number): number {
+  return Math.max(foldWidth, minWidth, 0);
+}
+
+/**
+ * The column widths the board's key counts the "weak" cue from. A board in a fold reads its own width
+ * (`heldWidth`) whenever the fold changes width or opens or closes, shut or open, so the count never waits
+ * for the board to be measured and never keeps a width from before the fold last changed. Otherwise
+ * (no fold, 0) the measured columns once there are any (`areaWidth` over 0).
+ */
+export function cueColumnWidths(measured: readonly number[], areaWidth: number, heldWidth: number, stageCount: number): readonly number[] {
+  if (heldWidth > 0) return boardColumnWidths(heldWidth, stageCount);
+  return areaWidth > 0 ? measured : [];
+}
+
+/**
+ * What a set block adds for screen readers after its visible text. A locked set says whose lock it is,
+ * in the board key's words: this app's on a published day (the last-set rule only where `holds` proves
+ * it), an invented fixed slot on the invented day.
+ */
+export function describeSetTail(view: SetView, moved: boolean, synthetic = false, holds = false): string {
   const parts = [
     view.coverage === "weak" ? weakSignalLabel(synthetic) : "",
-    view.slot.locked ? "Locked set." : "",
+    view.slot.locked ? lockLabel({ synthetic, holds }) : "",
     moved ? "Moved in your tested plan." : "",
   ];
   const [first] = view.clashes;
@@ -311,6 +357,58 @@ export function describeSetTail(view: SetView, moved: boolean, synthetic = false
     parts.push("No ranked clash.");
   }
   return parts.filter(Boolean).join(" ");
+}
+
+/** One pointer event as the hover rule reads it: which element, and what kind of pointer moved. */
+export type HandEvent = { type: "enter" | "move" | "leave"; key: string; pointerType?: string };
+
+/**
+ * The hover rule, step by step. `moved` is the element the pointer has moved in since it entered, or null.
+ * An entry alone does nothing: the browser also fires one when the page scrolls an element under a still
+ * pointer (a jump link, the wheel), and no move follows it. The first move inside an element highlights it
+ * ("on"), once; a touch never does (a tap opens). A leave clears the highlight ("off") only from the element
+ * whose move set it.
+ */
+export function handStep(moved: string | null, event: HandEvent): { moved: string | null; action: "on" | "off" | null } {
+  if (event.type === "enter") {
+    // The pointer was outside, so a move still kept for this element is stale (it left the page without a
+    // leave): the next move counts again.
+    return { moved: moved === event.key ? null : moved, action: null };
+  }
+  if (event.type === "move") {
+    if (event.pointerType === "touch" || moved === event.key) return { moved, action: null };
+    return { moved: event.key, action: "on" };
+  }
+  if (moved !== event.key) return { moved, action: null };
+  return { moved: null, action: "off" };
+}
+
+/**
+ * Hover that answers the visitor's hand only, by `handStep`: `on(key)` runs on the first pointer move
+ * inside an element, so nothing dims or lifts until the hand moves, and `off(key)` when the pointer leaves
+ * the element whose move set it. `hand` is the key the pointer last moved in, for hover styles that must
+ * not follow a scroll either. Keyboard focus and blur keep their own handlers.
+ */
+export function useHandHover(on: (key: string) => void, off: (key: string) => void) {
+  const [hand, setHand] = useState<string | null>(null);
+  const moved = useRef<string | null>(null);
+  const step = (event: HandEvent) => {
+    const next = handStep(moved.current, event);
+    moved.current = next.moved;
+    if (next.action === "on") {
+      setHand(event.key);
+      on(event.key);
+    } else if (next.action === "off") {
+      setHand(null);
+      off(event.key);
+    }
+  };
+  const bind = (key: string) => ({
+    onPointerEnter: () => step({ type: "enter", key }),
+    onPointerMove: (event: PointerEvent<HTMLElement>) => step({ type: "move", key, pointerType: event.pointerType }),
+    onPointerLeave: () => step({ type: "leave", key }),
+  });
+  return { hand, bind };
 }
 
 /**
@@ -338,15 +436,26 @@ export function TimetableGrid({
   plan = null,
   rulePreview = null,
   synthetic = false,
+  holds = false,
   className,
 }: TimetableGridProps) {
+  // A tile or a badge highlights on the visitor's first pointer move inside it, never because the page
+  // scrolled it under a still pointer. Keys: "set:{id}" and "clash:{key}".
+  const { hand, bind: handHover } = useHandHover(
+    (key) => (key.startsWith("set:") ? onHighlightSet(key.slice(4)) : onHighlightClash(key.slice(6))),
+    (key) => (key.startsWith("set:") ? onHighlightSet(null) : onHighlightClash(null)),
+  );
   const rootRef = useRef<HTMLDivElement>(null);
   const areaRef = useRef<HTMLDivElement>(null);
   const setRefs = useRef(new Map<string, HTMLButtonElement>());
   const [width, setWidth] = useState(0);
   const [boardWidth, setBoardWidth] = useState(0);
   const [rovingId, setRovingId] = useState<string | null>(null);
+  // The width the observer last reported, read by the preview's scroll (below) without waiting for a render.
+  const measuredWidth = useRef(0);
 
+  // The observer measures the board whenever its size changes, so a board hidden and shown again (display
+  // none, or a closed fold, reports 0 and then its width) lays its columns, links and badges out afresh.
   useEffect(() => {
     const root = rootRef.current;
     const area = areaRef.current;
@@ -354,7 +463,10 @@ export function TimetableGrid({
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         if (entry.target === root) setBoardWidth(entry.contentRect.width);
-        else setWidth(entry.contentRect.width);
+        else {
+          measuredWidth.current = entry.contentRect.width;
+          setWidth(entry.contentRect.width);
+        }
       }
     });
     observer.observe(root);
@@ -369,10 +481,46 @@ export function TimetableGrid({
   const scale = useMemo(() => timeScale(domain, PX_PER_MINUTE), [domain]);
   const hours = useMemo(() => timeTicks(domain, 60), [domain]);
   const frames = useMemo(() => columnFrames(width, stages.length, gap), [width, stages.length, gap]);
-  // The key draws the narrow tiles' "weak" cue while some tile on this board prints it.
+  // The key draws the narrow tiles' "weak" cue while some tile on this board prints it. Shut in its closed
+  // fold, the board's observer reports nothing, so the key learnt of the cue only once the fold opened, and
+  // gained a line above the summary just pressed (28 px at 768 px). So the board reads its own width before
+  // the first paint, and again whenever the fold changes width, opens or closes: the key holds the same
+  // items shut and open. Chromium lays out a closed fold's board when asked; a browser that does not reads
+  // 0, and then the width comes from the fold, which the board fills (never under its own minimum width).
+  const [heldWidth, setHeldWidth] = useState(0);
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    const fold = root?.closest("details");
+    if (!root || !fold) return;
+    const read = () => {
+      const own = root.getBoundingClientRect().width;
+      const style = getComputedStyle(fold);
+      const sides = ["paddingLeft", "paddingRight", "borderLeftWidth", "borderRightWidth"] as const;
+      const foldWidth = sides.reduce((left, side) => left - (parseFloat(style[side]) || 0), fold.getBoundingClientRect().width);
+      setHeldWidth(own > 0 ? own : foldedBoardWidth(foldWidth, parseFloat(getComputedStyle(root).minWidth) || 0));
+    };
+    read();
+    const observer = new ResizeObserver(read);
+    observer.observe(fold);
+    fold.addEventListener("toggle", read);
+    return () => {
+      observer.disconnect();
+      fold.removeEventListener("toggle", read);
+    };
+  }, []);
   const cueTiles = useMemo(
-    () => shortCueCount(views, frames.map((frame) => frame.width), synthetic),
-    [views, frames, synthetic],
+    () =>
+      shortCueCount(
+        views,
+        cueColumnWidths(
+          frames.map((frame) => frame.width),
+          width,
+          heldWidth,
+          stages.length,
+        ),
+        synthetic,
+      ),
+    [views, frames, width, heldWidth, stages.length, synthetic],
   );
   usePublishCueTiles(cueTiles);
   const byId = useMemo(() => new Map(views.map((view) => [view.id, view])), [views]);
@@ -481,15 +629,31 @@ export function TimetableGrid({
   const markPlayed = (name: string) => setSpent((previous) => (previous.has(name) ? previous : new Set(previous).add(name)));
 
   // "Preview on the timetable" brings the first tested slot into view (at once with reduced motion),
-  // and its flight starts after the scroll, so it is seen.
+  // and its flight starts after the scroll, so it is seen. A board shown in the same render as the
+  // preview (a closed fold that opens for it) has not been measured yet, so its ghosts do not stand where
+  // they will be drawn: the scroll then waits two frames, for the observer's width and the render it brings.
   const [ruleShown, setRuleShown] = useState<RulePreview | null>(null);
   useEffect(() => {
     if (!rulePreview) return;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const first = rootRef.current?.querySelector<HTMLElement>('[data-ghost="rule"]');
-    first?.scrollIntoView({ block: "center", inline: "center", behavior: reduce ? "auto" : "smooth" });
-    const timer = window.setTimeout(() => setRuleShown(rulePreview), reduce || !first ? 0 : 500);
-    return () => window.clearTimeout(timer);
+    let timer = 0;
+    let frame = 0;
+    const scroll = () => {
+      const first = rootRef.current?.querySelector<HTMLElement>('[data-ghost="rule"]');
+      first?.scrollIntoView({ block: "center", inline: "center", behavior: reduce ? "auto" : "smooth" });
+      timer = window.setTimeout(() => setRuleShown(rulePreview), reduce || !first ? 0 : 500);
+    };
+    const area = areaRef.current;
+    const stale = area !== null && Math.abs(area.getBoundingClientRect().width - measuredWidth.current) > 0.5;
+    if (stale) {
+      frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(scroll);
+      });
+    } else scroll();
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
   }, [rulePreview]);
   const ruleSeen = rulePreview !== null && ruleShown === rulePreview;
   const navItems = useMemo(
@@ -660,8 +824,16 @@ export function TimetableGrid({
                       : view.act.popularity !== null
                         ? `Draw ${formatDraw(view.act.popularity)}`
                         : "";
-                    // The tile's tooltip names everything it holds, shown or not.
-                    const title = [view.act.name, formatRange(view.slot), view.act.genre, drawText, weak ? weakSignalLabel(synthetic) : ""]
+                    // The tile's tooltip names everything it holds, shown or not. A lock shows on the tile as an
+                    // icon alone, so its tooltip says whose lock it is, in the tail's words.
+                    const title = [
+                      view.act.name,
+                      formatRange(view.slot),
+                      view.act.genre,
+                      drawText,
+                      weak ? weakSignalLabel(synthetic) : "",
+                      view.slot.locked ? lockLabel({ synthetic, holds }) : "",
+                    ]
                       .filter(Boolean)
                       .join(" · ");
                     return (
@@ -679,8 +851,7 @@ export function TimetableGrid({
                             onHighlightSet(view.id);
                           }}
                           onBlur={() => onHighlightSet(null)}
-                          onMouseEnter={() => onHighlightSet(view.id)}
-                          onMouseLeave={() => onHighlightSet(null)}
+                          {...handHover(`set:${view.id}`)}
                           onClick={(event) => {
                             if (costliest) onOpen(costliest, event.currentTarget);
                           }}
@@ -706,7 +877,9 @@ export function TimetableGrid({
                                 ? "border-dotted border-border-strong bg-background text-foreground"
                                 : cn("bg-card text-foreground", costedIds.has(view.id) ? "border-border-strong" : "border-border"),
                             moved && mayPlay(`lift:${view.id}`) && "cc-lift",
-                            costliest ? "cursor-pointer hover:bg-accent" : "cursor-default",
+                            // The hovered tile takes the wash with the highlight (isFocus, below), set by the hand's
+                            // first move: a tile scrolled under a still pointer stays as it is.
+                            costliest ? "cursor-pointer" : "cursor-default",
                             isFocus && "bg-accent outline-2 -outline-offset-2 outline-foreground",
                             related && !isFocus && "outline-2 -outline-offset-2 outline-primary",
                             dimmed && !related && !isFocus && "opacity-40",
@@ -755,7 +928,7 @@ export function TimetableGrid({
                             // No Qloo signal is the tile's label, never the row a short tile hides.
                             <span
                               data-no-signal=""
-                              className={cn("mt-auto block text-xs leading-4 font-medium whitespace-nowrap text-muted-foreground", rows.roomy && "pt-1")}
+                              className={cn("mt-auto block text-[0.78125rem] leading-4 font-medium whitespace-nowrap text-muted-foreground", rows.roomy && "pt-1")}
                             >
                               {noSignalLabel(synthetic)}
                               <span className="sr-only">, not scored. </span>
@@ -773,22 +946,26 @@ export function TimetableGrid({
                                 <span
                                   aria-hidden="true"
                                   data-weak={foot.cue ? "cue" : "line"}
-                                  className={cn("mt-auto block text-xs leading-4 font-medium whitespace-nowrap text-muted-foreground", rows.roomy && "pt-1")}
+                                  className={cn("mt-auto block text-[0.78125rem] leading-4 font-medium whitespace-nowrap text-muted-foreground", rows.roomy && "pt-1")}
                                 >
                                   {foot.text}
                                 </span>
                               ) : null}
                             </>
                           )}
-                          <span className="sr-only">{describeSetTail(view, moved, synthetic)}</span>
+                          <span className="sr-only">{describeSetTail(view, moved, synthetic, holds)}</span>
                         </button>
                         {clamped ? (
                           // A name in a slot too short for every line it needs also shows in full on hover
-                          // and on focus. Decorative: the tile's own text and its title carry the whole name.
+                          // (the hand's first move over the tile) and on focus. Decorative: the tile's own text
+                          // and its title carry the whole name.
                           <span
                             aria-hidden="true"
                             data-name-tooltip=""
-                            className="pointer-events-none absolute left-0 z-30 hidden w-max max-w-64 rounded-sm bg-foreground px-2 py-1 text-xs text-background group-focus-within/tile:block group-hover/tile:block print:hidden"
+                            className={cn(
+                              "pointer-events-none absolute left-0 z-30 hidden w-max max-w-64 rounded-sm bg-foreground px-2 py-1 text-xs text-background group-focus-within/tile:block print:hidden",
+                              hand === `set:${view.id}` && "block",
+                            )}
                             style={{ top: top + TILE_GAP / 2 + box + 4 }}
                           >
                             {view.act.name}
@@ -847,7 +1024,7 @@ export function TimetableGrid({
                       ...flight,
                     }}
                   >
-                    <span className="text-[0.75rem] leading-tight font-bold break-words">
+                    <span className="text-[0.8125rem] leading-tight font-bold break-words">
                       {ghost.name} · tested
                     </span>
                     {height >= 36 ? (
@@ -864,7 +1041,7 @@ export function TimetableGrid({
                   data-ghost="zero"
                   onAnimationEnd={() => markPlayed(`zero:${zero.key}`)}
                   className={cn(
-                    "absolute grid size-5.5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-foreground bg-card font-mono text-[11px] font-bold text-foreground",
+                    "absolute grid size-5.5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-foreground bg-card font-mono text-[0.8125rem] font-bold text-foreground",
                     mayPlay(`zero:${zero.key}`) && ruleSeen && "cc-zero",
                   )}
                   style={{ left: zero.x, top: zero.y }}
@@ -908,12 +1085,14 @@ export function TimetableGrid({
                     aria-label={`${clashMarkLabel(clash)}${clash.label && !hidden ? `, ${LABEL_META[clash.label].name.toLowerCase()}` : ""}, ${formatShare(clash.regret_share)} of the day's clash cost. Open details.`}
                     title={clashMarkLabel(clash)}
                     onClick={(event) => onOpen(clash, event.currentTarget)}
-                    onMouseEnter={() => onHighlightClash(layout.id)}
-                    onMouseLeave={() => onHighlightClash(null)}
+                    {...handHover(`clash:${layout.id}`)}
                     onFocus={() => onHighlightClash(layout.id)}
                     onBlur={() => onHighlightClash(null)}
+                    // The lift follows the hand (its first move over the badge) and keyboard focus, never a
+                    // scroll that carries the badge under a still pointer.
+                    data-hand={hand === `clash:${layout.id}` ? "" : undefined}
                     className={cn(
-                      "cc-link-badge pointer-events-auto absolute grid cursor-pointer place-items-center rounded-full font-mono text-[11px] font-bold tabular-nums transition-[opacity,transform] duration-150 hover:scale-110 focus-visible:scale-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+                      "cc-link-badge pointer-events-auto absolute grid cursor-pointer place-items-center rounded-full font-mono text-[0.78125rem] font-bold tabular-nums transition-[opacity,transform] duration-150 data-[hand]:scale-110 focus-visible:scale-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
                       dimmed && !active && "opacity-30",
                     )}
                     style={{
@@ -926,7 +1105,8 @@ export function TimetableGrid({
                     {/* Every clash is a 22px numbered disc, centred in the first gutter the line crosses,
                         clear of the sets: a seen clash is filled raspberry with a paper numeral, a hidden
                         one is an ink ring on the card with an ink numeral (Hidden is a label, not shared
-                        time; the raspberry link under it is the shared time). */}
+                        time; the raspberry link under it is the shared time). The numeral is 12.5px bold:
+                        "10" runs 15.6px at 13px and would touch the hidden ring's 18px inside. */}
                     <ClashDisc hidden={hidden} className="absolute top-0.5 left-0.5" />
                     <span aria-hidden="true" className={cn("relative", hidden ? "text-foreground" : "text-primary-foreground")}>
                       {clash.rank}

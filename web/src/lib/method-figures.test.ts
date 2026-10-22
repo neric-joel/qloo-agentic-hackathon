@@ -26,7 +26,9 @@ import {
   formatWholePct,
   formatWithin,
   methodRow,
+  noSignalSentence,
   numberWord,
+  tagCapSentence,
   tasteInPriceReading,
 } from "./method-figures";
 import { PUBLIC_SOURCES } from "./public-sources";
@@ -226,7 +228,7 @@ describe("method figures", () => {
     const text = pageText();
     expect(text.split("4 of 68, from 2 complaint clusters; all 4 were also in the top quarter on time and draw.")).toHaveLength(2);
     expect(text.indexOf("Complained-about clashes that taste overlap put")).toBeGreaterThan(
-      text.indexOf("Taste inside the full price (exploratory)"),
+      text.indexOf("Taste inside the pair score (exploratory)"),
     );
   });
 
@@ -352,7 +354,7 @@ describe("method figures", () => {
   it("says the factors are on a 0 to 1 scale, printed rounded, with a stand-in draw by billing tier", () => {
     const text = pageText();
     expect(text).toContain("The factors are on a 0 to 1 scale (taste overlap and draw are shown out of 100 elsewhere on the page)");
-    expect(text).toContain("and are rounded when printed, so they may not multiply to exactly the printed price.");
+    expect(text).toContain("and are rounded when printed, so they may not multiply to exactly the printed score.");
     expect(text).toContain(
       "An act with no Qloo popularity takes a stand-in draw set by its billing tier (0.9, 0.7, 0.5 and 0.3 for tiers 1 to 4).",
     );
@@ -397,6 +399,49 @@ describe("method figures", () => {
 
   it("pins the requests one live re-check sends", () => {
     expect(liveCheck).toEqual({ requests: 3 });
+  });
+
+  it("pins the compare-tag cap and the saved pairs that fill it, counted by count-tag-cap.mjs on 21 Oct 2026 (round 37, L60)", () => {
+    // TAG_TAKE = 8 (backend/app/pair.py) and shared_taste(..., take=8) (backend/app/qloo/overlap.py); 22 distinct
+    // saved pairs with tags over both published presets (Riot Fest saved none), 17 of them at the cap, none above it.
+    expect(METHOD_FIGURES.compareTags).toEqual({ tagCap: 8, savedPairs: 22, fullPairs: 17 });
+    expect(METHOD_FIGURES.compareTags.fullPairs).toBeLessThanOrEqual(METHOD_FIGURES.compareTags.savedPairs);
+    expect(tagCapSentence()).toBe(
+      "This app keeps at most 8 shared genre, subgenre or theme tags per compared pair, and 17 of the 22 saved pairs fill all 8, so the number of tags is not a measure of overlap; read them as examples.",
+    );
+    expect(tagCapSentence({ tagCap: 6, savedPairs: 3, fullPairs: 1 })).toBe(
+      "This app keeps at most 6 shared genre, subgenre or theme tags per compared pair, and 1 of the 3 saved pairs fill all 6, so the number of tags is not a measure of overlap; read them as examples.",
+    );
+    // The sentence states the cap and how many fill it; it gives no median or other baseline.
+    expect(tagCapSentence()).not.toMatch(/median|typical|average/i);
+    expect(pageText()).toContain(tagCapSentence());
+  });
+
+  it("pins the acts with no usable Qloo signal on the published days and one overlap each, read from the presets on 21 Oct 2026 (round 37, L38)", () => {
+    expect(METHOD_FIGURES.noSignal).toEqual([
+      {
+        festival: "Glastonbury",
+        acts: ["Thandii", "Abel Selaocoe & the Bantu Ensemble", "Westside Cowboy"],
+        example: { acts: ["Abel Selaocoe & the Bantu Ensemble", "Gurriers"], minutes: 60 },
+      },
+      {
+        festival: "Riot Fest",
+        acts: ["Largemouth", "William Shatner", "Rose of Demise"],
+        example: { acts: ["The Format", "William Shatner"], minutes: 35 },
+      },
+    ]);
+    // Three acts a day: the coverage counts' own gaps (36 of 39 and 31 of 34 scored).
+    expect(METHOD_FIGURES.noSignal.map((day) => day.acts.length)).toEqual(coverage.days.map((day) => day.total - day.scored));
+    // Each example names one of that day's no-signal acts.
+    for (const day of METHOD_FIGURES.noSignal) {
+      const acts: readonly string[] = day.acts;
+      expect(day.example.acts.some((act) => acts.includes(act))).toBe(true);
+    }
+    expect(noSignalSentence()).toBe(
+      "Qloo has no usable signal for six acts on the two published days: Thandii, Abel Selaocoe & the Bantu Ensemble and Westside Cowboy at Glastonbury, and Largemouth, William Shatner and Rose of Demise at Riot Fest. Their overlaps, such as Abel Selaocoe & the Bantu Ensemble × Gurriers (60 min) and The Format × William Shatner (35 min), are left out, not scored as zero, and drawn with no line.",
+    );
+    expect(noSignalSentence()).not.toMatch(/\bopen/i);
+    expect(pageText()).toContain(noSignalSentence());
   });
 
   it("pins the symmetry check's printout: whole counts, one tiny difference, none above 1e-5", () => {

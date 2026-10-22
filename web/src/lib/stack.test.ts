@@ -512,7 +512,7 @@ describe("plan storage", () => {
   });
 });
 
-describe("adding a step to a plan that already holds steps (the hero card and Keep this place)", () => {
+describe("adding a step to a plan that already holds steps (the hero card and Keep this move)", () => {
   const priced: PlanAnswer = {
     status: "ready",
     plan: { publishedBudget: 116.7, budget: 110.2, steps: [], clashes: [], options: null },

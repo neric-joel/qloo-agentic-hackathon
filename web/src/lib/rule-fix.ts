@@ -305,7 +305,7 @@ export const SMALLEST_NOTE = "smallest change this search found that ends it";
 export const NO_BREAK = "adds no rule break";
 export const ENDS_NOTE = `${NO_BREAK} and ends this overlap`;
 export const NO_RESULT = "This search found no change that ends it. It did not look for longer chains.";
-export const BOTH_LOCKED = "Both sets are locked.";
+export const BOTH_LOCKED = "Both sets are locked by this app, so neither can move.";
 /**
  * What the search covers, in the words the panel helper and the loading line use. The route sends
  * its own `searched` string; the panel prints that once an answer is in, and this before.
@@ -328,11 +328,11 @@ export function ruleLead(rule: Pick<RuleFixes, "a" | "b">): string {
   return `If a rule says ${rule.a.act} and ${rule.b.act} must never overlap:`;
 }
 
-/** "Sprints is locked, so only Katy J Pearson can move." Null when neither or both are locked. */
+/** "Sprints is locked by this app, so only Katy J Pearson can move." Null when neither or both are locked. */
 export function lockedNote(rule: Pick<RuleFixes, "a" | "b">): string | null {
   if (rule.a.locked === rule.b.locked) return null;
   const [still, free] = rule.a.locked ? [rule.a, rule.b] : [rule.b, rule.a];
-  return `${still.act} is locked, so only ${free.act} can move.`;
+  return `${still.act} is locked by this app, so only ${free.act} can move.`;
 }
 
 /** "{Act} to {Stage} {start}–{end} and {Act} to ...". */

@@ -473,8 +473,16 @@ function headerRefusal(row: number, missing: readonly Column[], unread: readonly
   return `Line ${row}: no column reads as ${orList(missing)}.${notRead}${words}${range}`;
 }
 
+/**
+ * A header cell as the name it is matched by: lower case, punctuation at either end dropped, underscores and
+ * runs of spaces as one space. A spreadsheet's "Fixed?", "Start:" or "(Locked)" names its column.
+ */
 function headerName(value: string): string {
-  return value.trim().toLowerCase().replace(/[_\s]+/g, " ");
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "")
+    .replace(/[_\s]+/g, " ");
 }
 
 function columnOf(value: string): Column | null {
@@ -666,8 +674,11 @@ export function parseGrid(raw: string): GridResult {
           headed = true;
           const ignored = unread.map((field) => clip(tidy(field), 30));
           if (ignored.length > 0) {
+            const names = ignored.join(", ");
+            // A last name that ends in its own mark ("Notes?") ends the sentence; no full stop after it.
+            const stop = /[.?!…]$/u.test(names) ? "" : ".";
             notes.push(
-              `Ignored ${ignored.length === 1 ? "a column" : `${ignored.length} columns`} this page does not read: ${ignored.join(", ")}.`,
+              `Ignored ${ignored.length === 1 ? "a column" : `${ignored.length} columns`} this page does not read: ${names}${stop}`,
             );
           }
         }

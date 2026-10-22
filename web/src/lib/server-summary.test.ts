@@ -11,6 +11,8 @@ import {
   resolveBackendUrl,
   summarize,
   SUMMARY_CLASHES,
+  SUMMARY_TIMEOUT_MS,
+  SYNTHETIC_EVIDENCE,
 } from "./server-summary";
 
 // Every name and figure below is invented for the test (the tiny preset fixture and variants of it).
@@ -60,6 +62,11 @@ describe("summarize", () => {
       "By this index, the published timetable scores 104.2, where 100 is the average random valid timetable and higher means more clash cost",
     );
     expect(summary.figure).toBe(`104 on the Clash Budget Index. ${summary.vsRandom}. Lower is better.`);
+  });
+
+  it("says an invented day's scores come from nowhere real", () => {
+    expect(SYNTHETIC_EVIDENCE).toBe("Scored from an invented day: its acts, times and figures are made up, and no Qloo request was made.");
+    expect(summarize(parsePreset({ ...rawTinyPreset(), synthetic: true })).evidence).toBe(SYNTHETIC_EVIDENCE);
   });
 
   it("calls an invented day's timetable invented in the index sentence", () => {
@@ -189,6 +196,90 @@ describe("the decision card in the summary", () => {
       expect(summary?.index).toBe(104);
       expect(summary?.decision).toBeNull();
     }
+  });
+});
+
+describe("the decision the preset response carries (round 37, L1)", () => {
+  const LIST = [{ id: "tiny-fest-sat", title: "Tiny Fest, Saturday", city: null, sets: 3, stages: 2, scored_share: 0.67 }];
+  const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+
+  /**
+   * A fake API with no network: it answers the list and the preset, records every path it is asked, and for
+   * `GET /decision` answers, rejects or never answers, recording each failure it forces.
+   */
+  function fakeApi(preset: Raw, decision: "answers" | "rejects" | "hangs" = "answers") {
+    const asked: string[] = [];
+    const forced: string[] = [];
+    const fetcher = vi.fn((url: string) => {
+      const path = url.replace("http://api.test", "");
+      asked.push(path);
+      if (path === "/api/presets") return Promise.resolve(json(LIST));
+      if (path === "/api/presets/tiny-fest-sat") return Promise.resolve(json(preset));
+      if (path === "/api/presets/tiny-fest-sat/decision") {
+        if (decision === "rejects") {
+          forced.push(`rejected ${path}`);
+          return Promise.reject(new TypeError("fetch failed"));
+        }
+        if (decision === "hangs") {
+          forced.push(`held ${path}`);
+          return new Promise<Response>(() => {});
+        }
+        return Promise.resolve(json(RAW_DECISION));
+      }
+      return Promise.resolve(new Response("{}", { status: 404 }));
+    });
+    return { fetcher, asked, forced };
+  }
+
+  it("reads the decision from the preset response and asks nothing more", async () => {
+    const api = fakeApi({ ...(rawTinyPreset() as Raw), decision: RAW_DECISION });
+    const summary = await loadServerSummary(null, { backend: "http://api.test", fetcher: api.fetcher });
+    expect(summary?.decisionData).toEqual(parseDecision(RAW_DECISION));
+    expect(summary?.decision?.receipt).toBe("Bo Diddly Squat 60 minutes later: 60 → 0 minutes shared");
+    expect(summary?.dayGraph?.move?.label).toBe("Bo Diddly Squat 60 min later");
+    expect(api.asked).toEqual(["/api/presets", "/api/presets/tiny-fest-sat"]);
+    expect(api.asked.some((path) => path.endsWith("/decision"))).toBe(false);
+  });
+
+  it("takes a null decision as no decision, with no second request", async () => {
+    const api = fakeApi({ ...(rawTinyPreset() as Raw), decision: null });
+    const summary = await loadServerSummary(null, { backend: "http://api.test", fetcher: api.fetcher });
+    expect(summary?.index).toBe(104);
+    expect(summary?.decision).toBeNull();
+    expect(summary?.decisionData).toBeNull();
+    expect(summary?.dayGraph?.move).toBeNull();
+    expect(api.asked).toEqual(["/api/presets", "/api/presets/tiny-fest-sat"]);
+  });
+
+  it("falls back to GET /decision only when the response has no decision key (an API older than the field)", async () => {
+    const api = fakeApi(rawTinyPreset() as Raw);
+    expect(Object.hasOwn(rawTinyPreset() as Raw, "decision")).toBe(false);
+    const summary = await loadServerSummary(null, { backend: "http://api.test", fetcher: api.fetcher });
+    expect(summary?.decisionData).toEqual(parseDecision(RAW_DECISION));
+    expect(api.asked).toEqual(["/api/presets", "/api/presets/tiny-fest-sat", "/api/presets/tiny-fest-sat/decision"]);
+  });
+
+  it("keeps the rest of the summary when that fallback request fails or never answers, and the failure is the one forced", async () => {
+    const rejecting = fakeApi(rawTinyPreset() as Raw, "rejects");
+    const rejected = await loadServerSummary(null, { backend: "http://api.test", fetcher: rejecting.fetcher });
+    expect(rejecting.forced).toEqual(["rejected /api/presets/tiny-fest-sat/decision"]);
+    expect(rejected?.decision).toBeNull();
+    expect(rejected?.decisionData).toBeNull();
+    expect(rejected?.index).toBe(104);
+    expect(rejected?.clashes).toHaveLength(1);
+    expect(rejected?.dayGraph?.sets).toHaveLength(3);
+
+    const hanging = fakeApi(rawTinyPreset() as Raw, "hangs");
+    const started = Date.now();
+    const held = await loadServerSummary(null, { backend: "http://api.test", fetcher: hanging.fetcher, timeoutMs: 50 });
+    expect(hanging.forced).toEqual(["held /api/presets/tiny-fest-sat/decision"]);
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(held?.decision).toBeNull();
+    expect(held?.decisionData).toBeNull();
+    expect(held?.index).toBe(104);
+    expect(held?.dayGraph?.sets).toHaveLength(3);
+    // The server waits 4 s for each request.
+    expect(SUMMARY_TIMEOUT_MS).toBe(4000);
   });
 });
 

@@ -5,19 +5,19 @@ import { ClashControl, ClashControlFallback, type HomeSummary } from "@/componen
 import { parsePreset } from "@/lib/preset";
 import { loadServerSummary } from "@/lib/server-summary";
 
-/** The lede on a published day: who it is for, the frame, then what the ranking reads. */
+/** The lede on a published day: who it is for, the frame, the stake, then what to compare (owner-ordered closeout, round 37). */
 const LEDE =
-  "For heads of programming: Qloo taste data used to schedule, not to recommend. Clashes ranked by minutes shared, popularity and taste overlap.";
+  "For heads of programming: Qloo taste data used to schedule, not to recommend. Clashes make people choose. Compare time, popularity, taste.";
 
 /** The lede on the invented day: the same frame, with no Qloo word (nothing on that day came from Qloo). */
 const INVENTED_LEDE =
-  "For heads of programming: taste data used to schedule, not to recommend. Clashes ranked by minutes shared, popularity and taste overlap.";
+  "For heads of programming: taste data used to schedule, not to recommend. Clashes make people choose. Compare time, popularity, taste.";
 
 /**
  * The pitch. Static, so it paints before any festival data arrives: the question, then one lede that names who
  * it is for, the frame (Qloo taste data used to schedule, not to recommend; on the invented day "taste data",
- * with no Qloo word) and what the ranking reads (minutes shared, popularity and taste overlap). The qualifier on
- * taste overlap sits beside its number in the hero's taste line, where the rank is printed. The day, its drawing
+ * with no Qloo word), the stake (clashes make people choose) and what to compare (time, popularity, taste; owner-ordered
+ * closeout, round 37). The qualifier on taste overlap sits beside its number in the hero's taste line, where the rank is printed. The day, its drawing
  * and the decision that follow are drawn by the interactive page.
  */
 function Intro({ synthetic = false }: { synthetic?: boolean }) {
@@ -80,7 +80,7 @@ export async function generateMetadata({ searchParams }: HomeProps): Promise<Met
 /**
  * The first page is built on the server from the saved preset the visitor asked for (`?preset=`,
  * else the first), so a reader without JavaScript, or a preview fetch, gets the day's drawing and its
- * decision, the day's index, its costliest clashes and where the prices come from. The preset fetch is
+ * decision, the day's index, its costliest clashes and where the scores come from. The preset fetch is
  * cached for an hour.
  */
 export default async function Home({ searchParams }: HomeProps) {

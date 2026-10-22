@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { createElement, isValidElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { parseGrid, removePairLine, runCheck, type PairSuggestion } from "@/lib/check";
 import { breakDecisionId } from "@/lib/check-decisions";
@@ -31,13 +31,18 @@ import {
   CheckTool,
   GridTable,
   PREVIEW_PAIRS,
+  PUBLISHED_KEPT,
   SharedPreview,
+  awaitPublishedDay,
   escapeClears,
   foldedLines,
   offeredDay,
   pairFixes,
   pairLineOf,
+  publishedArrival,
+  rejectedRange,
   remedyAnchor,
+  takesPaste,
   typedName,
   stageStartRows,
   type Remedy,
@@ -83,7 +88,7 @@ describe("Show all N pairs", () => {
     expect(html.lastIndexOf("</ul>")).toBeLessThan(html.indexOf("<button"));
   });
 
-  it("reads like a price list: each act (stage) on its own line, the window in 12px mono, the minutes set right once", () => {
+  it("reads like a price list: each act (stage) on its own line, the window in 12px tabular figures, the minutes set right once", () => {
     const html = renderToStaticMarkup(createElement(SharedPreview, { shared, open: false, onToggle: () => {} }));
     const first = html.slice(html.indexOf("<li "), html.indexOf("</li>"));
     const pair = shared[0];
@@ -131,12 +136,12 @@ describe("the check tool's sheet", () => {
     expect(preview).toContain(
       '<p class="mt-1 text-sm leading-5 text-muted-foreground">Flagged rows are marked 1 to 4 in the grid. Select a break to highlight its rows.</p>',
     );
-    // Each break: its numbered disc and the rule in 15px, as the same selection button as the results, then its rows with the row number and time in mono.
+    // Each break: its numbered disc and the rule in 15px, as the same selection button as the results, then its rows with the row number and time in tabular figures.
     expect(preview).toMatch(
       /<button type="button" aria-pressed="false" class="[^"]*"><svg aria-hidden="true"[^>]*data-break-disc="1"[\s\S]*?<span class="sr-only">Rule break 1\. <\/span><span class="text-\[0\.9375rem\] leading-snug">Act on two stages at once<\/span>/,
     );
     expect(preview).toMatch(/<span class="font-mono text-muted-foreground tabular-nums">row \d+<\/span>/);
-    // No floating numeral, no vermilion square beside "Checked".
+    // No floating numeral, no raspberry square beside "Checked".
     expect(preview.slice(0, 600)).not.toContain("bg-primary");
     expect(preview).not.toContain("text-[3.5rem]");
   });
@@ -335,7 +340,7 @@ describe("selecting a rule break", () => {
   const rows = (html: string) => html.match(/<tr [^>]*data-row="\d+"[^>]*>/g) ?? [];
   const selected = (html: string) => rows(html).filter((row) => row.includes("data-selected"));
 
-  it("marks exactly the rows the break names with the wash inside a 1px ink edge, never vermilion, and no left stripe", () => {
+  it("marks exactly the rows the break names with the wash inside a 1px ink edge, never raspberry, and no left stripe", () => {
     const html = renderToStaticMarkup(createElement(GridTable, { grid: SAMPLE_GRID, selection: { rows: [3, 4], nonce: 1 } }));
     const marked = selected(html);
     expect(marked.map((row) => row.match(/data-row="(\d+)"/)?.[1])).toEqual(["3", "4"]);
@@ -393,13 +398,13 @@ describe("selecting a rule break", () => {
     expect(headings.every((heading) => heading.includes('aria-pressed="false"'))).toBe(true);
     const id = (none.match(/<h3[^>]*><button[^>]*>/) ?? [""])[0];
     expect(id).not.toBe("");
-    // The pressed heading takes the wash and an ink outline, never vermilion.
+    // The pressed heading takes the wash and an ink outline, never raspberry.
     const pressed = render(breakDecisionId(report.breaks[0], report.sets));
     const on = pressed.match(/<h3[^>]*><button[^>]*aria-pressed="true"[^>]*>/)?.[0] ?? "";
     expect(on).toContain("aria-pressed:bg-accent");
     expect(on).toContain("aria-pressed:not-focus-visible:outline-foreground");
     expect(on).not.toContain("primary");
-    // Row references: visible 12px mono buttons on an 8px corner with a control edge, 44px to the pointer.
+    // Row references: visible 12px tabular-figure buttons on an 8px corner with a control edge, 44px to the pointer.
     const ref = none.match(/<button[^>]*>row \d+<\/button>/)?.[0] ?? "";
     expect(ref).toContain("font-mono text-xs");
     expect(ref).toContain("border border-border-strong");
@@ -709,7 +714,7 @@ describe("the table's row-number gutter, column gap and stage breaks", () => {
   const gutterText = (gutter: string) =>
     text(gutter.replace(/<svg[\s\S]*?<\/svg>/g, "").replace(/<span class="sr-only">[^<]*<\/span>/g, ""));
 
-  it("prints each shown row's grid number, the number the results cite, as plain 12px muted mono text set right", () => {
+  it("prints each shown row's grid number, the number the results cite, as plain 12px muted tabular figures set right", () => {
     const rows = rowTags(table(page));
     expect(rows).toHaveLength(18);
     for (const [, row, cells] of rows) {
@@ -839,8 +844,9 @@ describe("the table's row-number gutter, column gap and stage breaks", () => {
     const lines = SAMPLE_GRID.split("\n");
     for (const set of parsed.sets) expect(lines[set.row - 1].startsWith(`${set.act},${set.stage},`)).toBe(true);
     // The CSV gutter prints 1..N, one number per line of the text, so each set's line number is its table row.
-    const gutter = page.match(/<div aria-hidden="true" data-gutter="" class="shrink-0 [^"]*w-10[^"]*">([\s\S]*?)<\/div><textarea/)?.[1] ?? "";
-    const numbers = [...gutter.matchAll(/<div>(\d+)<\/div>/g)].map((m) => Number(m[1]));
+    // (Round 37: the numbers are hidden one by one, so a skipped line's mark can be a button the gutter does not hide.)
+    const gutter = page.match(/<div data-gutter="" class="shrink-0 [^"]*w-10[^"]*">([\s\S]*?)<\/div><textarea/)?.[1] ?? "";
+    const numbers = [...gutter.matchAll(/<div aria-hidden="true">(\d+)<\/div>/g)].map((m) => Number(m[1]));
     expect(numbers).toEqual(lines.map((_, at) => at + 1));
     for (const set of parsed.sets) expect(numbers[set.row - 1]).toBe(set.row);
   });
@@ -906,7 +912,7 @@ describe("the selected break's remedy row in the table", () => {
     });
   });
 
-  it("(case c) draws it directly after the first cited row, with the other cited rows as plain 12px mono muted labels", () => {
+  it("(case c) draws it directly after the first cited row, with the other cited rows as plain 12px muted tabular-figure labels", () => {
     const index = report.breaks.findIndex((item) => item.rows.length > 1 && item.rule === 5);
     expect(index).toBeGreaterThanOrEqual(0);
     const item = report.breaks[index];
@@ -934,7 +940,7 @@ describe("the selected break's remedy row in the table", () => {
       const remedy = remedyRow(render(0, fits));
       expect(remedy).toMatch(/^<tr data-remedy-row="" aria-hidden="true" class="print:hidden"><td colSpan="6" class="bg-accent /i);
       expect(remedy).not.toMatch(/<(button|a|input|select|textarea)\b|tabindex|role=|href=/i);
-      // Never vermilion text: only the disc is.
+      // No raspberry text, fill or edge here: the break's disc is the mark, in ink.
       expect(remedy).not.toMatch(/text-primary|bg-primary|border-primary/);
     }
   });
@@ -1740,7 +1746,7 @@ describe("round 32: a published day compares its own costliest clashes, values f
     // The fold is closed and lists each overlap with its reason in words.
     const fold = html.slice(html.indexOf('<details class="group cc-disclosure'), html.indexOf("</details>"));
     expect(fold).not.toMatch(/<details[^>]* open/);
-    expect(text(fold)).toContain("Delta Choir × Cedar Bloom: 10 min shared. Not compared: both sets are locked, so neither can move; the next clash in the saved day’s ranking is compared instead.");
+    expect(text(fold)).toContain("Delta Choir × Cedar Bloom: 10 min shared. Not compared: both sets are marked locked in this grid, so neither can move; the next clash in the saved day’s ranking is compared instead.");
     expect(text(fold)).toContain("Echo Field × Flint Harbor: 15 min shared. Not compared: the saved day marks an act of this pair as having no usable Qloo signal, so it was not sent.");
     expect(text(fold)).toContain(
       "Ash Meadow × Cedar Bloom: 30 min shared. Not served: this site serves saved Qloo values only for the pairs its timetable page prints. Shown by minutes only.",
@@ -1829,7 +1835,7 @@ describe("round 32: a published day compares its own costliest clashes, values f
     const second = page.indexOf("Flint Harbor × Delta Choir: 45 min shared.");
     expect([worked, sentence, first, second, page.indexOf("3 overlaps not compared")]).toEqual([worked, sentence, first, second, page.indexOf("3 overlaps not compared")].sort((x, y) => x - y));
     expect(worked).toBeGreaterThanOrEqual(0);
-    expect(page).toContain("Delta Choir × Cedar Bloom: 10 min shared. Not compared: both sets are locked");
+    expect(page).toContain("Delta Choir × Cedar Bloom: 10 min shared. Not compared: both sets are marked locked in this grid");
     // The order on screen, when another is chosen, is the one printed.
     const longest = text(
       renderToStaticMarkup(
@@ -1976,9 +1982,12 @@ describe("round 35: a real paste survives first contact", () => {
 
   it("marks each skipped line beside the editor, its number in ink with the word, and leaves the field's own classes alone", () => {
     const html = tool(MESSY);
-    const gutter = html.match(/<div aria-hidden="true" data-gutter="" class="([^"]*)">([\s\S]*?)<\/div><textarea/);
+    const gutter = html.match(/<div data-gutter="" class="([^"]*)">([\s\S]*?)<\/div><textarea/);
     expect(gutter?.[1].split(" ")).toContain("w-24");
-    expect(gutter?.[2]).toContain('<div data-skipped-line="4" class="font-semibold whitespace-nowrap text-foreground">skipped 4</div>');
+    // Round 37 (L64): the mark is a button that selects the rejected value; its number in ink with the word stays.
+    expect(gutter?.[2]).toContain(
+      '<div><button type="button" data-skipped-line="4" aria-label="Select the rejected value on line 4" class="rounded-sm font-semibold whitespace-nowrap text-foreground decoration-1 underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">skipped 4</button></div>',
+    );
     expect((gutter?.[2].match(/data-skipped-line/g) ?? []).length).toBe(1);
     // The column header's gutter keeps the same width, so the names stay over their columns.
     expect(html).toContain('<span class="shrink-0 border-r border-border w-24"></span>');
@@ -2158,5 +2167,228 @@ describe("round 36: the rail splits rule breaks from overlaps, a published day's
     // The page passes the loaded day's id only while its fields are as loaded; the one button keeps its words.
     expect(source).toContain("const publishedDay = offeredDay(publishedDays, editingPublished ? publishedFrom : null);");
     expect(source.match(/Check a published day: \{publishedDay\.title\}/g)).toHaveLength(1);
+  });
+});
+
+describe("round 37: the rejected value in the editor, a paste with nothing focused, a late published day", () => {
+  const source = readFileSync(fileURLToPath(new URL("./check-tool.tsx", import.meta.url)), "utf8");
+  // Every name is invented. Line 4's start is 25:70 (the guard's CHECK-SKIP grid).
+  const MESSY = [
+    "Tidal Fields,Main Stage,14:00,15:00",
+    "Cobalt Rows,Side Stage,14:15,15:15",
+    "Paper Lanterns,Tent,14:30,15:15",
+    "Glass Harbour,Tent,25:70,19:30",
+    "Saltmarsh,Main Stage,15:30,16:30",
+    "Quiet Engine,Side Stage,15:45,16:45",
+    "Nobody Has Heard Of Us,Tent,16:00,16:45",
+    "Velvet Static,Main   Stage,17:00,18:00",
+    "Orbit Choir,Side Stage,17:15,18:15",
+    "Lowland Kites,Tent,17:30,18:15",
+    "Amber Kite,Main Stage,18:30,19:30",
+    "Ember Coast,Side Stage,18:45,19:45",
+  ].join("\n");
+  const tool = (grid: string) =>
+    renderToStaticMarkup(createElement(CheckTool, { initial: { grid, changeover: "", curfew: "", pairs: "" }, checkOnLoad: true }));
+  /** The value each skipped line of `grid` would select, by line. */
+  const selected = (grid: string) => {
+    const parsed = parseGrid(grid);
+    const skipped = parsed.skipped ?? [];
+    return skipped.map((item) => {
+      const range = rejectedRange(grid, item);
+      return [item.line, range ? grid.replace(/\r\n?/g, "\n").slice(range.start, range.end) : null] as const;
+    });
+  };
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("L64: finds exactly the characters of the value a skipped line's message quotes, on that line", () => {
+    const parsed = parseGrid(MESSY);
+    if (!parsed.ok) throw new Error("the messy grid should read");
+    const range = rejectedRange(MESSY, parsed.skipped[0]);
+    expect(range).toEqual({ start: MESSY.indexOf("25:70"), end: MESSY.indexOf("25:70") + 5 });
+    expect(selected(MESSY)).toEqual([[4, "25:70"]]);
+    // An end time, a locked flag and a set-time range, each the field's own characters (not the "ax" in an act's name).
+    const grid = [
+      "act,stage,start,end,locked",
+      "Maxx,Main,18:00,19:00,",
+      "Paper Lanterns,Tent,18:00,9pmx,",
+      "Saltmarsh,Main,20:00,21:00,maybe",
+      "Max Axe,Barn,20:00,21:00,ax",
+    ].join("\n");
+    expect(selected(grid)).toEqual([
+      [3, "9pmx"],
+      [4, "maybe"],
+      [5, "ax"],
+    ]);
+    // The flag's own two characters at the end of line 5, not the "ax" inside the act's name.
+    const flag = rejectedRange(grid, (parseGrid(grid).skipped ?? [])[2]);
+    expect(flag?.start).toBe(grid.length - 2);
+    const ranges = ["act,stage,time", "Quiet Engine,Tent, 6pm until 7pm "].join("\n");
+    expect(selected(ranges)).toEqual([[2, "6pm until 7pm"]]);
+  });
+
+  it("L64: reads quotes, tabs, semicolons, line breaks and a value the message cut, and claims nothing it cannot find", () => {
+    // A quoted field: the characters inside its quotes.
+    expect(selected('Amber Kite,Main,18:00,19:00\n"Basalt Choir","Main","25:99","20:00"')).toEqual([[2, "25:99"]]);
+    // Tabs, and semicolons from the first line.
+    expect(selected("Amber Kite\tMain\t18:00\t19:00\nBasalt Choir\tMain\t7 pm-ish\t20:00")).toEqual([[2, "7 pm-ish"]]);
+    expect(selected("Amber Kite;Main;18:00;19:00\nBasalt Choir;Main;18,30;20:00")).toEqual([[2, "18,30"]]);
+    // Windows line breaks: the offsets are those of the field's text, which holds "\n" only.
+    const crlf = "Amber Kite,Main,18:00,19:00\r\nBasalt Choir,Main,18:00,19:7O";
+    expect(selected(crlf)).toEqual([[2, "19:7O"]]);
+    // A value longer than 30 characters is quoted cut: the whole field is selected.
+    const long = "Amber Kite,Main,18:00,19:00\nBasalt Choir,Main,half past six in the evening maybe,20:00";
+    expect(parseGrid(long).skipped?.[0]?.message).toContain("…");
+    expect(selected(long)).toEqual([[2, "half past six in the evening maybe"]]);
+    // A message that quotes no value selects nothing.
+    expect(selected("Amber Kite,Main,18:00,19:00\nBasalt Choir,Main,20:00,19:00")).toEqual([[2, null]]);
+    // A line that no longer holds the value selects nothing.
+    const [item] = parseGrid(MESSY).skipped ?? [];
+    expect(rejectedRange(MESSY.replace("25:70", "15:00"), item)).toBeNull();
+    expect(rejectedRange("one line", item)).toBeNull();
+  });
+
+  it("L64: the skipped line's mark is a button named for its line, and the results offer 'Show it in the grid' under the message", () => {
+    const html = tool(MESSY);
+    const mark = html.match(/<button type="button" data-skipped-line="4"[^>]*>([^<]*)<\/button>/);
+    expect(mark?.[0]).toContain('aria-label="Select the rejected value on line 4"');
+    // The visible mark stays.
+    expect(mark?.[1]).toBe("skipped 4");
+    // Directly under the skip message, one text action with its words, a 44px target and the focus ring.
+    const action = html.match(/<\/div><div data-show-rejected="" class="-mt-3 print:hidden">(<button[^>]*>[^<]*<\/button>)<\/div>/);
+    expect(action?.[1]).toMatch(/^<button[^>]*type="button"[^>]*>Show it in the grid<\/button>$/);
+    expect(action?.[1]).toContain("min-h-11");
+    expect(action?.[1]).toContain("focus-visible:outline-ring");
+    expect(html.indexOf('data-skipped=""')).toBeLessThan(html.indexOf("data-show-rejected"));
+    expect(html.split("Show it in the grid").length - 1).toBe(1);
+    // Nothing skipped, or a first skipped line whose message quotes no value: no action, and a plain mark.
+    expect(tool(SAMPLE_GRID)).not.toContain("Show it in the grid");
+    const unquoted = tool("Amber Kite,Main,18:00,19:00\nBasalt Choir,Main,20:00,19:00\nCopper Field,Barn,18:00,19:00");
+    expect(unquoted).not.toContain("Show it in the grid");
+    expect(unquoted).toMatch(/<div aria-hidden="true" data-skipped-line="2" class="font-semibold whitespace-nowrap text-foreground">skipped 2<\/div>/);
+    expect(unquoted).not.toContain("Select the rejected value");
+  });
+
+  it("L64: either control shows the text view, focuses the field with the value selected and brings its line into view", () => {
+    expect(source).toMatch(/onClick=\{\(\) => showRejected\(line \+ 1\)\}/);
+    expect(source).toMatch(/onClick=\{\(\) => showRejected\(firstRejected\)\}/);
+    const show = source.slice(source.indexOf("function showRejected("), source.indexOf("/** A rule break's row button"));
+    expect(show).toContain('setView("csv");');
+    const effect = source.slice(source.indexOf("// A skipped line's rejected value, asked for"), source.indexOf("// After a paste the page took"));
+    expect(effect).toContain("const range = area && item ? rejectedRange(area.value, item) : null;");
+    expect(effect).toContain("area.focus({ preventScroll: true });");
+    expect(effect).toContain("area.setSelectionRange(range.start, range.end);");
+    // The nearest edge, in the field and on the page; no smooth scroll under reduced motion.
+    expect(effect).toContain("if (top < area.scrollTop) area.scrollTop = top;");
+    expect(effect).toContain("else if (top + line > area.scrollTop + shown) area.scrollTop = top + line - shown;");
+    expect(effect).toContain('window.scrollBy({ top: by, behavior: reduce ? "auto" : "smooth" });');
+    // Each request is handled once, so a later check never selects the value again.
+    expect(effect).toContain("rejectedDone.current = rejectedPick.nonce;");
+  });
+
+  it("L65: a paste with nothing that takes typing focused goes into the editor; a paste into a field is left alone", () => {
+    expect(takesPaste(null)).toBe(false);
+    for (const tagName of ["BODY", "BUTTON", "A", "DIV"]) expect(takesPaste({ tagName, isContentEditable: false })).toBe(false);
+    for (const tagName of ["INPUT", "TEXTAREA", "SELECT", "textarea"]) expect(takesPaste({ tagName, isContentEditable: false })).toBe(true);
+    expect(takesPaste({ tagName: "DIV", isContentEditable: true })).toBe(true);
+    // One listener for the page's life, which leaves a paste a field or the table's own region took alone.
+    expect(source).toMatch(/window\.addEventListener\("paste", onPaste\);\s*return \(\) => window\.removeEventListener\("paste", onPaste\);/);
+    expect(source).toContain("if (event.defaultPrevented || takesPaste(document.activeElement as HTMLElement | null)) return;");
+    // As a paste into the editor: with the table on show, as the table's own paste; in the text view, at the caret.
+    const page = source.slice(source.indexOf("function pasteFromPage("), source.indexOf("/** A skipped line's mark"));
+    expect(page).toContain('if (view === "table") {\n      pasteOverGrid(text);');
+    expect(page).toContain("update(\"grid\", `${current.slice(0, start)}${pasted}${current.slice(end)}`);");
+    // Said once, in the polite live region, as the table's paste says it.
+    expect(page).toContain("setNote(pastedLine(text));");
+    expect(page).toContain("setPasteNote(pastedLine(text));");
+    // Nothing is checked, sent or stored, and the address is left alone.
+    expect(page).not.toMatch(/\bcheck\(|runCheck|requestPrice|fetch|localStorage|sessionStorage|history\.|location\./);
+  });
+
+  // An invented published day in the route's shape, as round 31's test builds one.
+  const day = {
+    id: "brookfield-2030-sat",
+    title: "Brookfield 2030, Saturday",
+    synthetic: false,
+    festival: {
+      stages: [
+        { id: "big", name: "Big Top" },
+        { id: "barn", name: "Barn" },
+      ],
+      acts: [
+        { id: "a", name: "Amber Kite" },
+        { id: "b", name: "Basalt Choir" },
+      ],
+      timetable: [
+        { act_id: "a", day: 0, stage_id: "big", start: 1110, end: 1200, locked: false },
+        { act_id: "b", day: 0, stage_id: "barn", start: 1140, end: 1230, locked: false },
+      ],
+      constraints: { changeover_minutes: 20, curfew: { "0": 1425 }, no_clash_with: [], billing_rules: [] },
+    },
+  };
+
+  /** A fetch whose answer waits until `release` is called; every request it gets is listed. */
+  function delayedFetch(body: unknown) {
+    let open: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? "GET"} ${url}`);
+      await gate;
+      return { ok: true, json: async () => body } as unknown as Response;
+    });
+    return { release: () => open(), calls };
+  }
+
+  it("L70: a paste made while a published day loads stays, the late day is dropped, and the page says so once", async () => {
+    const { release, calls } = delayedFetch(day);
+    // The page's count of presses and the editor's text, as the tool keeps them.
+    const page = { latest: 1, grid: "" };
+    const pending = awaitPublishedDay(day.id, { n: 1, grid: page.grid }, () => ({ latest: page.latest, grid: page.grid }));
+    // The visitor pastes a grid before the answer arrives.
+    page.grid = "Pasted Act,Main,18:00,19:00";
+    release();
+    expect(await pending).toEqual({ kind: "kept" });
+    expect(page.grid).toBe("Pasted Act,Main,18:00,19:00");
+    expect(calls).toEqual([`GET /api/presets/${day.id}`]);
+    expect(PUBLISHED_KEPT).toBe("Kept your pasted grid; ignored the published day that arrived later.");
+    // Said once, in the status line under the actions that said "Loading the published timetable." at the press.
+    expect(source.match(/PUBLISHED_KEPT/g)).toHaveLength(2);
+    expect(source).toMatch(/if \(answer\.kind === "kept"\) \{\s*setPublishedNote\(PUBLISHED_KEPT\);\s*return;\s*\}/);
+    expect(source).toMatch(/\{publishedNote \? \(\s*<p role="status" className="mt-1 text-sm font-semibold">\s*\{publishedNote\}/);
+    // The press is counted and the editor's text kept with it; the text as last drawn is what the answer meets.
+    expect(source).toContain("const press: PublishedPress = { n: publishedPresses.current, grid: input.grid };");
+    expect(source).toMatch(/useLayoutEffect\(\(\) => \{\s*gridNow\.current = input\.grid;\s*\}, \[input\.grid\]\);/);
+  });
+
+  it("L70: with no paste the published day loads and is checked as before", async () => {
+    const { release } = delayedFetch(day);
+    const pending = awaitPublishedDay(day.id, { n: 1, grid: "" }, () => ({ latest: 1, grid: "" }));
+    release();
+    const answer = await pending;
+    expect(answer.kind).toBe("load");
+    if (answer.kind !== "load") return;
+    expect(answer.day).toEqual(publishedDayInput(day));
+    const load = source.slice(source.indexOf("async function loadPublished("), source.indexOf('/** "Clear"'));
+    expect(load).toMatch(/const day = answer\.day;\s*setPublishedNote\(""\);[\s\S]*setInput\(day\.input\);[\s\S]*check\(day\.input, "Published timetable loaded\. "\);/);
+  });
+
+  it("L70: a later press wins without a word, and a day that did not load leaves the fields alone", async () => {
+    expect(publishedArrival({ n: 1, grid: "a" }, 2, "a")).toBe("later");
+    expect(publishedArrival({ n: 1, grid: "a" }, 2, "b")).toBe("later");
+    expect(publishedArrival({ n: 2, grid: "a" }, 2, "a")).toBe("load");
+    expect(publishedArrival({ n: 2, grid: "a" }, 2, "b")).toBe("kept");
+    const later = delayedFetch(day);
+    const first = awaitPublishedDay(day.id, { n: 1, grid: "" }, () => ({ latest: 2, grid: "" }));
+    later.release();
+    expect(await first).toEqual({ kind: "later" });
+    vi.unstubAllGlobals();
+    const failed = delayedFetch(null);
+    const none = awaitPublishedDay(day.id, { n: 1, grid: "" }, () => ({ latest: 1, grid: "changed" }));
+    failed.release();
+    expect(await none).toEqual({ kind: "failed" });
+    expect(source).toMatch(/if \(answer\.kind === "later"\) return;/);
   });
 });

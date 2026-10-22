@@ -51,6 +51,14 @@ describe("the footer's licence, source and independence line (round 31)", () => 
     expect(qlooCredits(plain)).toEqual([]);
   });
 
+  it("calls what this app calculates scores, never prices, on both kinds of day (round 37)", () => {
+    expect(FOOTER_SOURCES).toContain("taste overlap and clash scores are calculated by this app from them");
+    expect(FOOTER_SYNTHETIC).toContain("Scores are calculated by this app from the invented figures.");
+    expect(text(footer(false))).toContain("taste overlap and clash scores are calculated by this app from them");
+    expect(text(footer(true))).toContain("Scores are calculated by this app from the invented figures.");
+    for (const plain of [text(footer(false)), text(footer(true))]) expect(plain).not.toMatch(/pric(e|es|ed|ing)\b/i);
+  });
+
   it("sets the line in the footer's own type: muted 14px on paper, ink links with the 1px control-edge underline, no box", () => {
     const html = footer(false);
     const line = html.match(/<div class="container-page pb-8 text-sm text-muted-foreground"><p data-footer-legal="true"[\s\S]*?<\/p><\/div>/)?.[0] ?? "";

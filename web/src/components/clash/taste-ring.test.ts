@@ -214,7 +214,7 @@ describe("the taste figure's drawing", () => {
     expect(html.match(rankAxes)).toHaveLength(2);
     expect(html.replace(pagerRow, "").replace(rankAxes, "")).not.toContain("bg-border-strong");
     expect(html).not.toContain("border-t border-border-strong");
-    // The minutes in vermilion mono, the words in sans.
+    // The minutes in raspberry tabular figures, the words in the text face.
     expect(html).toMatch(/<span class="font-mono text-primary[^"]*">30 min<\/span> at the same time/);
     expect(render([{ ...item(1, tags), overlap_min: null }])).not.toContain("<pattern");
   });

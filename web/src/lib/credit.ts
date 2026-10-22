@@ -28,7 +28,7 @@ export function weakSignalLabel(synthetic: boolean): string {
   return synthetic ? "Weak signal." : "Weak Qloo signal.";
 }
 
-/** The legend's entry for a set that is left out of every price. */
+/** The legend's entry for a set that is left out of every score. */
 export function legendNoSignal(synthetic: boolean): string {
   return `${noSignalLabel(synthetic)}: left out, not scored as zero`;
 }
@@ -145,14 +145,14 @@ export function drawPriorList(): string {
 
 /**
  * The note that goes with every printed formula: the factors are on a 0 to 1 scale (taste overlap and draw
- * are shown out of 100), they are rounded when printed so they may not multiply to the printed price, and an
+ * are shown out of 100), they are rounded when printed so they may not multiply to the printed score, and an
  * act with no popularity takes a stand-in draw by billing tier (`DRAW_PRIOR` in the engine).
  */
 export function formulaNote(synthetic: boolean): string {
   const { scaleFactor } = METHOD_FIGURES.price;
   return (
     `The factors are on a ${scaleFactor[0]} to ${scaleFactor[1]} scale (taste overlap and draw are shown out of 100 elsewhere on the page) ` +
-    `and are rounded when printed, so they may not multiply to exactly the printed price. ` +
+    `and are rounded when printed, so they may not multiply to exactly the printed score. ` +
     `An act with no ${synthetic ? "popularity figure" : "Qloo popularity"} takes a stand-in draw set by its billing tier ` +
     `(${drawPriorList()} for tiers 1 to 4).`
   );

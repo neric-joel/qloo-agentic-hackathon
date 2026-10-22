@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ElementType, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ElementType, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, ExternalLink, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -37,9 +37,25 @@ import {
   traceDescription,
   usedTitle,
 } from "@/lib/credit";
-import { pluralize } from "@/lib/format";
+import { formatInteger, pluralize } from "@/lib/format";
 import { pairCheckKey, type PairCheck } from "@/lib/pair-check";
 import type { Act, PairClash, Preset, Receipt, SetSlot, Stage } from "@/lib/preset";
+import {
+  CHAIN_INVENTED,
+  CHAIN_TITLE,
+  candidatesAsked,
+  compareLine,
+  MATCHED_LABEL,
+  matchedNames,
+  overlapLine,
+  requestChain,
+  requestNoun,
+  retainedLine,
+  savedLine,
+  shortId,
+  tagsLine,
+  type ChainAct,
+} from "@/lib/request-chain";
 import { formatRange, overlapWindow } from "@/lib/timetable";
 
 
@@ -205,6 +221,113 @@ function PairTags({
 }
 
 /**
+ * One act's line of "Saved requests and values": its saved /search, the entity this app used (the first 8 characters,
+ * the full id in a title attribute), its saved popularity and how many /v2/insights requests rank from it. A clause
+ * the saved data does not hold (no saved search, no entity, no popularity) is left out. Qloo's endpoints in teal.
+ */
+function ChainActLine({ act }: { act: ChainAct }) {
+  const clauses: ReactNode[] = [];
+  if (act.search) {
+    clauses.push(
+      <span key="search">
+        <code className="font-mono text-[0.8125rem] text-prov-qloo">/search</code> &ldquo;{act.search.query}&rdquo;
+        {act.search.take !== null ? ` ${candidatesAsked(act.search.take)}` : null}
+      </span>,
+    );
+  }
+  if (act.entityId) {
+    clauses.push(
+      <span key="entity">
+        entity this app used{" "}
+        <code title={act.entityId} className="font-mono text-[0.8125rem]">
+          {shortId(act.entityId)}
+        </code>
+      </span>,
+    );
+  }
+  if (act.popularity !== null) {
+    clauses.push(
+      <span key="popularity">
+        popularity <span className="font-mono tabular-nums">{act.popularity}</span>
+      </span>,
+    );
+  }
+  if (act.entityId) {
+    // insightsCount's words, with the endpoint set in mono teal.
+    clauses.push(
+      <span key="insights">
+        its ranked row: {formatInteger(act.insights)}{" "}
+        <code className="font-mono text-[0.8125rem] text-prov-qloo">/v2/insights</code> {requestNoun(act.insights)}
+      </span>,
+    );
+  }
+  return (
+    <li data-chain-act className="min-w-0 break-words">
+      <span className="font-semibold">{act.name}:</span>{" "}
+      {clauses.map((clause, i) => (
+        <Fragment key={i}>
+          {i > 0 ? " · " : null}
+          {clause}
+        </Fragment>
+      ))}
+    </li>
+  );
+}
+
+/**
+ * "Saved requests and values" (round 37, L85): the walk from the saved requests to the score for this pair, read
+ * from the preset the page holds (`requestChain`); nothing is fetched. Per act its line (ChainActLine); then the
+ * taste overlap on to the pair score and the index; what the ledger holds for the pair's comparison; Qloo's search
+ * match for each act from the saved reading (or, on a preset that holds none, that the names were not retained);
+ * where the receipt holds no shared tag, why or that none is stored; and the saved date.
+ * On the invented day, one line: no request was made.
+ */
+function SavedRequests({ preset, shown }: { preset: Preset; shown: PairClash }) {
+  const chain = preset.synthetic ? null : requestChain(preset, shown.a.act_id, shown.b.act_id);
+  const matched = chain ? matchedNames(chain.acts) : null;
+  const tags = chain ? tagsLine(chain) : null;
+  return (
+    <Section title={CHAIN_TITLE}>
+      <div data-request-chain className="text-sm leading-relaxed">
+        {chain === null ? (
+          <p className="text-muted-foreground">{CHAIN_INVENTED}</p>
+        ) : (
+          <>
+            <ul className="space-y-2">
+              {chain.acts.map((act) => (
+                <ChainActLine key={act.id} act={act} />
+              ))}
+            </ul>
+            <p className="mt-3">{overlapLine(formatOverlap(chain.overlap ?? shown.audience_overlap))}</p>
+            <p className="mt-2">
+              {chain.compares > 0 ? (
+                // compareLine's words, with the endpoint set in mono teal.
+                <>
+                  {formatInteger(chain.compares)} saved{" "}
+                  <code className="font-mono text-[0.8125rem] text-prov-qloo">/v2/analysis/compare</code>{" "}
+                  {requestNoun(chain.compares)}.
+                </>
+              ) : (
+                compareLine(0)
+              )}
+            </p>
+            {matched ? (
+              <p data-matched-names className="mt-2 text-muted-foreground">
+                {MATCHED_LABEL} {matched}
+              </p>
+            ) : (
+              <p className="mt-2 text-muted-foreground">{retainedLine(chain.sharedTags)}</p>
+            )}
+            {matched && tags ? <p className="mt-2 text-muted-foreground">{tags}</p> : null}
+            {chain.savedOn ? <p className="mt-2 text-muted-foreground">{savedLine(chain.savedOn)}</p> : null}
+          </>
+        )}
+      </div>
+    </Section>
+  );
+}
+
+/**
  * Under the opening sentence of a clash whose two sets are both locked. A published day's locks are this
  * app's, so it says so and that no move is suggested, in the costliest-clashes line's words; the invented
  * day's fixed slots cannot move.
@@ -230,7 +353,7 @@ type ClashDetailsProps = {
 
 /**
  * The body of the drawer for one clash: the opening sentence, both acts, the live re-check, the price and
- * its formula, the label and confidence, the pair's tags and where the figures came from. Exported apart
+ * its formula, the saved requests and values behind it (round 37), the label and confidence, the pair's tags and where the figures came from. Exported apart
  * from the sheet so it can be rendered on its own; on an invented day (`preset.synthetic`) every line that
  * would credit Qloo says the figure is invented instead.
  */
@@ -350,6 +473,8 @@ export function ClashDetails({
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{withoutTaste}</p>
         ) : null}
       </Section>
+
+      <SavedRequests preset={preset} shown={shown} />
 
       <Section title="Label and confidence">
         {shown.label ? (

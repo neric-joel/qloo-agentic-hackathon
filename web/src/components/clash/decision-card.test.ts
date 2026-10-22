@@ -1139,7 +1139,7 @@ describe("KeepApart", () => {
     expect(plain).not.toMatch(/every (place|swap)|keeps all rules/);
     expect(plain).toContain("First set");
     expect(plain).toContain("Second set");
-    expect(plain).toContain("(locked)");
+    expect(plain).toContain("(locked by this app)");
     expect(html).toMatch(/<button[^>]*disabled[^>]*>Find changes that end this overlap<\/button>/);
     expect(plain).not.toContain("Smallest changes first");
   });

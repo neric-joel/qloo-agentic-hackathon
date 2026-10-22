@@ -1080,3 +1080,57 @@ describe("round 36: real headers and times, and what was not read", () => {
     expect(report("A;x\tMain\t18:00\t19:00").sets.map((s) => s.act)).toEqual(["A;x"]);
   });
 });
+
+describe("round 37 N7: punctuation at the end of a header cell", () => {
+  it("reads a “Fixed?” header as the lock column, so a Y locks its set and no column is said to be ignored", () => {
+    const r = report(
+      "﻿Performer\tVenue\tFrom\tTo\tFixed?\r\nVelvet Static\tMain Stage\t17:00\t18:00\tY\r\nAmber Kite\tSide Stage\t17:30\t18:30\t",
+    );
+    expect(r.sets.map((s) => [s.act, s.locked])).toEqual([
+      ["Velvet Static", true],
+      ["Amber Kite", false],
+    ]);
+    expect(r.notes).toEqual([]);
+  });
+
+  it("reads a value the lock column cannot read under “Fixed?” as a skipped line, as it does under “locked”", () => {
+    const grid = (lock: string) => `Act,Stage,Start,End,${lock}\nLowland Kites,Tent,17:30,18:15,maybe\nAmber Kite,Main,18:30,19:30,`;
+    const plain = report(grid("locked"));
+    const asked = report(grid("Fixed?"));
+    expect(asked.sets.map((s) => s.act)).toEqual(plain.sets.map((s) => s.act));
+    expect((asked.skipped ?? []).map((s) => s.message)).toEqual((plain.skipped ?? []).map((s) => s.message));
+    expect((asked.skipped ?? []).length).toBe(1);
+  });
+
+  it("reads other header words with punctuation at either end, and still reads underscores and spaces", () => {
+    const r = report("Act:,Stage:,*Start time*,End.,(Locked)\nA,Main,18:00,19:00,yes\nB,Side,18:30,19:30,");
+    expect(r.sets.map((s) => [s.act, s.stage, s.start, s.end, s.locked])).toEqual([
+      ["A", "Main", 1080, 1140, true],
+      ["B", "Side", 1110, 1170, false],
+    ]);
+    expect(r.notes).toEqual([]);
+    expect(report("ACT_NAME, stage ,set_start,Set  End\nA,Main,18:00,19:00").sets).toHaveLength(1);
+    expect(report("Time?,Act,Stage\n18:00-19:00,A,Main").sets[0]).toMatchObject({ start: 1080, end: 1140 });
+  });
+
+  it("ends the ignored-column note with one mark when the last name already ends in one", () => {
+    expect(report("act,stage,start,end,Notes?\nA,Main,18:00,19:00,x").notes).toEqual([
+      "Ignored a column this page does not read: Notes?",
+    ]);
+    expect(report("act,stage,start,end,Notes.\nA,Main,18:00,19:00,x").notes).toEqual([
+      "Ignored a column this page does not read: Notes.",
+    ]);
+    expect(report("Genre!,act,stage,start,end,Notes\nrock,A,Main,18:00,19:00,x").notes).toEqual([
+      "Ignored 2 columns this page does not read: Genre!, Notes.",
+    ]);
+    expect(report("act,stage,start,end,Notes\nA,Main,18:00,19:00,x").notes).toEqual([
+      "Ignored a column this page does not read: Notes.",
+    ]);
+  });
+
+  it("names no column with a cell of punctuation alone, and still refuses a header that misses one", () => {
+    expect(errors("act,stage,start,?\nA,Main,18:00,19:00")).toEqual([
+      'Line 1: no column reads as end. Not read: "?". For end this check reads: end, end time, ends, finish, finish time, finishes, until, to, set end.',
+    ]);
+  });
+});

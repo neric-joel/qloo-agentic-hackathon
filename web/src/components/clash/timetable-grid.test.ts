@@ -6,11 +6,24 @@ import { describe, expect, it } from "vitest";
 
 import { buildSetViews, topClashes } from "@/lib/clashes";
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
+import { LOCK_GENERIC, LOCK_INVENTED, LOCK_SHORT } from "@/lib/locks";
 import { parsePreset } from "@/lib/preset";
 import type { PlanPreview } from "@/lib/stack";
+import { columnFrames, columnGap } from "@/lib/timetable";
 
 import * as grid from "./timetable-grid";
-import { cardRows, isLongName, shortCueCount, TimetableGrid, WEAK_CUE_WORD } from "./timetable-grid";
+import {
+  boardColumnWidths,
+  cardRows,
+  cueColumnWidths,
+  describeSetTail,
+  foldedBoardWidth,
+  handStep,
+  isLongName,
+  shortCueCount,
+  TimetableGrid,
+  WEAK_CUE_WORD,
+} from "./timetable-grid";
 import { legendSymbolCount, TimetableLegend } from "./timetable-legend";
 
 // Every name and figure below is invented for the test, apart from one act name borrowed for its
@@ -38,7 +51,14 @@ function boardPreset(minutes: number, cyMinutes = 60, synthetic = false, weak: s
   return { preset, views: buildSetViews(preset, 0) };
 }
 
-function board(minutes: number, cyMinutes = 60, synthetic = false, weak: string[] = [], plan: PlanPreview | null = null): string {
+function board(
+  minutes: number,
+  cyMinutes = 60,
+  synthetic = false,
+  weak: string[] = [],
+  plan: PlanPreview | null = null,
+  holds = false,
+): string {
   const { preset, views } = boardPreset(minutes, cyMinutes, synthetic, weak);
   const noop = () => {};
   return renderToStaticMarkup(
@@ -56,6 +76,7 @@ function board(minutes: number, cyMinutes = 60, synthetic = false, weak: string[
       onOpen: noop,
       plan,
       synthetic,
+      holds,
     }),
   );
 }
@@ -164,14 +185,31 @@ describe("a tile with no Qloo signal", () => {
     expect(cardRows(40, 1, false, { label: true })).toMatchObject({ label: true, nameLines: 1 });
   });
 
+  it("gives a name with too few lines no time or genre row, so the label is not pushed out of the tile", () => {
+    // A 30-minute set with no signal on a phone column (59px): the name wraps to two lines and the label
+    // keeps its foot row, so the name has room for one line. It still prints both (it is never cut), so no
+    // time row goes under it: the time is read out and kept in the title.
+    expect(cardRows(59, 2, false, { label: true, wraps: true })).toMatchObject({
+      nameLines: 1,
+      clamped: true,
+      time: false,
+      genre: false,
+      label: true,
+    });
+    // With room for every line of the name, the rows under it are unchanged.
+    expect(cardRows(85, 2, true, { wraps: true })).toMatchObject({ nameLines: 2, clamped: false, time: true, genre: true });
+    expect(cardRows(54, 2, true, { wraps: true })).toMatchObject({ nameLines: 2, clamped: false, time: false, genre: false });
+  });
+
   it("is the board's paper in a dotted control-grey edge with an ink name and time and a muted label, and has no ring glyph", () => {
     const { open, inner } = tile(board(90), "cy");
     // Unpriced weighs less than priced: the opaque page paper, never the card and never a transparent fill.
     expect(open).toMatch(/border-dotted border-border-strong bg-background text-foreground/);
     expect(open).not.toContain("bg-card");
     expect(open).not.toContain("bg-transparent");
-    // The "No Qloo signal" label stays muted (12px, medium); the name and the time take the tile's ink.
-    expect(inner).toMatch(/<span data-no-signal="" class="mt-auto block text-xs leading-4 font-medium whitespace-nowrap text-muted-foreground/);
+    // The "No Qloo signal" label stays muted (12.5px, medium: a phone column cannot hold it at 13px); the name
+    // and the time take the tile's ink.
+    expect(inner).toMatch(/<span data-no-signal="" class="mt-auto block text-\[0\.78125rem\] leading-4 font-medium whitespace-nowrap text-muted-foreground/);
     // A screen reader hears that the set is left out of the scores, in the board's word.
     expect(inner).toContain('<span class="sr-only">, not scored. </span>');
     expect(inner).not.toContain("priced");
@@ -226,8 +264,11 @@ describe("the board's shading", () => {
     // The links and badges are laid out only once the board is measured, so the source says it for them.
     const source = readFileSync(join(__dirname, "timetable-grid.tsx"), "utf8");
     expect(source).not.toMatch(/useReveal|data-reveal|cc-link-draw|cc-link-wipe|--reveal-delay|pathLength/);
-    // The rank badges keep their hover and focus lift, and stay discs.
-    expect(source).toMatch(/"cc-link-badge [^"]*rounded-full[^"]*hover:scale-110 focus-visible:scale-110/);
+    // The rank badges keep their hover and focus lift, and stay discs. The hover lift follows the hand (the
+    // badge's data-hand, set on the first pointer move over it), never a CSS :hover that a scroll can start.
+    expect(source).toMatch(/"cc-link-badge [^"]*rounded-full[^"]*data-\[hand\]:scale-110 focus-visible:scale-110/);
+    expect(source).toContain("data-hand={hand === `clash:${layout.id}` ? \"\" : undefined}");
+    expect(source).not.toMatch(/hover:scale-110/);
   });
 
   it("numbers a hidden clash's disc in ink and a seen clash's in paper, never raspberry type on the card", () => {
@@ -246,7 +287,7 @@ describe("the board's shading", () => {
     for (const id of ["ann", "bo"]) expect(tile(html, id).open).not.toContain("bg-background");
   });
 
-  it("sets only the act and its time in ink: the genre (12px) stays muted, and the draw is read out only", () => {
+  it("sets only the act and its time in ink: the genre (13px) stays muted, and the draw is read out only", () => {
     const { inner } = tile(board(90), "ann");
     expect(inner).toMatch(/<span class="block font-mono text-xs leading-4 whitespace-nowrap tabular-nums text-foreground">/);
     expect(inner).not.toMatch(/font-mono text-xs leading-4 whitespace-nowrap[^"]*text-muted-foreground tabular-nums/);
@@ -271,6 +312,17 @@ describe("the board's shading", () => {
     expect(cardRows(101, 3, false, { long: true })).toMatchObject({ roomy: false, time: true });
     // Never smaller than 12px anywhere on a tile.
     expect(board(90) + board(50)).not.toMatch(/text-\[(?:[0-9]|1[01])px\]|text-\[0\.(?:[0-6]\d*|7[0-4]\d*)rem\]/);
+    // The type floor: no text on the board under 12.5px. Every size the board sets itself, rendered or in its
+    // source (the badges and ghosts are laid out only once measured), is at least 12.5px, and the text-xs role
+    // it uses for the time, the genre and the stage counts is 13px.
+    const sizes = (markup: string) =>
+      [...markup.matchAll(/\btext-\[([\d.]+)(px|rem)\]/g)].map(([, n, unit]) => Number(n) * (unit === "rem" ? 16 : 1));
+    const rendered = sizes(board(90) + board(50) + board(15) + board(90, 25, false, ["ann"]));
+    const source = sizes(readFileSync(join(__dirname, "timetable-grid.tsx"), "utf8"));
+    expect(rendered.length).toBeGreaterThan(0);
+    expect(source.length).toBeGreaterThanOrEqual(5);
+    for (const px of [...rendered, ...source]) expect(px).toBeGreaterThanOrEqual(12.5);
+    expect(readFileSync(join(__dirname, "../../app/globals.css"), "utf8")).toMatch(/--text-xs: 0\.8125rem;\s*--text-xs--line-height: 1rem;/);
   });
 
   it("has no draw-stepped fill, no colour mixing, no opacity attributes and no half-hour rules", () => {
@@ -283,7 +335,7 @@ describe("the board's shading", () => {
     expect(html).not.toContain("bg-hatch");
   });
 
-  it("sets the hour labels at 12px and the stage header with no heavy rule", () => {
+  it("sets the hour labels in the 13px text-xs role and the stage header with no heavy rule", () => {
     const html = board(90);
     expect(html).toMatch(/-translate-y-1\/2 font-mono text-xs text-muted-foreground tabular-nums/);
     expect(html).not.toContain("border-b-2");
@@ -309,7 +361,7 @@ describe("a weak-signal tile", () => {
     const { inner } = tile(board(90, 60, false, ["ann"]), "ann");
     const { line, cue } = weakParts(inner);
     expect(line?.[2]).toBe("Weak Qloo signal");
-    expect(line?.[1]).toBe("mt-auto block text-xs leading-4 font-medium whitespace-nowrap text-muted-foreground pt-1");
+    expect(line?.[1]).toBe("mt-auto block text-[0.78125rem] leading-4 font-medium whitespace-nowrap text-muted-foreground pt-1");
     expect(cue).toBeNull();
     // No figure beside it (the draw is read out just before it), and no lowercase token is left on the tile.
     expect(inner).toMatch(/<span class="sr-only">Draw 90\. <\/span><span aria-hidden="true" data-weak="line"/);
@@ -391,7 +443,7 @@ describe("a weak-signal tile", () => {
     const weakItem = [...shown.matchAll(item)].map((match) => match[1] ?? "").find((inner) => inner.includes('data-legend-item="weak"')) ?? "";
     expect(weakItem).toMatch(/<svg aria-hidden="true" data-mark="weak" width="36" height="18" viewBox="0 0 36 18" class="block">/);
     expect(weakItem).toContain('<rect x="0.5" y="0.5" width="35" height="17" rx="6" fill="var(--card)" stroke="var(--border-strong)" stroke-width="1"></rect>');
-    expect(weakItem).toContain(`font-size="12" fill="var(--muted-foreground)" class="font-medium">${WEAK_CUE_WORD}</text>`);
+    expect(weakItem).toContain(`font-size="12.5" fill="var(--muted-foreground)" class="font-medium">${WEAK_CUE_WORD}</text>`);
     expect(weakItem).toContain('<span data-legend-item="weak">Weak Qloo signal</span>');
     expect(shown).not.toMatch(/weak: /);
     expect(key({ weak: true, synthetic: true })).toContain('<span data-legend-item="weak">Weak signal</span>');
@@ -412,6 +464,67 @@ describe("a weak-signal tile", () => {
     expect(legendSymbolCount({})).toBe(4);
     expect(legendSymbolCount({ planShown: true })).toBe(5);
     expect(legendSymbolCount({ showLinks: false })).toBe(2);
+  });
+
+  it("counts the key's cue from the width the board opens to, so the key holds its items with the fold shut or open", () => {
+    // Found at 768 px: the board's summary moved 28 px when pressed and stayed there, because the key gained
+    // "Weak Qloo signal" only once the fold opened. A board shut in a closed fold is never measured.
+    const { preset, views } = boardPreset(90, 60, false, ["ann"]);
+    const stageCount = preset.festival.stages.length;
+    // The key is rendered once per value and reused: the sweep below compares it 802 times, and rendering it
+    // afresh each time made this test run past its time limit when the whole suite runs at once.
+    const keys = new Map<boolean, string>();
+    const key = (weak: boolean) => {
+      const html = keys.get(weak) ?? renderToStaticMarkup(createElement(TimetableLegend, { weak }));
+      keys.set(weak, html);
+      return html;
+    };
+    const seen = { cue: 0, words: 0 };
+    for (let foldWidth = 200; foldWidth <= 1000; foldWidth += 2) {
+      // With no minimum width (the tablet and desktop column) and inside the phone's 760 px scroller.
+      for (const minWidth of [0, 760]) {
+        // Open: the board's grid lays out a 52 px time axis, a gutter, then the stage area the observer
+        // measures, cut into equal columns with the same gutter between them (34 px at least, room for a badge).
+        const boardWidth = Math.max(foldWidth, minWidth);
+        const gap = Math.max(columnGap(boardWidth), 34);
+        const areaWidth = boardWidth - 52 - gap;
+        const measured = columnFrames(areaWidth, stageCount, gap).map((frame) => frame.width);
+        const open = shortCueCount(views, cueColumnWidths(measured, areaWidth, 0, stageCount));
+        // Shut: nothing is measured, and the width is read from the fold before the first paint (where the
+        // browser will not lay out a closed fold's board).
+        const shut = shortCueCount(views, cueColumnWidths([], 0, foldedBoardWidth(foldWidth, minWidth), stageCount));
+        expect(shut, `fold ${foldWidth}px, board at least ${minWidth}px`).toBe(open);
+        expect(key(shut > 0)).toBe(key(open > 0));
+        // Read from the board itself (shut or open), the same; and a measurement left from before the fold
+        // last changed width (a window resized while the board was shut) never wins over a fresh read.
+        expect(shortCueCount(views, cueColumnWidths(measured, areaWidth, boardWidth, stageCount))).toBe(open);
+        expect(shortCueCount(views, cueColumnWidths(columns(400), 1800, boardWidth, stageCount))).toBe(open);
+        if (open > 0) seen.cue += 1;
+        else seen.words += 1;
+      }
+    }
+    // The sweep crosses the width where the tile turns from its words to the cue word.
+    expect(seen.cue).toBeGreaterThan(0);
+    expect(seen.words).toBeGreaterThan(0);
+    // The phone's board never runs under its 760 px, and a fold's own width counts where it is wider.
+    expect(foldedBoardWidth(652, 760)).toBe(760);
+    expect(foldedBoardWidth(720, 0)).toBe(720);
+    // Before anything is read (the server HTML), there are no columns and every weak tile prints its words.
+    expect(boardColumnWidths(0, stageCount)).toEqual([]);
+    expect(shortCueCount(views, cueColumnWidths([], 0, 0, stageCount))).toBe(0);
+    // The arithmetic above is the board's own: a 52 px axis and its gutter, then the stage area.
+    const gridSource = readFileSync(join(__dirname, "timetable-grid.tsx"), "utf8");
+    expect(gridSource).toContain("const AXIS_WIDTH = 52;");
+    expect(gridSource).toContain("const MIN_GUTTER = BADGE + 8;");
+    expect(gridSource).toContain("const BADGE = 26;");
+    expect(gridSource).toContain("style={{ gridTemplateColumns: `${AXIS_WIDTH}px minmax(0, 1fr)`, columnGap: gap }}");
+    // The width is read before the first paint and again when the fold changes width, opens or closes, and
+    // the count reaches the key before it paints.
+    expect(gridSource).toMatch(/useLayoutEffect\(\(\) => \{\s*const root = rootRef\.current;\s*const fold = root\?\.closest\("details"\);/);
+    expect(gridSource).toContain("observer.observe(fold);");
+    expect(gridSource).toContain('fold.addEventListener("toggle", read);');
+    const legendSource = readFileSync(join(__dirname, "timetable-legend.tsx"), "utf8");
+    expect(legendSource).toMatch(/useLayoutEffect\(\(\) => \{\s*setBoardCueTiles\(count\);/);
   });
 
   it("draws the no-signal swatch as a 20 x 12 dotted mini tile at 1.5px on a mark's 6px corner, on the board's paper as the tile is", () => {
@@ -465,5 +578,113 @@ describe("a weak-signal tile", () => {
     expect(label?.[1]).not.toContain("sr-only");
     expect(label?.[2]).toContain("No Qloo signal");
     expect(inner).not.toContain("data-weak");
+  });
+});
+
+describe("a locked tile says whose lock it is", () => {
+  it("reads the board key's lock words: this app's on a published day, an invented fixed slot on the invented day", () => {
+    // Ann is the tiny day's one locked set.
+    const published = text(tile(board(90), "ann").inner);
+    expect(published).toContain(LOCK_GENERIC);
+    expect(LOCK_GENERIC).toBe("Locked by this app: kept in place.");
+    expect(published).not.toContain("Locked set.");
+    const invented = text(tile(board(90, 60, true), "ann").inner);
+    expect(invented).toContain(LOCK_INVENTED);
+    expect(LOCK_INVENTED).toBe("Locked: an invented fixed slot.");
+    expect(invented).not.toContain("Locked by this app");
+    expect(invented).not.toContain("Locked set.");
+    // Where the day's locks are exactly the last set on each stage, the grid's holds prop states the rule.
+    expect(text(tile(board(90, 60, false, [], null, true), "ann").inner)).toContain(LOCK_SHORT);
+    // An unlocked tile says nothing about a lock.
+    expect(text(tile(board(90), "bo").inner)).not.toMatch(/lock/i);
+  });
+
+  it("says whose lock it is in the tooltip too, since the tile itself shows only the lock icon", () => {
+    const titleOf = (html: string, id: string) => decode(/title="([^"]*)"/.exec(tile(html, id).open)?.[1] ?? "");
+    // The tile's visible words carry no lock word: the icon is the only mark, and it is hidden from screen readers.
+    const published = tile(board(90), "ann");
+    expect(visible(published.inner)).not.toMatch(/lock/i);
+    expect(published.inner).toMatch(/<svg[^>]*aria-hidden="true"[^>]*lucide-lock|<svg[^>]*lucide-lock[^>]*aria-hidden="true"/);
+    // Its tooltip ends with the same owner words as its tail: this app's on a published day ...
+    expect(titleOf(board(90), "ann")).toMatch(/ · Locked by this app: kept in place\.$/);
+    expect(titleOf(board(90, 60, false, [], null, true), "ann")).toMatch(/ · Locked by this app: the last set on its stage stays in place\.$/);
+    // ... an invented fixed slot on the invented day, and never a bare "Locked".
+    const invented = titleOf(board(90, 60, true), "ann");
+    expect(invented).toMatch(/ · Locked: an invented fixed slot\.$/);
+    expect(invented).not.toContain("Locked by this app");
+    for (const title of [titleOf(board(90), "ann"), invented]) expect(title).not.toMatch(/Locked(?!( by this app)?:)/);
+    // An unlocked tile's tooltip names no lock.
+    expect(titleOf(board(90), "bo")).not.toMatch(/lock/i);
+  });
+
+  it("puts the lock words in the tile's tail and nothing after them but the move and the clash", () => {
+    const { views } = boardPreset(90);
+    const ann = views.find((view) => view.id === "ann");
+    expect(ann?.slot.locked).toBe(true);
+    if (!ann) return;
+    expect(describeSetTail(ann, false)).toMatch(/^Locked by this app: kept in place\. In 1 ranked clash;/);
+    expect(describeSetTail(ann, false, false, true)).toMatch(/^Locked by this app: the last set on its stage stays in place\. In 1 ranked clash;/);
+    expect(describeSetTail(ann, false, true, true)).toMatch(/^Locked: an invented fixed slot\. In 1 ranked clash;/);
+    expect(describeSetTail(ann, true)).toContain("Locked by this app: kept in place. Moved in your tested plan.");
+  });
+});
+
+describe("hover answers the visitor's hand only", () => {
+  it("highlights on the first pointer move inside an element, never on an entry alone", () => {
+    // A jump link scrolls a tile under a still pointer: the browser fires an entry and no move.
+    let step = handStep(null, { type: "enter", key: "set:ann" });
+    expect(step).toEqual({ moved: null, action: null });
+    // The hand moves: one highlight; further moves inside change nothing.
+    step = handStep(step.moved, { type: "move", key: "set:ann", pointerType: "mouse" });
+    expect(step).toEqual({ moved: "set:ann", action: "on" });
+    expect(handStep(step.moved, { type: "move", key: "set:ann", pointerType: "mouse" })).toEqual({ moved: "set:ann", action: null });
+    // Leaving clears it; a leave from an element the hand never moved in clears nothing.
+    expect(handStep("set:ann", { type: "leave", key: "set:ann" })).toEqual({ moved: null, action: "off" });
+    expect(handStep(null, { type: "leave", key: "set:bo" })).toEqual({ moved: null, action: null });
+    expect(handStep("set:ann", { type: "leave", key: "clash:ann|bo" })).toEqual({ moved: "set:ann", action: null });
+    // A pen hovers like a mouse; a touch never highlights (a tap opens).
+    expect(handStep(null, { type: "move", key: "clash:ann|bo", pointerType: "pen" }).action).toBe("on");
+    expect(handStep(null, { type: "move", key: "clash:ann|bo", pointerType: "touch" })).toEqual({ moved: null, action: null });
+    // A move kept for an element that left the page without a leave counts again after a fresh entry.
+    const stale = handStep("set:ann", { type: "enter", key: "set:ann" });
+    expect(stale).toEqual({ moved: null, action: null });
+    expect(handStep(stale.moved, { type: "move", key: "set:ann", pointerType: "mouse" }).action).toBe("on");
+  });
+
+  it("wires the tiles, the badges and the clash list's rows to it, and keeps no hover a scroll can start", () => {
+    const gridSource = readFileSync(join(__dirname, "timetable-grid.tsx"), "utf8");
+    const listSource = readFileSync(join(__dirname, "clash-list.tsx"), "utf8");
+    for (const source of [gridSource, listSource]) expect(source).not.toMatch(/onMouseEnter|onMouseLeave|onMouseOver/);
+    expect(gridSource).toContain("{...handHover(`set:${view.id}`)}");
+    expect(gridSource).toContain("{...handHover(`clash:${layout.id}`)}");
+    expect(listSource).toContain("{...handHover(key)}");
+    // Keyboard focus and blur keep their own handlers.
+    expect(gridSource).toContain("onFocus={() => onHighlightClash(layout.id)}");
+    expect(gridSource).toContain("onBlur={() => onHighlightClash(null)}");
+    expect(gridSource).toContain("onBlur={() => onHighlightSet(null)}");
+    expect(listSource).toMatch(/onFocus=\{\(event\) => \{\s*focusedRow\.current = event\.currentTarget;\s*onHighlight\(key\);/);
+    // No CSS :hover that fades, moves or shows: the badge's lift, the row's wash and chevron, and a short
+    // tile's name tooltip follow the hand (or focus) instead.
+    expect(gridSource).not.toMatch(/\bhover:bg-accent\b|group-hover\/tile:block|\bhover:scale-110\b/);
+    expect(listSource).not.toMatch(/\bhover:bg-accent\b|group-hover:/);
+    expect(listSource).toContain("group-data-[hand]:translate-x-0.5");
+    expect(listSource).toContain('data-hand={hand === key ? "" : undefined}');
+    expect(gridSource).toContain('hand === `set:${view.id}` && "block"');
+  });
+});
+
+describe("Hidden is ink in its own classes", () => {
+  it("draws the key's Hidden clash swatch as an ink ring and the list's label word in ink, with no stylesheet override", () => {
+    const key = renderToStaticMarkup(createElement(TimetableLegend, {}));
+    const swatch = /<span data-mark="hidden" class="([^"]*)"/.exec(key)?.[1] ?? "";
+    expect(swatch.split(" ")).toEqual(expect.arrayContaining(["border-foreground", "bg-card", "rounded-full"]));
+    expect(swatch).not.toMatch(/primary/);
+    const listSource = readFileSync(join(__dirname, "clash-list.tsx"), "utf8");
+    expect(listSource).toContain('<span data-clash-badge="" className="mr-1.5 text-xs font-semibold whitespace-nowrap text-foreground">');
+    expect(listSource).not.toMatch(/clash\.label === "hidden" \? "text-primary"/);
+    // The two overrides that once made them ink are gone, and nothing paints either one raspberry.
+    const css = readFileSync(join(__dirname, "../../app/globals.css"), "utf8");
+    expect(css).not.toMatch(/\[data-clash-badge\][^{]*\{/);
+    expect(css).not.toMatch(/\[data-mark="hidden"\][^{]*\{/);
   });
 });

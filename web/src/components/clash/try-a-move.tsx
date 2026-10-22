@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type Ref } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import { ArrowDown, ArrowRight, ArrowUp, Check, Equal, LoaderCircle, Minus, Plus, RotateCcw, TriangleAlert } from "lucide-react";
 
 import { ProvenanceChip } from "@/components/kernel";
@@ -8,7 +8,10 @@ import { Button } from "@/components/ui/button";
 import { budgetDelta, changeLabel } from "@/lib/agent-session";
 import { dayName } from "@/lib/clashes";
 import { noSignalMove } from "@/lib/credit";
+import { buildDayGraph, drawingHeight, type DayGraphModel } from "@/lib/day-graph";
+import type { Decision } from "@/lib/decision";
 import { pluralize } from "@/lib/format";
+import { rangeLead } from "@/lib/plan-copy";
 import type { RulePreview } from "@/lib/rule-fix";
 import type { GrowingOverlap } from "@/lib/overlap-words";
 import {
@@ -57,12 +60,25 @@ import { formatClock, overlapWindow } from "@/lib/timetable";
 import { cn } from "@/lib/utils";
 
 import { BudgetMove, scaleRange, signedDelta, type ScaleRange } from "./budget-move";
+import { DayGraph } from "./day-graph";
 import { KeepApart, SetSelect, fieldDisplay, setPlace } from "./keep-apart";
-import { PairStrip, stripDomain } from "./pair-strip";
+import { stripDomain } from "./pair-strip";
 import { ScratchPlan } from "./scratch-plan";
-import { clashParts, sharedMinutesByName, useMoveCheck, usePlan, type MoveCheck, type SharedByName } from "./use-moves";
+import { useHeldRoom } from "./skeletons";
+import {
+  MOVES_LIMIT,
+  clashParts,
+  sharedMinutesByName,
+  useMoveCheck,
+  usePlan,
+  type MoveCheck,
+  type SharedByName,
+} from "./use-moves";
 
-/** The one time domain and tick policy every pair strip shares (the hero, here and "Keep two sets apart"). */
+/**
+ * The one time domain and tick policy every pair strip shares ("Keep two sets apart" draws one), kept here for the
+ * tests that pin it. Try a move itself draws a tested place with the hero's drawing (`TestedDrawing`).
+ */
 export { stripDomain };
 
 /** Where the section sits on the page, for links that point at it. */
@@ -121,21 +137,103 @@ export function seededPlan(
 const NO_STEPS: readonly StackStep[] = [];
 
 /**
- * What a legal place was checked against, said after "Adds no rule break.": the rules the timetable engine
- * tests every listed place on (stage hours, curfew, changeover gap, locks and pairs that must never overlap).
+ * The cap on a published day's changeover gap: the gap is the tightest published gap between two sets on a
+ * stage, capped at this (`DEFAULT_CHANGEOVER` in backend/app/lineups/timetable.py, `to_festival`).
  */
-export const RULES_CHECKED =
-  "Checked against the stage’s hours, the curfew, the changeover gap, locked sets and pairs that must never overlap.";
+const PUBLISHED_CHANGEOVER_CAP = 15;
+
+/** How far from its published start a published day's movable set may start (`Reach.minutes`, timetable.py). */
+const REACH_MINUTES = 120;
 
 /**
- * The rule status of a legal place and the rules it was checked against, in one line: the status in ink, the
- * rules muted beside it. Every place the engine lists passed them, so the tested place and each place in the
- * full list say the same words.
+ * The values of a published day's rules, read from its published timetable the way the timetable engine
+ * builds them (backend/app/lineups/timetable.py, `to_festival`), so the sentence never states a value the
+ * engine does not enforce:
+ * - `curfew`: the day's latest published end (the engine's curfew);
+ * - `changeover`: the tightest published gap between two sets on a stage, at most 15 minutes;
+ * - `publishedHours`: every stage that plays that day has hours from its first published start to its last
+ *   published end (the hours the engine checks each place against);
+ * - `reach`: every set that may move carries a start window of its published start ± 120 minutes and the
+ *   stages within one place of its own in the day's stage order (the engine's `Reach`, checked per place).
+ * Null when the day has no set.
  */
-function RulesLine({ className }: { className?: string }) {
+export type DayRules = { curfew: number; changeover: number; publishedHours: boolean; reach: boolean };
+
+export function dayRules(festival: Pick<Preset["festival"], "stages" | "timetable">, day: number): DayRules | null {
+  const slots = festival.timetable.filter((slot) => slot.day === day);
+  if (slots.length === 0) return null;
+  const byStage = new Map<string, SetSlot[]>();
+  for (const slot of slots) byStage.set(slot.stage_id, [...(byStage.get(slot.stage_id) ?? []), slot]);
+  const gaps: number[] = [];
+  for (const sets of byStage.values()) {
+    const ordered = [...sets].sort((a, b) => a.start - b.start);
+    for (let i = 1; i < ordered.length; i += 1) gaps.push(ordered[i].start - ordered[i - 1].end);
+  }
+  const tightest = gaps.length > 0 ? Math.max(0, Math.min(...gaps)) : PUBLISHED_CHANGEOVER_CAP;
+  const publishedHours = [...byStage].every(([stageId, sets]) => {
+    const hours = festival.stages.find((stage) => stage.id === stageId)?.hours.find((item) => item.day === day);
+    return (
+      hours !== undefined &&
+      hours.open === Math.min(...sets.map((set) => set.start)) &&
+      hours.close === Math.max(...sets.map((set) => set.end))
+    );
+  });
+  const order = festival.stages.map((stage) => stage.id);
+  const reach = slots
+    .filter((slot) => !slot.locked)
+    .every((slot) => {
+      const own = order.indexOf(slot.stage_id);
+      const near = order.filter((_, rank) => Math.abs(rank - own) <= 1);
+      const stages = slot.stages ?? null;
+      return (
+        own >= 0 &&
+        slot.not_before === Math.max(0, slot.start - REACH_MINUTES) &&
+        slot.not_after === slot.start + REACH_MINUTES &&
+        stages !== null &&
+        stages.length === near.length &&
+        near.every((id) => stages.includes(id))
+      );
+    });
+  return {
+    curfew: Math.max(...slots.map((slot) => slot.end)),
+    changeover: Math.min(PUBLISHED_CHANGEOVER_CAP, tightest),
+    publishedHours,
+    reach,
+  };
+}
+
+/**
+ * What a legal place was checked against, said after "Adds no rule break.": the rules the timetable engine
+ * tests every listed place on, with the shown day's own values. On a published day: each stage's published
+ * hours, nothing after the day's latest published end, the changeover gap in minutes, the sets this app locks,
+ * the reach limit when every movable set carries it, and pairs that must never overlap. The invented day names
+ * the same kinds of rule without "published"; its curfew and changeover are not in the day the page holds, so
+ * they are named without a value.
+ */
+export function rulesChecked(preset: Pick<Preset, "festival" | "synthetic">, day: number): string {
+  if (preset.synthetic === true) {
+    return "Checked against the invented day’s rules: each stage’s hours, the curfew, the changeover gap, locked sets, and pairs that must never overlap.";
+  }
+  const rules = dayRules(preset.festival, day);
+  const clauses = [
+    rules?.publishedHours ? "each stage’s published hours" : "each stage’s hours",
+    rules ? `nothing after ${formatClock(rules.curfew)} (the day’s latest published end)` : "the curfew",
+    rules ? `at least ${rules.changeover} min between sets on a stage` : "the changeover gap",
+    "sets this app locks",
+    ...(rules?.reach ? ["a start within two hours of the set’s published start, on its own stage or a neighbouring one"] : []),
+  ];
+  return `Checked against this app’s rules for the day, read from the published timetable: ${clauses.join(", ")}, and pairs that must never overlap.`;
+}
+
+/**
+ * The rule status of a legal place and the rules it was checked against (`rulesChecked`, for the shown day),
+ * in one line: the status in ink, the rules muted beside it. Every place the engine lists passed them, so the
+ * tested place and each place in the full list say the same words.
+ */
+function RulesLine({ rules, className }: { rules: string; className?: string }) {
   return (
     <p data-rules-line className={className}>
-      Adds no rule break. <span className="text-muted-foreground">{RULES_CHECKED}</span>
+      Adds no rule break. <span className="text-muted-foreground">{rules}</span>
     </p>
   );
 }
@@ -170,6 +268,377 @@ function CountTogether({ sentence }: { sentence: string }) {
       <span className="whitespace-nowrap">{match[2]}</span>
       {match[3]}
     </>
+  );
+}
+
+/**
+ * Room held for words an answer will bring, drawn as quiet bars: the element's `data-ghost` words are laid out
+ * through its ::before box (so they wrap as words of that length will, at any width) in a transparent ink over
+ * the muted fill, one bar per line. The words are never in the page's text: not shown, not read, not
+ * selectable. The same room /check holds while a compare is out.
+ */
+const GHOST_LINE =
+  "before:rounded-xs before:bg-muted before:text-transparent before:content-[attr(data-ghost)] before:[-webkit-box-decoration-break:clone] before:[box-decoration-break:clone]";
+
+/** The same room with nothing drawn: an unseen stand-in that only takes the width of its words. */
+const GHOST_ROOM = "invisible before:content-[attr(data-ghost)]";
+
+/**
+ * The words the room of a listed-clashes line is laid out from while the answer is out, with no figure in them
+ * (never shown): the counts of a long line as the engine's answers read (a place it has not told yet) or of a
+ * middling one (a place whose move is known), and the sentence that ends the line when an overlap outside the
+ * list starts or grows.
+ */
+const LISTED_LONG = "0 shortened (00 → 00 min), 0 lengthened (00 → 00 min), 0 added, 0 removed.";
+const LISTED_MID = "0 shortened (00 → 00 min), 0 added, 0 removed.";
+const OUTSIDE_COUNT = " Outside the list, 0 overlaps start or grow.";
+/** The words an outside line's room is laid out from: one overlap with the named set. Never shown. */
+function outsideRoom(partner: string): string {
+  return `${OUTSIDE_LEAD} new 00 min overlap with ${partner}.`;
+}
+
+/**
+ * Whether moving a set as `move` says starts or lengthens an overlap with a set outside its three costliest
+ * clashes now (the report's, the ones the engine lists before a place), read from `timetable`: only then can the
+ * answer for that place carry an outside line, so only then does a verdict hold that line's room while the place
+ * is checked. False when the set is not on the timetable or the start does not read.
+ */
+export function mayGrowOutside(
+  preset: Pick<Preset, "festival" | "report">,
+  timetable: readonly SetSlot[],
+  move: Pick<StackMove, "actId" | "day" | "start">,
+): boolean {
+  const slot = timetable.find((item) => item.act_id === move.actId);
+  const start = clockMinutes(move.start);
+  if (!slot || start === null) return false;
+  const nameOf = (id: string) => preset.festival.acts.find((act) => act.id === id)?.name ?? null;
+  const costliest = preset.report.clashes
+    .filter((clash) => clash.day === slot.day && (clash.a.act_id === move.actId || clash.b.act_id === move.actId))
+    .sort((p, q) => p.rank - q.rank)
+    .slice(0, 3)
+    .flatMap((clash) => {
+      const name = nameOf(clash.a.act_id === move.actId ? clash.b.act_id : clash.a.act_id);
+      return name ? [name] : [];
+    });
+  const home = { day: slot.day, start: slot.start, end: slot.end };
+  const after = { day: move.day, start, end: start + (slot.end - slot.start) };
+  return outsideGrowth(preset.festival.acts, timetable, move.actId, home, after, new Set(costliest)).length > 0;
+}
+
+/**
+ * The room the rule status takes ("Adds no rule break."), without its words: the same letters in reverse order,
+ * set on one line, so a box is exactly as wide as the status while no claim is in the page before the check,
+ * not even in an attribute.
+ */
+const RULE_STATUS_ROOM = [..."Adds no rule break."].reverse().join("");
+
+/**
+ * The room the rules sentence takes, worded for a check still running ("Checking against …" for "Checked
+ * against …"), so it wraps as the sentence will while the sentence that says the place was checked is not in the
+ * page before the check.
+ */
+function checkingRules(rules: string): string {
+  return rules.replace(/^Checked against/, "Checking against");
+}
+
+/**
+ * The verdict lines while a place is checked, holding the room the answer's lines will take: "Checking rules…"
+ * where the rule status will be (in a box as wide as "Adds no rule break.", so the rules after it wrap as they
+ * will), the rules sentence's room after it, then the room of the listed-clashes line (`long` for a place not yet
+ * told) and, when the place may start or lengthen an overlap outside the list (`outside`), of one outside line.
+ * The status, the rules, the counts and the outside line are not in the page until the answer brings them, so
+ * nothing is claimed before the check.
+ */
+function VerdictRoom({
+  rules,
+  listedName,
+  partner,
+  long,
+  outside,
+}: {
+  rules: string;
+  listedName: string | null;
+  partner: string | null;
+  long: boolean;
+  outside: boolean;
+}) {
+  return (
+    <>
+      <p data-rules-room className="text-muted-foreground">
+        <span className="inline-grid whitespace-nowrap">
+          <span aria-hidden="true" data-ghost={RULE_STATUS_ROOM} className={cn(GHOST_ROOM, "col-start-1 row-start-1")} />
+          <span className="col-start-1 row-start-1">Checking rules…</span>
+        </span>{" "}
+        <span aria-hidden="true" data-ghost={checkingRules(rules)} className={GHOST_LINE} />
+      </p>
+      {listedName ? (
+        <p aria-hidden="true" data-listed-room>
+          <span className="text-muted-foreground">{listedLead(listedName)}</span>
+          <span data-ghost={`${long ? LISTED_LONG : LISTED_MID}${outside ? OUTSIDE_COUNT : ""}`} className={GHOST_LINE} />
+        </p>
+      ) : null}
+      {outside ? (
+        <p aria-hidden="true" data-outside-room>
+          <span data-ghost={outsideRoom(partner ?? listedName ?? "a set")} className={GHOST_LINE} />
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * How soon after the visitor's own press (a key or a pointer) an answer counts as part of what the press did: the
+ * page may change then. Under the browser's 500 ms, so the frame the answer paints in is still inside it.
+ */
+const PRESS_MS = 400;
+
+/**
+ * The height an answer's place keeps once the answer is in (`HeldRoom`): the pending room's, when the answer lands
+ * late (`sincePress`, ms since the visitor's last press, is `PRESS_MS` or more), reads shorter than that room at the
+ * same width, and ends above the fold (so what sits under it is on screen and would move up). Null otherwise: the
+ * answer takes its own height, as part of the press, or moving nothing on screen.
+ */
+export function heldHeight(
+  room: { width: number; height: number } | null,
+  now: { width: number; height: number; end: number },
+  fold: number,
+  sincePress = Number.POSITIVE_INFINITY,
+): number | null {
+  if (!room || room.height <= 0 || Math.abs(room.width - now.width) > 0.5) return null;
+  if (sincePress < PRESS_MS || now.end >= fold || now.height >= room.height) return null;
+  return room.height;
+}
+
+/** When the visitor last pressed a key or a pointer, on `performance.now()`'s clock (watched once, in the browser). */
+let lastPress = Number.NEGATIVE_INFINITY;
+let watchingPresses = false;
+function watchPresses() {
+  if (watchingPresses || typeof window === "undefined") return;
+  watchingPresses = true;
+  const note = (event: Event) => {
+    lastPress = event.timeStamp;
+  };
+  window.addEventListener("pointerdown", note, { capture: true, passive: true });
+  window.addEventListener("keydown", note, { capture: true, passive: true });
+}
+
+/** Runs before paint in the browser; a static render (the tests') never runs it. */
+const useBeforePaint = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+/**
+ * An answer's place on the page. While the answer is out (`pending`) it records the room its pending frame takes.
+ * When the answer comes (`hold`) and reads shorter, what sits under it would move up by the difference. Within
+ * `PRESS_MS` of the visitor's own press that is part of what they did, and if the answer's end is below the fold
+ * nothing that moves is on screen: either way the answer takes its own height at once. Else the place keeps the
+ * pending room's height (the space stays under the answer) until the answer's end would be below the fold (a
+ * scroll up), the width changes or another answer is asked for (`room`). So an answer that lands late moves
+ * nothing that was on screen. A failed answer (`hold` false) takes its own height at once.
+ */
+function HeldRoom({ room, pending, hold, children }: { room: string; pending: boolean; hold: boolean; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const held = useRef<{ width: number; height: number } | null>(null);
+  useBeforePaint(() => {
+    watchPresses();
+    const element = ref.current;
+    if (!element) return;
+    // Fractional sizes, so a held room is the pending room to the subpixel.
+    const box = () => element.getBoundingClientRect();
+    element.style.minHeight = "";
+    if (pending) {
+      const measure = () => {
+        const { width, height } = box();
+        held.current = { width, height };
+      };
+      measure();
+      if (typeof ResizeObserver === "undefined") return;
+      const observer = new ResizeObserver(measure);
+      observer.observe(element);
+      return () => observer.disconnect();
+    }
+    const was = held.current;
+    held.current = null;
+    // Where the answer itself ends: its last block's bottom (the place's own bottom while it holds a room).
+    const now = () => {
+      const { width, height, top } = box();
+      return { width, height, end: element.lastElementChild?.getBoundingClientRect().bottom ?? top };
+    };
+    const keep = hold ? heldHeight(was, now(), window.innerHeight, performance.now() - lastPress) : null;
+    if (keep === null || !was) return;
+    element.style.minHeight = `${keep}px`;
+    const release = () => {
+      const at = now();
+      if (at.end < window.innerHeight && Math.abs(at.width - was.width) <= 0.5) return;
+      element.style.minHeight = "";
+      window.removeEventListener("scroll", release);
+      window.removeEventListener("resize", release);
+    };
+    window.addEventListener("scroll", release, { passive: true });
+    window.addEventListener("resize", release);
+    return () => {
+      window.removeEventListener("scroll", release);
+      window.removeEventListener("resize", release);
+    };
+  }, [room, pending, hold]);
+  return (
+    <div ref={ref} className="flow-root">
+      {children}
+    </div>
+  );
+}
+
+/** What the page already knows of a picked set's best tested place before the engine answers (`PendingPlace`). */
+export type PlaceRoom = {
+  /** The set its minutes are read against (`pickedPartner`, the one the answer reads) and the minutes they share now. */
+  partner: { name: string; minutes: number } | null;
+  /** The day's coverage has no usable signal for the set, so the answer opens with the no-signal line. */
+  unscored: boolean;
+  /** The height of the place's drawing in its short layout (`drawingHeight`), or null when none will be drawn. */
+  drawing: number | null;
+};
+
+const NO_ROOM: PlaceRoom = { partner: null, unscored: false, drawing: null };
+
+/**
+ * A picked set's best tested place while the engine scores its legal places: the tested place's own frame, each
+ * line in the room the answer's line will take. What the page already knows is set in words (the label, the set,
+ * the set it shares time with and the minutes they share now, the no-signal line); what the answer brings is
+ * held by quiet bars laid out from words of its length, the drawing by its own height and the actions by their
+ * row. Nothing in it can be pressed or focused.
+ */
+function PendingPlace({ label, name, room, rules, synthetic }: { label: string; name: string; room: PlaceRoom; rules: string; synthetic: boolean }) {
+  return (
+    <div data-place-room>
+      {room.unscored ? <p className="mb-4 text-sm">{noSignalMove(synthetic, name)}</p> : null}
+      <div className="border-t border-border pt-5 sm:pt-6">
+        <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">{label}</p>
+        <p className="mt-1 flex items-start gap-2 text-[0.9375rem] leading-snug text-muted-foreground">
+          <LoaderCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0 motion-safe:animate-spin" />
+          <span className="min-w-0">Scoring every legal place for {name}</span>
+        </p>
+        <div className="mt-4">
+          {room.partner ? (
+            <p className="type-numeral text-2xl leading-tight break-words">
+              {room.partner.minutes} →{" "}
+              <span aria-hidden="true" data-ghost={String(room.partner.minutes)} className={GHOST_LINE} /> min shared with{" "}
+              {room.partner.name}
+            </p>
+          ) : null}
+          <p className={cn("text-[0.9375rem] leading-snug text-muted-foreground", room.partner && "mt-1.5")}>Index checking…</p>
+          <div className="mt-1.5 space-y-1 text-sm leading-snug break-words text-pretty">
+            <VerdictRoom rules={rules} listedName={name} partner={room.partner?.name ?? null} long outside />
+          </div>
+          {room.drawing ? (
+            <div aria-hidden="true" data-drawing-room className="mt-5 rounded-md bg-muted" style={{ height: `${room.drawing}px` }} />
+          ) : null}
+        </div>
+        <div aria-hidden="true" className="mt-6 border-t border-border" />
+        <div aria-hidden="true" data-actions-room className="mt-4 h-11" />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A picked set's full list of legal places while the engine scores them (the copy under 1024 px): the list's
+ * own frame, block for block, holding the room each block will take. Its heading's words and its source chip,
+ * then the scoring line where "Lowest Clash Budget first" will be, a quiet row for each place the list can show
+ * (`MOVES_LIMIT`), and the chosen place's frame: its line, its index and scale, its rules, the clashes it ends and
+ * adds, its drawing (at its own height), its action, and the list's footnote. What the answer brings is held by
+ * quiet bars laid out from words of its length. Nothing in it can be pressed or focused.
+ */
+export function PlacesRoom({
+  name,
+  rules,
+  drawing,
+  range = null,
+  synthetic = false,
+}: {
+  name: string;
+  rules: string;
+  drawing: number | null;
+  /** The day's scale (`scaleRange`), for the room of the line under the index's bars. */
+  range?: ScaleRange | null;
+  synthetic?: boolean;
+}) {
+  const lead = range ? rangeLead(range) : null;
+  return (
+    <div data-places-room className="border-t border-border pt-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="type-title break-words">Where {name} could go</p>
+          <p aria-hidden="true" className="mt-1.5 text-sm">
+            <span data-ghost="Now: Stage 00:00–00:00" className={GHOST_LINE} />
+          </p>
+        </div>
+        <ProvenanceChip provenance="derived" size="sm" className="mt-1" synthetic={synthetic} />
+      </div>
+      <div className="mt-5 grid gap-6">
+        <div className="min-w-0">
+          <p className="flex items-start gap-2 text-[0.8125rem] leading-5 font-semibold text-muted-foreground">
+            <LoaderCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0 motion-safe:animate-spin" />
+            <span className="min-w-0">Scoring every legal place for {name}</span>
+          </p>
+          <ul aria-hidden="true" className="mt-2 space-y-1.5">
+            {Array.from({ length: MOVES_LIMIT }, (_, i) => (
+              <li key={i} className="h-11 rounded-md bg-muted" />
+            ))}
+          </ul>
+        </div>
+        <div aria-hidden="true" className="min-w-0">
+          <p className="font-semibold break-words">
+            <span data-ghost={`${name} → Stage 00:00–00:00`} className={GHOST_LINE} />
+          </p>
+          {/* The index before and after, its change and its caption, then its two bars and the scale's line. */}
+          <div className="mt-3">
+            <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span data-ghost="000.0 → 000.0" className={cn("type-numeral text-3xl leading-none", GHOST_LINE)} />
+              <span className="tag invisible">
+                <span data-ghost="↓ 0.0 lower" className={GHOST_ROOM} />
+              </span>
+              <span data-ghost="Clash Budget Index · lower is better" className={cn("text-[0.8125rem]", GHOST_LINE)} />
+            </p>
+            <div className="mt-2.5 space-y-1.5">
+              {["Now", "After"].map((label) => (
+                <div key={label} className="grid grid-cols-[3rem_minmax(0,1fr)] items-center gap-2 text-xs">
+                  <span data-ghost={label} className={GHOST_ROOM} />
+                  <span className="block h-2 rounded-bar bg-muted" />
+                </div>
+              ))}
+            </div>
+            {lead ? (
+              <p className="mt-2 text-xs lg:text-[0.8125rem]">
+                <span data-ghost={lead} className={GHOST_LINE} />
+              </p>
+            ) : null}
+          </div>
+          <p className="mt-4 text-sm leading-snug break-words text-pretty">
+            <span data-ghost={`${RULE_STATUS_ROOM} ${checkingRules(rules)}`} className={GHOST_LINE} />
+          </p>
+          {/* The clashes it ends and adds, one line each, and one outside line. */}
+          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            {["Listed clashes it ends", "Listed clashes it adds"].map((title) => (
+              <div key={title} className="min-w-0">
+                <p className="text-[0.8125rem] leading-5">
+                  <span data-ghost={title} className={GHOST_LINE} />
+                </p>
+                <p className="mt-1.5 text-sm">
+                  <span data-ghost="Stage Name · 0.0 index points" className={GHOST_LINE} />
+                </p>
+              </div>
+            ))}
+            <p className="text-sm leading-snug break-words text-pretty sm:col-span-2">
+              <span data-ghost={outsideRoom(name)} className={GHOST_LINE} />
+            </p>
+          </div>
+          {drawing ? <div data-drawing-room className="mt-5 rounded-md bg-muted" style={{ height: `${drawing}px` }} /> : null}
+          <div className="mt-6 border-t border-border" />
+          <div className="mt-4 h-11" />
+        </div>
+      </div>
+      <p aria-hidden="true" className="mt-5 text-xs lg:text-[0.8125rem]">
+        <span data-ghost="00 legal places, checking every start on a 5-minute grid. Tested only: the timetable above is unchanged." className={GHOST_LINE} />
+      </p>
+    </div>
   );
 }
 
@@ -317,7 +786,7 @@ function PlaceButton({
       onClick={onPress}
       className={cn(
         "grid min-h-11 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 rounded-md text-left text-sm motion-safe:transition-colors motion-safe:duration-150 motion-safe:ease-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
-        // Selected is the wash with a 1.5px ink edge (the edge is the cue; never an ink or vermilion fill);
+        // Selected is the wash with a 1.5px ink edge (the edge is the cue; never an ink or raspberry fill);
         // the others keep a 1px border-strong edge (3:1, so the edge names the control) and take the wash on
         // hover. The padding gives back the extra half pixel, so the button keeps its size when pressed.
         pressed
@@ -344,10 +813,10 @@ function PlaceButton({
 type KeepControl = { full: boolean; onKeep: (option: PlacedOption) => void };
 
 /**
- * The answer for one set: its legal places as a list, and the chosen one priced in full. With kept
- * moves the places are priced on top of them (`result.before` is the plan's Clash Budget Index) and
- * `timetable` is the published one with those moves made, so the clashes a place ends and adds are
- * read against where every set plays in the plan.
+ * The answer for one set: its legal places as a list, and the chosen one priced in full, with the hero's
+ * drawing of it when one is passed (`drawing`). With kept moves the places are priced on top of them
+ * (`result.before` is the plan's Clash Budget Index) and `timetable` is the published one with those moves
+ * made, so the clashes a place ends and adds are read against where every set plays in the plan.
  */
 export function MovesCard({
   result,
@@ -359,6 +828,8 @@ export function MovesCard({
   keep,
   onChoose,
   headingRef,
+  rules,
+  drawing = null,
 }: {
   result: MovesResult;
   preset: Preset;
@@ -370,6 +841,10 @@ export function MovesCard({
   onChoose: (index: number) => void;
   /** The heading takes focus when "Show every legal place" opened this list. */
   headingRef?: Ref<HTMLHeadingElement>;
+  /** What every legal place was checked against, with the shown day's values (`rulesChecked`). */
+  rules: string;
+  /** The hero's drawing of the chosen place (`placeDrawing`); redrawn for each place chosen. */
+  drawing?: DayGraphModel | null;
 }) {
   const detailId = useId();
   const fullHelpId = useId();
@@ -477,7 +952,7 @@ export function MovesCard({
               />
               {/* Every place in this list is one the engine found legal, so each says which rules it passed,
                   in the tested place's words, above the clashes it changes. */}
-              <RulesLine className="mt-4 text-sm leading-snug break-words text-pretty" />
+              <RulesLine rules={rules} className="mt-4 text-sm leading-snug break-words text-pretty" />
               {changes ? (
                 <div className="mt-6 grid gap-4 sm:grid-cols-2">
                   <ClashChangeList title="Listed clashes it ends" items={changes.ends} tone="ends" />
@@ -486,6 +961,7 @@ export function MovesCard({
                   <OutsideLine grows={changes.outside} className="sm:col-span-2" />
                 </div>
               ) : null}
+              {drawing ? <TestedDrawing model={drawing} /> : null}
               {/* The result's one inner separator: a 1px hairline above the action. */}
               <div aria-hidden="true" className="mt-6 border-t border-border" />
               <div className="mt-4">
@@ -559,87 +1035,129 @@ export function cardSharedMinutes(
   };
 }
 
-/** A span of the day in minutes from its start, as the strips draw them. */
+/** A span of the day in minutes from its start. */
 type Span = { start: number; end: number };
 
 /**
- * The minutes a move's set shares with `partnerId` before and after the move, and the receipt's strip of the
- * three sets, read from `timetable` (the published one, or the plan's). Null when the minutes do not read.
+ * The minutes a move's set shares with `partnerId` before and after the move, read from `timetable` (the
+ * published one, or the plan's). Null when the minutes do not read.
  */
 function moveFigures(
-  festival: Preset["festival"],
   timetable: readonly SetSlot[],
   move: StackMove,
   partnerId: string,
   partnerName: string,
-): { minutes: SharedMinutes; strip: MoveStripData | null } | null {
+): { minutes: SharedMinutes } | null {
   const minutes = cardSharedMinutes(timetable, move, partnerId, partnerName);
-  if (!minutes) return null;
-  const nameOf = (id: string) => festival.acts.find((act) => act.id === id)?.name ?? null;
-  const slot = timetable.find((candidate) => candidate.act_id === move.actId);
-  const other = timetable.find((candidate) => candidate.act_id === partnerId);
-  const start = clockMinutes(move.start);
-  const stageOf = (id: string) => festival.stages.find((stage) => stage.id === id)?.name ?? null;
-  const strip: MoveStripData | null =
-    slot && other && start !== null
-      ? {
-          now: { start: slot.start, end: slot.end },
-          tested: { start, end: start + (slot.end - slot.start) },
-          partner: { start: other.start, end: other.end },
-          moverName: nameOf(move.actId) ?? move.actId,
-          partnerName,
-          nowStage: stageOf(slot.stage_id),
-          testedStage: stageOf(move.stageId),
-          partnerStage: stageOf(other.stage_id),
-        }
-      : null;
-  return { minutes, strip };
+  return minutes ? { minutes } : null;
 }
 
-/**
- * The moved set now and at the tested place, and the set it shares time with, for the receipt's strip,
- * with each one's stage when the timetable names it.
- */
-export type MoveStripData = {
-  now: Span;
-  tested: Span;
-  partner: Span;
-  moverName: string;
-  partnerName: string;
-  nowStage?: string | null;
-  testedStage?: string | null;
-  partnerStage?: string | null;
+/** What the timetable engine answered for one tested place, as Try a move holds it: the set's answer and the place. */
+export type TestedAnswer = {
+  result: Pick<MovesResult, "act" | "actId" | "from" | "legalPlaces">;
+  option: Pick<PlacedOption, "stageId" | "stage" | "day" | "start" | "end" | "after">;
 };
 
-/** A lane's meta, "Now" or "Tested", then a stage only where the card's place line does not already say it. */
-function whenAt(when: string, stage: string | null | undefined, said: string | null | undefined): string {
-  return stage && stage !== said ? `${when} · ${stage}` : when;
+/**
+ * One tested place as a decision the hero's drawing can draw (`buildDayGraph`): the clash is the set and
+ * `partnerId`, the set its minutes are read against; the move is the engine's place for it (stage, day, start and
+ * end) and whether that changes its stage. `buildDayGraph` reads only those: the two ids and the move's set, day,
+ * stage, start, end and stage change, and it takes every rank, minute and window it draws from the report and from
+ * the timetable. The fields it never reads carry the engine's own figures (the index after, the legal places), the
+ * timetable's minutes the lines above print, or no value (`null`, or `NaN` for a number with no source), so nothing
+ * here is a default. Null when the set or its partner is not on `timetable`, they play on different days, or the
+ * place is on another day or its times do not read.
+ */
+export function testedDecision(
+  preset: Pick<Preset, "report">,
+  timetable: readonly SetSlot[],
+  answer: TestedAnswer,
+  partnerId: string,
+): Decision | null {
+  const { result, option } = answer;
+  const slot = timetable.find((item) => item.act_id === result.actId);
+  const partner = timetable.find((item) => item.act_id === partnerId);
+  const start = clockMinutes(option.start);
+  if (!slot || !partner || start === null || clockMinutes(option.end) === null) return null;
+  if (partner.day !== slot.day || option.day !== slot.day) return null;
+  const span = (window: Span | null) => (window ? window.end - window.start : 0);
+  const ranked = preset.report.clashes.find(
+    (clash) =>
+      clash.day === slot.day &&
+      ((clash.a.act_id === result.actId && clash.b.act_id === partnerId) ||
+        (clash.a.act_id === partnerId && clash.b.act_id === result.actId)),
+  );
+  return {
+    day: slot.day,
+    skippedLocked: 0,
+    skippedNoPlace: 0,
+    publishedBudget: null,
+    clash: {
+      aId: result.actId,
+      bId: partnerId,
+      rank: ranked?.rank ?? Number.NaN,
+      minutes: span(overlapWindow(slot, partner)),
+    },
+    move: {
+      actId: result.actId,
+      act: result.act,
+      from: result.from,
+      stageId: option.stageId,
+      stage: option.stage,
+      day: option.day,
+      start: option.start,
+      end: option.end,
+      minutesMoved: start - slot.start,
+      legalPlaces: result.legalPlaces,
+      stageChanged: option.stageId !== slot.stage_id,
+      budgetAfter: option.after ?? Number.NaN,
+      minutesSharedAfter: span(overlapWindow({ start, end: start + (slot.end - slot.start) }, partner)),
+      alternative: null,
+      flagsNow: null,
+      flagsAfter: null,
+      costliestAfter: undefined,
+    },
+    rule: null,
+    ruleChange: null,
+  };
 }
 
 /**
- * The receipt's before/after strip, under the result lines at the card's full inner width, drawn with the
- * hero's `PairStrip` on the one strip domain: the set it shares time with, which stays, as the solid ink
- * capsule; the moved set where it plays now as the open capsule; and the moved set at the tested place as
- * the same open capsule with a dashed outline, each hatched where it shares time with the staying set, with
- * its bracket and minutes. The tested place and time are printed once, in the card's place line, so the
- * labels do not repeat them. Decorative: the lines above state the same minutes in words.
+ * The hero's drawing of one tested place: the day on `timetable` (the plan's, the published one with the kept
+ * moves made: the timetable the place's lines are read from), with the place drawn as the decision's move is.
+ * Null when `testedDecision` is, or when the drawing would not show the move (the set shares no time with its
+ * partner where it plays now), so a drawing here always shows its tested place.
  */
-function MoveStrip({ data }: { data: MoveStripData }) {
+export function testedDrawing(
+  preset: Preset,
+  timetable: readonly SetSlot[],
+  answer: TestedAnswer,
+  partnerId: string,
+): DayGraphModel | null {
+  const decision = testedDecision(preset, timetable, answer, partnerId);
+  if (!decision) return null;
+  const model = buildDayGraph({ ...preset, festival: { ...preset.festival, timetable: [...timetable] } }, decision, decision.day);
+  return model?.move ? model : null;
+}
+
+/**
+ * A tested place drawn with the hero's own drawing, in its short layout at every width: the stages around the
+ * move, the set at the tested place with its published slot dashed, the minutes it still shares with its partner
+ * hatched and any new overlap dashed with its tag. Keyed by the place, so another set or place draws a new frame
+ * at once, with no flight. The drawing keeps its own role="group", title and description; the lines above say
+ * the same minutes in words.
+ */
+function TestedDrawing({ model }: { model: DayGraphModel }) {
+  const { move } = model;
+  const place = move ? `${move.actId}@${move.to.stageIndex}:${move.to.start}` : "none";
   return (
-    <div data-move-strip className="mt-5 min-w-0">
-      <PairStrip
-        description={null}
-        lanes={[
-          { key: "partner", kind: "staying", name: data.partnerName, meta: data.partnerStage, ...data.partner },
-          { key: "now", kind: "now", name: data.moverName, meta: whenAt("Now", data.nowStage, data.testedStage), ...data.now },
-          { key: "tested", kind: "tested", name: data.moverName, meta: "Tested", ...data.tested },
-        ]}
-      />
+    <div data-tested-drawing className="mt-5 min-w-0">
+      <DayGraph key={`${model.presetId}|${model.day}|${place}`} model={model} view="moved" layout="short" />
     </div>
   );
 }
 
-/** "1.5 → 1.2 (−0.3, lower is better)": the index before and after, in mono, as the card prints it. */
+/** "1.5 → 1.2 (−0.3, lower is better)": the index before and after, in tabular figures, as the card prints it. */
 function IndexValue({ before, after }: { before: number; after: number }) {
   return (
     <>
@@ -697,8 +1215,9 @@ export function placeChanges(
 /**
  * The decision card's move for the set shown, read as one result before anything is kept, open on paper
  * under a 1px top rule: the set, its place and times, then the minutes shared in one large line (from the published timetable), the Clash
- * Budget Index before and after in mono, the rule status and the clashes it removes and adds in one
- * 14px line, a before/after strip, then one action row: Keep this move and Show every legal place. The index comes from the card
+ * Budget Index before and after in tabular figures, the rule status and the clashes it removes and adds in one
+ * 14px line, the hero’s drawing of the tested place when one is passed (`drawing`), then one action row: Keep this move and
+ * Show every legal place. The index comes from the card
  * when it passed one, else from the timetable engine's list of legal places for the set (`check`); the
  * rule status and the clashes only ever come from that list, and read "Checking rules…" until it is in.
  */
@@ -708,7 +1227,7 @@ export function TestedPlace({
   stage,
   end,
   minutes,
-  strip,
+  drawing,
   check,
   changes,
   keepFull,
@@ -716,6 +1235,9 @@ export function TestedPlace({
   onShowAll,
   label = "Tested place",
   showAll = null,
+  rules,
+  roomKey = "",
+  outside = true,
 }: {
   card: CardMove;
   /** The moved set's name, for "Listed clashes of {mover}:". */
@@ -723,7 +1245,8 @@ export function TestedPlace({
   stage: string;
   end: string | null;
   minutes: SharedMinutes | null;
-  strip: MoveStripData | null;
+  /** The hero’s drawing of this place (`testedDrawing`), or null to draw none (the card’s own move: the hero draws it). */
+  drawing: DayGraphModel | null;
   check: MoveCheck | null;
   changes: PlaceChanges | null;
   keepFull: boolean;
@@ -733,6 +1256,15 @@ export function TestedPlace({
   label?: string;
   /** When "Show every legal place" opens a list on this page rather than asking for one: whether it is open. */
   showAll?: { expanded: boolean; controls: string } | null;
+  /** What a legal place was checked against, with the shown day's values (`rulesChecked`). */
+  rules: string;
+  /** The plan the place is checked on top of (encoded), so a new question drops a verdict room held for the last. */
+  roomKey?: string;
+  /**
+   * While the rules are checked: whether the place may start or lengthen an overlap outside the list
+   * (`mayGrowOutside`), so the verdict holds an outside line's room. Held when not known.
+   */
+  outside?: boolean;
 }) {
   const fullHelpId = useId();
   const cardBefore = card.indexBefore ? Number(card.indexBefore) : Number.NaN;
@@ -748,7 +1280,7 @@ export function TestedPlace({
   const minutesBefore = typeof card.minutesBefore === "number" ? card.minutesBefore : (minutes?.before ?? null);
   const minutesAfter = typeof card.minutesAfter === "number" ? card.minutesAfter : (minutes?.after ?? null);
   const hasMinutes = minutesBefore !== null && minutesAfter !== null;
-  const listedName = mover ?? strip?.moverName ?? null;
+  const listedName = mover ?? drawing?.move?.name ?? null;
   // The summary's last sentence when the outside line shows: "Outside the list, 1 overlap starts or grows."
   const outsideSentence = changes ? outsideCount(changes.outside?.length ?? 0) : null;
   return (
@@ -792,59 +1324,68 @@ export function TestedPlace({
         </p>
         {/* The rule status with the rules it was checked against; then the listed clashes it changes, counted as
             before, with "listed" defined where it appears; then, when the place starts or lengthens an overlap
-            none of the lists shows, the outside line in the hero's words. One 14px block, read out together. */}
-        <div aria-live="polite" data-place-verdict className="mt-1.5 space-y-1 text-sm leading-snug break-words text-pretty">
-          {checking ? (
-            <p className="text-muted-foreground">Checking rules…</p>
-          ) : ready ? (
-            <>
-              <RulesLine />
-              {changes ? (
-                <>
-                  <p data-listed-line>
-                    {/* The endpoint lists at most three of the set's clashes before and after, so the counts are
-                        of the listed clashes, and the line says what listed means. */}
-                    {listedName ? <span className="text-muted-foreground">{listedLead(listedName)}</span> : null}
-                    {clashParts(changes, changes.shared).map((part, i) => (
-                      <span key={part.word}>
-                        {i > 0 ? ", " : null}
-                        {/* A count stays on the line of its word. */}
-                        <span className="whitespace-nowrap">
-                          <span className="font-mono tabular-nums">{part.count}</span> {part.word}
-                        </span>
-                        {part.minutes ? (
-                          <span className="text-muted-foreground">
-                            {" "}
-                            (
-                            <span className="font-mono tabular-nums">
-                              {part.minutes.before} → {part.minutes.after}
-                            </span>{" "}
-                            min)
+            none of the lists shows, the outside line in the hero's words. One 14px block, read out together.
+            While the rules are checked it holds the room the answer's lines will take, and keeps it when they read
+            shorter, so a late check moves nothing under it: the drawing, the actions, the rest of the page. */}
+        <HeldRoom
+          room={`${roomKey}|${card.move.actId}@${card.move.stageId}:${card.move.day}:${card.move.start}`}
+          pending={checking}
+          hold={check?.status === "ready" || check?.status === "unlisted"}
+        >
+          <div aria-live="polite" data-place-verdict className="mt-1.5 space-y-1 text-sm leading-snug break-words text-pretty">
+            {checking ? (
+              // "Checking rules…", in the room the answer's lines will take, so a late answer moves nothing under it.
+              <VerdictRoom rules={rules} listedName={listedName} partner={minutes?.partner ?? null} long={false} outside={outside} />
+            ) : ready ? (
+              <>
+                <RulesLine rules={rules} />
+                {changes ? (
+                  <>
+                    <p data-listed-line>
+                      {/* The endpoint lists at most three of the set's clashes before and after, so the counts are
+                          of the listed clashes, and the line says what listed means. */}
+                      {listedName ? <span className="text-muted-foreground">{listedLead(listedName)}</span> : null}
+                      {clashParts(changes, changes.shared).map((part, i) => (
+                        <span key={part.word}>
+                          {i > 0 ? ", " : null}
+                          {/* A count stays on the line of its word. */}
+                          <span className="whitespace-nowrap">
+                            <span className="font-mono tabular-nums">{part.count}</span> {part.word}
                           </span>
-                        ) : null}
-                      </span>
-                    ))}
-                    .
-                    {outsideSentence ? (
-                      <>
-                        {" "}
-                        <CountTogether sentence={outsideSentence} />
-                      </>
-                    ) : null}
-                  </p>
-                  <OutsideLine grows={changes.outside} />
-                </>
-              ) : (
-                <p className="text-muted-foreground">Clashes not checked for this place.</p>
-              )}
-            </>
-          ) : check?.status === "error" ? (
-            <p className="text-muted-foreground">Not checked: the legal places did not load.</p>
-          ) : (
-            <p className="text-muted-foreground">Rules and clashes not checked for this place.</p>
-          )}
-        </div>
-        {strip ? <MoveStrip data={strip} /> : null}
+                          {part.minutes ? (
+                            <span className="text-muted-foreground">
+                              {" "}
+                              (
+                              <span className="font-mono tabular-nums">
+                                {part.minutes.before} → {part.minutes.after}
+                              </span>{" "}
+                              min)
+                            </span>
+                          ) : null}
+                        </span>
+                      ))}
+                      .
+                      {outsideSentence ? (
+                        <>
+                          {" "}
+                          <CountTogether sentence={outsideSentence} />
+                        </>
+                      ) : null}
+                    </p>
+                    <OutsideLine grows={changes.outside} />
+                  </>
+                ) : (
+                  <p className="text-muted-foreground">Clashes not checked for this place.</p>
+                )}
+              </>
+            ) : check?.status === "error" ? (
+              <p className="text-muted-foreground">Not checked: the legal places did not load.</p>
+            ) : (
+              <p className="text-muted-foreground">Rules and clashes not checked for this place.</p>
+            )}
+          </div>
+        </HeldRoom>
+        {drawing ? <TestedDrawing model={drawing} /> : null}
       </div>
       {/* The receipt says the minutes in words; it shows only when the fact list has no minutes row. */}
       {hasMinutes || !card.receipt ? null : <p className="mt-3 text-sm leading-relaxed">{card.receipt}</p>}
@@ -887,14 +1428,42 @@ export function TestedPlace({
 export type BestPlace = {
   option: PlacedOption;
   move: StackMove;
-  figures: { minutes: SharedMinutes; strip: MoveStripData | null } | null;
+  figures: { minutes: SharedMinutes } | null;
+  /** The hero's drawing of the place (`testedDrawing`), against the same partner as `figures`. */
+  drawing: DayGraphModel | null;
   changes: PlaceChanges;
 };
+
+/** The set a picked set's places are read against: its partner in `starterPairsOf`, the one the starting rows name. */
+function pickedPartner(
+  actId: string,
+  preset: Preset,
+  timetable: readonly SetSlot[],
+  clashes: readonly { aId: string; bId: string }[],
+): StarterPair | null {
+  return starterPairsOf({ actIds: [actId], timetable, acts: preset.festival.acts, clashes, seed: null }).get(actId) ?? null;
+}
+
+/**
+ * The hero's drawing of any listed place of a picked set (`testedDrawing`), against the partner its best place
+ * reads (`pickedPartner`), on `timetable`, the plan's. Null with no partner or no drawing.
+ */
+export function placeDrawing(
+  result: MovesResult,
+  option: PlacedOption,
+  preset: Preset,
+  timetable: readonly SetSlot[],
+  clashes: readonly { aId: string; bId: string }[],
+): DayGraphModel | null {
+  const partner = pickedPartner(result.actId, preset, timetable, clashes);
+  return partner ? testedDrawing(preset, timetable, { result, option }, partner.partnerId) : null;
+}
 
 /**
  * A picked set's best tested place, read as the card's tested place is: the first place the engine
  * lists (lowest Clash Budget first), the minutes the set shares with its partner before and after (on
- * `timetable`, the plan's) and the clashes the engine lists for it there. Null with no legal place.
+ * `timetable`, the plan's), the hero's drawing of the place against that partner, and the clashes the engine
+ * lists for it there. Null with no legal place.
  */
 export function bestPlace(
   result: MovesResult | null,
@@ -905,13 +1474,12 @@ export function bestPlace(
   const option = result && result.movable ? (result.options[0] ?? null) : null;
   if (!result || !option) return null;
   const move: StackMove = { actId: result.actId, stageId: option.stageId, day: option.day, start: option.start };
-  const partner =
-    starterPairsOf({ actIds: [result.actId], timetable, acts: preset.festival.acts, clashes, seed: null }).get(result.actId) ??
-    null;
+  const partner = pickedPartner(result.actId, preset, timetable, clashes);
   return {
     option,
     move,
-    figures: partner ? moveFigures(preset.festival, timetable, move, partner.partnerId, partner.partnerName) : null,
+    figures: partner ? moveFigures(timetable, move, partner.partnerId, partner.partnerName) : null,
+    drawing: partner ? testedDrawing(preset, timetable, { result, option }, partner.partnerId) : null,
     changes: placeChanges(preset.festival, timetable, result, option),
   };
 }
@@ -933,6 +1501,9 @@ export function BestPlaceColumn({
   open,
   controls,
   onToggle,
+  rules,
+  room,
+  roomKey,
 }: {
   status: "idle" | "loading" | "error" | "ready" | "invalid";
   result: MovesResult | null;
@@ -944,6 +1515,12 @@ export function BestPlaceColumn({
   open: boolean;
   controls: string;
   onToggle: () => void;
+  /** What the best place was checked against, with the shown day's values (`rulesChecked`). */
+  rules: string;
+  /** What the page knows of the place before the answer, for the room it holds while scoring (`PendingPlace`). */
+  room?: PlaceRoom;
+  /** The question being answered (the plan and the set), so a new pick drops a room held for the last one. */
+  roomKey?: string;
 }) {
   return (
     <div
@@ -951,38 +1528,39 @@ export function BestPlaceColumn({
       className="mt-8 min-w-0 max-lg:hidden lg:col-span-7 lg:col-start-6 lg:row-start-2"
       aria-busy={status === "loading"}
     >
-      {status === "loading" ? (
-        <p className="flex min-h-32 items-start gap-2 border-t border-border pt-5 text-sm text-muted-foreground sm:pt-6">
-          <LoaderCircle aria-hidden="true" className="mt-0.5 size-4 motion-safe:animate-spin" />
-          Scoring every legal place for {pickedName ?? "this set"}
-        </p>
-      ) : result && best ? (
-        <>
-          {!result.priced ? <p className="mb-4 text-sm">{noSignalMove(synthetic, result.act)}</p> : null}
-          <TestedPlace
-            card={{ move: best.move, receipt: "" }}
-            mover={result.act}
-            stage={best.option.stage}
-            end={best.option.end}
-            minutes={best.figures?.minutes ?? null}
-            strip={best.figures?.strip ?? null}
-            check={{ status: "ready", result, option: best.option }}
-            changes={best.changes}
-            keepFull={keepFull}
-            onKeep={() => onKeep(best.option)}
-            onShowAll={onToggle}
-            label="Best tested place"
-            showAll={{ expanded: open, controls }}
-          />
-        </>
-      ) : result ? (
-        <div className="border-t border-border pt-5 sm:pt-6">
-          <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Where {result.act} could go</p>
-          <p className="mt-1 text-[0.9375rem] font-semibold">
-            {result.movable ? "No free slot it may use breaks no rule." : `It cannot move: ${result.why ?? "it is fixed in place"}.`}
-          </p>
-        </div>
-      ) : null}
+      {/* While the places are scored, the tested place's frame holds the room the place will take. */}
+      <HeldRoom room={roomKey ?? pickedName ?? ""} pending={status === "loading"} hold={status === "ready"}>
+        {status === "loading" ? (
+          <PendingPlace label="Best tested place" name={pickedName ?? "this set"} room={room ?? NO_ROOM} rules={rules} synthetic={synthetic} />
+        ) : result && best ? (
+          <>
+            {!result.priced ? <p className="mb-4 text-sm">{noSignalMove(synthetic, result.act)}</p> : null}
+            <TestedPlace
+              card={{ move: best.move, receipt: "" }}
+              mover={result.act}
+              stage={best.option.stage}
+              end={best.option.end}
+              minutes={best.figures?.minutes ?? null}
+              drawing={best.drawing}
+              check={{ status: "ready", result, option: best.option }}
+              changes={best.changes}
+              keepFull={keepFull}
+              onKeep={() => onKeep(best.option)}
+              onShowAll={onToggle}
+              label="Best tested place"
+              showAll={{ expanded: open, controls }}
+              rules={rules}
+            />
+          </>
+        ) : result ? (
+          <div className="border-t border-border pt-5 sm:pt-6">
+            <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">Where {result.act} could go</p>
+            <p className="mt-1 text-[0.9375rem] font-semibold">
+              {result.movable ? "No free slot it may use breaks no rule." : `It cannot move: ${result.why ?? "it is fixed in place"}.`}
+            </p>
+          </div>
+        ) : null}
+      </HeldRoom>
     </div>
   );
 }
@@ -1121,6 +1699,7 @@ export function TryAMove({
   ranked,
   isLocked,
   onPlanChange,
+  onPick,
   onRulePreview,
   seedStep = null,
   seedRule = null,
@@ -1132,6 +1711,12 @@ export function TryAMove({
   ranked: readonly PairClash[];
   isLocked: (actId: string) => boolean;
   onPlanChange?: (preview: PlanPreview | null) => void;
+  /**
+   * The visitor pressed for a set's places (a starting row, the select, "Show every legal place", "Next"): heard in
+   * the press itself, so the page can open the board for the tested place to come while the browser still counts
+   * the change as the visitor's own, instead of when a late answer lands (round 37).
+   */
+  onPick?: () => void;
   /** A change previewed from "Keep two sets apart": two ghost slots, never part of the kept plan. */
   onRulePreview?: (preview: RulePreview | null) => void;
   /**
@@ -1162,6 +1747,8 @@ export function TryAMove({
   const groups = useMemo(() => byStage(sets), [sets]);
   const range = useMemo(() => scaleRange(preset.report.baseline), [preset]);
   const unpriced = useMemo(() => new Set(preset.report.coverage.unscored.map((act) => act.act_id)), [preset]);
+  // What every legal place is checked against, with this day's own values.
+  const rules = useMemo(() => rulesChecked(preset, day), [preset, day]);
 
   // The page is drawn in the browser once the festival day has loaded, so the tab's saved plan can
   // be read when this section first renders.
@@ -1186,6 +1773,9 @@ export function TryAMove({
   const actId = picked && !moved.has(picked) && sets.some((set) => set.actId === picked && !set.locked) ? picked : null;
   const pickedName = sets.find((set) => set.actId === actId)?.name ?? null;
   const state = usePlan(preset.id, moves, actId);
+  // While the plan's answer is out (after Keep this move, an undo or a new pick), its place holds room down past the
+  // screen's foot, so a plan that lands late, however long, moves nothing under it that a visitor sees (round 37).
+  useHeldRoom(planRef, state.status === "loading");
   const result = state.status === "ready" ? state.options : null;
   const choiceKey = `${encodeMoves(moves)}:${actId ?? ""}`;
   const index = choice && choice.key === choiceKey ? choice.index : 0;
@@ -1299,7 +1889,6 @@ export function TryAMove({
   // The minutes the moved set shares with the partner `starterPairs` names for it, now and at the card's
   // place, read from the published timetable; shown only when the card carries its pair or its receipt
   // names that set, so the figures and the sentence always speak of the same pair.
-  // The same three published sets also draw the receipt's before/after strip.
   const seedFigures = useMemo(() => {
     if (!seedShown) return null;
     const mover = seedShown.move.actId;
@@ -1307,12 +1896,17 @@ export function TryAMove({
     const partnerId = starterPairs.get(mover)?.partnerId ?? null;
     const partnerName = partnerId ? nameOf(partnerId) : null;
     if (!partnerId || !partnerName || (!seedShown.pair && !seedShown.receipt.includes(partnerName))) return null;
-    return moveFigures(preset.festival, preset.festival.timetable, seedShown.move, partnerId, partnerName);
+    return moveFigures(preset.festival.timetable, seedShown.move, partnerId, partnerName);
   }, [seedShown, preset, starterPairs]);
   const seedMinutes = seedFigures?.minutes ?? null;
   // The card's move checked against the engine's legal places for its set, so the tested place can say
   // its index, rule status and clashes before Keep this move; "Checking rules…" until the answer is in.
   const seedCheck = useMoveCheck(preset.id, moves, seedShown?.move ?? null);
+  // Whether that answer can carry an outside line, so its verdict holds that line's room only then.
+  const seedOutside = useMemo(
+    () => (seedShown ? mayGrowOutside(preset, timetable, seedShown.move) : false),
+    [seedShown, preset, timetable],
+  );
   const seedChanges = useMemo(
     () =>
       seedCheck?.status === "ready"
@@ -1325,6 +1919,30 @@ export function TryAMove({
   // the minutes it shares with its partner before and after (from the plan's timetable) and the clashes the
   // engine lists for it there.
   const best = useMemo(() => bestPlace(result, preset, timetable, pairClashes), [result, timetable, preset, pairClashes]);
+  // The visitor's presses are watched from the start, so the first answer already knows whether it came with one.
+  useEffect(() => watchPresses(), []);
+  // While a picked set's places are scored, its best place and its list hold the room the answer will take: the
+  // drawing's height in its short layout (the day's stages, three at most, on the plan's timetable), and what the
+  // page already knows of the place: the set it is read against with the minutes they share now, and whether the
+  // day's coverage scores the set.
+  const drawingRoom = useMemo(() => {
+    const model = buildDayGraph({ ...preset, festival: { ...preset.festival, timetable: [...timetable] } }, null, day);
+    return model ? drawingHeight(model, "short") : null;
+  }, [preset, timetable, day]);
+  const placeRoom = useMemo<PlaceRoom>(() => {
+    const partner = actId ? pickedPartner(actId, preset, timetable, pairClashes) : null;
+    return {
+      partner: partner ? { name: partner.partnerName, minutes: partner.minutes } : null,
+      unscored: actId !== null && unpriced.has(actId),
+      drawing: partner ? drawingRoom : null,
+    };
+  }, [actId, preset, timetable, pairClashes, unpriced, drawingRoom]);
+  // The place chosen in the full list, drawn with the hero's drawing against the same partner; a new drawing
+  // for each place chosen.
+  const chosenDrawing = useMemo(
+    () => (result && chosen ? placeDrawing(result, chosen, preset, timetable, pairClashes) : null),
+    [result, chosen, preset, timetable, pairClashes],
+  );
 
 
   // What the grid may draw: the kept moves and the place being tried on top of them.
@@ -1541,6 +2159,7 @@ export function TryAMove({
   function showEvery(id: string) {
     const key = `${encodeMoves(moves)}:${id}`;
     setPicked(id);
+    onPick?.();
     setAllFor(key);
     focusPlaces.current = key;
   }
@@ -1548,6 +2167,7 @@ export function TryAMove({
   /** "Next: A × B": opens this section on that pair's movable set; focus goes to the picker that now shows it. */
   function openNext(actId: string) {
     setPicked(actId);
+    onPick?.();
     setNotice(null);
     focusOn("picker-shown");
   }
@@ -1624,14 +2244,16 @@ export function TryAMove({
                   // next row's button or its ink outline.
                   const besideSelected = selected || (i + 1 < starters.length && shown === starters[i + 1].actId);
                   return (
+                    // Keyed by row, not by set: when a late plan answer changes which sets start the list, each row
+                    // keeps its place and only its words change, so no row moves under a visitor (round 37).
                     <li
-                      key={set.actId}
+                      key={i}
                       data-start-rule
                       className={cn("border-b py-1", besideSelected ? "border-transparent" : "border-border")}
                     >
                       {/* A row of the running order, the column's full width and at least 56px tall, in one rhythm:
-                          the set's start in mono, a 16px slot for the check, then the act; its stage and end; and,
-                          when it has a pair, the minutes it shares (vermilion mono) with the set named after them,
+                          the set's start in tabular figures, a 16px slot for the check, then the act; its stage and
+                          end; and, when it has a pair, the minutes it shares (raspberry tabular figures) with the set named after them,
                           on a line of their own. The chosen row is marked inside itself: a 1.5px ink outline inset
                           at its edge (an overlay, so the row never changes size; the text keeps 12px or more clear
                           of it), the check in its slot and its start in ink. No wash marks it; the wash is only the
@@ -1646,7 +2268,10 @@ export function TryAMove({
                           "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
                           selected ? null : "hover:bg-accent",
                         )}
-                        onClick={() => setPicked(set.actId)}
+                        onClick={() => {
+                          setPicked(set.actId);
+                          onPick?.();
+                        }}
                       >
                         {selected ? (
                           <span
@@ -1720,7 +2345,10 @@ export function TryAMove({
               selectRef={selectRef}
               value={shown ?? ""}
               display={fieldDisplay(sets, shown)}
-              onChange={(event) => setPicked(event.target.value || null)}
+              onChange={(event) => {
+                setPicked(event.target.value || null);
+                if (event.target.value) onPick?.();
+              }}
             >
               <option value="" disabled>
                 Choose a set
@@ -1733,7 +2361,7 @@ export function TryAMove({
                       {moved.has(set.actId)
                         ? " (already moved)"
                         : set.locked
-                          ? " (locked)"
+                          ? " (locked by this app)"
                           : unpriced.has(set.actId)
                             ? " (not scored)"
                             : ""}
@@ -1749,20 +2377,24 @@ export function TryAMove({
         {shown && shownName && !actId ? (
           <div data-move-card className="mt-8 min-w-0 lg:col-span-7 lg:col-start-6 lg:row-start-2">
             {seedShown && seedStage ? (
+              // While its rules are checked, its verdict holds the room the answer's lines will take (`TestedPlace`).
               <TestedPlace
                 card={seedShown}
                 mover={shownName}
                 stage={seedStage}
                 end={seedEnd}
                 minutes={seedMinutes}
-                // The card's own move: the decision card above draws this same before/after strip, so here
-                // the figures stand alone. A set the visitor picks still gets its strip (BestPlaceColumn).
-                strip={null}
+                // The card's own move: the hero above draws this same move, so here the figures stand alone.
+                // A set the visitor picks, and each place it lists, gets its own drawing (BestPlaceColumn, MovesCard).
+                drawing={null}
                 check={seedCheck}
                 changes={seedChanges}
                 keepFull={used >= MAX_STACK}
                 onKeep={() => keepCardMove(seedShown.move)}
                 onShowAll={() => showEvery(shown)}
+                rules={rules}
+                roomKey={encodeMoves(moves)}
+                outside={seedOutside}
               />
             ) : (
               <Button type="button" variant="ruled" onClick={() => showEvery(shown)}>
@@ -1788,49 +2420,62 @@ export function TryAMove({
             open={allOpen}
             controls={placesId}
             onToggle={() => setAllFor(allOpen ? null : choiceKey)}
+            rules={rules}
+            room={placeRoom}
+            roomKey={choiceKey}
           />
         ) : null}
 
         {actId ? (
           <div id={placesId} className="lg:col-span-12" aria-busy={state.status === "loading"}>
-            {state.status === "loading" ? (
-              <div className="mt-6 flex min-h-32 items-center gap-2 rounded-md border border-border bg-card p-6 text-sm text-muted-foreground lg:hidden">
-                <LoaderCircle aria-hidden="true" className="size-4 motion-safe:animate-spin" />
-                Scoring every legal place for {pickedName ?? "this set"}
-              </div>
-            ) : state.status === "error" ? (
-              <div className="mt-6">
-                {planned ? (
-                  <PlanError onRetry={state.retry} onStartOver={startOver} />
-                ) : (
-                  <div role="alert" className="rounded-md border border-destructive bg-card p-5">
-                    <p className="flex items-center gap-2 text-[0.9375rem] font-semibold text-destructive">
-                      <TriangleAlert aria-hidden="true" className="size-4 shrink-0" />
-                      Could not load the places for this set.
-                    </p>
-                    <Button type="button" variant="outline" className="mt-3" onClick={state.retry}>
-                      <RotateCcw aria-hidden="true" />
-                      Try again
-                    </Button>
-                  </div>
-                )}
-              </div>
-            ) : result ? (
-              // From 1024 px the list waits under its best tested place until "Show every legal place" opens it.
-              <div className={cn("mt-6", !allOpen && "lg:hidden")}>
-                <MovesCard
-                  result={result}
-                  preset={preset}
-                  timetable={timetable}
-                  kept={used}
-                  range={range}
-                  chosen={chosen}
-                  keep={{ full: used >= MAX_STACK, onKeep: keep }}
-                  onChoose={(next) => setChoice({ key: choiceKey, index: next })}
-                  headingRef={placesHeadingRef}
-                />
-              </div>
-            ) : null}
+            {/* While the places are scored, the list's frame holds the room the list will take. */}
+            <HeldRoom room={choiceKey} pending={state.status === "loading"} hold={state.status === "ready"}>
+              {state.status === "loading" ? (
+                <div className="mt-6 lg:hidden">
+                  <PlacesRoom
+                    name={pickedName ?? "this set"}
+                    rules={rules}
+                    drawing={placeRoom.drawing}
+                    range={range}
+                    synthetic={preset.synthetic === true}
+                  />
+                </div>
+              ) : state.status === "error" ? (
+                <div className="mt-6">
+                  {planned ? (
+                    <PlanError onRetry={state.retry} onStartOver={startOver} />
+                  ) : (
+                    <div role="alert" className="rounded-md border border-destructive bg-card p-5">
+                      <p className="flex items-center gap-2 text-[0.9375rem] font-semibold text-destructive">
+                        <TriangleAlert aria-hidden="true" className="size-4 shrink-0" />
+                        Could not load the places for this set.
+                      </p>
+                      <Button type="button" variant="outline" className="mt-3" onClick={state.retry}>
+                        <RotateCcw aria-hidden="true" />
+                        Try again
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ) : result ? (
+                // From 1024 px the list waits under its best tested place until "Show every legal place" opens it.
+                <div className={cn("mt-6", !allOpen && "lg:hidden")}>
+                  <MovesCard
+                    result={result}
+                    preset={preset}
+                    timetable={timetable}
+                    kept={used}
+                    range={range}
+                    chosen={chosen}
+                    keep={{ full: used >= MAX_STACK, onKeep: keep }}
+                    onChoose={(next) => setChoice({ key: choiceKey, index: next })}
+                    headingRef={placesHeadingRef}
+                    rules={rules}
+                    drawing={chosenDrawing}
+                  />
+                </div>
+              ) : null}
+            </HeldRoom>
           </div>
         ) : null}
 

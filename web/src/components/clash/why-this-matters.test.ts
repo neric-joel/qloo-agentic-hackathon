@@ -6,7 +6,7 @@ import MethodPage from "@/app/method/page";
 import { SyntheticContext } from "@/components/site/synthetic-context";
 import { qlooCredits } from "@/lib/credit";
 import * as demandModule from "@/lib/demand";
-import { PILOT, PILOT_CONTACT, PILOT_TERMS, type Demand } from "@/lib/demand";
+import { DO_NOT_USE, PILOT, PILOT_CONTACT, PILOT_TERMS, type Demand } from "@/lib/demand";
 import { METHOD_FIGURES } from "@/lib/method-figures";
 import { PUBLIC_SOURCES } from "@/lib/public-sources";
 
@@ -21,6 +21,7 @@ import {
   WHY_THIS_MATTERS_ID,
   PRESS_OUTLETS,
   WHY_STAKE,
+  WHY_USE,
   WhyThisMatters,
   along,
   isForumThread,
@@ -177,9 +178,12 @@ describe("WhyThisMatters", () => {
     expect(html).not.toContain('rel="noopener noreferrer"');
     for (const host of ["bbc.co.uk", "nme.com", "alpsinc.kr", "abc.net.au", "billboard.com"]) expect(html).not.toContain(host);
     expect(html).not.toMatch(/<summary[^>]*>(?:<span[^>]*>)*\w+ more statements?/);
-    // No quote glyph anywhere in the section, and no left bar.
+    // No quote glyph anywhere in the section, and no left bar. Round 37: the one exception is the name of the /check
+    // decision, \u201cKept on purpose\u201d, in the WHY_USE paragraph; no statement, paraphrase or reply is quoted.
     expect(html).not.toContain("&quot;");
-    expect(html).not.toMatch(/[\u201c\u201d]/);
+    expect(html.replace(`<p data-why-use="true" class="mt-2 text-base leading-normal text-foreground">${WHY_USE}</p>`, "")).not.toMatch(/[\u201c\u201d]/);
+    expect(html.match(/[\u201c\u201d]/g)).toEqual(["\u201c", "\u201d"]);
+    expect(WHY_USE.match(/\u201c[^\u201d]*\u201d/g)).toEqual(["\u201cKept on purpose\u201d"]);
     expect(html).not.toContain("border-l-2");
     expect(html).not.toContain("border-t-2");
   });
@@ -490,9 +494,9 @@ describe("WhyThisMatters", () => {
       "When two sets clash, anyone who wants to see both has to choose. Clash Control is for the time after acts are booked and before set times go out.",
     );
     const html = renderToStaticMarkup(createElement(WhyThisMatters));
-    // Directly under the heading, before the grid of findings.
+    // Directly under the heading, before the grid of findings (round 37: with the WHY_USE paragraph between them).
     expect(html).toContain(
-      `Who has complained, and what nobody has tested</h2><p data-why-stake="true" class="mt-2 text-base leading-normal text-foreground">${WHY_STAKE}</p><div class="mt-6 grid`,
+      `Who has complained, and what nobody has tested</h2><p data-why-stake="true" class="mt-2 text-base leading-normal text-foreground">${WHY_STAKE}</p><p data-why-use="true" class="mt-2 text-base leading-normal text-foreground">${WHY_USE}</p><div class="mt-6 grid`,
     );
     const plain = text(html);
     expect(plain.indexOf(WHY_STAKE)).toBeLessThan(plain.indexOf("45 clashes that fans or the press complained about"));
@@ -503,6 +507,45 @@ describe("WhyThisMatters", () => {
     // No figure, no fan count, no Qloo credit.
     expect(WHY_STAKE).not.toMatch(/\d|fans?\b|people|crowd|qloo/i);
     expect(qlooCredits(WHY_STAKE)).toEqual([]);
+  });
+
+  it("says, directly under the stake and in its type, how to keep a clash, what not to decide with this, and what the brief holds, as a condition (round 37)", () => {
+    expect(WHY_USE).toBe(
+      "A clash can stay: in Check a draft grid, choose “Kept on purpose”. Do not use this to set fees, billing order or an artist’s worth, or for crowd capacity, safety or attendance. If a festival used it, an act’s team would see the brief: the proposed time and the minutes shared before and after. This app writes no artist bios, images or messages.",
+    );
+    // It opens with where to keep a clash on purpose (CHARTER section 10, `WHY_USE` exactly).
+    expect(WHY_USE.startsWith("A clash can stay: in Check a draft grid, choose “Kept on purpose”.")).toBe(true); // owner-ordered closeout, round 37 (W1)
+    // The middle sentence is DO_NOT_USE itself, byte for byte, as /method's limits and the brief print it.
+    expect(WHY_USE).toContain(` ${DO_NOT_USE} `);
+    expect(DO_NOT_USE).toBe(
+      "Do not use this to set fees, billing order or an artist’s worth, or for crowd capacity, safety or attendance.",
+    );
+    expect(renderToStaticMarkup(createElement(MethodPage))).toContain(`<li>${DO_NOT_USE}</li>`);
+    const html = renderToStaticMarkup(createElement(WhyThisMatters));
+    // One paragraph, at the stake's body size in ink, with no width cap, tint or fold of its own.
+    expect(html.match(/data-why-use/g)).toHaveLength(1);
+    const cls = /<p data-why-use="true" class="([^"]*)">/.exec(html)?.[1];
+    expect(cls).toBe("mt-2 text-base leading-normal text-foreground");
+    expect(cls).toBe(/<p data-why-stake="true" class="([^"]*)">/.exec(html)?.[1]);
+    // In order: the heading, the stake, this paragraph, then the columns; visible with no click.
+    const at = (needle: string) => html.indexOf(needle);
+    expect(at("<p data-why-stake")).toBeGreaterThan(at("</h2>"));
+    expect(at("<p data-why-use")).toBeGreaterThan(at("<p data-why-stake"));
+    for (const col of ["problem", "unknown", "pilot"]) expect(at("<p data-why-use")).toBeLessThan(at(`data-why-col="${col}"`));
+    const visible = text(withoutDisclosures(html));
+    expect(visible).toContain(`${WHY_STAKE} ${WHY_USE} 45 clashes that fans or the press complained about`);
+    // The same on both kinds of day, with no Qloo word.
+    for (const invented of [false, true]) {
+      const day = renderToStaticMarkup(createElement(SyntheticContext.Provider, { value: invented }, createElement(WhyThisMatters)));
+      expect(day).toContain(`<p data-why-use="true" class="mt-2 text-base leading-normal text-foreground">${WHY_USE}</p>`);
+    }
+    expect(WHY_USE).not.toMatch(/qloo/i);
+    expect(qlooCredits(WHY_USE)).toEqual([]);
+    // The brief clause is a condition: no act's team receives it today, and no benefit to an artist is claimed.
+    expect(WHY_USE).toContain("If a festival used it, an act’s team would see the brief:");
+    expect(WHY_USE).not.toMatch(/\b(gets?|receives?|benefits?|helps?|sends?)\b/i);
+    // No number and no count of people.
+    expect(WHY_USE).not.toMatch(/\d|\bfans?\b|\bpeople\b/i);
   });
 
   it("orders the blocks problem, then what is not known, with the pilot last (the one-column order below 1024px)", () => {

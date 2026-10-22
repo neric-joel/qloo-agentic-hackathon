@@ -20,6 +20,39 @@ const text = (part: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
+/** The chain's steps on /method (round 37, L59), each as its text, the agent's branch left out. */
+const CHAIN = [
+  "act names Your timetable",
+  "entity IDs Qloo /search",
+  "each act's ranked row of the bill Qloo /v2/insights",
+  "percentile ranks and taste overlap This app",
+  "pair score and Clash Budget Index This app",
+  "legal moves under the day's rules The engine",
+  "Keep this move You Nothing moves until the acts' teams agree.",
+];
+
+/** The agent's branch off the engine, as its text. */
+const BRANCH = "On request: the agent explains a clash with one /v2/analysis/compare and tests moves through the same engine.";
+
+/** The top-level items of the chain's ordered list, each with its markup (a nested list stays inside its item). */
+function topLevelSteps(flow: string): string[] {
+  const steps: string[] = [];
+  // Lists open and close around items; an item of the outer list starts and ends at list depth 1.
+  let depth = 0;
+  let start = -1;
+  for (const m of flow.matchAll(/<(\/?)(li|ul|ol)\b[^>]*>/g)) {
+    const closing = m[1] === "/";
+    const list = m[2] !== "li";
+    if (list) depth += closing ? -1 : 1;
+    else if (depth === 1 && !closing) start = m.index!;
+    else if (depth === 1 && closing) {
+      steps.push(flow.slice(start, m.index! + m[0].length));
+      start = -1;
+    }
+  }
+  return steps;
+}
+
 describe("the failed bar (M11)", () => {
   it("draws taste overlap's share short of the written-down bar, from the method figures, final in the server HTML", () => {
     const html = renderToStaticMarkup(createElement(MethodPage));
@@ -155,12 +188,12 @@ describe("the reading column's alignment and measure (round 10b)", () => {
     expect(html).not.toMatch(/\bsticky\b/);
     expect(html).not.toMatch(/class="absolute inset-y-0[^"]*\b(right-0|pr-6|pl-10)\b/);
     expect(html).toMatch(/^<article>/);
-    // 20rem is the short version's verdict only (its caption, its three meters and its scale note, round 29), never a
-    // rail beside the column.
+    // 20rem is the short version's verdict only (its opening line, its two meters and its scale note; round 37 fix
+    // pass 1 took out the meter that drew the chart's taste bar again), never a rail beside the column.
     const verdictAt = html.indexOf('<div aria-hidden="true" data-short-verdict="true"');
     const verdictEnd = html.indexOf("</div></section>", verdictAt);
     expect(verdictAt).toBeGreaterThan(-1);
-    expect(html.slice(verdictAt, verdictEnd).match(/max-w-\[20rem\]/g)).toHaveLength(5);
+    expect(html.slice(verdictAt, verdictEnd).match(/max-w-\[20rem\]/g)).toHaveLength(4);
     expect(html.slice(0, verdictAt) + html.slice(verdictEnd)).not.toContain("max-w-[20rem]");
   });
 
@@ -200,41 +233,77 @@ describe("Qloo requests (lane A; cards and the request flow, round 20)", () => {
     for (const path of listed) expect(client).toContain(`"${path}"`);
   });
 
-  it("draws the request flow before the endpoints as a typed pipeline: four mono tokens joined by arrows, the two Qloo returns in teal, across from 768px and down on a phone", () => {
+  it("draws the chain from request to decision before the endpoints as a typed column: seven mono tokens joined by arrows, the two Qloo returns in teal, the agent a branch off the engine (round 37, L59)", () => {
     const flow = block.match(/<ol aria-label="From your timetable to the index"[^>]*>[\s\S]*?<\/ol>/)?.[0] ?? "";
-    expect(flow).toMatch(/class="[^"]*grid [^"]*md:grid-cols-4/);
+    // One column at every width (seven steps do not fit across), 8px between steps.
+    expect(flow).toMatch(/^<ol aria-label="From your timetable to the index" class="my-6 grid gap-y-2">/);
+    expect(flow).not.toMatch(/md:grid-cols|md:hidden|md:block/);
     expect(block.indexOf(flow)).toBeLessThan(block.indexOf("<h4"));
-    const nodes = [...flow.matchAll(/<li data-flow-node="true"[^>]*>([\s\S]*?)<\/li>/g)].map((m) => text(m[1]));
-    expect(nodes).toEqual([
-      "act names Your timetable",
-      "entity IDs Qloo /search",
-      "overlap ranks Qloo /v2/insights",
-      "index (this app) Clash Budget Index",
-    ]);
-    // The tokens: 14px mono; entity IDs and overlap ranks teal (Qloo returns them), the others ink, the last semibold.
+    // The steps in order: the list's own items, top level only (the branch is nested inside the engine's step).
+    const steps = topLevelSteps(flow);
+    expect(steps.map((step) => text(step.replace(/<ul data-flow-branch[\s\S]*?<\/ul>/, " ")))).toEqual(CHAIN);
+    const order = ["/search", "/v2/insights", "The engine", "Keep this move"].map((needle) => steps.findIndex((s) => text(s).includes(needle)));
+    expect(order).toEqual([1, 2, 5, 6]);
+    // The agent's /v2/analysis/compare is on a branch inside the engine's step, never a step of its own and never
+    // between the engine and the Keep.
+    expect(steps.filter((step) => step.includes("/v2/analysis/compare"))).toHaveLength(1);
+    const engine = steps[5];
+    const branch = engine.match(/<ul data-flow-branch[^>]*>([\s\S]*?)<\/ul>/);
+    expect(branch).not.toBeNull();
+    expect(text(branch![1])).toBe(BRANCH);
+    expect(text(steps[6])).not.toContain("compare");
+    expect(text(steps[6])).toBe("Keep this move You Nothing moves until the acts' teams agree.");
+    // The tokens: 14px mono, all ink (round 37, L59 LATE: teal only for Qloo's endpoints), the Keep semibold.
     const tokens = [...flow.matchAll(/<code data-flow-token="true" class="([^"]*)">([^<]+)<\/code>/g)].map((m) => [m[2], m[1]]);
-    expect(tokens.map(([token]) => token)).toEqual(["act names", "entity IDs", "overlap ranks", "index (this app)"]);
+    expect(tokens.map(([token]) => token.replace(/&#x27;|’/g, "'"))).toEqual([
+      "act names",
+      "entity IDs",
+      "each act's ranked row of the bill",
+      "percentile ranks and taste overlap",
+      "pair score and Clash Budget Index",
+      "legal moves under the day's rules",
+      "Keep this move",
+    ]);
     for (const [, cls] of tokens) expect(cls).toContain("font-mono text-sm");
     expect(tokens.map(([, cls]) => (cls.includes("text-prov-qloo") ? "qloo" : cls.includes("text-foreground") ? "ink" : "?"))).toEqual([
       "ink",
-      "qloo",
-      "qloo",
+      "ink",
+      "ink",
+      "ink",
+      "ink",
+      "ink",
       "ink",
     ]);
-    expect(tokens[3][1]).toContain("font-semibold");
-    // Arrows: inline SVG in a 1.5px ink line with round caps (round 29: ink, so the flow reads as one pipeline), three
-    // across (at least 40px) and three down, 40px long on a phone.
-    expect(flow.match(/<svg aria-hidden="true" data-flow-arrow="across"[^>]*class="hidden min-w-10 flex-1 overflow-visible md:block"/g)).toHaveLength(3);
-    expect(flow.match(/<svg aria-hidden="true" data-flow-arrow="down"[^>]*class="[^"]*md:hidden"/g)).toHaveLength(3);
-    expect(flow.match(/<svg aria-hidden="true" data-flow-arrow="down" focusable="false" width="10" height="40"/g)).toHaveLength(3);
-    expect(flow).toMatch(/<line [^>]*stroke="var\(--foreground\)" stroke-width="1.5" stroke-linecap="round"/);
+    expect(tokens[6][1]).toContain("font-semibold");
+    expect(tokens.slice(0, 6).every(([, cls]) => !cls.includes("font-semibold"))).toBe(true);
+    // Teal only for Qloo's three endpoints, in mono: /search and /v2/insights on their steps, /v2/analysis/compare on
+    // the branch; nothing else in the chain is teal.
+    expect(branch![1]).toContain('<code class="font-mono text-prov-qloo">/v2/analysis/compare</code>');
+    expect(flow.match(/text-prov-qloo/g)).toHaveLength(3);
+    expect(flow.match(/<code class="font-mono text-prov-qloo">\/[^<]+<\/code>/g)).toEqual([
+      '<code class="font-mono text-prov-qloo">/search</code>',
+      '<code class="font-mono text-prov-qloo">/v2/insights</code>',
+      '<code class="font-mono text-prov-qloo">/v2/analysis/compare</code>',
+    ]);
+    // Arrows: inline SVG in a 1.5px ink line with round caps: five 24px arrows down, the spine from the engine on to
+    // the Keep (it runs the branch's height plus 24px) and the branch's own arrow off the spine.
+    expect(flow.match(/<svg aria-hidden="true" data-flow-arrow="down" focusable="false" width="10" height="24" class="mt-2 block overflow-visible"/g)).toHaveLength(5);
+    expect(flow.match(/data-flow-arrow="spine"/g)).toHaveLength(1);
+    expect(flow.match(/data-flow-arrow="branch"/g)).toHaveLength(1);
+    expect(engine).toContain('data-flow-arrow="spine"');
+    expect(engine).toContain('data-flow-arrow="branch"');
+    expect(flow).not.toContain('data-flow-arrow="across"');
+    expect(flow.match(/<line [^>]*stroke="var\(--foreground\)" stroke-width="1.5" stroke-linecap="round"/g)).toHaveLength(7);
     expect(flow).not.toContain("var(--border-strong)");
-    // No dots, circles, nodes, boxes or vermilion.
+    // No dots, circles, nodes, boxes or raspberry.
     expect(flow).not.toMatch(/<circle|rounded|class="[^"]*border|bg-card|var\(--primary\)|text-primary|bg-primary/);
-    // The labels in 13px ink, the endpoints in 13px muted mono, never broken mid-word.
-    expect(flow.match(/<p class="mt-1\.5 text-\[0\.8125rem\] leading-snug text-foreground">/g)).toHaveLength(4);
-    expect(flow.match(/<code class="block font-mono text-\[0\.8125rem\] leading-snug text-muted-foreground">\/[^<]+<\/code>/g)).toHaveLength(2);
+    // The makers in 13px ink, Qloo's endpoints in teal mono on the same line, the Keep's note in 13px muted.
+    expect(flow.match(/<p class="mt-1 text-\[0\.8125rem\] leading-snug text-foreground">/g)).toHaveLength(7);
+    expect(flow).not.toMatch(/<code class="font-mono text-muted-foreground">/);
+    expect(flow.match(/<p class="text-\[0\.8125rem\] leading-snug text-muted-foreground">/g)).toHaveLength(1);
     expect(flow).not.toContain("break-all");
+    // Nothing focusable, and no motion.
+    expect(flow).not.toMatch(/<a |<button|<input|<select|tabindex|<details|animate|transition/);
   });
 
   it("sets each endpoint on the page with no box, two columns from 1024px: the path in 17px teal mono, what we send as two-column rows where the endpoint is 24rem wide, what we get back", () => {
@@ -441,7 +510,7 @@ describe("the short version and the contents card (round 19)", () => {
     expect(html).not.toContain("border-b-2");
     // No muted surface (the baselines' bg-muted-foreground fill is ink, not a surface).
     expect(html).not.toMatch(/\bbg-muted(?!-foreground)/);
-    // No colour mix, and vermilion only for cost: none on this page's chrome.
+    // No colour mix, and the raspberry accent only for shared time: none on this page's chrome.
     expect(html).not.toContain("color-mix");
     expect(html).not.toMatch(/\b(bg|text)-primary\b/);
   });
@@ -557,7 +626,7 @@ describe("hanging heads from 1280px (round 26)", () => {
       expect(figure).not.toContain("max-w");
       expect(html.slice(at, html.indexOf(">", at))).toContain("xl:max-w-[76ch]");
     }
-    expect(html).toMatch(/<ol aria-label="From your timetable to the index" class="my-6 grid gap-y-2 md:grid-cols-4 md:gap-y-0">/);
+    expect(html).toMatch(/<ol aria-label="From your timetable to the index" class="my-6 grid gap-y-2">/);
     expect(html).toMatch(/<ul aria-labelledby="qloo-calls-caption" class="grid gap-x-10 gap-y-10 lg:grid-cols-2">/);
   });
 
@@ -590,6 +659,8 @@ describe("the short version's head and verdict (round 27)", () => {
   const verdict = (short + "</section>").match(/<div aria-hidden="true" data-short-verdict="true" class="([^"]*)">([\s\S]*?)<\/div><\/section>/);
   const meters = [...(verdict?.[2] ?? "").matchAll(/<div data-verdict-meter="true" class="([^"]*)">([\s\S]*?)<\/div>/g)];
   const meter = meters[0] ?? null;
+  /** A share of the chart's domain as the percentage the markup carries. */
+  const at = (pct: number) => `${Math.round((pct / FIGURE_DOMAIN) * 100000) / 1000}%`;
   /** The marks of one meter, in order: start tick, capsule, bar rule. */
   const marksOf = (inner: string) =>
     [...inner.matchAll(/<span (data-meter-[a-z]+)="true" class="([^"]*)"(?: style="([^"]*)")?><\/span>/g)].map((m) => ({
@@ -597,10 +668,10 @@ describe("the short version's head and verdict (round 27)", () => {
       cls: m[2],
       style: m[3] ?? "",
     }));
-  /** The one line under the third meter that says the scales differ: muted, the verdict's only non-ink line. */
+  /** The one line under the last meter that says the scales differ: muted, the verdict's only non-ink line. */
   const SCALE_NOTE = "Each line has its own scale, set by its own bar.";
   const source = readFileSync(join(process.cwd(), "src", "app", "method", "page.tsx"), "utf-8");
-  const { backtest, moves, scale } = METHOD_FIGURES;
+  const { backtest, moves } = METHOD_FIGURES;
   const reached = methodRow("taste").topQuarterPct;
 
   it("sets the heading in the sections' own class, same id and words", () => {
@@ -620,10 +691,10 @@ describe("the short version's head and verdict (round 27)", () => {
     // In the heading's columns, in the row under the heading; the body spans both rows, so their tops stay level.
     expect(cls).toMatch(/\bxl:col-span-4 xl:col-start-1 xl:row-start-2\b/);
     expect(short).toMatch(/<div class="min-w-0 xl:col-span-8 xl:col-start-5 xl:row-span-2 xl:row-start-1">/);
-    // No box, rule, fill, vermilion, softer tone or sticky, outside the meters (round 28; three of them from round
-    // 29), which draw only in ink and border-strong, and the one muted scale note.
+    // No box, rule, fill, raspberry, softer tone or sticky, outside the meters (round 28; two of them from round 37
+    // fix pass 1), which draw only in ink and border-strong, and the one muted scale note.
     expect(meter).not.toBeNull();
-    expect(meters).toHaveLength(3);
+    expect(meters).toHaveLength(2);
     const note = verdict![0].match(/<p class="([^"]*)">([^<]*)<\/p>/g)?.find((p) => p.includes(SCALE_NOTE)) ?? "";
     expect(note).toBe(`<p class="mt-3 max-w-[20rem] text-[0.8125rem] leading-5 text-muted-foreground">${SCALE_NOTE}</p>`);
     const rest = meters.reduce((all, m) => all.replace(m[0], ""), verdict![0]).replace(note, "");
@@ -633,55 +704,80 @@ describe("the short version's head and verdict (round 27)", () => {
     }
   });
 
-  it("draws the miss as a meter on the chart's own scale: ink capsule to taste overlap, the chart's ink bar rule, a border-strong start tick, and empty paper between (round 28)", () => {
+  it("draws taste overlap's share once on the first screen: the chart's bar, with no meter, row label or bar line for it in the verdict (round 37 fix pass 1, L58)", () => {
+    const [, , inner] = verdict!;
+    // The chart draws it, once: its ink bar ends at taste overlap's share of the domain, under the one bar line
+    // labelled "Bar we set" (the failed bar test pins each); the sentence under the chart states the number (fix pass 2).
+    const chart = short.slice(short.indexOf("<figure"), short.indexOf("</figure>"));
+    expect(chart).toContain(`rounded-bar h-4 bg-foreground" style="width:${at(reached)}"`);
+    expect(text(chart).split("Bar we set:")).toHaveLength(2);
+    // The verdict beside it draws none of it again: no meter is called with taste overlap's share, its bar or the
+    // chart's own domain, and no line repeats the chart's caption, its row label, its bar label or a figure of it.
+    const verdictSource = source.slice(source.indexOf("function ShortVerdict"), source.indexOf("function ShortVersion"));
+    expect(verdictSource).not.toContain("taste.topQuarterPct");
+    expect(verdictSource).not.toContain("backtest.bar.topQuarterPct");
+    expect(verdictSource).not.toContain("domain={FIGURE_DOMAIN}");
+    const said = text(inner).replace(/ (?=%)/g, "");
+    for (const repeated of [
+      "Complained-about clashes",
+      "Taste overlap",
+      "Bar we set",
+      "It missed the bar.",
+      `${backtest.bar.topQuarterPct}%`,
+      `${reached.toFixed(1)}%`,
+      `${methodRow("popularity").topQuarterPct.toFixed(1)}%`,
+    ]) {
+      expect(said).not.toContain(repeated);
+    }
+    // In the short version the share is a bar exactly once: the chart's two ink bars are taste overlap and popularity,
+    // and the verdict's only meters are the two checks the chart does not draw.
+    expect(short.match(/rounded-bar h-4 bg-foreground/g)).toHaveLength(2);
+    expect(short.match(/data-verdict-meter/g)).toHaveLength(2);
+  });
+
+  it("draws each miss as a meter: an ink capsule to its value, the chart's 1.5px ink bar rule, a border-strong start tick, and empty paper between (round 28)", () => {
     const [, meterCls, inner] = meter!;
-    // Between the numeral and the bar line, at most the rail figure's 20rem.
-    expect(meterCls).toBe("relative mt-3 h-5 max-w-[20rem]");
+    // Under its value line, at most the rail figure's 20rem, with no display numeral anywhere in the verdict.
+    expect(meterCls).toBe("relative mt-1 h-5 max-w-[20rem]");
     const lines = verdict![2];
-    expect(lines.indexOf("type-numeral")).toBeLessThan(lines.indexOf("data-verdict-meter"));
-    expect(lines.indexOf("data-verdict-meter")).toBeLessThan(lines.indexOf("Bar we set:"));
-    const at = (pct: number) => `${Math.round((pct / FIGURE_DOMAIN) * 100000) / 1000}%`;
+    expect(lines).not.toContain("type-numeral");
+    expect(lines.indexOf(">Lead over genre tags</p>")).toBeGreaterThan(-1);
+    expect(lines.indexOf(">Lead over genre tags</p>")).toBeLessThan(lines.indexOf("data-verdict-meter"));
     const marks = marksOf(inner);
     expect(marks.map((m) => m.mark)).toEqual(["data-meter-start", "data-meter-reach", "data-meter-bar"]);
     const [start, reach, rule] = marks;
     // The start tick: 1px border-strong, 8px tall, at 0.
     expect(start.cls).toBe("absolute top-1.5 left-0 h-2 w-px bg-border-strong");
-    // The capsule: 8px ink, ending at taste overlap's share of the chart's domain (left + width = that share); it
-    // starts 3px in, 2px clear of the 1px start tick, which its round start would otherwise cover.
+    // The capsule: 8px ink, ending at the lead's share of its own domain; it starts 3px in, 2px clear of the 1px start
+    // tick, which its round start would otherwise cover.
     expect(reach.cls).toBe("absolute top-1.5 left-[3px] h-2 rounded-bar bg-foreground");
-    expect(reach.style).toBe(`width:calc(${at(reached)} - 3px)`);
-    expect(Number(reach.style.match(/width:calc\(([\d.]+)% - 3px\)/)![1]) / 100).toBeCloseTo(reached / FIGURE_DOMAIN, 4);
-    // The rule: the chart's 1.5px solid ink bar notation, across the meter's 20px, so 6px above and below the capsule.
+    const domain = (backtest.bar.leadOverGenrePoints * FIGURE_DOMAIN) / backtest.bar.topQuarterPct;
+    expect(Number(reach.style.match(/width:calc\(([\d.]+)% - 3px\)/)![1]) / 100).toBeCloseTo(backtest.leadOverGenrePoints / domain, 4);
+    // The rule: the chart's 1.5px solid ink bar notation, across the meter's 20px, so 6px above and below the capsule,
+    // at the chart's bar fraction.
     expect(rule.cls).toBe("absolute inset-y-0 w-0 -translate-x-1/2 border-l-[1.5px] border-solid border-foreground");
     expect(rule.style).toBe(`left:${at(backtest.bar.topQuarterPct)}`);
-    expect(Number(rule.style.match(/left:([\d.]+)%/)![1]) / 100).toBeCloseTo(backtest.bar.topQuarterPct / FIGURE_DOMAIN, 4);
     // The gap between them is the miss: nothing else is drawn, and the meter holds no text.
     expect(inner.match(/<span/g)).toHaveLength(3);
     expect(text(inner)).toBe("");
     // Inside the aria-hidden, never-printed, xl-only verdict.
     expect(verdict![1]).toContain("hidden xl:block");
     expect(verdict![1]).toMatch(/\bprint:hidden\b/);
-    // Both positions come from the figures module through the chart's own mapping: no number typed in. From round 29
-    // the meter takes (value, bar, domain), and the first one is called with taste overlap, its bar and the chart's
-    // own domain, so its geometry is the round 28 one.
+    // Both positions come from the figures module through the chart's own mapping: no number typed in.
     const component = source.slice(source.indexOf("function VerdictMeter"), source.indexOf("function ShortVerdict"));
     expect(component).toContain("along((point / domain) * FIGURE_DOMAIN)");
     expect(component).toContain("at(value)");
     expect(component).toContain("at(bar)");
     expect(component.replace(/\/\*\*[\s\S]*?\*\//g, "")).not.toMatch(/\d+(\.\d+)?%|\b(25|60|75)\b/);
-    const verdictSource = source.slice(source.indexOf("function ShortVerdict"), source.indexOf("function ShortVersion"));
-    expect(verdictSource).toContain(
-      '<VerdictMeter value={taste.topQuarterPct} bar={backtest.bar.topQuarterPct} domain={FIGURE_DOMAIN} space="mt-3" />',
-    );
     expect(source).toMatch(/import \{ BacktestBars, FIGURE_DOMAIN, along \} from "@\/components\/clash\/why-this-matters";/);
   });
 
-  it("draws the two other pre-set checks as meters on their own scales, each bar rule at the first meter's rule x (round 29)", () => {
-    const [first, lead, movesMeter] = meters.map((m) => ({ cls: m[1], marks: marksOf(m[2]) }));
-    // Called three times, with the figures module's values: the lead over genre tags against its bar, the moves
-    // against theirs, each on 0 to bar x (FIGURE_DOMAIN / the chart's bar), so each bar sits at the chart's bar fraction.
+  it("draws the two pre-set checks the chart does not draw as meters on their own scales, both bar rules at the chart's bar fraction (round 29)", () => {
+    const [lead, movesMeter] = meters.map((m) => ({ cls: m[1], marks: marksOf(m[2]) }));
+    // Called twice, with the figures module's values: the lead over genre tags against its bar, the moves against
+    // theirs, each on 0 to bar x (FIGURE_DOMAIN / the chart's bar), so each bar sits at the chart's bar fraction.
     const verdictSource = source.slice(source.indexOf("function ShortVerdict"), source.indexOf("function ShortVersion"));
-    expect(verdictSource.match(/<VerdictMeter\b/g)).toHaveLength(3);
+    expect(verdictSource.match(/<VerdictMeter\b/g)).toHaveLength(2);
     expect(source).toContain("const RAIL_SCALE = FIGURE_DOMAIN / backtest.bar.topQuarterPct;");
     expect(verdictSource.replace(/\s+/g, " ")).toContain(
       "<VerdictMeter value={backtest.leadOverGenrePoints} bar={backtest.bar.leadOverGenrePoints} domain={backtest.bar.leadOverGenrePoints * RAIL_SCALE} space=\"mt-1\" />",
@@ -693,16 +789,15 @@ describe("the short version's head and verdict (round 27)", () => {
     const typed = [backtest.leadOverGenrePoints, backtest.bar.leadOverGenrePoints, moves.measuredPoints, moves.barPoints];
     for (const n of typed) expect(verdictSource.replace(/\/\*\*[\s\S]*?\*\//g, "")).not.toMatch(new RegExp(`[^\\w.[-]${String(n).replace(".", "\\.")}(?![\\w.%-]|rem)`));
     // The same notation: same marks, same classes, only the capsule's end differs.
-    for (const meter of [lead, movesMeter]) {
-      expect(meter.cls).toBe("relative mt-1 h-5 max-w-[20rem]");
-      expect(meter.marks.map((m) => [m.mark, m.cls])).toEqual(first.marks.map((m) => [m.mark, m.cls]));
-    }
-    // Every bar rule at the same x: the same along(bar) fraction as the first meter's.
-    const rule = (meter: typeof first) => meter.marks.find((m) => m.mark === "data-meter-bar")!.style;
-    expect(rule(lead)).toBe(rule(first));
-    expect(rule(movesMeter)).toBe(rule(first));
+    expect(lead.cls).toBe("relative mt-1 h-5 max-w-[20rem]");
+    expect(movesMeter.cls).toBe(lead.cls);
+    expect(movesMeter.marks.map((m) => [m.mark, m.cls])).toEqual(lead.marks.map((m) => [m.mark, m.cls]));
+    // Both bar rules at one x: the chart's bar over the chart's domain.
+    const rule = (meter: typeof lead) => meter.marks.find((m) => m.mark === "data-meter-bar")!.style;
+    expect(rule(lead)).toBe(`left:${at(backtest.bar.topQuarterPct)}`);
+    expect(rule(movesMeter)).toBe(rule(lead));
     // Each capsule ends at its own value over its own domain.
-    const reach = (meter: typeof first) => Number(meter.marks.find((m) => m.mark === "data-meter-reach")!.style.match(/width:calc\(([\d.]+)% - 3px\)/)![1]) / 100;
+    const reach = (meter: typeof lead) => Number(meter.marks.find((m) => m.mark === "data-meter-reach")!.style.match(/width:calc\(([\d.]+)% - 3px\)/)![1]) / 100;
     const domain = (bar: number) => (bar * FIGURE_DOMAIN) / backtest.bar.topQuarterPct;
     expect(reach(lead)).toBeCloseTo(backtest.leadOverGenrePoints / domain(backtest.bar.leadOverGenrePoints), 4);
     expect(reach(movesMeter)).toBeCloseTo(moves.measuredPoints / domain(moves.barPoints), 4);
@@ -715,55 +810,44 @@ describe("the short version's head and verdict (round 27)", () => {
     const [, , inner] = verdict!;
     const lines = [...inner.matchAll(/<p class="([^"]*)">([\s\S]*?)<\/p>/g)].map((m) => ({ cls: m[1], text: text(m[2]).replace(/ (?=%)/g, "") }));
     expect(lines.map((l) => l.text)).toEqual([
-      `Complained-about clashes in the day's highest ${scale.topQuarterPct}%`,
-      "Taste overlap",
-      `${reached.toFixed(1)}%`,
-      `Bar we set: ${backtest.bar.topQuarterPct}%`,
-      "It missed the bar.",
+      "Two other checks we set before building",
       "Lead over genre tags",
       `${backtest.leadOverGenrePoints} points · bar ${backtest.bar.leadOverGenrePoints}`,
       "Suggested moves against popularity-only",
       `${moves.measuredPoints} index points · bar ${moves.barPoints}`,
       SCALE_NOTE,
     ]);
-    // Round 29: the two added checks, 24px under "It missed the bar." and 20px apart, labels 13px semibold ink, value
-    // lines 13px with the numbers in mono tabular; nothing past 13px, so no stat strip.
-    expect(lines[5].cls).toBe("mt-6 text-[0.8125rem] leading-5 font-semibold");
-    expect(lines[6].cls).toBe("mt-0.5 text-[0.8125rem] leading-5");
-    expect(lines[7].cls).toBe("mt-5 text-[0.8125rem] leading-5 font-semibold");
-    expect(lines[8].cls).toBe("mt-0.5 text-[0.8125rem] leading-5");
-    expect(lines[9].cls).toBe("mt-3 max-w-[20rem] text-[0.8125rem] leading-5 text-muted-foreground");
+    // The opening line at the rail's measure; the two checks 12px under it and 20px apart, labels 13px semibold ink,
+    // value lines 13px with the numbers in mono tabular; nothing past 13px, so no stat strip.
+    expect(lines[0].cls).toBe("max-w-[20rem] text-[0.8125rem] leading-5");
+    expect(lines[1].cls).toBe("mt-3 text-[0.8125rem] leading-5 font-semibold");
+    expect(lines[2].cls).toBe("mt-0.5 text-[0.8125rem] leading-5");
+    expect(lines[3].cls).toBe("mt-5 text-[0.8125rem] leading-5 font-semibold");
+    expect(lines[4].cls).toBe("mt-0.5 text-[0.8125rem] leading-5");
+    expect(lines[5].cls).toBe("mt-3 max-w-[20rem] text-[0.8125rem] leading-5 text-muted-foreground");
     const mono = (n: number) => `<span class="font-mono tabular-nums">${n}</span>`;
     expect(inner).toContain(`${mono(backtest.leadOverGenrePoints)} points · bar ${mono(backtest.bar.leadOverGenrePoints)}`);
     expect(inner).toContain(`${mono(moves.measuredPoints)} index points · bar ${mono(moves.barPoints)}`);
-    // The scale note sits right after the third meter.
+    // The scale note sits right after the second meter.
     expect(inner.indexOf(SCALE_NOTE)).toBeGreaterThan(inner.lastIndexOf("data-verdict-meter"));
-    // The definition is the chart caption's own words up to its comma.
-    const caption = text(html.slice(html.indexOf("<figcaption"), html.indexOf("</figcaption>")));
-    expect(caption.replace(/ (?=%)/g, "").startsWith(`${lines[0].text}, by method`)).toBe(true);
-    expect(lines[0].cls).toBe("max-w-[20rem] text-[0.8125rem] leading-5");
-    expect(lines[1].cls).toBe("mt-3 text-[0.8125rem] leading-5 font-semibold");
-    expect(lines[2].cls).toBe("type-numeral mt-1 text-[3.5rem] leading-none tabular-nums");
-    expect(lines[3].cls).toBe("mt-2 text-[0.8125rem] leading-5");
-    expect(lines[4].cls).toBe("mt-1 text-[0.9375rem] leading-snug font-semibold");
-    // The bar's value in mono, as the chart's label sets it.
-    expect(inner).toMatch(new RegExp(`Bar we set: <span class="font-mono tabular-nums">${backtest.bar.topQuarterPct}(<!-- -->)?%</span>`));
-    // Exactly one display numeral: a single figure, never a stat strip.
-    expect(inner.match(/type-numeral/g)).toHaveLength(1);
+    // No display numeral and no restated share (round 37, L58): the chart beside the verdict draws taste overlap's
+    // share and prints it, so the verdict neither draws nor states it. Never a stat strip.
+    expect(inner).not.toContain("type-numeral");
+    expect(text(inner)).not.toContain(`${reached.toFixed(1)}%`);
+    expect(inner).not.toMatch(/text-\[(0\.9375|1|2|3|3\.5|4)rem\]/);
     // Ink: the wrapper sets the foreground and no line but the scale note (muted) sets another colour.
     expect(verdict![1]).toMatch(/\btext-foreground\b/);
     for (const line of lines.slice(0, -1)) expect(line.cls).not.toMatch(/\btext-(?!\[)/);
     // No number is typed into the page: the verdict reads them from METHOD_FIGURES.
     expect(source).not.toMatch(/46\.8|\b60\s*%|>\s*60\b/);
     const component = source.slice(source.indexOf("function ShortVerdict"), source.indexOf("function ShortVersion"));
-    expect(component).toContain("{scale.topQuarterPct}%");
-    expect(component).toContain("{formatPct(taste.topQuarterPct)}");
-    expect(component).toContain("{backtest.bar.topQuarterPct}%");
+    expect(component).not.toContain("formatPct(");
     expect(component).not.toMatch(/\d+\.\d+%|\b(25|60)\b/);
   });
 
   it("keeps the real lines visible where they are: the caption, the chart, the failed test and It missed the bar.", () => {
-    const visible = text(html.replace(/<div aria-hidden="true" data-short-verdict="true"[\s\S]*?<\/div><\/section>/, "</section>"));    expect(visible).toContain("Complained-about clashes in the day's highest 25%, by method");
+    const visible = text(html.replace(/<div aria-hidden="true" data-short-verdict="true"[\s\S]*?<\/div><\/section>/, "</section>"));
+    expect(visible).toContain("Complained-about clashes in the day's highest 25%, by method");
     expect(visible).toContain("The test we set before building failed.");
     expect(visible).toContain("It missed the bar.");
     expect(visible).toMatch(/Bar we set: 60 ?%/);
@@ -809,37 +893,33 @@ describe("the request flow in the rail of How the rest works (round 28)", () => 
     expect(rest).not.toMatch(/\bsticky\b/);
   });
 
-  it("draws the rail copy in the flow's own vertical form, words, tokens and paths unchanged", () => {
-    const [rail, body] = [flows.find((f) => f.includes('class="grid gap-y-2"'))!, flows.find((f) => f.includes("md:grid-cols-4"))!];
+  it("draws the rail copy as the body copy is drawn, words, tokens and paths unchanged (round 37: one column at every width)", () => {
+    const [rail, body] = [flows.find((f) => f.includes('class="grid gap-y-2"'))!, flows.find((f) => f.includes('class="my-6 grid gap-y-2"'))!];
     expect(rail).toBeDefined();
     expect(body).toBeDefined();
     expect(rail).toMatch(/^<ol aria-label="From your timetable to the index" class="grid gap-y-2">/);
-    const expected = [
-      "act names Your timetable",
-      "entity IDs Qloo /search",
-      "overlap ranks Qloo /v2/insights",
-      "index (this app) Clash Budget Index",
-    ];
-    expect(nodesOf(rail)).toEqual(expected);
-    expect(nodesOf(body)).toEqual(expected);
-    // The same tokens in the same classes: teal on the two Qloo returns, ink on the rest, the last semibold.
+    expect(nodesOf(rail).map((node) => node.replace(/ On request: .*$/, ""))).toEqual(CHAIN);
+    expect(nodesOf(body).map((node) => node.replace(/ On request: .*$/, ""))).toEqual(CHAIN);
+    // The same markup inside both lists: the two copies differ only in the outer margin.
+    const inner = (flow: string) => flow.slice(flow.indexOf(">") + 1);
+    expect(inner(rail)).toBe(inner(body));
+    // The same tokens in the same classes: ink, the Keep semibold.
     const tokens = (flow: string) => [...flow.matchAll(/<code data-flow-token="true" class="([^"]*)">([^<]+)<\/code>/g)].map((m) => [m[2], m[1]]);
     expect(tokens(rail)).toEqual(tokens(body));
-    // Down arrows only, shown at every width (no md:hidden), three of them; no across arrows.
-    expect(rail.match(/<svg aria-hidden="true" data-flow-arrow="down"[^>]*class="mt-2 block overflow-visible"/g)).toHaveLength(3);
-    // Round 29: 24px long in the stacked form (8px clear above, the list's 8px row gap below), in ink, the head's tip
-    // where the line ends; the phone form keeps 40px.
-    expect(rail.match(/<svg aria-hidden="true" data-flow-arrow="down" focusable="false" width="10" height="24"/g)).toHaveLength(3);
-    expect(rail.match(/<line x1="5" y1="0.75" x2="5" y2="22.5" stroke="var\(--foreground\)"/g)).toHaveLength(3);
-    expect(rail.match(/<path d="M1.25 18.25 L5 22.5 L8.75 18.25" stroke="var\(--foreground\)"/g)).toHaveLength(3);
-    expect(body.match(/<line x1="5" y1="0.75" x2="5" y2="38.5" stroke="var\(--foreground\)"/g)).toHaveLength(3);
-    expect(body.match(/<path d="M1.25 34.25 L5 38.5 L8.75 34.25" stroke="var\(--foreground\)"/g)).toHaveLength(3);
+    expect(tokens(rail)).toHaveLength(7);
+    // Down arrows only, shown at every width, five of them 24px long, in ink, the head's tip where the line ends; the
+    // spine and the branch arrow off the engine; no across arrows and no width variants.
+    expect(rail.match(/<svg aria-hidden="true" data-flow-arrow="down" focusable="false" width="10" height="24" class="mt-2 block overflow-visible"/g)).toHaveLength(5);
+    expect(rail.match(/<line x1="5" y1="0.75" x2="5" y2="22.5" stroke="var\(--foreground\)"/g)).toHaveLength(5);
+    expect(rail.match(/<path d="M1.25 18.25 L5 22.5 L8.75 18.25" stroke="var\(--foreground\)"/g)).toHaveLength(5);
+    expect(rail.match(/data-flow-arrow="spine"/g)).toHaveLength(1);
+    expect(rail.match(/data-flow-arrow="branch"/g)).toHaveLength(1);
     expect(rail).not.toContain('data-flow-arrow="across"');
-    expect(rail).not.toMatch(/md:/);
-    // The labels and endpoint paths under each token, as in the body copy.
-    expect(rail.match(/<p class="mt-1\.5 text-\[0\.8125rem\] leading-snug text-foreground">/g)).toHaveLength(4);
-    expect(rail.match(/<code class="block font-mono text-\[0\.8125rem\] leading-snug text-muted-foreground">\/[^<]+<\/code>/g)).toHaveLength(2);
-    // No dots, nodes, boxes or vermilion, and nothing focusable in either copy.
+    expect(rail).not.toMatch(/\b(sm|md|lg|xl):/);
+    // The makers and Qloo's endpoint paths under each token, as in the body copy: the endpoints teal, three of them.
+    expect(rail.match(/<p class="mt-1 text-\[0\.8125rem\] leading-snug text-foreground">/g)).toHaveLength(7);
+    expect(rail.match(/<code class="font-mono text-prov-qloo">\/[^<]+<\/code>/g)).toHaveLength(3);
+    // No dots, nodes, boxes or raspberry, and nothing focusable in either copy.
     for (const flow of [rail, body]) {
       expect(flow).not.toMatch(/<circle|rounded|class="[^"]*border|bg-card|var\(--primary\)|text-primary|bg-primary/);
       expect(flow).not.toMatch(/<a |<button|<input|<select|tabindex|<details/);
@@ -927,7 +1007,7 @@ describe("true sentences about location, the test that held, the brief and its l
   });
 });
 
-describe("taste inside the full price, the second exploratory follow-up (round 32, V2)", () => {
+describe("taste inside the pair score, the second exploratory follow-up (round 32, V2; round 37 score words)", () => {
   const html = renderToStaticMarkup(createElement(MethodPage));
   const visible = text(html.replace(/<details(?![^>]*\bopen\b)[^>]*>[\s\S]*?<\/details>/g, " "));
   const start = html.indexOf('id="taste-in-price"');
@@ -939,25 +1019,27 @@ describe("taste inside the full price, the second exploratory follow-up (round 3
     expect(start).toBeLessThan(html.indexOf('id="limits"'));
     expect(start).toBeGreaterThan(html.indexOf("Exploratory follow-up, run after the test failed"));
     expect(html).toContain(
-      '<h3 id="taste-in-price-heading" class="text-lg leading-snug font-semibold break-words">Taste inside the full price (exploratory)</h3>',
+      '<h3 id="taste-in-price-heading" class="text-lg leading-snug font-semibold break-words">Taste inside the pair score (exploratory)</h3>',
     );
     expect(html).not.toContain("What taste adds");
-    expect(visible).toContain("Taste inside the full price (exploratory)");
+    expect(visible).toContain("Taste inside the pair score (exploratory)");
   });
 
   it("prints every figure from METHOD_FIGURES and says it did not establish an advantage over popularity", () => {
-    // "Full price" is the backtest's name for the index's pair score, defined once in its own clause (round 33, E1).
+    // The index's pair score, named with its factors once, in its own clause (round 33, E1; round 37, R3: "pair
+    // score" in place of the backtest's "full price").
     expect(blockText).toContain(
-      "Run after the failed test above, on the same 68 complained-about pairs, so it is exploratory. The full price (the index's pair score: taste overlap × shared time × Qloo popularity) scored AUC 0.746 (interval 0.675 to 0.812); popularity alone scored 0.722. The difference is +0.024 (interval -0.074 to +0.136), so the full price did not establish an advantage over popularity.",
+      "Run after the failed test above, on the same 68 complained-about pairs, so it is exploratory. The pair score (taste overlap × shared time × Qloo popularity) scored AUC 0.746 (interval 0.675 to 0.812); popularity alone scored 0.722. The difference is +0.024 (interval -0.074 to +0.136), so the pair score did not establish an advantage over popularity.",
     );
-    expect(blockText.match(/the index's pair score/g)).toHaveLength(1);
+    expect(blockText.match(/The pair score \(taste overlap × shared time × Qloo popularity\)/g)).toHaveLength(1);
     expect(blockText).toContain(
-      "With taste taken out, every pair given the same taste overlap so that only shared time and draw are left, the same score reached 0.754 (interval 0.690 to 0.828). The full price minus that is -0.009 (interval -0.102 to +0.079). This check did not establish that taste adds to time and draw.",
+      "With taste taken out, every pair given the same taste overlap so that only shared time and draw are left, the same score reached 0.754 (interval 0.690 to 0.828). The pair score minus that is -0.009 (interval -0.102 to +0.079). This check did not establish that taste adds to time and draw.",
     );
     expect(blockText).toContain(
-      "With the taste values shuffled among each day's pairs, 1,000 times, the full price fell to 0.652 on average (95% of shuffles between 0.593 and 0.706). So the full price depends on the real taste values, which is not the same as taste adding to time and draw.",
+      "With the taste values shuffled among each day's pairs, 1,000 times, the pair score fell to 0.652 on average (95% of shuffles between 0.593 and 0.706). So the pair score depends on the real taste values, which is not the same as taste adding to time and draw.",
     );
-    expect(visible).toContain("so the full price did not establish an advantage over popularity.");
+    expect(visible).toContain("so the pair score did not establish an advantage over popularity.");
+    expect(blockText).not.toMatch(/full price/i);
     expect(visible).toContain("This check did not establish that taste adds to time and draw.");
   });
 
@@ -969,7 +1051,7 @@ describe("taste inside the full price, the second exploratory follow-up (round 3
     expect(block).toContain('<figcaption id="taste-by-festival-caption"');
     const table = text(block.slice(block.indexOf("<table"), block.indexOf("</table>")));
     expect(table).toBe(
-      "Festivals Popularity Time and draw Full price " +
+      "Festivals Popularity Time and draw Pair score " +
         "Glastonbury 2025 14 pairs from 8 complaints 0.563 0.671 0.871 " +
         "Four US festivals 54 pairs from 34 complaints 0.768 0.779 0.715 " +
         "Riot Fest 2026, one of the four 5 pairs from 3 complaints Not interpreted: too few complaints to read alone",
@@ -979,7 +1061,7 @@ describe("taste inside the full price, the second exploratory follow-up (round 3
 
   it("states each sample's result with its sign, interval, size and source, then a labelled hypothesis with its confound (round 33, E3)", () => {
     expect(blockText).toContain(
-      "On the Glastonbury 2025 complaints (14 complaint pairs in 8 clusters, all from one NME clash guide about mid-card acts), adding taste raised the full price's AUC by 0.201 (interval +0.111 to +0.277, resampled by complaint). On the four US festivals (54 complaint pairs in 34 clusters, press complaints that mostly named the day's biggest acts, which popularity already ranks well), adding taste lowered it by 0.065 (interval -0.163 to +0.025, includes 0).",
+      "On the Glastonbury 2025 complaints (14 complaint pairs in 8 clusters, all from one NME clash guide about mid-card acts), adding taste raised the pair score's AUC by 0.201 (interval +0.111 to +0.277, resampled by complaint). On the four US festivals (54 complaint pairs in 34 clusters, press complaints that mostly named the day's biggest acts, which popularity already ranks well), adding taste lowered it by 0.065 (interval -0.163 to +0.025, includes 0).",
     );
     expect(blockText).toContain(
       "A hypothesis for use, not a result: taste overlap may matter most for mid-card clashes; for clashes between the day's biggest acts, time and draw already carry most of the signal. The two samples also differ in festival, complaint source and act size, so this split cannot say which of those drives it. Untested beyond this data.",
@@ -1004,7 +1086,7 @@ describe("taste inside the full price, the second exploratory follow-up (round 3
 
   it("describes a replication test that has not been run, with its threshold stated before any data and no result promised (round 33, E5)", () => {
     expect(blockText).toContain(
-      "A replication test we have not run. It needs data that does not exist yet: the 2027 bills of the same five festivals, scored when their set times are published and before any complaint is collected. The scoring would be fixed and written down before that data arrives, and complaints collected the same way as here. On the same complained-about pairs, the full price would be compared with the same score with taste held constant, as a paired difference, counted a success only if that difference's 95% interval lies above 0. Both arms keep Qloo's popularity; a baseline with no Qloo data has not been tested.",
+      "A replication test we have not run. It needs data that does not exist yet: the 2027 bills of the same five festivals, scored when their set times are published and before any complaint is collected. The scoring would be fixed and written down before that data arrives, and complaints collected the same way as here. On the same complained-about pairs, the pair score would be compared with the same score with taste held constant, as a paired difference, counted a success only if that difference's 95% interval lies above 0. Both arms keep Qloo's popularity; a baseline with no Qloo data has not been tested.",
     );
     // A plain bold lead, never a kicker or a heading of its own.
     expect(block).toContain('<strong class="font-semibold">A replication test we have not run.</strong>');
@@ -1036,22 +1118,18 @@ describe("the lede and the index's words (round 33, E1)", () => {
   const html = renderToStaticMarkup(createElement(MethodPage));
   const plain = text(html);
 
-  it("opens with 'scores', as the home page does, and leaves no money word for the index outside the defined 'full price'", () => {
+  it("opens with 'scores', as the home page does, and leaves no money word for the index anywhere on the page, folds included (round 37, R3)", () => {
     expect(plain).toContain("Clash Control scores set-time clashes with a number it derives from Qloo data.");
     // Round 34 (audit M2): the lede is that one sentence; the self-describing second sentence is cut.
     const lede = text(html.match(/<p class="mt-4 max-w-2xl [^"]*xl:col-span-12">([\s\S]*?)<\/p>/)?.[1] ?? "");
     expect(lede).toBe("Clash Control scores set-time clashes with a number it derives from Qloo data.");
     expect(plain).not.toContain("This page says what that number is");
     expect(plain).not.toMatch(/Clash Control prices/);
-    // Outside the backtest's defined name "full price" (and its table column), and the anchor id kept for links,
-    // the page says score or index.
-    // formulaNote (lib/credit.ts, shared with the home page) still says "the printed price" inside the closed fold.
-    const words =
-      plain
-        .replace(/full price/gi, "")
-        .replace(/the printed price/, "")
-        .match(/\b(price|prices|priced|unpriced|pricing)\b/gi) ?? [];
+    // The page says score or index everywhere, the anchor id kept for links (round 37, R3: nothing is excused; the
+    // backtest's "full price" is the pair score, and formulaNote says "the printed score" inside the closed fold).
+    const words = plain.match(/\b(price|prices|priced|unpriced|pricing)\b/gi) ?? [];
     expect(words).toEqual([]);
+    expect(plain).toContain("so they may not multiply to exactly the printed score.");
     expect(html).toContain('id="price"');
     expect(plain).toContain("Pair score = taste overlap × share of the shorter set played at once × combined draw × rarity factor.");
   });
@@ -1201,5 +1279,101 @@ describe("why Qloo, the control acts, the backtest's pairs, the legend and the g
     // A row of the limits list, before the do-not-use line that closes it.
     expect(items.indexOf(LOCK_RULE)).toBe(items.length - 2);
     expect(text(html)).not.toMatch(/not by the festival/i);
+  });
+});
+
+describe("round 37: one 46.8% on the first screen, the tag cap and the no-signal acts (L58, L60, L38)", () => {
+  const html = renderToStaticMarkup(createElement(MethodPage));
+  /** What a reader sees with no click: the page with every closed disclosure taken out. */
+  const visible = text(html.replace(/<details(?![^>]*\bopen\b)[^>]*>[\s\S]*?<\/details>/g, " "));
+  const { compareTags, noSignal } = METHOD_FIGURES;
+  const reached = `${methodRow("taste").topQuarterPct.toFixed(1)}%`;
+
+  it("states taste overlap's share once above the fold: in the failed test's sentence, with the chart's bar and no value label beside it, and not in the verdict (L58)", () => {
+    // Fix pass 2: the failed test's sentence states it (CHARTER 2.1). The chart keeps the bar drawn short of 60 and
+    // its accessible name, and still writes all four value labels (the failed bar test pins them), but the figure
+    // hides the label after the one bar whose name starts "Taste". The verdict neither draws nor states it (fix
+    // pass 1). So a reader sees the number once on the first screen.
+    const shortAt = html.indexOf('<section aria-labelledby="short-heading"');
+    const short = html.slice(shortAt, html.indexOf("</section>", shortAt));
+    const chart = short.slice(short.indexOf("<figure"), short.indexOf("</figure>"));
+    // The rule on the figure: an element named "Taste…" with role img, then the value label right after it, is hidden.
+    expect(chart.slice(0, chart.indexOf(">"))).toBe(
+      '<figure class="mt-4 xl:mt-0 print:mt-4 [&amp;_[role=img][aria-label^=Taste]+[data-bar-value]]:hidden"',
+    );
+    const bars = [...chart.matchAll(/<span role="img" aria-label="([^"]*)"[^>]*><\/span>(<span data-bar-value="true"[^>]*>([^<]*)<\/span>)/g)];
+    expect(bars).toHaveLength(4);
+    const named = bars.filter((m) => m[1].startsWith("Taste"));
+    // Exactly one bar matches, and the label it hides is taste overlap's share; the other three stay.
+    expect(named).toHaveLength(1);
+    expect(named[0][1]).toBe(`Taste overlap reached ${reached}; the bar was ${METHOD_FIGURES.backtest.bar.topQuarterPct}%`);
+    expect(named[0][3]).toBe(reached);
+    expect(bars.filter((m) => m[3] === reached)).toHaveLength(1);
+    // What shows once that label is hidden: one figure leaf, the sentence's, and one 46.8% in the text.
+    const seen = short.replace(named[0][2], "");
+    const leaves = [...seen.matchAll(/<(p|span)\b[^>]*>([^<]*)<\/\1>/g)].filter((m) => m[2].trim() === reached);
+    expect(leaves).toHaveLength(1);
+    expect(leaves[0][0]).toBe(`<span data-failed-figure="true">${reached}</span>`);
+    expect(text(seen).split(reached)).toHaveLength(2);
+    // In the markup it is there twice, no more: the hidden label and the sentence. No third copy creeps in.
+    expect(text(short).split(reached)).toHaveLength(3);
+    const verdict = short.slice(short.indexOf("data-short-verdict"));
+    expect(text(verdict)).not.toContain(reached);
+    expect(verdict).not.toContain("Taste overlap");
+    // The sentence keeps the figure: the failed test is stated with its number.
+    expect(text(short.slice(short.indexOf("<li"), short.indexOf("</li>")))).toContain(`Taste overlap put ${reached} of complained-about clashes`);
+  });
+
+  it("says what the number of compare tags means, with the cap and the counts from the figures, after the endpoint cards (L60)", () => {
+    expect(compareTags).toEqual({ tagCap: 8, savedPairs: 22, fullPairs: 17 });
+    const sentence = `This app keeps at most ${compareTags.tagCap} shared genre, subgenre or theme tags per compared pair, and ${compareTags.fullPairs} of the ${compareTags.savedPairs} saved pairs fill all ${compareTags.tagCap}, so the number of tags is not a measure of overlap; read them as examples.`;
+    expect(sentence).toBe(
+      "This app keeps at most 8 shared genre, subgenre or theme tags per compared pair, and 17 of the 22 saved pairs fill all 8, so the number of tags is not a measure of overlap; read them as examples.",
+    );
+    expect(visible).toContain(sentence);
+    expect(text(html).split(sentence)).toHaveLength(2);
+    // In "Qloo requests", after the cards (the /v2/analysis/compare card says which tags are kept), before Why Qloo.
+    const at = html.indexOf("This app keeps at most");
+    expect(at).toBeGreaterThan(html.indexOf('<ul aria-labelledby="qloo-calls-caption"'));
+    expect(at).toBeLessThan(html.indexOf('id="why-qloo"'));
+    // No median and no other baseline: with a cap of 8 a median would be the cap.
+    expect(text(html)).not.toMatch(/median of \d+ tags|typical pair|tags a typical/i);
+  });
+
+  it("names the acts with no Qloo signal on each published day under #limits, and says their overlaps are left out and drawn with no line, with no claim about where they play (L38)", () => {
+    expect(noSignal).toEqual([
+      {
+        festival: "Glastonbury",
+        acts: ["Thandii", "Abel Selaocoe & the Bantu Ensemble", "Westside Cowboy"],
+        example: { acts: ["Abel Selaocoe & the Bantu Ensemble", "Gurriers"], minutes: 60 },
+      },
+      {
+        festival: "Riot Fest",
+        acts: ["Largemouth", "William Shatner", "Rose of Demise"],
+        example: { acts: ["The Format", "William Shatner"], minutes: 35 },
+      },
+    ]);
+    const bullet =
+      "Qloo has no usable signal for six acts on the two published days: Thandii, Abel Selaocoe & the Bantu Ensemble and Westside Cowboy at Glastonbury, and Largemouth, William Shatner and Rose of Demise at Riot Fest. Their overlaps, such as Abel Selaocoe & the Bantu Ensemble × Gurriers (60 min) and The Format × William Shatner (35 min), are left out, not scored as zero, and drawn with no line.";
+    const start = html.indexOf('<section id="limits"');
+    const limits = html.slice(start, html.indexOf("</section>", start));
+    const items = [...limits.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => text(m[1].replace(/&amp;/g, "&")));
+    expect(items).toContain(bullet);
+    // Right after the coverage row it explains, and before the index, lock and do-not-use rows.
+    const coverage = items.findIndex((item) => item.startsWith("Qloo has a usable signal for"));
+    expect(items.indexOf(bullet)).toBe(coverage + 1);
+    expect(visible.replace(/&amp;/g, "&")).toContain(bullet);
+    // No claim that these acts open their stages: two of them do not.
+    expect(bullet).not.toMatch(/\bopen/i);
+    expect(text(limits)).not.toMatch(/\bopen(s|ing|er|ers)?\b/i);
+  });
+
+  it("says the chain's steps and the agent's branch in the open, in both copies, and resolves every anchor other pages link to (L59, L57)", () => {
+    for (const id of ["price", "tested", "limits", "labels", "brief", "moving-sets", "live-check", "controls", "why-qloo", "qloo-calls", "taste-in-price"]) {
+      expect(html).toContain(`id="${id}"`);
+    }
+    expect(text(html).split(BRANCH)).toHaveLength(3);
+    expect(visible).toContain("pair score did not establish an advantage over popularity");
+    expect(visible).toContain("did not establish that taste adds to time and draw");
   });
 });

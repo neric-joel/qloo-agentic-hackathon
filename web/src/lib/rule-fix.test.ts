@@ -207,7 +207,7 @@ describe("ruleSentence", () => {
   it("handles no result, locked sets and a pair that already holds", () => {
     expect(ruleSentence(parseRuleFixes(rawRule({ fixes: [], fixes_found: 0 }))!)).toContain(NO_RESULT);
     const locked = rawRule({ a: { act_id: "ann", act: "Ann Arbor", locked: true, place: "Main 20:00-21:30" } });
-    expect(ruleSentence(parseRuleFixes(locked)!)).toContain("Ann Arbor is locked, so only Bo Diddly Squat can move.");
+    expect(ruleSentence(parseRuleFixes(locked)!)).toContain("Ann Arbor is locked by this app, so only Bo Diddly Squat can move.");
     const both = rawRule({
       a: { act_id: "ann", act: "Ann Arbor", locked: true, place: "x" },
       b: { act_id: "bo", act: "Bo Diddly Squat", locked: true, place: "y" },
@@ -216,6 +216,8 @@ describe("ruleSentence", () => {
     expect(ruleSentence(parseRuleFixes(both)!)).toBe(
       `If a rule says Ann Arbor and Bo Diddly Squat must never overlap: ${BOTH_LOCKED}`,
     );
+    // Whose lock it is: this app's, on a published day and on the invented day alike.
+    expect(BOTH_LOCKED).toBe("Both sets are locked by this app, so neither can move.");
     expect(lockedNote(parseRuleFixes(both)!)).toBeNull();
     expect(ruleSentence(parseRuleFixes(rawRule({ holds: true, fixes: [], shared_minutes: 0 }))!)).toBeNull();
   });

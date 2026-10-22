@@ -42,6 +42,7 @@ import {
   type CheckSet,
   type PairSuggestion,
   type SharedPair,
+  type SkippedLine,
 } from "@/lib/check";
 import {
   DECISION_COPY,
@@ -188,7 +189,7 @@ const SAMPLE_INPUT: CheckInput = {
 /** The grid's column names, drawn above the paste like the stage headers above the timetable. */
 const GRID_COLUMNS = ["Act", "Stage", "Start", "End", "Locked"] as const;
 
-/** One line of the grid's mono text: the line-number gutter and the textarea share it exactly. */
+/** One line of the grid's text: the line-number gutter and the textarea share it exactly. */
 const GRID_LINE = "font-mono text-[0.8125rem] leading-5";
 const IDLE: PriceState = { phase: "idle" };
 
@@ -220,6 +221,108 @@ export function offeredDay(
   if (days.length === 0) return null;
   const at = onShow === null ? -1 : days.findIndex((day) => day.id === onShow);
   return days[(at + 1) % days.length];
+}
+
+/** What the page says once when a published day arrives after the editor's text changed: the paste is kept. */
+export const PUBLISHED_KEPT = "Kept your pasted grid; ignored the published day that arrived later.";
+
+/** One press of "Check a published day": its count among the presses, and the editor's text at the press. */
+export type PublishedPress = { n: number; grid: string };
+
+/**
+ * What a published day's answer does when it arrives for `press`: it loads only when no later press started
+ * (`latest` is still its count) and the editor's text is still what it was at the press; an answer a later press
+ * replaced gives way to that press without a word; otherwise the newer text in the editor is kept.
+ */
+export function publishedArrival(press: PublishedPress, latest: number, grid: string): "load" | "later" | "kept" {
+  if (press.n !== latest) return "later";
+  return grid === press.grid ? "load" : "kept";
+}
+
+/**
+ * One press of "Check a published day", from the press to its answer: the day's public timetable from this
+ * app's API (a GET that carries nothing of the visitor's), then what to do with it now (`now`: the latest
+ * press's count and the editor's text when the answer arrived). `failed` when the day did not load.
+ */
+export async function awaitPublishedDay(
+  id: string,
+  press: PublishedPress,
+  now: () => { latest: number; grid: string },
+): Promise<{ kind: "later" } | { kind: "failed" } | { kind: "kept" } | { kind: "load"; day: PublishedInput }> {
+  const day = publishedDayInput(await loadPublishedTimetable(id));
+  const { latest, grid } = now();
+  const arrival = publishedArrival(press, latest, grid);
+  if (arrival === "later") return { kind: "later" };
+  if (!day) return { kind: "failed" };
+  return arrival === "kept" ? { kind: "kept" } : { kind: "load", day };
+}
+
+/**
+ * The characters of a skipped line's rejected value in the editor's text (`text`, its lines split at "\n" as a
+ * text field holds them): the value its message quotes ('the start time "25:70" is not a time such as …'), as
+ * written on that line (its field's own characters, inside any quotes; the whole field when the message clipped
+ * it). Null when the message quotes no value or the line does not hold it.
+ */
+export function rejectedRange(
+  text: string,
+  item: Pick<SkippedLine, "line" | "message" | "act">,
+): { start: number; end: number } | null {
+  const lead = `Line ${item.line}${item.act ? ` (${item.act})` : ""}: `;
+  const rest = item.message.startsWith(lead) ? item.message.slice(lead.length) : item.message;
+  const open = rest.indexOf('"');
+  const close = rest.lastIndexOf('"');
+  if (open < 0 || close <= open) return null;
+  const quoted = rest.slice(open + 1, close);
+  // A value longer than 30 characters is quoted cut, with an ellipsis: its first 30 characters name it.
+  const clipped = quoted.endsWith("…") && Array.from(quoted).length > 30;
+  const wanted = clipped ? quoted.slice(0, -1) : quoted;
+  if (wanted.trim() === "") return null;
+  const value = text.replace(/\r\n?/g, "\n");
+  const lines = value.split("\n");
+  const line = lines[item.line - 1];
+  if (line === undefined) return null;
+  const base = lines.slice(0, item.line - 1).reduce((sum, earlier) => sum + earlier.length + 1, 0);
+  const tidy = (field: string) => field.normalize("NFC").trim().replace(/\s+/g, " ");
+  const same = (field: string) => (clipped ? tidy(field).startsWith(wanted) : tidy(field) === wanted);
+  // The line's fields for one separator, quotes respected: each field's characters, without the spaces around it
+  // or the quotes that enclose it.
+  const fields = (separator: string) => {
+    const spans: { start: number; end: number }[] = [];
+    let from = 0;
+    let quoting = false;
+    for (let at = 0; at <= line.length; at += 1) {
+      const char = line[at];
+      if (char === '"') quoting = !quoting;
+      if (at < line.length && (quoting || char !== separator)) continue;
+      let start = from;
+      let end = at;
+      while (start < end && line[start] === " ") start += 1;
+      while (end > start && line[end - 1] === " ") end -= 1;
+      if (end - start >= 2 && line[start] === '"' && line[end - 1] === '"') {
+        start += 1;
+        end -= 1;
+      }
+      spans.push({ start, end });
+      from = at + 1;
+    }
+    return spans;
+  };
+  // The separator the first non-blank line sets, as the check reads it, then the other two.
+  const first = lines.find((candidate) => candidate.trim() !== "") ?? "";
+  const counted = (char: string) => first.split(char).length - 1;
+  const own = first.includes("\t") ? "\t" : counted(";") > counted(",") ? ";" : ",";
+  for (const separator of [own, ...["\t", ";", ","].filter((char) => char !== own)]) {
+    const span = fields(separator).find((field) => same(line.slice(field.start, field.end).replace(/""/g, '"')));
+    if (span) return { start: base + span.start, end: base + span.end };
+  }
+  const at = line.indexOf(wanted);
+  return at < 0 ? null : { start: base + at, end: base + at + wanted.length };
+}
+
+/** Whether an element takes typing or a paste of its own: an input, a textarea, a select or editable content. */
+export function takesPaste(element: Pick<HTMLElement, "tagName" | "isContentEditable"> | null): boolean {
+  if (!element) return false;
+  return ["INPUT", "TEXTAREA", "SELECT"].includes(element.tagName.toUpperCase()) || element.isContentEditable === true;
 }
 
 /** Minutes from local midnight now. */
@@ -351,10 +454,10 @@ const TABLE_COLUMNS = GRID_COLUMNS.length + 1;
 /**
  * The current text read as a ledger, with the same parser the check uses, in the browser: a header with
  * no fill (13px semibold muted labels over an inset hairline), inset horizontal hairlines only, the act
- * in 14px semibold, the stage muted, mono times set right, and an inline lock glyph and the word for a
- * locked set (no box). Each row opens with a gutter that prints its grid row number (the number the
- * results cite as "row 17"), as plain 12px mono text set right; a row a rule break names carries that
- * break's numbered vermilion disc in the gutter, left of the number (every disc, for a row in two or more
+ * in 14px semibold, the stage muted, times in tabular figures set right, and an inline lock glyph and the word
+ * for a locked set (no box). Each row opens with a gutter that prints its grid row number (the number the
+ * results cite as "row 17"), as plain 12px tabular figures set right; a row a rule break names carries that
+ * break's numbered ink disc in the gutter, left of the number (every disc, for a row in two or more
  * breaks: two side by side from `sm`, then wrapping onto further lines; stacked above the number on a
  * phone), and says "Rule break N." to assistive technology. Where the stage changes from the shown row
  * above, the separator between them is the control edge colour rather than the hairline. Twelve rows show, then the
@@ -364,7 +467,7 @@ const TABLE_COLUMNS = GRID_COLUMNS.length + 1;
  * not shown"), and the footer says which rows it shows. The rows of a selected break take the wash
  * inside a 1px ink edge. A row the results point at (`jump`) is shown (every row first, when it is folded
  * away), scrolled to (no smooth scroll under reduced motion) and marked for two seconds with the same
- * ink edge on rounded ends. Selection is ink, never vermilion. Text that does not read as a grid shows
+ * ink edge on rounded ends. Selection is ink, never raspberry. Text that does not read as a grid shows
  * the parser's first problem instead.
  */
 export function GridTable({
@@ -624,7 +727,7 @@ export function GridTable({
  * The selected break's remedy, carried by the table beside its rows: one full-width row on the wash with the
  * break's disc, its rule (14px semibold ink) and its Next line exactly as the results print it (a muted
  * "Next: ", then the repair in 14px ink). `others` are the break's other cited rows, printed as plain 12px
- * mono muted text ("row 21 row 26") when the remedy sits under the first row. It repeats words the results
+ * muted tabular figures ("row 21 row 26") when the remedy sits under the first row. It repeats words the results
  * hold, so it is hidden from assistive technology; it holds nothing focusable, is not a control and does
  * not print.
  */
@@ -713,7 +816,7 @@ export const PREVIEW_PAIRS = 5;
 
 /**
  * The pairs that share time as a ruled list, read like a price list: at the left the first act (stage),
- * the second act (stage) under it and the window in 12px mono; at the right the shared minutes in the
+ * the second act (stage) under it and the window in 12px tabular figures; at the right the shared minutes in the
  * condensed display face. Names wrap; nothing is cut off. Five show; "Show all N" opens the rest in
  * place (it stays where it is, so focus stays on it) and "Show fewer" folds them again.
  */
@@ -763,7 +866,7 @@ export function SharedPreview({
 
 /**
  * One rule break under the verdict: its numbered disc and the rule, its next repair ("Next: ..."), then
- * each row it involves in ascending row order (row number and time in mono, then the act), then `figure`,
+ * each row it involves in ascending row order (row number and time in tabular figures, then the act), then `figure`,
  * the break drawn from those rows (the results' `BreakStrip`), under the row lines and on the same
  * condition. With `onSelect`, the rule is the same button as the break's heading in the results: pressed,
  * its rows stay marked in the draft table; the figure does not change with it.
@@ -1096,6 +1199,17 @@ export function CheckTool({
   const searchTarget = useRef<TrialTarget | null>(null);
   // A price request in flight; a new check, a change tried or leaving the page drops its answer.
   const priceAbort = useRef<AbortController | null>(null);
+  // "Check a published day" presses so far, and the editor's text as last drawn: a day that arrives late reads
+  // both, so it never replaces a newer paste (`publishedArrival`).
+  const publishedPresses = useRef(0);
+  const gridNow = useRef(input.grid);
+  // The skipped line whose rejected value the visitor asked to see, selected in the editor once the text shows.
+  const [rejectedPick, setRejectedPick] = useState<{ line: number; nonce: number } | null>(null);
+  const rejectedDone = useRef(0);
+  // Where the caret goes after a paste the page took into the text view: just after the pasted text.
+  const [caret, setCaret] = useState<{ at: number; nonce: number } | null>(null);
+  // The newest page-paste handler, so the page's one listener reads the fields as they are now.
+  const pageTakesPaste = useRef<(text: string) => boolean>(() => false);
   const ids = {
     grid: useId(),
     gridHelp: useId(),
@@ -1200,6 +1314,65 @@ export function CheckTool({
     area.scrollLeft = 0;
     if (gutterRef.current) gutterRef.current.scrollTop = area.scrollTop;
   }, [run]);
+
+  // The editor's text as last drawn, for a published day that arrives after the press.
+  useLayoutEffect(() => {
+    gridNow.current = input.grid;
+  }, [input.grid]);
+
+  // A skipped line's rejected value, asked for from its mark or from the results: once the text view is on show,
+  // the editor takes focus with exactly the value's characters selected, and its line is scrolled into view, in
+  // the field and on the page (the nearest edge; no smooth scroll under reduced motion).
+  useEffect(() => {
+    if (!rejectedPick || rejectedDone.current === rejectedPick.nonce || view !== "csv") return;
+    rejectedDone.current = rejectedPick.nonce;
+    const area = gridRef.current;
+    const item = (run?.outcome.ok ? (run.outcome.report.skipped ?? []) : []).find((entry) => entry.line === rejectedPick.line);
+    const range = area && item ? rejectedRange(area.value, item) : null;
+    if (!area || !range) return;
+    area.focus({ preventScroll: true });
+    area.setSelectionRange(range.start, range.end);
+    const style = window.getComputedStyle(area);
+    const line = Number.parseFloat(style.lineHeight) || 20;
+    const padTop = Number.parseFloat(style.paddingTop) || 0;
+    const shown = area.clientHeight - padTop - (Number.parseFloat(style.paddingBottom) || 0);
+    const top = (rejectedPick.line - 1) * line;
+    if (top < area.scrollTop) area.scrollTop = top;
+    else if (top + line > area.scrollTop + shown) area.scrollTop = top + line - shown;
+    if (gutterRef.current) gutterRef.current.scrollTop = area.scrollTop;
+    const at = area.getBoundingClientRect().top + area.clientTop + padTop + top - area.scrollTop;
+    const header = stickyHeaderHeight();
+    const by =
+      at < header + VIEW_EDGE
+        ? at - header - VIEW_EDGE
+        : at + line > window.innerHeight - VIEW_EDGE
+          ? at + line - window.innerHeight + VIEW_EDGE
+          : 0;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (by !== 0) window.scrollBy({ top: by, behavior: reduce ? "auto" : "smooth" });
+  }, [rejectedPick, view, run]);
+
+  // After a paste the page took into the text view, the editor takes focus with the caret after the pasted text.
+  useEffect(() => {
+    const area = gridRef.current;
+    if (!caret || !area) return;
+    area.focus();
+    area.setSelectionRange(caret.at, caret.at);
+  }, [caret]);
+
+  // A paste while nothing that takes typing has focus (the page itself, a button, a link) goes into the editor
+  // (`pasteFromPage`, the newest one). A paste into a field, or one the table's own region took, is left alone.
+  useEffect(() => {
+    pageTakesPaste.current = pasteFromPage;
+  });
+  useEffect(() => {
+    const onPaste = (event: globalThis.ClipboardEvent) => {
+      if (event.defaultPrevented || takesPaste(document.activeElement as HTMLElement | null)) return;
+      if (pageTakesPaste.current(event.clipboardData?.getData("text/plain") ?? "")) event.preventDefault();
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, []);
 
   // When a search ends, its result heading takes focus.
   const searchDone = trial?.result ?? null;
@@ -1311,6 +1484,11 @@ export function CheckTool({
     const text = event.clipboardData.getData("text/plain");
     if (text.trim() === "") return;
     event.preventDefault();
+    pasteOverGrid(text);
+  }
+
+  /** A paste the table takes: the pasted text becomes the editor's text, shown as text, from its first line. */
+  function pasteOverGrid(text: string) {
     update("grid", text);
     setView("csv");
     setRowJump(null);
@@ -1318,6 +1496,39 @@ export function CheckTool({
     setNote(pastedLine(text));
     setPasteNote(pastedLine(text));
     setFocusGrid((count) => count + 1);
+  }
+
+  /**
+   * A paste while nothing that takes typing has focus goes into the editor as a paste into it would: with the
+   * table on show, as the table's own paste does; in the text view, at the editor's caret or over its selection,
+   * the caret then after it. Nothing is checked yet; the polite live region says so once. False for a paste with
+   * no text, which is left alone.
+   */
+  function pasteFromPage(text: string): boolean {
+    if (text.trim() === "") return false;
+    if (view === "table") {
+      pasteOverGrid(text);
+      return true;
+    }
+    const area = gridRef.current;
+    const current = area ? area.value : input.grid;
+    const start = area ? area.selectionStart : current.length;
+    const end = area ? area.selectionEnd : current.length;
+    const pasted = text.replace(/\r\n?/g, "\n");
+    update("grid", `${current.slice(0, start)}${pasted}${current.slice(end)}`);
+    setRowJump(null);
+    setPicked(null);
+    setNote(pastedLine(text));
+    setPasteNote(pastedLine(text));
+    setCaret((previous) => ({ at: start + pasted.length, nonce: (previous?.nonce ?? 0) + 1 }));
+    return true;
+  }
+
+  /** A skipped line's mark, or "Show it in the grid": the text view shows, with that line's rejected value selected. */
+  function showRejected(line: number) {
+    setView("csv");
+    setRowJump(null);
+    setRejectedPick((current) => ({ line, nonce: (current?.nonce ?? 0) + 1 }));
   }
 
   /** A rule break's row button: the sheet shows as a table, scrolls to the row and marks it. */
@@ -1377,16 +1588,27 @@ export function CheckTool({
   /**
    * "Check a published day": the day's public timetable from this app's API, with that day's own
    * changeover, curfew and pair rules (never the sample's), checked at once. Nothing is sent to Qloo.
+   * The press is counted and the editor's text kept with it: an answer that arrives after a later press gives
+   * way to that press, and one that arrives after the text changed (a paste while it loaded) is dropped, the
+   * paste kept, and the page says so once.
    */
   async function loadPublished() {
     if (!publishedDay) return;
     const from = publishedDay.id;
+    publishedPresses.current += 1;
+    const press: PublishedPress = { n: publishedPresses.current, grid: input.grid };
     setPublishedNote("Loading the published timetable.");
-    const day = publishedDayInput(await loadPublishedTimetable(from));
-    if (!day) {
+    const answer = await awaitPublishedDay(from, press, () => ({ latest: publishedPresses.current, grid: gridNow.current }));
+    if (answer.kind === "later") return;
+    if (answer.kind === "failed") {
       setPublishedNote("The published timetable did not load. Your fields are unchanged.");
       return;
     }
+    if (answer.kind === "kept") {
+      setPublishedNote(PUBLISHED_KEPT);
+      return;
+    }
+    const day = answer.day;
     setPublishedNote("");
     publishedRef.current = day;
     setPublished(day);
@@ -1463,6 +1685,12 @@ export function CheckTool({
   // gutter keeps the room for the marks until the next check, so the text never moves while it is typed.
   const skippedLines = pasted?.skipped ?? [];
   const marked = !stale && skippedLines.length > 0 ? new Set(skippedLines.map((item) => item.line)) : null;
+  // The marked lines whose message quotes a value the line holds: each one's mark selects that value, and the
+  // results offer "Show it in the grid" when the first skipped line is one of them.
+  const rejectedLines = new Set(
+    marked ? skippedLines.filter((item) => rejectedRange(input.grid, item) !== null).map((item) => item.line) : [],
+  );
+  const firstRejected = skippedLines.length > 0 && rejectedLines.has(skippedLines[0].line) ? skippedLines[0].line : null;
   // A paste's own note already said to check again: until another note replaces it, the stale line shows
   // outside its live region, so the paste is said once.
   const saidByPaste = note !== "" && note === pasteNote;
@@ -1738,7 +1966,7 @@ export function CheckTool({
                   <Button
                     type="button"
                     variant="ghost"
-                    className={cn(BAR_TEXT_ACTION, "max-sm:-ml-2 max-sm:h-auto max-sm:min-h-11 max-sm:justify-start max-sm:py-2.5 max-sm:text-left max-sm:whitespace-normal")}
+                    className={cn(BAR_TEXT_ACTION, "max-sm:-ml-2 max-sm:h-auto max-sm:min-h-11 max-sm:max-w-[calc(100%+1rem)] max-sm:justify-start max-sm:py-0.5 max-sm:text-left max-sm:leading-tight max-sm:whitespace-normal")}
                     onClick={() => void loadPublished()}
                   >
                     Check a published day: {publishedDay.title}
@@ -1841,7 +2069,6 @@ export function CheckTool({
                 <div className="flex">
                   <div
                     ref={gutterRef}
-                    aria-hidden="true"
                     data-gutter=""
                     // On a phone the field keeps its own 160px height, so the gutter takes no height of its own
                     // (size containment) and runs exactly as tall as the field, its numbers scrolled with it.
@@ -1850,15 +2077,37 @@ export function CheckTool({
                       wideGutter ? "w-24" : "w-10",
                       GRID_LINE,
                     )}
+                    // A mark that takes keyboard focus scrolls the gutter to it: the field follows, so the numbers
+                    // stay beside their lines.
+                    onScroll={(event) => {
+                      const area = gridRef.current;
+                      if (area && area.scrollTop !== event.currentTarget.scrollTop) area.scrollTop = event.currentTarget.scrollTop;
+                    }}
                   >
                     {Array.from({ length: Math.max(1, input.grid.split("\n").length) }, (_, line) =>
-                      // A line the last check skipped: its number in ink, with the word. The results say why.
-                      marked?.has(line + 1) ? (
-                        <div key={line} data-skipped-line={line + 1} className="font-semibold whitespace-nowrap text-foreground">
+                      // A line the last check skipped: its number in ink, with the word. The results say why. Where
+                      // the message quotes the value the line was skipped for, the mark is a button that selects
+                      // exactly that value in the field. The line numbers themselves are decorative.
+                      marked?.has(line + 1) && rejectedLines.has(line + 1) ? (
+                        <div key={line}>
+                          <button
+                            type="button"
+                            data-skipped-line={line + 1}
+                            aria-label={`Select the rejected value on line ${line + 1}`}
+                            onClick={() => showRejected(line + 1)}
+                            className="rounded-sm font-semibold whitespace-nowrap text-foreground decoration-1 underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                          >
+                            skipped {line + 1}
+                          </button>
+                        </div>
+                      ) : marked?.has(line + 1) ? (
+                        <div key={line} aria-hidden="true" data-skipped-line={line + 1} className="font-semibold whitespace-nowrap text-foreground">
                           skipped {line + 1}
                         </div>
                       ) : (
-                        <div key={line}>{line + 1}</div>
+                        <div key={line} aria-hidden="true">
+                          {line + 1}
+                        </div>
                       ),
                     )}
                   </div>
@@ -2073,6 +2322,15 @@ export function CheckTool({
                 )}
               </div>
               {pasted && (pasted.skipped ?? []).length > 0 ? <SkippedLines report={pasted} /> : null}
+              {/* Under the skip message, 8px from it: a text action that selects its first line's rejected value in
+                  the editor, as that line's mark does. Only while the editor holds the text that was checked. */}
+              {firstRejected !== null ? (
+                <div data-show-rejected="" className="-mt-3 print:hidden">
+                  <Button type="button" variant="ghost" className={cn(BAR_TEXT_ACTION, "-ml-2")} onClick={() => showRejected(firstRejected)}>
+                    Show it in the grid
+                  </Button>
+                </div>
+              ) : null}
               {run.sample ? (
                 <p className="rounded-md border border-warning bg-warning-bg px-3 py-2 text-sm font-semibold text-foreground print:hidden">
                   {SAMPLE_LABEL}
@@ -2171,6 +2429,7 @@ export function CheckTool({
                     published={Boolean(run.published)}
                     publishedTitle={publishedDay?.title ?? null}
                     onTryPublished={() => void loadPublished()}
+                    day={shown}
                   />
                 }
                 after={

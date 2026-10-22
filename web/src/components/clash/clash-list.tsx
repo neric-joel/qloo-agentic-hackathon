@@ -18,6 +18,7 @@ import { formatRange, overlapWindow } from "@/lib/timetable";
 
 import { DiamondGlyph } from "./marks";
 import { MoreDetails } from "./more-details";
+import { useHandHover } from "./timetable-grid";
 
 /** Rows shown before the disclosure: five from the `sm` breakpoint up, three on a phone. */
 const ROWS_WIDE = 5;
@@ -121,6 +122,9 @@ export function ClashList({
   const maxShare = Math.max(...clashes.map((clash) => clash.regret_share), 0.0001);
   const combined = clashes.reduce((sum, clash) => sum + clash.regret_share, 0);
   const visible = useWide() ? ROWS_WIDE : ROWS_NARROW;
+  // A row highlights on the visitor's first pointer move over it, never because the page scrolled it
+  // under a still pointer; focus and blur keep their own handlers.
+  const { hand, bind: handHover } = useHandHover(onHighlight, () => onHighlight(null));
   const shown = clashes.slice(0, visible);
   const rest = clashes.slice(visible);
 
@@ -150,8 +154,8 @@ export function ClashList({
           type="button"
           data-clash={key}
           onClick={(event) => onOpen(clash, event.currentTarget)}
-          onMouseEnter={() => onHighlight(key)}
-          onMouseLeave={() => onHighlight(null)}
+          {...handHover(key)}
+          data-hand={hand === key ? "" : undefined}
           onFocus={(event) => {
             focusedRow.current = event.currentTarget;
             onHighlight(key);
@@ -166,7 +170,8 @@ export function ClashList({
             }, 0);
           }}
           className={cn(
-            "group relative grid w-full cursor-pointer grid-cols-[2rem_minmax(0,1fr)_1rem] items-start gap-x-2.5 rounded-md px-1.5 py-3 text-left transition-[background-color,opacity] duration-150 ease-out hover:bg-accent focus-visible:bg-accent",
+            // The hovered row takes the wash with the highlight (active, below), from the hand's first move.
+            "group relative grid w-full cursor-pointer grid-cols-[2rem_minmax(0,1fr)_1rem] items-start gap-x-2.5 rounded-md px-1.5 py-3 text-left transition-[background-color,opacity] duration-150 ease-out focus-visible:bg-accent",
             active && "bg-accent",
             dimmed && !active && "opacity-55",
           )}
@@ -192,15 +197,10 @@ export function ClashList({
               {clash.label ? (
                 <>
                   {/* The label as the legend writes it, open on the line: a hidden clash takes the
-                      outlined Hidden mark, a plain ink ring, and its word in raspberry; any other label is
-                      ink words alone. Row grounds are paper, card or the accent wash, never bg-muted. */}
-                  <span
-                    data-clash-badge=""
-                    className={cn(
-                      "mr-1.5 text-xs font-semibold whitespace-nowrap",
-                      clash.label === "hidden" ? "text-primary" : "text-foreground",
-                    )}
-                  >
+                      outlined Hidden mark, a plain ink ring, and its word in ink (Hidden is a label, not
+                      shared time); any other label is ink words alone. Row grounds are paper, card or the
+                      accent wash, never bg-muted. */}
+                  <span data-clash-badge="" className="mr-1.5 text-xs font-semibold whitespace-nowrap text-foreground">
                     {clash.label === "hidden" ? <DiamondGlyph className="mr-1 inline-block align-[-2px]" /> : null}
                     {LABEL_META[clash.label].short}
                     <span className="sr-only"> clash</span>
@@ -247,7 +247,7 @@ export function ClashList({
           </span>
           <ChevronRight
             aria-hidden="true"
-            className="mt-1 size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+            className="mt-1 size-4 text-muted-foreground transition-transform group-data-[hand]:translate-x-0.5"
           />
         </button>
       </li>

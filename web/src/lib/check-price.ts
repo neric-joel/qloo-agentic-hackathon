@@ -174,7 +174,7 @@ export type PriceResult =
   | { status: "refused"; code: string; message: string }
   | { status: "error" };
 
-/** The step's name: it compares bill-relative audience overlap ranks, not the home page's full price. */
+/** The step's name: it compares bill-relative audience overlap ranks, not the home page's pair score. */
 const COMPARE = "Compare audience overlap";
 
 /**
@@ -294,7 +294,7 @@ export function thirdParty(n: number): string {
  */
 export function lockedLine(overlap: PriceOverlap, basis: PriceBasis = "longest"): string {
   const next = basis === "saved_ranking" ? "the next clash in the saved day’s ranking" : "the next-longest overlap";
-  return `${pairName(overlap)}: ${overlap.minutes} min shared. Not compared: both sets are locked, so neither can move; ${next} is compared instead.`;
+  return `${pairName(overlap)}: ${overlap.minutes} min shared. Not compared: both sets are marked locked in this grid, so neither can move; ${next} is compared instead.`;
 }
 
 /** An overlap passed over before the request, with its reason in words. */

@@ -12,7 +12,7 @@
  * - Two-set changes (after the one-set moves, if the limit is not reached first): one set of the break
  *   takes the slot of another set (that set's stage and start), and the other set moves to a free place
  *   (a stage and a 5-minute start where no other set is playing).
- * - Sets marked locked are never moved and never displaced.
+ * - Sets marked locked in this grid are never moved and never displaced.
  * - At most 20,000 candidates are tested; a candidate is one complete arrangement tested against the five
  *   rules. When the limit is hit the result says so.
  *
@@ -907,11 +907,11 @@ export function trialSummary(result: Omit<TrialResult, "summary">): string {
   if (result.allLocked) {
     const rows = result.target.rows.length;
     if (result.target.kind === "shared") {
-      return "Both sets of this pair are marked locked, and this search does not move locked sets.";
+      return "Both sets of this pair are marked locked in this grid, and this search does not move locked sets.";
     }
     return rows === 1
-      ? "The set in this break is marked locked, and this search does not move locked sets."
-      : "Both sets in this break are marked locked, and this search does not move locked sets.";
+      ? "The set in this break is marked locked in this grid, and this search does not move locked sets."
+      : "Both sets in this break are marked locked in this grid, and this search does not move locked sets.";
   }
   const parts: string[] = [];
   const bound = result.bound.toLocaleString("en-US");

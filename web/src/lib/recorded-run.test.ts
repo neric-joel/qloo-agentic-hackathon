@@ -345,14 +345,25 @@ describe("replayFinalState", () => {
   });
 });
 
-/** A run whose saved `result` carries these tool results (in call order), with the other events as saved. */
-function endingWith(id: string, toolData: Record<string, Record<string, unknown>>): RecordedRun {
-  const events = rawEvents().map((item) =>
-    item.event.type === "result"
-      ? { ...item, event: { ...item.event, data: { ...(item.event.data as object), tool_data: toolData } } }
-      : item,
-  );
-  return only([rawRun({ id, title: `Run ${id}` }, events)]);
+/**
+ * A run whose saved `result` carries these tool results (in call order), with the other events as saved: its explain
+ * step's one Qloo request kept (`asked`, the default) or saved with no request at all, as a run that never reached
+ * Qloo is. `title` replaces the default "Run {id}".
+ */
+function endingWith(
+  id: string,
+  toolData: Record<string, Record<string, unknown>>,
+  { asked = true, title = `Run ${id}` }: { asked?: boolean; title?: string } = {},
+): RecordedRun {
+  const events = rawEvents().map((item) => {
+    if (item.event.type === "result") {
+      return { ...item, event: { ...item.event, data: { ...(item.event.data as object), tool_data: toolData } } };
+    }
+    if (!asked && item.event.type === "tool_result") return { ...item, event: { ...item.event, requests: [] } };
+    if (!asked && item.event.type === "run_finished") return { ...item, event: { ...item.event, qloo_calls: 0 } };
+    return item;
+  });
+  return only([rawRun({ id, title }, events)]);
 }
 
 const FOUND = { kind: "move_options", act: "Act Two", movable: true, options: [{ stage: "Side", start: "21:05", clash_budget_after: 99.1 }] };
@@ -376,22 +387,81 @@ describe("how a recorded run ends, and the order the panel lists the runs in", (
     expect(runEnding(endingWith("empty", {}))).toBe("other");
   });
 
-  it("lists a run that ends with a place to keep first and a run the rules refuse last, each group in the server's order", () => {
-    // The server's order, as Glastonbury's saved file has it: the refusal first.
+  it("lists a run that ends with a place to keep first, the one with a Qloo request ahead, and a run the rules refuse last", () => {
+    // The server's order, shaped as Glastonbury's saved file has it: the refusal first, and only the last run (a keep
+    // run) holds a Qloo request.
     const served = [
+      endingWith("refusal", { c1: REFUSED }, { asked: false }),
+      endingWith("explain", { c1: EXPLAINED }, { asked: false }),
+      endingWith("rules-then-move", { c1: FOUND }, { asked: false }),
+      endingWith("hidden-clash-and-move", { c1: FOUND, c2: EXPLAINED, c3: ALLOWED }),
+    ];
+    expect(orderRecordings(served).map((run) => run.id)).toEqual(["hidden-clash-and-move", "rules-then-move", "explain", "refusal"]);
+    // When every run holds a request (or none does), each group keeps the server's order.
+    const allAsked = [
       endingWith("refusal", { c1: REFUSED }),
       endingWith("explain", { c1: EXPLAINED }),
       endingWith("rules-then-move", { c1: FOUND }),
       endingWith("second-keep", { c1: ALLOWED }),
     ];
-    expect(orderRecordings(served).map((run) => run.id)).toEqual(["rules-then-move", "second-keep", "explain", "refusal"]);
+    expect(orderRecordings(allAsked).map((run) => run.id)).toEqual(["rules-then-move", "second-keep", "explain", "refusal"]);
+    const noneAsked = allAsked.map((run) => endingWith(run.id, toolDataOf(run), { asked: false }));
+    expect(orderRecordings(noneAsked).map((run) => run.id)).toEqual(["rules-then-move", "second-keep", "explain", "refusal"]);
     // The served list itself is left as it was, and an ordered list orders to itself.
-    expect(served.map((run) => run.id)).toEqual(["refusal", "explain", "rules-then-move", "second-keep"]);
+    expect(served.map((run) => run.id)).toEqual(["refusal", "explain", "rules-then-move", "hidden-clash-and-move"]);
     const ordered = orderRecordings(served);
     expect(orderRecordings(ordered)).toEqual(ordered);
     expect(orderRecordings([])).toEqual([]);
   });
+
+  it("puts a keep run whose own events hold a Qloo request ahead of a keep run whose events hold none", () => {
+    const quiet = endingWith("quiet", { c1: FOUND }, { asked: false });
+    const asked = endingWith("asked", { c1: FOUND, c2: EXPLAINED });
+    expect(savedRequests(quiet)).toEqual([]);
+    expect(savedRequests(asked)).toHaveLength(1);
+    // Either way round in the file, the run with the request leads.
+    expect(orderRecordings([quiet, asked]).map((run) => run.id)).toEqual(["asked", "quiet"]);
+    expect(orderRecordings([asked, quiet]).map((run) => run.id)).toEqual(["asked", "quiet"]);
+    // Two keep runs with a request, or two without, keep the server's order between them.
+    const alsoAsked = endingWith("also-asked", { c1: ALLOWED });
+    expect(orderRecordings([quiet, alsoAsked, asked]).map((run) => run.id)).toEqual(["also-asked", "asked", "quiet"]);
+    const alsoQuiet = endingWith("also-quiet", { c1: ALLOWED }, { asked: false });
+    expect(orderRecordings([alsoQuiet, asked, quiet]).map((run) => run.id)).toEqual(["asked", "also-quiet", "quiet"]);
+    // A request never lifts a run out of its group: the other runs and the refusals keep their rule and the server's order.
+    const explainAsked = endingWith("explain-asked", { c1: EXPLAINED });
+    const explainQuiet = endingWith("explain-quiet", { c1: EXPLAINED }, { asked: false });
+    const refusedAsked = endingWith("refused-asked", { c1: REFUSED });
+    const refusedQuiet = endingWith("refused-quiet", { c1: REFUSED }, { asked: false });
+    expect(orderRecordings([refusedQuiet, refusedAsked, explainQuiet, explainAsked, quiet]).map((run) => run.id)).toEqual([
+      "quiet",
+      "explain-quiet",
+      "explain-asked",
+      "refused-quiet",
+      "refused-asked",
+    ]);
+  });
+
+  it("decides from each run's own events, never from its id, its title or its place in the file", () => {
+    // The quiet run carries the id and title of the run that asked Qloo on the published day, and the other way round.
+    const quiet = endingWith("hidden-clash-and-move", { c1: FOUND }, { asked: false, title: "Explain a hidden clash and find a move" });
+    const asked = endingWith("rules-then-move", { c1: FOUND, c2: EXPLAINED }, { title: "Set two rules, then move one set" });
+    expect(orderRecordings([quiet, asked]).map((run) => run.title)).toEqual([
+      "Set two rules, then move one set",
+      "Explain a hidden clash and find a move",
+    ]);
+    expect(orderRecordings([asked, quiet]).map((run) => run.id)).toEqual(["rules-then-move", "hidden-clash-and-move"]);
+    // The same events under any id and title order the same way.
+    const renamed = [endingWith("z", { c1: FOUND }, { asked: false, title: "A" }), endingWith("a", { c1: FOUND, c2: EXPLAINED }, { title: "Z" })];
+    expect(orderRecordings(renamed).map((run) => run.id)).toEqual(["a", "z"]);
+  });
 });
+
+/** The tool results a run's saved `result` carries, read back from the run. */
+function toolDataOf(run: RecordedRun): Record<string, Record<string, unknown>> {
+  const result = run.events.find(({ event }) => event.type === "result")?.event;
+  const data = result && result.type === "result" ? (result.data as { tool_data?: Record<string, Record<string, unknown>> }) : null;
+  return data?.tool_data ?? {};
+}
 
 /** The visible words of some markup. */
 const words = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();

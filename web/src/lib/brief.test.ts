@@ -566,12 +566,23 @@ describe("the brief sheet", () => {
     expect(sheetText(makePreset(), null)).not.toContain("To decide");
   });
 
-  it("prints no type under 9 pt and one column of steps up to three moves", () => {
+  it("prints no type under 9.5 pt, its running text at 10 pt, and one column of steps up to three moves (round 37)", () => {
     const html = renderToStaticMarkup(createElement(BriefContent, { preset: makePreset(), day: 0, plan: PLAN }));
-    const sizes = [...html.matchAll(/print:text-\[([\d.]+)pt\]/g)].map((match) => Number(match[1]));
+    const sizes = printSizes(html);
     expect(sizes.length).toBeGreaterThan(5);
-    expect(Math.min(...sizes)).toBeGreaterThanOrEqual(9);
-    expect(html).not.toMatch(/print:size-\[[1-8]pt\]/);
+    expect(Math.min(...sizes)).toBeGreaterThanOrEqual(9.5);
+    expect(html).not.toMatch(/print:size-\[(?:[1-8](?:\.\d+)?|9)pt\]/);
+    // The sheet's own text is 10 pt on paper; the drawing's caption, a shared component, is set from the sheet.
+    expect(html).toMatch(/<article [^>]*class="[^"]*print:text-\[10pt\] print:leading-\[1\.15\]/);
+    expect(html).toMatch(/<figure data-brief-figure="" class="[^"]*print:\[&amp;_figcaption\]:text-\[9\.5pt\]/);
+    // The drawing's labels print at the wide frame's printFont, set from the sheet: at least 9.5 pt on the A4 column
+    // (190 mm) the frame is drawn for, and 3% more on Letter. The stage names move down to stay centred on their bars,
+    // 0.35 of each unit they grow, as the drawing centres them (round 37, L75).
+    const figureClass = html.match(/<figure data-brief-figure="" class="([^"]*)"/)?.[1].replace(/&amp;/g, "&").split(" ") ?? [];
+    const { font, printFont, width } = FIGURE_FRAMES.wide;
+    expect(figureClass).toContain(`print:[&_svg[data-frame=wide]]:text-[${printFont}px]`);
+    expect(figureClass).toContain(`print:[&_svg[data-frame=wide]_[data-stage]]:translate-y-[${+((printFont - font) * 0.35).toFixed(3)}px]`);
+    expect(printFont * ((190 * 96) / 25.4 / width) * 0.75).toBeGreaterThanOrEqual(9.5);
   });
 
   it("marks a kept step that raises the index", () => {
@@ -716,10 +727,9 @@ describe("kept changes in the brief", () => {
     expect(sheetText(makePreset(), broken)).toContain("After this plan they share no time, but the plan adds 2 rule breaks.");
   });
 
-  it("keeps print type at 9 pt or more with four moves and two kept changes", () => {
+  it("keeps print type at 9.5 pt or more with four moves and two kept changes (round 37)", () => {
     const html = renderToStaticMarkup(createElement(BriefContent, { preset: makePreset(), day: 0, plan: MIXED_PLAN }));
-    const sizes = [...html.matchAll(/print:text-\[([\d.]+)pt\]/g)].map((match) => Number(match[1]));
-    expect(Math.min(...sizes)).toBeGreaterThanOrEqual(9);
+    expect(Math.min(...printSizes(html))).toBeGreaterThanOrEqual(9.5);
     expect(html).toContain("print:columns-2");
   });
 
@@ -893,6 +903,12 @@ describe("the brief's trade-off", () => {
     expect(plain.indexOf("Weigh this reading")).toBeGreaterThan(plain.indexOf("Costliest clash after"));
     // The heading is kept on paper when the table is tested alone; the plan summary is the larger type.
     expect(html).toMatch(/<h3[^>]*print:text-\[9pt\][^>]*>The two changes, tested alone/);
+    // On this sheet the comparison prints at the sheet's sizes (round 37): its sentences and heading at 10 pt, its
+    // table at 9.5 pt, set on the comparison from the sheet.
+    const compare = html.match(/<section aria-labelledby="[^"]*" class="([^"]*)"><h3/)?.[1].replace(/&amp;/g, "&").split(" ") ?? [];
+    for (const name of ["print:[&_p]:text-[10pt]", "print:[&_h3]:text-[10pt]", "print:[&_table]:text-[9.5pt]", "print:[&_th]:text-[9.5pt]", "print:[&_td]:text-[9.5pt]"]) {
+      expect(compare).toContain(name);
+    }
     expect(html).toMatch(/<p class="[^"]*text-lg[^"]*font-bold[^"]*">3 kept moves/);
     // Three single steps with the comparison: the published day's table stays on the screen only.
     const tableSection = html.match(/<section[^>]*aria-labelledby="brief-[^"]*on-the-published-day[^"]*"[^>]*>/)?.[0] ?? "";
@@ -1070,6 +1086,15 @@ function lensesFor(day = 0, overrides: Partial<Lenses> = {}): Lenses {
 }
 
 /** The sheet's HTML, with lenses and an optional comparison. */
+/**
+ * The sheet's own printed sizes: every `print:text-[…pt]` class outside the drawing, a shared component whose caption
+ * the sheet sets from outside (`print:[&_figcaption]:text-[9.5pt]` on the figure).
+ */
+function printSizes(html: string): number[] {
+  const own = html.replace(/<figure data-brief-figure=""[\s\S]*?<\/figure>/g, "");
+  return [...own.matchAll(/print:text-\[([\d.]+)pt\]/g)].map((match) => Number(match[1]));
+}
+
 function sheetHtml(preset: Preset, plan: Plan | null, extra: Record<string, unknown> = {}): string {
   return renderToStaticMarkup(createElement(BriefContent, { preset, day: 0, plan, ...extra }));
 }
@@ -1123,7 +1148,7 @@ describe("the candidate to keep (round 33)", () => {
     expect(text.indexOf(LINE)).toBeLessThan(text.indexOf("How to read this"));
     // Inside the table's block, on paper as on the screen, in the sheet's own ink: no colour of its own.
     const block = html.match(/<section aria-labelledby="brief-the-five-costliest-clashes"[\s\S]*?<\/section>/)?.[0] ?? "";
-    expect(block).toContain(`<p data-candidate="true" class="mt-1 text-sm print:mt-[1pt] print:text-[9pt]">${LINE}</p>`);
+    expect(block).toContain(`<p data-candidate="true" class="mt-1 text-sm print:mt-[1pt] print:text-[10pt] print:leading-[1.15]">${LINE}</p>`);
     // With a plan it stays under the published day's table, before the plan's moves.
     const withPlan = plainOf(sheetHtml(makePreset(), PLAN, { lenses: lensesFor() }));
     expect(withPlan.indexOf(LINE)).toBeGreaterThan(withPlan.indexOf("before these moves"));
@@ -1158,7 +1183,7 @@ describe("the decision line beside each kept step (round 33)", () => {
     expect(marks).toHaveLength(PLAN.steps.length);
     for (const mark of marks) {
       // Never on the screen; on paper it sits to the right of its step's first line, in the step's muted ink.
-      expect(mark).toMatch(/class="hidden text-muted-foreground print:text-\[9pt\] print:float-right print:ml-\[10pt\] print:block"/);
+      expect(mark).toMatch(/class="hidden text-muted-foreground print:text-\[10pt\] print:float-right print:ml-\[10pt\] print:block"/);
       expect(plainOf(mark)).toBe(`${DECISION_CHOICES} ${DECISION_INITIALS}`);
       // The line to write on is a 1px rule in the control-edge ink, as the sign-off's are: a mark, never a box.
       expect(mark).toContain('<span class="inline-block w-[40pt] border-b border-border-strong"></span>');
@@ -1178,7 +1203,7 @@ describe("the decision line beside each kept step (round 33)", () => {
     const html = sheetHtml(makePreset(), four);
     const marks = html.match(/<span data-decision="true"[^>]*>/g) ?? [];
     expect(marks).toHaveLength(4);
-    for (const mark of marks) expect(mark).toBe('<span data-decision="true" class="hidden text-muted-foreground print:text-[9pt] print:block">');
+    for (const mark of marks) expect(mark).toBe('<span data-decision="true" class="hidden text-muted-foreground print:text-[10pt] print:block">');
     const steps = html.match(/<li class="min-w-0 break-inside-avoid print:mb-\[2pt\]">[\s\S]*?<\/li>/g) ?? [];
     for (const item of steps) expect(item.indexOf("data-decision")).toBeGreaterThan(item.indexOf("font-semibold"));
     // Five single moves in two columns: the decision lines are the second thing left off paper.
@@ -1237,55 +1262,58 @@ describe("the shared minutes of a plan (round 33)", () => {
     for (const sentence of sentences) expect(sentence).not.toMatch(/attend|people|fans|crowd|audience|revenue|money|\$|£/i);
   });
 
-  it("is printed with a plan, under its summary, and never without one", () => {
+  it("is printed with a plan, directly above its summary (round 37, R5), and never without one", () => {
     const text = sheetText(makePreset(), PLAN);
     const line = "Shared minutes in the published day’s 6 ranked clashes: 210 → 240 with your plan. Outside them, no overlap gets longer.";
     expect(text).toContain(line);
-    expect(text.indexOf(line)).toBeGreaterThan(text.indexOf("3 kept moves"));
+    expect(text.indexOf(line)).toBeLessThan(text.indexOf("3 kept moves"));
     expect(text.indexOf(line)).toBeLessThan(text.indexOf("1. Act One"));
+    // Nothing between the minutes line and the index line.
+    expect(text).toContain(`${line} 3 kept moves: Clash Budget Index`);
     expect(sheetText(makePreset(), null)).not.toContain("Shared minutes");
     expect(sheetText(makePreset(), { ...PLAN, steps: [{ ...PLAN.steps[0], end: "later" }] })).not.toContain("Shared minutes");
   });
 
-  it("leaves paper first, and stays on the screen, when the sheet is full", () => {
+  it("stays on paper and on the screen even when the sheet is full, since it leads the plan (round 37, R5)", () => {
     // Three moves in one column: on paper.
-    expect(sheetHtml(makePreset(), PLAN)).toMatch(/<p data-shared-minutes="true" class="mt-1 print:mt-\[2pt\]">/);
-    // The card's single move with the comparison and the published day's one-row table: screen only.
+    expect(sheetHtml(makePreset(), PLAN)).toMatch(/<p data-shared-minutes="true" class="mb-1 print:mb-\[1pt\]">/);
+    // The card's single move with the comparison and the drawing, the fullest sheet: on paper too.
     const tradeoff = briefTradeoff(makePreset(), parseDecision(decisionRaw()), [CARD_MOVE], 0);
     const single: Plan = {
       ...PLAN,
       steps: [{ ...PLAN.steps[0], act: "Act Two", actId: "act-two", stage: "The Barn", stageId: "barn", start: "14:30", end: "15:30" }],
     };
-    expect(sheetHtml(makePreset(), single, { tradeoff })).toMatch(/<p data-shared-minutes="true" class="mt-1 print:mt-\[2pt\] print:hidden">/);
+    expect(sheetHtml(makePreset(), single, { tradeoff })).toMatch(/<p data-shared-minutes="true" class="mb-1 print:mb-\[1pt\]">/);
+    expect(sheetHtml(makePreset(), single, { tradeoff })).not.toMatch(/data-shared-minutes="true" class="[^"]*print:hidden/);
   });
 });
 
-describe("what a full sheet leaves off paper (round 33)", () => {
+describe("what a full sheet leaves off paper (round 33; round 37, R5: never the minutes line)", () => {
   const move = (n: number): BriefStep => ({ n, act: "A", place: "P", shift: "s", before: "1.0", after: "0.9", raises: false, receipt: null });
   const change = (n: number): BriefStep => ({ n, line: "L", before: "1.0", after: "0.9", raises: false, receipt: "r" });
   const moves = (count: number) => Array.from({ length: count }, (_, i) => move(i + 1));
 
   it("keeps both on paper for up to three single moves in one column", () => {
     for (const count of [1, 2, 3]) expect(onPaper(moves(count), 1)).toEqual({ minutes: true, decisions: true });
-    // Beside the comparison: two or three moves leave the published day's table to the screen, so both fit.
-    expect(onPaper(moves(2), 1, true)).toEqual({ minutes: true, decisions: true });
-    expect(onPaper(moves(3), 1, true)).toEqual({ minutes: true, decisions: true });
-    expect(onPaper([change(1), move(2)], 1, true)).toEqual({ minutes: true, decisions: true });
+    // Beside the comparison too: two or three moves leave the published day's table to the screen, so both fit.
+    expect(onPaper(moves(2), 1)).toEqual({ minutes: true, decisions: true });
+    expect(onPaper(moves(3), 1)).toEqual({ minutes: true, decisions: true });
+    expect(onPaper([change(1), move(2)], 1)).toEqual({ minutes: true, decisions: true });
   });
 
-  it("drops the minutes line first: beside the comparison and the one-row table, or past six lines of steps", () => {
+  it("keeps the minutes line on paper: beside the comparison and the drawing, and past six lines of steps (round 37, R5)", () => {
     // The Devpost's single kept move with the comparison.
-    expect(onPaper(moves(1), 1, true)).toEqual({ minutes: false, decisions: true });
+    expect(onPaper(moves(1), 1)).toEqual({ minutes: true, decisions: true });
     // A kept change and two moves: seven lines, and one more for the change's decision line.
-    expect(onPaper([change(1), move(2), move(3)], 1)).toEqual({ minutes: false, decisions: true });
-    // Four single moves are two columns: no minutes line on paper.
-    expect(onPaper(moves(4), 2)).toEqual({ minutes: false, decisions: true });
+    expect(onPaper([change(1), move(2), move(3)], 1)).toEqual({ minutes: true, decisions: true });
+    // Four single moves are two columns: the minutes line is on paper too.
+    expect(onPaper(moves(4), 2)).toEqual({ minutes: true, decisions: true });
   });
 
-  it("then the decision lines, for longer plans", () => {
-    expect(onPaper([change(1), change(2), change(3)], 1)).toEqual({ minutes: false, decisions: false });
-    for (const count of [5, 6, 7, 8]) expect(onPaper(moves(count), 2)).toEqual({ minutes: false, decisions: false });
-    expect(onPaper([change(1), ...moves(4).map((step, i) => ({ ...step, n: i + 2 }))], 2, true)).toEqual({ minutes: false, decisions: false });
+  it("leaves the decision lines off for longer plans", () => {
+    expect(onPaper([change(1), change(2), change(3)], 1)).toEqual({ minutes: true, decisions: false });
+    for (const count of [5, 6, 7, 8]) expect(onPaper(moves(count), 2)).toEqual({ minutes: true, decisions: false });
+    expect(onPaper([change(1), ...moves(4).map((step, i) => ({ ...step, n: i + 2 }))], 2)).toEqual({ minutes: true, decisions: false });
   });
 });
 
@@ -1329,7 +1357,7 @@ describe("the lock line under the table (round 36)", () => {
       expect(text.indexOf(line)).toBeGreaterThan(text.indexOf("both locked"));
       expect(text.indexOf(line)).toBeLessThan(text.indexOf(HIDDEN_NOTE));
       expect(html).toContain(
-        `<p data-lock-rule="true" class="mt-2 text-sm text-muted-foreground print:mt-[2pt] print:text-[9pt] print:leading-[1.17]">${line}</p>`,
+        `<p data-lock-rule="true" class="mt-2 text-sm text-muted-foreground print:mt-[2pt] print:text-[10pt] print:leading-[1.15]">${line}</p>`,
       );
       expect(html.indexOf("data-lock-rule")).toBeGreaterThan(html.indexOf("</table>"));
       expect(text).not.toMatch(/not by the festival/i);
@@ -1461,31 +1489,54 @@ describe("the day, drawn (round 36)", () => {
       expect(layout.ticks.at(-1)?.label).toBeNull();
       expect(layout.ticks[0].label).toBe("14:00");
     }
-    // Five stages stay under 190 printed px on Letter (the wide frame prints 3% larger), and so do eight.
+    // Five stages (both published days have five) stay under 135 printed px on Letter (the wide frame prints 3% larger),
+    // and eight under 205, with the labels at their printed 9.5 pt (round 37, L75; the sheet's one page is measured in
+    // the browser).
     const widePitch = FIGURE_FRAMES.wide.gap + FIGURE_FRAMES.wide.bar;
-    expect((FIGURE_FRAMES.wide.axis + 5 * widePitch) * (740 / 718)).toBeLessThan(190);
-    expect((FIGURE_FRAMES.wide.axis + 8 * widePitch) * (740 / 718)).toBeLessThan(190);
+    expect((FIGURE_FRAMES.wide.axis + 5 * widePitch) * (740 / 718)).toBeLessThan(135);
+    expect((FIGURE_FRAMES.wide.axis + 8 * widePitch) * (740 / 718)).toBeLessThan(205);
+  });
+
+  it("labels every hour clear of the next and inside the top edge, at the screen size and the printed one (round 37, L75)", () => {
+    const figure = figureOf(cardPlan, { pair, minutes: sharedMinutes(preset, 0, cardPlan) });
+    for (const frame of [FIGURE_FRAMES.wide, FIGURE_FRAMES.narrow]) {
+      const labelled = layoutFigure(figure, frame).ticks.filter((tick) => tick.label !== null);
+      expect(labelled.length).toBeGreaterThan(3);
+      for (const size of [frame.font, frame.printFont]) {
+        // Digit ink rises 0.73 em over the baseline (the site's sans, measured).
+        expect(frame.hourBaseline - 0.73 * size).toBeGreaterThanOrEqual(0);
+        for (let i = 1; i < labelled.length; i += 1) {
+          expect(labelled[i].x - labelled[i - 1].x).toBeGreaterThanOrEqual(textWidth(labelled[i - 1].label ?? "", size) + 8);
+        }
+      }
+      // The stage names end left of the first hour, at either size.
+      const longest = Math.max(...figure.stages.map((stage) => textWidth(stage.name, Math.max(frame.font, frame.printFont))));
+      expect(layoutFigure(figure, frame).plotX).toBeGreaterThanOrEqual(longest + 6);
+    }
   });
 
   it("keeps each name in the gap over its own bar, clear of that bar's edge and of the bar above, and nearer its own (round 36 fix)", () => {
     const figure = figureOf(cardPlan, { pair, minutes: sharedMinutes(preset, 0, cardPlan) });
     // The site's sans, measured: ink rises 0.73 em over the baseline and falls 0.19 em under it. A named bar's edge
-    // is 1.5 units wide, so it reaches 0.75 out of the bar; a plain bar's reaches 0.375.
+    // is 1.5 units wide, so it reaches 0.75 out of the bar; a plain bar's reaches 0.375. Checked at the screen size
+    // and at the printed one (the wide frame prints its labels at printFont; round 37, L75).
     const [ascent, descent] = [0.73, 0.19];
     for (const frame of [FIGURE_FRAMES.wide, FIGURE_FRAMES.narrow]) {
       const layout = layoutFigure(figure, frame);
-      layout.lanes.forEach((lane, index) => {
-        if (lane.nameY === null) return;
-        expect(lane.nameY).toBeCloseTo(lane.barY - frame.nameRise, 6);
-        const inkBottom = lane.nameY + descent * frame.font;
-        const inkTop = lane.nameY - ascent * frame.font;
-        const above = index === 0 ? frame.hourBaseline : layout.lanes[index - 1].barY + frame.bar + 0.75;
-        const toOwn = lane.barY - 0.75 - inkBottom;
-        const toAbove = inkTop - above;
-        expect(toOwn).toBeGreaterThan(0.5);
-        expect(toAbove).toBeGreaterThan(1.5);
-        expect(toOwn).toBeLessThan(toAbove);
-      });
+      for (const size of [frame.font, frame.printFont]) {
+        layout.lanes.forEach((lane, index) => {
+          if (lane.nameY === null) return;
+          expect(lane.nameY).toBeCloseTo(lane.barY - frame.nameRise, 6);
+          const inkBottom = lane.nameY + descent * size;
+          const inkTop = lane.nameY - ascent * size;
+          const above = index === 0 ? frame.hourBaseline : layout.lanes[index - 1].barY + frame.bar + 0.75;
+          const toOwn = lane.barY - 0.75 - inkBottom;
+          const toAbove = inkTop - above;
+          expect(toOwn).toBeGreaterThan(0.5);
+          expect(toAbove).toBeGreaterThan(1.5);
+          expect(toOwn).toBeLessThan(toAbove);
+        });
+      }
     }
   });
 
@@ -1533,12 +1584,18 @@ describe("where the drawing prints (round 36)", () => {
     expect(figureOnPaper([move(1), move(2), move(3), move(4)], 2, true)).toBe(false);
   });
 
-  it("takes the one-row table's room beside the comparison, and keeps the minutes line off paper there", () => {
+  it("takes the one-row table's room beside the comparison, and keeps the minutes line on paper there (round 37, R5)", () => {
     expect(tableOnPaper([move(1)], 1, true, true)).toBe(false);
     expect(tableOnPaper([move(1)], 1, true, false)).toBe(true);
     expect(tableOnPaper([move(1)], 1, false, true)).toBe(true);
-    expect(onPaper([move(1)], 1, true, true)).toEqual({ minutes: false, decisions: true });
-    expect(onPaper([move(1)], 1, false, true)).toEqual({ minutes: true, decisions: true });
+    expect(onPaper([move(1)], 1)).toEqual({ minutes: true, decisions: true });
+    // On the sheet: the card's one move, its comparison and the drawing all print, and the minutes line prints with them.
+    const card: Plan = {
+      ...PLAN,
+      steps: [{ ...PLAN.steps[0], act: "Act Two", actId: "act-two", stage: "The Barn", stageId: "barn", start: "14:30", end: "15:30" }],
+    };
+    const kept = sheetHtml(makePreset(), card, { tradeoff: briefTradeoff(makePreset(), parseDecision(decisionRaw()), [CARD_MOVE], 0) });
+    expect(kept).toMatch(/<p data-shared-minutes="true" class="mb-1 print:mb-\[1pt\]">/);
   });
 
   it("on the sheet: printed for the card's one move with its comparison and on a bare sheet, screen only for a longer plan", () => {

@@ -1,6 +1,6 @@
 /**
  * The first page's figures, worked out on the server from the saved preset: the day's Clash Budget
- * Index, its five costliest clashes and where the prices come from. Everything here is a display
+ * Index, its five costliest clashes and where the scores come from. Everything here is a display
  * string made with the page's own formatters, so the server HTML prints exactly what the page
  * prints once it loads, and carries no tag, entity id or raw popularity.
  */
@@ -18,6 +18,7 @@ import {
 import { buildDayGraph, type DayGraphModel } from "./day-graph";
 import { buildDecisionCopy, decisionDay, decisionPath, parseDecision, type Decision, type DecisionCopy } from "./decision";
 import { pluralize } from "./format";
+import { isRecord } from "./events";
 import { parsePreset, parsePresetList, type Preset, type PresetSummary } from "./preset";
 
 /** How many of the day's costliest clashes the first page lists. */
@@ -55,13 +56,14 @@ export type ServerSummary = {
   /** The hero's one-line figure for narrow screens (`figureLine`); null without an index. */
   figure: string | null;
   clashes: SummaryClash[];
-  /** Where the prices come from, in one sentence. */
+  /** Where the scores come from, in one sentence. */
   evidence: string;
   /** The page's meta and Open Graph description. */
   description: string;
   /**
-   * The worked decision for the day (`GET /decision`), worded from the route and this preset, or null
-   * when the route did not answer: the page then has no decision card and no button to it.
+   * The worked decision for the day, worded from the decision and this preset, or null when there is none:
+   * the page then has no decision card and no button to it. The decision is the one the preset response
+   * carries (`decision`), or `GET /decision`'s answer from an API that predates that field.
    */
   decision: DecisionCopy | null;
   /** The route's answer behind it, so the interactive page can show the same card without asking again. */
@@ -89,9 +91,9 @@ function pairList(clashes: readonly SummaryClash[]): string {
   return clashes.map((clash) => `${clash.a} and ${clash.b}`).join("; ");
 }
 
-/** Where the prices of an invented day come from: nowhere real, and no Qloo request. */
+/** Where the scores of an invented day come from: nowhere real, and no Qloo request. */
 export const SYNTHETIC_EVIDENCE =
-  "Priced from an invented day: its acts, times and figures are made up, and no Qloo request was made.";
+  "Scored from an invented day: its acts, times and figures are made up, and no Qloo request was made.";
 
 function evidenceSentence(preset: Preset): string {
   if (preset.synthetic === true) return SYNTHETIC_EVIDENCE;
@@ -229,6 +231,37 @@ async function loadDecision(fetcher: FetchLike, backend: string, id: string, tim
 }
 
 /**
+ * The decision a preset response carries: the API puts the engine's cached answer for the preset's first day
+ * with sets in it (`decision`, exactly `GET /decision`'s body for that day). The parsed decision; null when the
+ * response says there is none (or sends one the page cannot read); undefined when the response has no such
+ * field (an API that predates it), so the caller asks `GET /decision` instead. Used by the server's summary and
+ * by the browser's read-ahead of the other days alike.
+ */
+export function carriedDecision(raw: unknown): Decision | null | undefined {
+  if (!isRecord(raw) || !Object.hasOwn(raw, "decision")) return undefined;
+  return raw.decision === null ? null : parseDecision(raw.decision);
+}
+
+/**
+ * The preset and the decision for its first day with sets, from one read of the preset response
+ * (`carriedDecision`), so the server renders one consistent preset and decision and asks nothing more: a null
+ * means no decision, and no second request. Only a response without the field falls back to `GET /decision`,
+ * asked once the preset has answered; that request failing or timing out costs the page its decision only,
+ * never its summary.
+ */
+async function loadPreset(
+  fetcher: FetchLike,
+  backend: string,
+  id: string,
+  timeoutMs: number,
+): Promise<{ preset: Preset; decision: Decision | null }> {
+  const raw = await getJson(fetcher, `${backend}/api/presets/${encodeURIComponent(id)}`, timeoutMs);
+  const preset = parsePreset(raw);
+  const carried = carriedDecision(raw);
+  return { preset, decision: carried === undefined ? await loadDecision(fetcher, backend, id, timeoutMs) : carried };
+}
+
+/**
  * True when the server's first festival day is its invented one. Read from the preset list alone (the
  * flag is the server's, not the day's), so the layout can print the synthetic notice in the server HTML
  * of every page. False on any failure: the client banner then still checks after the page loads.
@@ -260,10 +293,7 @@ export async function loadServerSummary(
     const list = parsePresetList(await getJson(fetcher, `${backend}/api/presets`, timeoutMs));
     const id = choosePresetId(list, requestedId);
     if (id === null) return null;
-    const [preset, decision] = await Promise.all([
-      getJson(fetcher, `${backend}/api/presets/${encodeURIComponent(id)}`, timeoutMs).then(parsePreset),
-      loadDecision(fetcher, backend, id, timeoutMs),
-    ]);
+    const { preset, decision } = await loadPreset(fetcher, backend, id, timeoutMs);
     return summarize(preset, decision, list);
   } catch {
     return null;

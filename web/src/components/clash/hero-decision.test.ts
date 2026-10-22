@@ -31,7 +31,22 @@ import {
   SEE_YOUR_PLAN,
   seeYourPlan,
 } from "./decision-card";
-import { HeroDecision, HeroDecisionSkeleton, KEPT_LABEL, offerPartToShow, tasteLineText } from "./hero-decision";
+import {
+  HERO_CELL_MIN,
+  HERO_ROWS,
+  HeroDecision,
+  HeroDecisionSkeleton,
+  HeroNote,
+  heroNote,
+  KEPT_LABEL,
+  NOTE_LOWEST,
+  NOTE_NEAR_100,
+  NOTE_NEAR_100_INVENTED,
+  NOTE_TIED,
+  NOTE_TWO_SETS,
+  offerPartToShow,
+  tasteLineText,
+} from "./hero-decision";
 
 // Every name and figure below is invented for the test.
 
@@ -58,34 +73,36 @@ function tinyPreset({ synthetic = false } = {}) {
   return parsePreset(synthetic ? { ...raw, synthetic: true } : raw);
 }
 
-/** The decision for the tiny preset: Bo Diddly Squat 60 minutes later, which ends its overlap with Ann Arbor. */
-function decisionFor(overrides: Record<string, unknown> = {}): Decision {
-  const decision = parseDecision({
-    kind: "decision",
+/** The route's answer for the tiny preset: Bo Diddly Squat 60 minutes later, which ends its overlap with Ann Arbor. */
+const RAW_DECISION = {
+  kind: "decision",
+  day: 0,
+  skipped_locked: 0,
+  skipped_no_place: 0,
+  clash: { a_id: "ann", b_id: "bo", rank: 1, minutes: 60 },
+  published_budget: 104.2,
+  move: {
+    act_id: "bo",
+    act: "Bo Diddly Squat",
+    from: "Side 20:30-22:00",
+    stage_id: "side",
+    stage: "Side",
     day: 0,
-    skipped_locked: 0,
-    skipped_no_place: 0,
-    clash: { a_id: "ann", b_id: "bo", rank: 1, minutes: 60 },
-    published_budget: 104.2,
-    move: {
-      act_id: "bo",
-      act: "Bo Diddly Squat",
-      from: "Side 20:30-22:00",
-      stage_id: "side",
-      stage: "Side",
-      day: 0,
-      start: "21:30",
-      end: "23:00",
-      minutes_moved: 60,
-      legal_places: 4,
-      stage_changed: false,
-      budget_after: 98.4,
-      minutes_shared_after: 0,
-      same_index_alternative: null,
-    },
-    rule: null,
-    ...overrides,
-  });
+    start: "21:30",
+    end: "23:00",
+    minutes_moved: 60,
+    legal_places: 4,
+    stage_changed: false,
+    budget_after: 98.4,
+    minutes_shared_after: 0,
+    same_index_alternative: null,
+  },
+  rule: null,
+};
+
+/** The decision for the tiny preset (`RAW_DECISION`, parsed), with any field replaced. */
+function decisionFor(overrides: Record<string, unknown> = {}): Decision {
+  const decision = parseDecision({ ...RAW_DECISION, ...overrides });
   if (!decision) throw new Error("no decision");
   return decision;
 }
@@ -272,12 +289,15 @@ describe("the hero's answer", () => {
     expect(keep).toContain("disabled:opacity-100");
     expect(keep).toMatch(/\bh-12\b/);
     expect(html).toContain("data-kept-notice");
-    // The same boxes as the live hero: only the button's pressability differs.
+    // The same boxes as the live hero: only the button's pressability, and the state the group names, differ.
     const live = hero();
+    expect(html).toContain('data-hero-state="pending"');
+    expect(live).toContain('data-hero-state="settled"');
     const strip = (markup: string) =>
       markup
         .replace(/ disabled=""/g, "")
-        .replace(/ disabled:(opacity-50|opacity-100|cursor-default)/g, "");
+        .replace(/ disabled:(opacity-50|opacity-100|cursor-default)/g, "")
+        .replace(/ data-hero-state="(pending|settled)"/, "");
     expect(strip(html)).toBe(strip(live));
   });
 
@@ -333,6 +353,188 @@ describe("the hero's answer", () => {
     expect(html).toMatch(/h-12 w-40 rounded-md bg-muted/);
     expect(html).not.toMatch(/rounded-(sm|full|none|\[)/);
   });
+});
+
+describe("one row geometry for every state the hero group can be painted in (round 37, L1)", () => {
+  /**
+   * Two days built here from the tiny preset: Bo Diddly Squat moved to Main at 15:25, which starts a new 15 min
+   * overlap with Cy Twombly; and, with Cy Twombly at Main 21:55 (5 min shared with Bo Diddly Squat), Bo Diddly Squat
+   * moved to 18:25, which ends that overlap. Every name and figure is invented for the test.
+   */
+  function rowDay(kind: "new" | "ends") {
+    const raw = rawTinyPreset() as ReturnType<typeof rawTinyPreset> & {
+      festival: { timetable: { act_id: string; stage_id: string; start: number | string; end: number }[] };
+    };
+    if (kind === "ends") {
+      raw.festival.timetable = raw.festival.timetable.map((slot) =>
+        slot.act_id === "cy" ? { ...slot, stage_id: "main", start: 1315, end: 1375 } : slot,
+      );
+    }
+    const preset = parsePreset(raw);
+    const place =
+      kind === "new"
+        ? { stage_id: "main", stage: "Main", start: "15:25", end: "16:55", minutes_moved: 305, stage_changed: true }
+        : { stage_id: "side", stage: "Side", start: "18:25", end: "19:55", minutes_moved: 125, stage_changed: false };
+    const decision = parseDecision({
+      kind: "decision",
+      day: 0,
+      skipped_locked: 0,
+      skipped_no_place: 0,
+      clash: { a_id: "ann", b_id: "bo", rank: 1, minutes: 60 },
+      published_budget: 104.2,
+      move: {
+        act_id: "bo",
+        act: "Bo Diddly Squat",
+        from: "Side 20:30-22:00",
+        day: 0,
+        ...place,
+        legal_places: 4,
+        budget_after: 98.4,
+        minutes_shared_after: 0,
+        same_index_alternative: null,
+      },
+      rule: null,
+    });
+    if (!decision) throw new Error("no decision");
+    const model = buildDayGraph(preset, decision, 0) as DayGraphModel;
+    return { preset, decision, model, copy: buildDecisionCopy(preset, decision) };
+  }
+
+  /** Each row of a rendered group, in DOM order: its name, its min-height classes and its space classes. */
+  function rowsOf(html: string): { name: string; min: string[]; space: string[] }[] {
+    return [...html.matchAll(/<div\b(?=[^>]*\bdata-hero-row="([^"]+)")(?=[^>]*\bclass="([^"]*)")[^>]*>/g)].map((m) => {
+      const classes = m[2].split(" ");
+      return {
+        name: m[1],
+        min: classes.filter((name) => /(^|:)min-h-/.test(name)),
+        space: classes.filter((name) => /(^|:)mt-/.test(name)),
+      };
+    });
+  }
+
+  /** What a row holds: the markup between its opening tag and the next row's. */
+  function rowMarkup(html: string, name: string): string {
+    const from = html.indexOf(`data-hero-row="${name}"`);
+    const next = html.indexOf("data-hero-row=", from + 1);
+    return html.slice(html.indexOf(">", from) + 1, next === -1 ? undefined : html.lastIndexOf("<", next));
+  }
+
+  const expected = HERO_ROWS.map((row) => ({
+    name: row.name,
+    min: row.min.split(" ").filter(Boolean),
+    space: row.space.split(" ").filter(Boolean),
+  }));
+
+  for (const kind of ["new", "ends"] as const) {
+    it(`gives the settled group, the pending group without its words and the skeleton the same rows (${kind === "new" ? "a new 15 min overlap" : "the move ends a 5 min overlap"})`, () => {
+      const { model, copy } = rowDay(kind);
+      expect(sideEffectText(model.move!)).toMatch(kind === "new" ? /^New 15 min overlap with Cy Twombly\./ : /^Ends the 5 min overlap with Cy Twombly\./);
+      expect(copy).not.toBeNull();
+      const settled = renderToStaticMarkup(createElement(HeroDecision, { model, copy, view: "moved", onOpenMove: () => null }));
+      const pending = renderToStaticMarkup(createElement(HeroDecision, { model, copy: null, view: "moved", pending: true }));
+      const skeleton = renderToStaticMarkup(createElement(HeroDecisionSkeleton));
+
+      // One ordered list of rows, with the same rooms and the same space above each, in all three.
+      expect(HERO_ROWS.map((row) => row.name)).toEqual(["lead", "readout", "side-effects", "taste", "attribution", "actions", "notice"]);
+      for (const html of [settled, pending, skeleton]) expect(rowsOf(html)).toEqual(expected);
+      // Every room is a min-height, never a fixed height that could clip a longer line.
+      for (const row of HERO_ROWS) expect(`${row.min} ${row.space}`).not.toMatch(/(^|\s|:)(h-|max-h-|overflow|line-clamp|truncate)/);
+
+      // Settled: the group, the readout, Keep and the attribution in full.
+      expect(settled).toMatch(/^<div id="one-decision" data-hero-group="" data-hero-state="settled"/);
+      expect(settled).toContain("data-readout");
+      expect(settled).toMatch(/<button[^>]*data-variant="default"[^>]*>[\s\S]*Keep this move/);
+      expect(text(rowMarkup(settled, "attribution"))).toBe("Selected and scored by this app’s index. A reading, not a verdict.");
+      expect(settled).toContain("data-taste-line");
+
+      // Pending without the decision's words: the attribution keeps its text; the taste row holds its room empty,
+      // hidden from assistive tech, with no number and no qualifier.
+      expect(pending).toMatch(/^<div id="one-decision" data-hero-group="" data-hero-state="pending"/);
+      expect(text(rowMarkup(pending, "attribution"))).toBe("Selected and scored by this app’s index. A reading, not a verdict.");
+      expect(pending).toMatch(/<div data-hero-row="taste" aria-hidden="true" class="[^"]*"><\/div>/);
+      expect(text(rowMarkup(pending, "taste"))).toBe("");
+      expect(rowMarkup(pending, "taste")).not.toMatch(/\d|rank|attendance/);
+      expect(pending).not.toContain("data-taste-line");
+
+      // The skeleton: the group's hooks, and nothing to read or press.
+      expect(skeleton).toMatch(/^<div aria-hidden="true" data-hero-skeleton="" data-hero-group="" data-hero-state="skeleton"/);
+      expect(text(skeleton)).toBe("");
+      expect(text(skeleton)).not.toMatch(/\d/);
+      expect(skeleton).not.toMatch(/<(a|button|input)\b|tabindex|data-readout|data-attribution|Keep this move/);
+    });
+  }
+
+  it("holds every row, empty where it has nothing, when there is no move or no decision", () => {
+    const noMove = hero({}, { decision: decisionFor({ move: null }) });
+    const noDecision = hero({}, { decision: null });
+    for (const html of [noMove, noDecision]) {
+      expect(rowsOf(html)).toEqual(expected);
+      // Keep's place is held, but there is no button and no confirmation.
+      expect(html).toContain('<div aria-hidden="true" class="h-12 [grid-area:keep]"></div>');
+      expect(html).not.toMatch(/<button/);
+      // The pair's heading, two or three lines at 26rem, sits in the readout's room (empty without a move, and as
+      // tall as three of its lines), so a decision that does not come, or comes with no move, keeps the group's
+      // height; the lead's room is held empty, hidden from assistive tech.
+      expect(rowMarkup(html, "lead")).toBe("</div>");
+      expect(html).toMatch(/<div data-hero-row="lead" aria-hidden="true" class="[^"]*">/);
+      expect(rowMarkup(html, "readout")).toMatch(/^<h2 id="decision-heading"[^>]*>Ann Arbor × Bo Diddly Squat: 60 min shared<\/h2><\/div>$/);
+      expect(html).toMatch(/<div data-hero-row="readout" class="[^"]*">/);
+    }
+    // With a move the heading is the lead's one line, and the readout holds the figures.
+    const moved = hero({}, { decision: decisionFor() });
+    expect(rowMarkup(moved, "lead")).toMatch(/^<h2 id="decision-heading"[^>]*>Bo Diddly Squat 60 minutes later<\/h2><\/div>$/);
+    expect(rowMarkup(moved, "readout")).toMatch(/^<p data-readout="">/);
+  });
+
+  // The test imports clash-control cold (its whole module graph); under a loaded runner that alone passed the
+  // 5-second default (vitest flake, round 37), so it allows 30 s, as check-links.test.ts does.
+  it("reserves the settled group's height in the layout's group cell from 1024 px, the sum of the rows", async () => {
+    // The rows' space and room at a breakpoint, mobile first, in px (Tailwind's 4 px spacing scale and rem values).
+    const px = (token: string) => {
+      const value = token.replace(/^(min-h|mt)-/, "");
+      const rem = /^\[([\d.]+)rem\]$/.exec(value);
+      return rem ? Number(rem[1]) * 16 : Number(value) * 4;
+    };
+    const at = (classes: string, screens: readonly string[], kind: "min-h" | "mt") => {
+      let found = 0;
+      for (const token of classes.split(" ").filter(Boolean)) {
+        const [screen, name] = token.includes(":") ? token.split(":") : ["", token];
+        if (name.startsWith(`${kind}-`) && screens.includes(screen)) found = px(name);
+      }
+      return found;
+    };
+    const total = (screens: readonly string[]) =>
+      HERO_ROWS.reduce((sum, row) => sum + at(row.space, screens, "mt") + Math.max(at(row.min, screens, "min-h"), 0), 0);
+    // From 1024 px the paste sits beside Keep, so the actions row is Keep's 48 px and the confirmation's room under it.
+    const lg = total(["", "sm", "md", "lg"]);
+    const xl = total(["", "sm", "md", "lg", "xl"]);
+    expect(lg).toBeCloseTo(354.8, 5);
+    expect(xl).toBeCloseTo(332.8, 5);
+    expect(HERO_CELL_MIN).toBe(`lg:min-h-[${+(lg / 16).toFixed(4)}rem] xl:min-h-[${+(xl / 16).toFixed(4)}rem]`);
+    // The layout holds it in an empty room in the group's cell, second in the hero's DOM, right after the pitch:
+    // before the dateline, the toggle, the drawing and the group, so it is there from the first bytes the browser
+    // paints, whatever state the group streams in (a decision, or none and the skeleton).
+    const { ClashControlFallback } = await import("./clash-control");
+    const room = `<div aria-hidden="true" data-hero-room="" class="hidden lg:block lg:[grid-area:group] ${HERO_CELL_MIN}"></div>`;
+    const list: PresetSummary[] = [{ id: "tiny-fest-sat", title: "Tiny Fest, Saturday", city: "Tiny Town", sets: 3, stages: 2, scored_share: 0.67 }];
+    for (const summary of [summarize(tinyPreset(), decisionFor(), list), summarize(tinyPreset(), null, list)]) {
+      const html = renderToStaticMarkup(
+        createElement(ClashControlFallback, { intro: createElement("h1", { id: "pitch-heading" }, "Pitch"), summary }),
+      );
+      const heroHtml = html.slice(html.indexOf('data-hero=""'));
+      const at = heroHtml.indexOf(room);
+      expect(at).toBeGreaterThan(heroHtml.indexOf('id="pitch-heading"'));
+      for (const later of ["data-dateline", 'data-toggle-room=""|aria-label="Drawing shows"', "data-day-graph", "data-hero-group"]) {
+        const next = later.split("|").map((needle) => heroHtml.indexOf(needle)).filter((index) => index >= 0);
+        expect(next.length).toBeGreaterThan(0);
+        expect(at).toBeLessThan(Math.min(...next));
+      }
+      expect(html.match(/data-hero-room=""/g)).toHaveLength(1);
+    }
+    // The interactive view holds it while it draws a group in any state.
+    const source = readFileSync(join(__dirname, "clash-control.tsx"), "utf8");
+    expect(source).toContain("reserve={heroGroup !== null}");
+  }, 30_000);
 });
 
 describe("Keep this move, confirmed in place", () => {
@@ -491,6 +693,9 @@ describe("Keep this move on a plan that already holds steps (P1)", () => {
     expect(source).toContain('offerShown && "invisible"');
     expect(source).toContain('showKeep && offerShown && "invisible"');
     expect(source).not.toMatch(/offerShown && "hidden"/);
+    // Below 380 px, while the offer shows, the paste's row comes up under Keep's: Replace (in the paste's place) sits
+    // directly under Add (in Keep's), with no control between them, and the words in the confirmation's room follow.
+    expect(source).toContain(`showKeep && offerShown && "max-[379px]:[grid-template-areas:'keep'_'paste'_'notice']"`);
     // Escape puts the offer away and hands focus back to Keep; the whole offer under the fold (Add, Replace and
     // the words in the confirmation's room) comes into view by the least scroll, at once under reduced motion.
     expect(source).toContain("onDismiss={dismissOffer}");
@@ -519,11 +724,14 @@ describe("Keep this move on a plan that already holds steps (P1)", () => {
 
   it("brings the whole offer into view by its lowest part under the fold, its highest above the top, or not at all", () => {
     const viewport = 667;
-    // A short phone below 380 px: Add in Keep's place, the words in the room, Replace in the paste's place.
+    // A short phone below 380 px: Add in Keep's place, Replace directly under it in the paste's place (the paste's
+    // row comes up while the offer shows), then the words in the confirmation's room.
     const add = { part: "add", top: 700, bottom: 748 };
-    const words = { part: "words", top: 752, bottom: 806 };
-    const replace = { part: "replace", top: 814, bottom: 858 };
-    expect(offerPartToShow([add, replace, words], viewport)).toBe("replace");
+    const replace = { part: "replace", top: 756, bottom: 800 };
+    const words = { part: "words", top: 804, bottom: 858 };
+    expect(offerPartToShow([add, replace, words], viewport)).toBe("words");
+    // Whichever part is lowest is the one brought in, whatever order the parts come in.
+    expect(offerPartToShow([add, { ...replace, top: 862, bottom: 906 }, words], viewport)).toBe("replace");
     // From 380 px both buttons share Keep's row, so the words in the room are the offer's foot.
     expect(offerPartToShow([add, { ...replace, top: 700, bottom: 748 }, words], viewport)).toBe("words");
     // Wholly in view: no scroll at all.
@@ -580,7 +788,8 @@ describe("the hero's layout (server fallback, the interactive hero's final frame
 
   it("reads in one DOM order at every width: pitch, day, toggle, drawing, decision group, key", async () => {
     const html = await fallback();
-    const order = ["lg:[grid-area:pitch]", "lg:[grid-area:day]", "lg:[grid-area:toggle]", "lg:[grid-area:graph]", "lg:[grid-area:group]", "lg:[grid-area:key]"].map(
+    // The group's own cell (the empty room that holds its height comes earlier, and holds nothing to read).
+    const order = ["lg:[grid-area:pitch]", "lg:[grid-area:day]", "lg:[grid-area:toggle]", "lg:[grid-area:graph]", "lg:self-start lg:[grid-area:group]", "lg:[grid-area:key]"].map(
       (area) => html.indexOf(area),
     );
     order.forEach((at, i) => {
@@ -611,7 +820,7 @@ describe("the hero's layout (server fallback, the interactive hero's final frame
     // One picker on the page: the board's header no longer has one.
     expect(html.match(/aria-label="Festival day"/g)).toHaveLength(1);
     const dateline = /<p data-dateline=""[^>]*>([^<]*)<\/p>/.exec(html)?.[1];
-    expect(dateline).toBe("Saturday. Published timetable; saved Qloo reading built 1 Oct 2026. Neither festival uses Clash Control.");
+    expect(dateline).toBe("Saturday. Published timetable; saved Qloo reading built 1\u00a0Oct\u00a02026. Neither festival uses Clash Control.");
   });
 
   it("calls the saved reading global only where the preset sent no location, and makes no place claim otherwise", async () => {
@@ -625,15 +834,15 @@ describe("the hero's layout (server fallback, the interactive hero's final frame
         ),
       )?.[1];
     // None sent: the reading was asked for no place, so it is global.
-    expect(dateline(null)).toBe("Saturday. Published timetable; saved global Qloo reading built 1 Oct 2026. Neither festival uses Clash Control.");
+    expect(dateline(null)).toBe("Saturday. Published timetable; saved global Qloo reading built 1\u00a0Oct\u00a02026. Neither festival uses Clash Control.");
     // A place sent: no "global", and no city claim.
-    expect(dateline("London")).toBe("Saturday. Published timetable; saved Qloo reading built 1 Oct 2026. Neither festival uses Clash Control.");
+    expect(dateline("London")).toBe("Saturday. Published timetable; saved Qloo reading built 1\u00a0Oct\u00a02026. Neither festival uses Clash Control.");
     // Not known (the server could not say): no claim either way.
-    expect(dateline(undefined)).toBe("Saturday. Published timetable; saved Qloo reading built 1 Oct 2026. Neither festival uses Clash Control.");
+    expect(dateline(undefined)).toBe("Saturday. Published timetable; saved Qloo reading built 1\u00a0Oct\u00a02026. Neither festival uses Clash Control.");
     // The lead on its own: the invented day and a day with no build date carry no reading to call global.
     const model = day().model;
-    expect(datelineLead(model, false, null)).toBe("Saturday. Published timetable; saved global Qloo reading built 1 Oct 2026.");
-    expect(datelineLead(model, false, "Chicago, IL")).toBe("Saturday. Published timetable; saved Qloo reading built 1 Oct 2026.");
+    expect(datelineLead(model, false, null)).toBe("Saturday. Published timetable; saved global Qloo reading built 1\u00a0Oct\u00a02026.");
+    expect(datelineLead(model, false, "Chicago, IL")).toBe("Saturday. Published timetable; saved Qloo reading built 1\u00a0Oct\u00a02026.");
     expect(datelineLead(model, true, null)).toBe("Invented timetable.");
     expect(datelineLead({ ...model, builtAt: null }, false, null)).toBe("Saturday. Published timetable.");
     expect(datelineLead(null, false, null)).toBeNull();
@@ -641,6 +850,33 @@ describe("the hero's layout (server fallback, the interactive hero's final frame
     const source = readFileSync(join(__dirname, "clash-control.tsx"), "utf8");
     expect(source).toContain("<HeroDateline model={model} synthetic={synthetic} location={preset.location} />");
     expect(source).toContain("<HeroDateline model={model} synthetic={synthetic} location={summary?.location} />");
+  });
+
+  it("keeps the build date in one piece: its three parts joined by no-break spaces, the rest of the sentence unchanged", async () => {
+    const { datelineLead } = await import("./clash-control");
+    const lead = datelineLead(day().model, false, null) ?? "";
+    expect(lead).toContain("built 1 Oct 2026.");
+    expect(lead.match(/ /g)).toHaveLength(2);
+    expect(lead.replaceAll(" ", " ")).toBe("Saturday. Published timetable; saved global Qloo reading built 1 Oct 2026.");
+  });
+
+  it("puts the desktop note under the dateline, before the toggle, and none without a move", async () => {
+    const html = await fallback();
+    const note = /<p data-hero-note=""[^>]*>([^<]*)<\/p>/.exec(html);
+    expect(note?.[1]).toBe(`${NOTE_LOWEST} ${NOTE_NEAR_100}`);
+    expect(html.indexOf("data-hero-note")).toBeGreaterThan(html.indexOf("data-dateline"));
+    expect(html.indexOf("data-hero-note")).toBeLessThan(html.indexOf("lg:[grid-area:toggle]"));
+    // In the day's slot of the left column.
+    const daySlot = html.slice(html.indexOf("lg:[grid-area:day]"), html.indexOf("lg:[grid-area:toggle]"));
+    expect(daySlot).toContain("data-hero-note");
+    // The invented day: the invented scale, and nothing credits Qloo.
+    const invented = /<p data-hero-note=""[^>]*>([^<]*)<\/p>/.exec(await fallback({ synthetic: true }))?.[1] ?? "";
+    expect(invented).toBe(`${NOTE_LOWEST} ${NOTE_NEAR_100_INVENTED}`);
+    expect(qlooCredits(invented)).toEqual([]);
+    // The interactive view words it from its own decision.
+    const source = readFileSync(join(__dirname, "clash-control.tsx"), "utf8");
+    expect(source).toContain("<HeroNote text={model ? heroNote(decision, synthetic) : null} />");
+    expect(source).toContain("<HeroNote text={model ? heroNote(summary?.decisionData ?? null, synthetic) : null} />");
   });
 
   it("draws the toggle on the moved view, its first option 'As published' (on the invented day 'Invented timetable')", async () => {
@@ -684,7 +920,8 @@ describe("the hero's layout (server fallback, the interactive hero's final frame
     for (const art of [false, true]) {
       const html = await fallback({ art });
       expect(html).not.toContain("hero-site-plan");
-      expect(html).not.toContain("data-hero-stat");
+      // No stat attribute (data-hero-state, the group's state, is another attribute).
+      expect(html).not.toMatch(/data-hero-stat(?!e=)/);
     }
   });
 
@@ -697,6 +934,42 @@ describe("the hero's layout (server fallback, the interactive hero's final frame
     const all = `${text(heroHtml)}. ${[...heroHtml.matchAll(/(?:title|aria-label)="([^"]*)"/g)].map((m) => m[1]).join(". ")}`;
     expect(qlooCredits(all)).toEqual([]);
     expect(text(heroHtml)).not.toMatch(/as published|Published timetable/);
+  });
+
+  it("draws the toggle, the readout and Keep in the server's frame from a complete seed, with no second request (round 37, L1)", async () => {
+    const { ClashControlFallback } = await import("./clash-control");
+    const { loadServerSummary } = await import("@/lib/server-summary");
+    const render = async (decision: unknown) => {
+      const asked: string[] = [];
+      const fetcher = vi.fn(async (url: string) => {
+        const path = url.replace("http://api.test", "");
+        asked.push(path);
+        if (path === "/api/presets") return new Response(JSON.stringify(PRESETS), { status: 200 });
+        if (path === "/api/presets/tiny-fest-sat") return new Response(JSON.stringify({ ...rawTinyPreset(), decision }), { status: 200 });
+        return new Response("{}", { status: 404 });
+      });
+      const summary = await loadServerSummary(null, { backend: "http://api.test", fetcher });
+      const html = renderToStaticMarkup(createElement(ClashControlFallback, { intro: createElement("h1", { id: "pitch-heading" }, "Pitch"), summary }));
+      return { html, asked };
+    };
+    // The preset response carries the decision: one consistent frame, and only the list and the preset asked.
+    const seeded = await render(RAW_DECISION);
+    expect(seeded.asked).toEqual(["/api/presets", "/api/presets/tiny-fest-sat"]);
+    const toggle = /<div role="radiogroup" aria-label="Drawing shows"[\s\S]*?<\/div>/.exec(seeded.html)?.[0] ?? "";
+    expect(text(toggle)).toBe("As published Bo Diddly Squat 60 min later");
+    const readout = /<p data-readout=""[^>]*>[\s\S]*?<\/p>/.exec(seeded.html)?.[0] ?? "";
+    expect(seen(readout)).toBe("60 → 0 min shared with Ann Arbor");
+    const keep = /<button[^>]*data-variant="default"[^>]*>[\s\S]*?<\/button>/.exec(seeded.html)?.[0] ?? "";
+    expect(seen(keep)).toBe("Keep this move");
+    expect(keep).toContain('disabled=""');
+    expect(seeded.html).toContain('data-hero-state="pending"');
+    expect(seeded.html).toContain("data-taste-line");
+    // A seed that says the day has no decision: the skeleton and the toggle's room, still no second request.
+    const none = await render(null);
+    expect(none.asked).toEqual(["/api/presets", "/api/presets/tiny-fest-sat"]);
+    expect(none.html).toContain('data-hero-state="skeleton"');
+    expect(none.html).toContain('data-toggle-room=""');
+    expect(none.html).not.toMatch(/data-readout|aria-label="Drawing shows"|Keep this move/);
   });
 
   it("builds its drawing from the same model the server summary carries", () => {
@@ -745,5 +1018,100 @@ describe("the index card's clash action", () => {
     expect(source).toContain("onOpenHidden={cardAction ? (trigger) => openClash(cardAction.clash, trigger) : undefined}");
     expect(source).toContain("hiddenLabel={cardAction?.label}");
     expect(source).not.toContain("openClash(hero.clash");
+  });
+});
+
+describe("the desktop note under the dateline", () => {
+  /** A rule answer for the clash's pair whose first change moves `sets` sets and leaves `after` minutes shared. */
+  function ruleAnswer(sets: number, after: number | null, holds = false) {
+    const place = (actId: string, act: string, start: string, end: string) => ({
+      act_id: actId,
+      act,
+      from: "Side 20:30-22:00",
+      stage_id: "side",
+      stage: "Side",
+      day: 0,
+      start,
+      end,
+      minutes_moved: 60,
+    });
+    return {
+      kind: "rule_fixes",
+      a: { act_id: "ann", act: "Ann Arbor", locked: false, place: "Main 20:00-21:30" },
+      b: { act_id: "bo", act: "Bo Diddly Squat", locked: false, place: "Side 20:30-22:00" },
+      rule: "Ann Arbor and Bo Diddly Squat must not overlap",
+      shared_minutes: 60,
+      holds,
+      single_set_places: 1,
+      fixes_found: 1,
+      searched: "x",
+      fixes: [
+        {
+          sets_moved: sets,
+          minutes_moved: 60 * sets,
+          stage_changes: 0,
+          budget_after: 98.4,
+          ...(after === null ? {} : { minutes_shared_after: after }),
+          moves: [place("bo", "Bo Diddly Squat", "21:30", "23:00"), ...(sets === 2 ? [place("cy", "Cy Twombly", "19:00", "20:00")] : [])],
+        },
+      ],
+    };
+  }
+  const alternative = {
+    act_id: "ann",
+    act: "Ann Arbor",
+    from: "Main 20:00-21:30",
+    stage_id: "main",
+    stage: "Main",
+    day: 0,
+    start: "18:30",
+    end: "20:00",
+    minutes_moved: 90,
+  };
+
+  it("says the move gives the lowest index of the legal moves checked, or ties for it with a same-index alternative", () => {
+    expect(NOTE_LOWEST).toBe("Of the legal moves checked, this gives the lowest index.");
+    expect(NOTE_TIED).toBe("Of the legal moves checked, this ties for the lowest index.");
+    expect(heroNote(decisionFor(), false)).toBe(`${NOTE_LOWEST} ${NOTE_NEAR_100}`);
+    const tied = decisionFor({ move: { ...RAW_DECISION.move, same_index_alternative: alternative } });
+    expect(tied.move?.alternative?.act).toBe("Ann Arbor");
+    expect(heroNote(tied, false)).toBe(`${NOTE_TIED} ${NOTE_NEAR_100}`);
+  });
+
+  it("adds that two sets end the overlap only when the rule answer's first change moves two sets and leaves 0 minutes shared", () => {
+    expect(NOTE_TWO_SETS).toBe("Moving two sets ends the overlap instead.");
+    const two = decisionFor({ rule: ruleAnswer(2, 0) });
+    expect(two.rule?.fixes[0].setsMoved).toBe(2);
+    expect(two.ruleChange?.minutesSharedAfter).toBe(0);
+    expect(heroNote(two, false)).toBe(`${NOTE_LOWEST} ${NOTE_TWO_SETS} ${NOTE_NEAR_100}`);
+    // Every sentence whose condition holds is there, together.
+    const tiedTwo = decisionFor({ move: { ...RAW_DECISION.move, same_index_alternative: alternative }, rule: ruleAnswer(2, 0) });
+    expect(heroNote(tiedTwo, false)).toBe(`${NOTE_TIED} ${NOTE_TWO_SETS} ${NOTE_NEAR_100}`);
+    // One set moved, time still shared, the time after not sent, or a rule that already holds: no such sentence.
+    for (const rule of [ruleAnswer(1, 0), ruleAnswer(2, 15), ruleAnswer(2, null), ruleAnswer(2, 0, true)]) {
+      const decision = decisionFor({ rule });
+      expect(decision.rule).not.toBeNull();
+      expect(heroNote(decision, false)).not.toContain(NOTE_TWO_SETS);
+    }
+    // No figure in the note: neither an index value nor minutes.
+    expect((heroNote(tiedTwo, false) ?? "").replace("Near 100 means", "")).not.toMatch(/\d/);
+  });
+
+  it("says what near 100 means, invented on the invented day, credits Qloo nowhere, and is null without a move", () => {
+    expect(NOTE_NEAR_100).toBe("Near 100 means closer tastes among the acts compared.");
+    expect(NOTE_NEAR_100_INVENTED).toBe("Near 100 means closer invented tastes among the acts compared.");
+    const invented = heroNote(decisionFor({ rule: ruleAnswer(2, 0) }), true) ?? "";
+    expect(invented).toBe(`${NOTE_LOWEST} ${NOTE_TWO_SETS} ${NOTE_NEAR_100_INVENTED}`);
+    for (const note of [invented, heroNote(decisionFor(), false) ?? ""]) expect(qlooCredits(note)).toEqual([]);
+    expect(heroNote(decisionFor({ move: null }), false)).toBeNull();
+    expect(heroNote(null, false)).toBeNull();
+  });
+
+  it("prints one muted 13 px paragraph on 20 px, shown only from 1280 px wide and 791 px tall", () => {
+    const html = renderToStaticMarkup(createElement(HeroNote, { text: NOTE_LOWEST }));
+    expect(html).toBe(
+      `<p data-hero-note="" class="mt-1 hidden max-w-[44rem] text-[0.8125rem] leading-5 text-muted-foreground xl:[@media(min-height:791px)]:block">${NOTE_LOWEST}</p>`,
+    );
+    expect(renderToStaticMarkup(createElement(HeroNote, { text: null }))).toBe("");
   });
 });

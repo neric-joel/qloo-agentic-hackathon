@@ -19,7 +19,7 @@ import {
   type DayGraphModel,
   type GraphView,
 } from "@/lib/day-graph";
-import { BANDS, lineColor, lineKeyAction, lineTransform, planDrawing, stepLine, trackPct } from "@/lib/day-graph-motion";
+import { BANDS, detailAt, lineColor, lineKeyAction, lineTransform, MARK_RADIUS, planDrawing, stepLine, trackPct } from "@/lib/day-graph-motion";
 import { parseDecision, type Decision } from "@/lib/decision";
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
 import { parsePreset, type Preset } from "@/lib/preset";
@@ -205,6 +205,34 @@ describe("DayGraph: the server frame", () => {
     expect(layoutOf(html, "short")).not.toContain("data-strip");
   });
 
+  it("draws one forced layout whatever the screen, at its narrowest band, and two drawings on a page share no id", () => {
+    const page = renderToStaticMarkup(
+      createElement("div", null, createElement(DayGraph, { model: moved, view: "moved" }), createElement(DayGraph, { model: moved, view: "moved", layout: "short" })),
+    );
+    const ids = [...page.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
+    expect(ids.length).toBeGreaterThan(0);
+    expect(new Set(ids).size).toBe(ids.length);
+    // Every id the page references is one it defines.
+    for (const [, ref] of page.matchAll(/(?:aria-labelledby|aria-describedby)="([^"]+)"/g)) expect(ids).toContain(ref);
+    for (const [, ref] of page.matchAll(/url\(#([^)]+)\)/g)) expect(ids).toContain(ref);
+    // The second drawing: the short layout alone, with no viewport class on it or its band, so a desktop shows it.
+    const second = page.slice(page.lastIndexOf("data-day-graph="));
+    expect([...second.matchAll(/data-layout="([a-z]+)" class="relative"/g)].map((match) => match[1])).toEqual(["short"]);
+    const bands = [...second.matchAll(/data-band="(\d+)" data-layout="([a-z]+)" class="([^"]*)"/g)];
+    expect(bands.map((match) => [Number(match[1]), match[2], match[3]])).toEqual([[BANDS.short[0].track, "short", "absolute inset-0"]]);
+    expect(second).not.toMatch(/data-layout="(desktop|phone)"/);
+    expect(second).not.toMatch(/\b(?:lg|xl|max-lg|min-\[\d+px\]|max-\[\d+px\]):(?:hidden|block)\b|\[@media/);
+    expect(second).toContain(`style="height:${drawingHeight(moved, "short")}px"`);
+    // The hero's drawing, given no layout, is the markup it always was (its own ids aside): every layout, picked by CSS.
+    const first = page.slice(page.indexOf("<div data-day-graph="), page.lastIndexOf("<div data-day-graph="));
+    const plain = (html: string) => {
+      const uid = /aria-labelledby="([^"]+)-title"/.exec(html)?.[1] ?? "";
+      return html.split(uid).join("UID");
+    };
+    expect(plain(first)).toBe(plain(render(moved, "moved")));
+    expect(first).toContain('data-layout="desktop" class="relative hidden lg:block"');
+  });
+
   it("is a group titled by the view it shows and described by the key, the move and its side effects", () => {
     for (const view of ["moved", "published"] as const) {
       const html = render(moved, view);
@@ -261,17 +289,52 @@ describe("DayGraph: the server frame", () => {
     const published = tagsOf("published");
     const withMove = tagsOf("moved");
     expect(new Set(published)).toEqual(new Set(["45 min shared"]));
-    expect(new Set(withMove)).toEqual(new Set(["30 min shared", "new 15 min", "+15 min"]));
+    // A desktop's moved view gives the published minutes, then the moved ones; a phone's, the moved ones alone.
+    expect(new Set(withMove)).toEqual(new Set(["45 → 30 min shared", "30 min shared", "new 15 min", "+15 min"]));
     for (const text of [...published, ...withMove]) {
       const shared = /^(\d+) min shared$/.exec(text);
       if (shared) expect([45, 30]).toContain(Number(shared[1]));
+      const both = /^(\d+) → (\d+) min shared$/.exec(text);
+      if (both) expect([Number(both[1]), Number(both[2])]).toEqual([45, 30]);
     }
+    const layoutOf = (html: string, layout: string) => html.split(/(?=<div data-layout=")/).filter((part) => part.startsWith(`<div data-layout="${layout}"`)).join("");
+    const movedHtml = render(moved, "moved");
+    const tagTexts = (html: string) => [...html.matchAll(/data-shared-tag="hatch"[^>]*>([^<]*)</g)].map((match) => match[1]);
+    expect(new Set(tagTexts(layoutOf(movedHtml, "desktop")))).toEqual(new Set(["45 → 30 min shared"]));
+    for (const layout of ["phone", "short"]) expect(new Set(tagTexts(layoutOf(movedHtml, layout)))).toEqual(new Set(["30 min shared"]));
     // What a reader sees (a line's accessible name may say "45 min shared as published, 30 with the move").
     const visible = (view: GraphView) => render(moved, view).replace(/<[^>]+>/g, " ");
     expect(visible("published")).not.toContain("new 15 min");
     expect(visible("moved")).not.toContain("45 min shared");
     expect(visible("moved")).toContain("30 min shared");
     expect(visible("published")).toContain("45 min shared");
+  });
+
+  it("sets a short phone's tags in a 13px line box and every other layout's at the label's 15px (round 37, L17)", () => {
+    const layoutOf = (html: string, layout: string) => html.split(/(?=<div data-layout=")/).filter((part) => part.startsWith(`<div data-layout="${layout}"`)).join("");
+    const tagStyles = (html: string) => [...html.matchAll(/<span data-shared-tag="[^"]*"[^>]*style="([^"]*)"/g)].map((match) => match[1]);
+    for (const view of ["moved", "published"] as const) {
+      const html = render(moved, view);
+      const short = tagStyles(layoutOf(html, "short"));
+      expect(short.length, `${view}: short phone tags`).toBeGreaterThan(0);
+      for (const style of short) expect(style).toContain("line-height:13px");
+      for (const layout of ["desktop", "phone"]) for (const style of tagStyles(layoutOf(html, layout))) expect(style).not.toContain("line-height");
+    }
+  });
+
+  it("edges the chosen clash's hatched window in solid raspberry, 1.5px, on its own 6px corners (a new overlap's edge stays dashed)", () => {
+    for (const view of ["moved", "published"] as const) {
+      const html = render(moved, view);
+      const hatched = [...html.matchAll(/<rect [^>]*fill="url\(#[^"]*-hatch\)"[^>]*>/g)].map((match) => match[0]);
+      expect(hatched.length).toBeGreaterThan(0);
+      for (const rect of hatched) {
+        expect(rect).toContain('stroke="var(--primary)"');
+        expect(rect).toContain('stroke-width="1.5"');
+        expect(rect).toContain(`rx="${MARK_RADIUS}"`);
+        expect(rect).not.toContain("stroke-dasharray");
+      }
+    }
+    for (const rect of [...render(moved, "moved").matchAll(/<rect data-created="[^"]+"[^>]*>/g)].map((match) => match[0])) expect(rect).toContain('stroke-dasharray="4 3"');
   });
 
   it("gives every mark its corner: 6px bars, ghost, windows and bracket; 10px hit areas; round dots", () => {
@@ -366,12 +429,54 @@ describe("DayGraph: the server frame", () => {
     }
   });
 
-  it("marks a locked set with its lock and an unscored one with a muted fill and no edge", () => {
+  it("marks a locked set with its lock and an unscored one with a muted fill and a dotted edge, never a dashed one", () => {
     const html = layoutOf(render(moved, "published"), "desktop");
     // Larch is locked but is not the last set on Main, so its lock does not state the last-set rule.
     expect(html).toMatch(/data-set="larch"[^>]*>.*?title="Locked by this app: kept in place\."/);
     expect(html).toMatch(/data-set="kauri"[^>]*? class="[^"]*\bbg-muted\b/);
-    expect(html).not.toMatch(/data-set="kauri"[^>]*? class="[^"]*\bborder-border-strong\b/);
+    // A 1px dotted edge in the bars' edge ink, on the bar's own 6px corners (dashed keeps its one meaning).
+    expect(html).toMatch(/data-set="kauri"[^>]*? class="[^"]*\bborder border-dotted border-border-strong\b/);
+    expect(html).toMatch(/data-set="kauri"[^>]*? class="[^"]*\brounded-xs\b/);
+    expect(html).not.toMatch(/data-set="kauri"[^>]*? class="[^"]*\bborder-dashed\b/);
+    // A scored bar keeps its solid hairline.
+    expect(html).toMatch(/data-set="larch"[^>]*? class="[^"]*\bborder border-border-strong bg-card\b/);
+    expect(html).not.toMatch(/data-set="larch"[^>]*? class="[^"]*\bborder-dotted\b/);
+    // Still no line for a set with no signal.
+    expect(moved.threads.some((thread) => thread.aId === "kauri" || thread.bId === "kauri")).toBe(false);
+  });
+
+  it("draws the phone's overview strip as a 1px track per stage, a 2px mark per set and every line of the day at 1px, solid, in the quiet ink", () => {
+    for (const view of ["moved", "published"] as const) {
+      const html = render(moved, view);
+      const phone = layoutOf(html, "phone");
+      for (const band of BANDS.phone) {
+        const markup = bandOf(html, "phone", band.track);
+        const strip = markup.slice(markup.indexOf("data-strip"));
+        // One track per stage.
+        expect([...strip.matchAll(/data-strip-track=""/g)].length).toBe(moved.stages.length);
+        // One mark per set, 2px tall, each half a pixel in from both ends of its set, so neighbours keep 1px apart.
+        const marks = [...strip.matchAll(/data-strip-mark="([^"]+)"[^>]*style="([^"]*)"/g)];
+        expect(new Set(marks.map((match) => match[1]))).toEqual(new Set(moved.sets.map((set) => set.actId)));
+        for (const [, , style] of marks) {
+          expect(style).toContain("height:2px");
+          expect(style).toMatch(/left:calc\([\d.]+% \+ 0\.5px\)/);
+          expect(style).toMatch(/width:max\(1px, calc\([\d.]+% - 1px\)\)/);
+        }
+        // Every line the desktop drawing draws in this view, each solid and in the quiet ink.
+        const lines = [...strip.matchAll(/data-strip-line="(\d+)"[^>]*style="([^"]*)"/g)];
+        const drawn = planDrawing(moved, "desktop", BANDS.desktop[2].track).views[view].lines;
+        expect(lines.map((match) => Number(match[1])).sort((a, b) => a - b)).toEqual(drawn.map((line) => line.thread.rank).sort((a, b) => a - b));
+        for (const [, rank, style] of lines) {
+          const thread = moved.threads.find((item) => item.rank === Number(rank));
+          expect(style).toContain(`background:${lineColor(false, false, thread?.ranked ?? true)}`);
+        }
+        expect(strip).not.toMatch(/dasharray|border-dashed|var\(--prov-qloo\)/);
+        // The chosen clash's shared minutes in raspberry on its two marks, and the bracket with its 6px corners.
+        expect([...strip.matchAll(/data-strip-shared="([^"]+)"[^>]*class="[^"]*\bbg-primary\b/g)].map((match) => match[1]).sort()).toEqual(["alder", "birch"]);
+        expect(strip).toMatch(/data-bracket="" class="[^"]*\brounded-xs\b[^"]*\bborder-2 border-foreground\b/);
+      }
+      expect(phone).toContain("data-strip");
+    }
   });
 
   it("says on a lock whose lock it is: this app's, the last set on its stage on a day that keeps that rule, an invented fixed slot on the invented day", () => {
@@ -549,6 +654,27 @@ describe("DayGraph: geometry and motion constants", () => {
     const focus = moved.focus.end - moved.focus.start;
     expect(html).toContain(`width:${Math.round((length / focus) * 100 * 10000) / 10000}%`);
     expect(html).toContain(`translateX(-${Math.round(trackPct(plan.track, moved.focus.start) * 10000) / 10000}%)`);
+  });
+
+  it("names the phone's opening window in the server frame, and plans a phone's bands again for each window it slides to (round 37 fix pass 2, N1)", () => {
+    const moved = model();
+    const html = render(moved, "moved");
+    // The server frame draws the opening window's names: each phone band's names are its plan's for that window.
+    for (const layout of ["phone", "short"] as const) {
+      for (const band of BANDS[layout]) {
+        const plan = planDrawing(moved, layout, band.track, detailAt(moved, moved.focus.start));
+        const drawn = [...bandOf(html, layout, band.track).matchAll(/data-label="([^"]+)"/g)].map((match) => match[1]);
+        expect(new Set(drawn), `${layout} at ${band.from}px`).toEqual(new Set(Object.keys(plan.views.moved.labels)));
+      }
+    }
+    // The pan is the window's start: the phone's plans follow it (planned again on each slide), the desktop's do not.
+    const source = readFileSync(fileURLToPath(new URL("./day-graph.tsx", import.meta.url)), "utf8");
+    expect(source).toMatch(/const detail = detailAt\(model, pan\);/);
+    expect(source).toMatch(/planDrawing\(model, layout, band\.track, detail\)/);
+    expect(source).toMatch(/useMemo\(\(\) => bandsOf\("desktop"\)\.map\(\(band\) => planDrawing\(model, "desktop", band\.track\)\), \[model, bandsOf\]\)/);
+    // The names a slide adds fade in with the slide (and only when motion is welcome); the rest ride with their bars.
+    expect(source).toMatch(/added\.map\(\(element\) => element\.animate\(\[\{ opacity: 0 \}, \{ opacity: 1 \}\], \{ duration: TAG_MS, easing: EASE_OUT \}\)\)/);
+    expect(source).toMatch(/const still = prefersReducedMotion\(\);/);
   });
 
   it("moves with the house curve and duration from globals.css", () => {

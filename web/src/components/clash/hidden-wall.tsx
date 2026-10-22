@@ -206,21 +206,31 @@ export type HiddenDay = {
   hidden: readonly { rank: number; a: string; b: string }[];
 };
 
-/** At most this many Hidden pairs are named in the day line; more are given as a count. */
+/** At most this many Hidden pairs are named in the day line; with more, only the costliest is named. */
 const NAMED_MAX = 2;
 
+/** A Hidden pair as the day line names it: "Act A × Act B (#3)". */
+function namedPair(pair: HiddenDay["hidden"][number]): string {
+  return `${pair.a} × ${pair.b} (#${pair.rank})`;
+}
+
 /**
- * How many of the day's ranked clashes carry the Hidden label, as a base rate beside the definition:
- * "On this day, 5 of the 15 ranked clashes carry the Hidden label.", naming one or two pairs with their
- * rank, or "No clash on this day carries the Hidden label."
+ * How many of the day's ranked clashes carry the Hidden label, as a base rate beside the definition, always
+ * naming the day's own costliest Hidden pair, so the section's first named clash is the day on show: one or two
+ * pairs are each named with their rank ("On this day, 2 of the 15 ranked clashes carry the Hidden label: A × B
+ * (#1) and C × D (#3)."); with three or more, the count and the costliest one ("On this day, 5 of the 15 ranked
+ * clashes carry the Hidden label; the costliest is A × B (#1)."); with none, "No clash on this day carries the
+ * Hidden label." The costliest is the lowest rank, read from the ranks themselves rather than the list's order.
  */
 export function hiddenDayLine(day: HiddenDay): string {
   const count = day.hidden.length;
   if (count === 0) return "No clash on this day carries the Hidden label.";
   const of = `On this day, ${count} of the ${day.ranked} ranked clashes ${count === 1 ? "carries" : "carry"} the Hidden label`;
-  if (count > NAMED_MAX) return `${of}.`;
-  const names = day.hidden.map((pair) => `${pair.a} × ${pair.b} (#${pair.rank})`).join(" and ");
-  return `${of}: ${names}.`;
+  if (count > NAMED_MAX) {
+    const costliest = day.hidden.reduce((best, pair) => (pair.rank < best.rank ? pair : best));
+    return `${of}; the costliest is ${namedPair(costliest)}.`;
+  }
+  return `${of}: ${day.hidden.map(namedPair).join(" and ")}.`;
 }
 
 /**

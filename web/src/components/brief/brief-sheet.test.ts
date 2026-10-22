@@ -22,7 +22,6 @@ import {
   UNAVAILABLE,
   briefTarget,
   chooseBriefPreset,
-  outsideOnPaper,
   type Outcome,
 } from "./brief-sheet";
 
@@ -162,7 +161,7 @@ describe("the sheet's limits and sign-off (screen and print)", () => {
     for (const preset of [published(), invented()]) {
       for (const sheetPlan of [null, plan]) {
         const html = renderToStaticMarkup(createElement(BriefContent, { preset, day: 0, plan: sheetPlan }));
-        expect(html).toContain(`<p data-do-not-use="true" class="mt-2 font-semibold print:mt-[2pt] print:text-[9pt]">${DO_NOT_USE}</p>`);
+        expect(html).toContain(`<p data-do-not-use="true" class="mt-2 font-semibold print:mt-[1pt] print:text-[10pt] print:leading-[1.15]">${DO_NOT_USE}</p>`);
       }
     }
   });
@@ -265,7 +264,7 @@ describe("the Hidden mark (round 34, R3)", () => {
     // One in the wide table and one in the stacked rows for the tiny day's one hidden clash.
     expect(marks).toHaveLength(2);
     for (const cls of marks) {
-      expect(cls).toBe("font-semibold whitespace-nowrap text-foreground print:text-[9pt]");
+      expect(cls).toBe("font-semibold whitespace-nowrap text-foreground print:text-[9.5pt]");
       expect(cls.split(" ").filter((name) => /^(tag|ring|bg-|border|rounded|shadow)/.test(name))).toEqual([]);
     }
     // No hidden-clash ring glyph and no chip beside it: raspberry stays on shared minutes. Since round 36 the sheet
@@ -294,13 +293,13 @@ describe("the Hidden mark (round 34, R3)", () => {
   });
 });
 
-describe("the new overlap on paper (round 34, pass 1)", () => {
+describe("the new overlap on paper (round 34, pass 1; round 37, R5)", () => {
   function step(actId: string, act: string, stage: string, stageId: string, start: string, end: string, budgetAfter: number) {
     return { act, actId, move: `${act}: moved`, stage, stageId, day: 0, start, end, budgetAfter };
   }
-  // Four kept moves on the tiny day: two columns of steps, so a full sheet leaves the minutes line off paper. Cy
-  // Twombly ends on Side 20:00 to 21:00, under Ann Arbor's set on Main: 60 new minutes outside the day's one ranked
-  // clash, which Bo Diddly Squat's later set shortens from 60 to 30.
+  // Four kept moves on the tiny day: two columns of steps. Cy Twombly ends on Side 20:00 to 21:00, under Ann Arbor's
+  // set on Main: 60 new minutes outside the day's one ranked clash, which Bo Diddly Squat's later set shortens from 60
+  // to 30.
   const four: Plan = {
     publishedBudget: 112.5,
     budget: 101,
@@ -315,45 +314,44 @@ describe("the new overlap on paper (round 34, pass 1)", () => {
   };
   const one: Plan = { ...four, steps: [four.steps[2]], budget: 104 };
 
-  it("words what the plan adds outside the ranked clashes as the minutes line does, with the set named", () => {
-    expect(outsideOnPaper({ ranked: 15, before: 815, after: 800, outside: { added: 15, longest: { a: "Sprints", b: "Joy Crookes", minutes: 15 } } })).toBe(
-      "Outside the published day’s 15 ranked clashes, the plan adds 15 min of new or longer overlap (longest: Sprints × Joy Crookes, 15 min).",
+  it("words what the plan adds outside the ranked clashes in the minutes line itself, with the set named", () => {
+    expect(sharedMinutesSentence({ ranked: 15, before: 815, after: 800, outside: { added: 15, longest: { a: "Sprints", b: "Joy Crookes", minutes: 15 } } })).toContain(
+      "Outside them, the plan adds 15 min of new or longer overlap (longest: Sprints × Joy Crookes, 15 min).",
     );
-    expect(outsideOnPaper({ ranked: 1, before: 45, after: 30, outside: { added: 0, longest: null } })).toBe(
-      "Outside the published day’s one ranked clash, no overlap gets longer.",
+    expect(sharedMinutesSentence({ ranked: 1, before: 45, after: 30, outside: { added: 0, longest: null } })).toContain(
+      "Outside it, no overlap gets longer.",
     );
-    // The same claim and figures as the minutes line's second sentence: only its "them" is named.
+    // The same claim and figures whatever the plan's length: the outside clause is never said apart from its line.
     const minutes = { ranked: 6, before: 210, after: 150, outside: { added: 105, longest: { a: "Act Seven", b: "Act One", minutes: 60 } } };
-    expect(sharedMinutesSentence(minutes)).toContain(outsideOnPaper(minutes).replace("Outside the published day’s 6 ranked clashes", "Outside them"));
-    expect(outsideOnPaper(minutes)).not.toMatch(/attend|people|fans|crowd|audience|revenue|money|\$|£/i);
+    expect(sharedMinutesSentence(minutes)).toContain("Outside them, the plan adds 105 min of new or longer overlap (longest: Act Seven × Act One, 60 min).");
+    expect(sharedMinutesSentence(minutes)).not.toMatch(/attend|people|fans|crowd|audience|revenue|money|\$|£/i);
   });
 
-  it("prints it after the verdict whenever the minutes line is left off paper, and never on the screen", () => {
+  it("prints the whole minutes line, the new overlap with it, first in the plan on paper and on the screen, however long the plan", () => {
     const minutes = sharedMinutes(published(), 0, four);
     expect(minutes).toEqual({ ranked: 1, before: 60, after: 30, outside: { added: 60, longest: { a: "Cy Twombly", b: "Ann Arbor", minutes: 60 } } });
-    const line = "Outside the published day’s one ranked clash, the plan adds 60 min of new or longer overlap (longest: Cy Twombly × Ann Arbor, 60 min).";
-    expect(outsideOnPaper(minutes!)).toBe(line);
-    const html = renderToStaticMarkup(createElement(BriefContent, { preset: published(), day: 0, plan: four }));
-    // The whole minutes line stays on the screen and leaves paper; the new overlap stays on paper, run on after the
-    // verdict, in the sheet's own ink, and is hidden on the screen at every width.
-    expect(html).toMatch(/<p data-shared-minutes="true" class="mt-1 print:mt-\[2pt\] print:hidden">/);
-    const clause = html.match(/<p data-new-overlap="true" class="([^"]*)">([^<]*)<\/p>/);
-    expect(clause?.[1]).toBe("hidden print:inline");
-    expect(clause?.[2]).toBe(line);
-    expect(html.indexOf("data-new-overlap")).toBeGreaterThan(html.indexOf("4 kept moves"));
-    expect(html.indexOf("data-new-overlap")).toBeLessThan(html.indexOf("data-shared-minutes"));
-    // Where the minutes line prints (one kept move, one column), it says this itself, and nothing repeats it.
-    const short = renderToStaticMarkup(createElement(BriefContent, { preset: published(), day: 0, plan: one }));
-    expect(short).toMatch(/<p data-shared-minutes="true" class="mt-1 print:mt-\[2pt\]">/);
-    expect(short).not.toContain("data-new-overlap");
-    expect(renderToStaticMarkup(createElement(BriefContent, { preset: published(), day: 0, plan: null }))).not.toContain("data-new-overlap");
+    const line =
+      "Shared minutes in the published day’s one ranked clash: 60 → 30 with your plan. Outside it, the plan adds 60 min of new or longer overlap (longest: Cy Twombly × Ann Arbor, 60 min).";
+    expect(sharedMinutesSentence(minutes!)).toBe(line);
+    for (const plan of [four, one]) {
+      const html = renderToStaticMarkup(createElement(BriefContent, { preset: published(), day: 0, plan }));
+      // Four moves in two columns and one move alike: on paper (no print:hidden), above the plan's index line.
+      const found = html.match(/<p data-shared-minutes="true" class="([^"]*)">([^<]*)<\/p>/);
+      expect(found?.[1]).toBe("mb-1 print:mb-[1pt]");
+      expect(found?.[1]).not.toContain("print:hidden");
+      expect(html.indexOf("data-shared-minutes")).toBeLessThan(html.indexOf(plan === four ? "4 kept moves" : "1 kept move"));
+      // Nothing repeats the new overlap apart from its line, on paper or on the screen.
+      expect(html).not.toContain("data-new-overlap");
+    }
+    expect(text(renderToStaticMarkup(createElement(BriefContent, { preset: published(), day: 0, plan: four })))).toContain(line);
+    expect(renderToStaticMarkup(createElement(BriefContent, { preset: published(), day: 0, plan: null }))).not.toContain("data-shared-minutes");
   });
 
-  it("sets the sheet's kicker and section heads in the sheet's own leading on paper, so the line fits the page", () => {
+  it("sets the sheet's kicker and section heads in the sheet's own size and leading on paper, so the line fits the page", () => {
     const html = renderToStaticMarkup(createElement(BriefContent, { preset: published(), day: 0, plan: four }));
     const heads = [...html.matchAll(/<h2 id="brief-[^"]*" class="([^"]*)"/g)].map((m) => m[1].split(" "));
     expect(heads.length).toBeGreaterThan(3);
-    for (const head of heads) expect(head).toEqual(expect.arrayContaining(["type-kicker", "print:text-[10pt]", "print:leading-[1.17]"]));
-    expect(html).toContain('<p class="type-kicker text-muted-foreground print:text-[9pt] print:leading-[1.17]">Clash brief · ');
+    for (const head of heads) expect(head).toEqual(expect.arrayContaining(["type-kicker", "print:text-[10pt]", "print:leading-[1.15]"]));
+    expect(html).toContain('<p class="type-kicker text-muted-foreground print:text-[10pt] print:leading-[1.15]">Clash brief · ');
   });
 });

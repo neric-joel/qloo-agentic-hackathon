@@ -233,6 +233,11 @@
   --font-mono--font-feature-settings: "tnum" 1, "lnum" 1;
   --font-heading: var(--font-sans);
 
+  /* The type floor: the smallest text role is 13px, on the 16px line the 12px role had, so a one-line label
+     keeps its box. The drawing's clock axis keeps its own size (round-34 DECISION 2.2), the one exemption. */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1rem;
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -572,7 +577,7 @@
     border-radius: var(--radius-sm);
     font-family: var(--font-sans);
     font-variant-numeric: tabular-nums;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     line-height: 1;
     text-transform: none;
@@ -589,24 +594,6 @@
   .tag-ink {
     color: var(--foreground);
   }
-}
-
-/*
- * The label word on a row of the costliest-clashes list (components/clash/clash-list.tsx marks it
- * data-clash-badge): ink for every label, Hidden included, beside its ink ring. Raspberry stays for
- * shared minutes and their cost. Outside any layer, so it holds over the row's own colour class.
- */
-[data-clash-badge] {
-  color: var(--foreground);
-}
-
-/*
- * The key's "Hidden clash" swatch (components/clash/timetable-legend.tsx marks it data-mark="hidden"):
- * an ink ring on the card, the same as the board's hidden disc it stands for. Outside any layer, so it
- * holds over the swatch's own border colour class.
- */
-span[data-mark="hidden"] {
-  border-color: var(--foreground);
 }
 
 @keyframes caret-blink {

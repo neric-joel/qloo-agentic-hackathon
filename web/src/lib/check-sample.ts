@@ -111,6 +111,18 @@ const SAMPLE_ACT_KEYS: ReadonlySet<string> = new Set(
 );
 
 /**
+ * Whether at least `share` of these names are the sample's acts, compared as the check compares names. The
+ * sample's acts are the invented example day's lineup, and the server answers a saved compare from the saved
+ * day holding most of the names sent (`share`, 0.8 there), so this says the sample's compare will be answered
+ * from the invented day. False for no names.
+ */
+export function onSampleDay(names: readonly string[], share: number): boolean {
+  if (names.length === 0) return false;
+  const on = names.filter((name) => SAMPLE_ACT_KEYS.has(normalizeName(name))).length;
+  return on >= share * names.length;
+}
+
+/**
  * Whether a grid replaced the invented sample rather than edited it: it keeps fewer than half of the
  * sample's act names. Renaming one act of the sample is an edit, not a replacement.
  */
@@ -134,8 +146,10 @@ export function removedNotice(line: string, missing: number): string {
 /**
  * After the grid text changes: drop each pair rule that came from the invented sample and names an act no
  * longer in the grid, but only when the new grid reads with no grid-level problem and replaced the sample
- * (`replacesSample`). A rule the person typed or edited is never removed here, whatever it names; an
- * unmatched one still refuses at check time and offers "Remove this rule". Pure.
+ * (`replacesSample`). An act written on a skipped line is still in the grid: a sample rule that names it is
+ * kept, and the check lists it as "Pair line {p} not checked: {act} is on a skipped line." A rule the person
+ * typed or edited is never removed here, whatever it names; an unmatched one still refuses at check time and
+ * offers "Remove this rule". Pure.
  */
 export function dropSampleRules(pairs: string, sampleRules: readonly string[], grid: string): RuleDrop {
   const sample = keepSampleRules(pairs, sampleRules);
@@ -143,7 +157,11 @@ export function dropSampleRules(pairs: string, sampleRules: readonly string[], g
   if (sample.length === 0) return unchanged;
   const parsed = parseGrid(grid);
   if (!parsed.ok || !replacesSample(parsed.sets)) return unchanged;
-  const acts = new Set(parsed.sets.map((set) => set.actKey));
+  // The acts the check reads, and the acts written on lines it skips (compared as the check compares them).
+  const acts = new Set([
+    ...parsed.sets.map((set) => set.actKey),
+    ...parsed.skipped.flatMap((item) => (item.act === null ? [] : [normalizeName(item.act)])),
+  ]);
   const left = [...sample];
   const removed: string[] = [];
   const keptLines: string[] = [];

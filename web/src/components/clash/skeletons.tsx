@@ -1,4 +1,119 @@
+import { useEffect, useLayoutEffect, type RefObject } from "react";
+
 import { cn } from "@/lib/utils";
+
+/** How many screens a waiting place may reach down from its own top, so an answer that never comes cannot grow the page without end. */
+export const HELD_ROOM_SCREENS = 3;
+
+/**
+ * How far past the screen's foot a waiting place reaches while it is on screen, as a share of the screen: the browser
+ * tells the page about a scroll a frame after it draws it, so the room keeps this much ahead of the visitor.
+ */
+export const HELD_ROOM_LEAD = 0.25;
+
+/**
+ * The height (px) a place that waits for a late answer holds (`useHeldRoom`) while its top (`top`, px from the top of
+ * the screen) is above the screen's foot (`fold`): enough to reach `HELD_ROOM_LEAD` of a screen past that foot, so
+ * whatever sits under it stays off screen and the answer can take any height without moving anything a visitor sees.
+ * It only grows (`current` is what it holds now), never past `HELD_ROOM_SCREENS` screens; a place below the screen
+ * keeps what it holds.
+ */
+export function heldRoomHeight(current: number, top: number, fold: number): number {
+  if (!(fold > 0) || top >= fold) return current;
+  return Math.max(current, Math.min(Math.ceil(fold * (1 + HELD_ROOM_LEAD) - top), HELD_ROOM_SCREENS * fold));
+}
+
+/**
+ * Whether a place keeps the room it held once its answer is in. It lets the room go when that moves nothing on screen:
+ * when all of it is off screen (`onScreen` false), or when the answer's own end (`end`, px from the top of the screen)
+ * is at or below the screen's foot (`fold`), so what sits under it stays off screen as it moves up.
+ */
+export function keepsHeldRoom({ onScreen, end, fold }: { onScreen: boolean; end: number; fold: number }): boolean {
+  return onScreen && end < fold;
+}
+
+/**
+ * The room a place keeps once its answer is in (`useHeldRoom`): what it held (`held`), cut back to reach the screen's
+ * foot (`fold`) from its top (`top`) and no further, so only room that is off screen is given back. Never more than it
+ * held.
+ */
+export function trimmedHeldRoom(held: number, top: number, fold: number): number {
+  return Math.max(0, Math.min(held, Math.ceil(fold - top)));
+}
+
+/** No least height: the room is only what `heldRoomHeight` gives. */
+const noFloor = () => 0;
+
+/** Runs before paint in the browser; a static render (the tests') never runs it. */
+const useBeforePaint = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+/**
+ * Holds room for an answer that comes late. When it goes out (`pending`, in the same commit as the press or the mount
+ * that asked for it), the element `ref` points at takes at least the `floor` its width gives (px) and the height `heldRoomHeight` gives, so
+ * what sits under it is off screen; as the visitor scrolls, it grows only while its own foot is below the screen's, so
+ * that growing moves nothing they can see. The answer, whatever its height, then moves nothing a visitor sees. Once it
+ * is in, the room is cut back to the screen's foot (`trimmedHeldRoom`) and stays until letting it go moves nothing on
+ * screen (`keepsHeldRoom`). Set as an inline min-height in the browser only, so the server's HTML is unchanged.
+ */
+export function useHeldRoom(
+  ref: RefObject<HTMLElement | null>,
+  pending: boolean,
+  floor: (width: number) => number = noFloor,
+): void {
+  useBeforePaint(() => {
+    const element = ref.current;
+    if (!element || typeof window === "undefined") return;
+    const held = () => Number.parseFloat(element.style.minHeight) || 0;
+    const hold = (next: number) => {
+      if (next !== held()) element.style.minHeight = `${next}px`;
+    };
+    if (pending) {
+      const fill = () => hold(heldRoomHeight(held(), element.getBoundingClientRect().top, window.innerHeight));
+      hold(Math.max(held(), Math.ceil(floor(window.innerWidth))));
+      fill();
+      const follow = () => {
+        if (element.getBoundingClientRect().bottom > window.innerHeight) fill();
+      };
+      window.addEventListener("scroll", follow, { passive: true });
+      window.addEventListener("resize", follow);
+      return () => {
+        window.removeEventListener("scroll", follow);
+        window.removeEventListener("resize", follow);
+      };
+    }
+    if (held() === 0) return;
+    let onScreen = true;
+    let observer: IntersectionObserver | null = null;
+    const stop = () => {
+      observer?.disconnect();
+      window.removeEventListener("scroll", check);
+      window.removeEventListener("resize", check);
+    };
+    function check() {
+      const top = element!.getBoundingClientRect().top;
+      const end = element!.lastElementChild?.getBoundingClientRect().bottom ?? top;
+      if (keepsHeldRoom({ onScreen, end, fold: window.innerHeight })) return;
+      stop();
+      element!.style.minHeight = "";
+    }
+    if (typeof IntersectionObserver !== "undefined") {
+      observer = new IntersectionObserver((entries) => {
+        const entry = entries.at(-1);
+        if (!entry) return;
+        onScreen = entry.isIntersecting;
+        check();
+      });
+      observer.observe(element);
+    }
+    window.addEventListener("scroll", check, { passive: true });
+    window.addEventListener("resize", check);
+    check();
+    // What it kept is cut back once, to reach the screen's foot and no further: the lead past the foot was only for
+    // scrolls while the answer was out, and the part it gives back is off screen.
+    if (element.style.minHeight !== "") hold(trimmedHeldRoom(held(), element.getBoundingClientRect().top, window.innerHeight));
+    return stop;
+  }, [ref, pending, floor]);
+}
 
 /**
  * A placeholder: the muted step of the ladder, a 6px-cornered bar like every bar and track, or a 10px tile. It

@@ -149,22 +149,22 @@ export const METHOD_FIGURES = {
     gapInterval: [-0.098, 0.254],
   },
   /**
-   * Taste inside the full price: a second exploratory follow-up on the same 68 complained-about pairs, from scripts in the
+   * Taste inside the pair score: a second exploratory follow-up on the same 68 complained-about pairs, from scripts in the
    * entry's private backtest folder (not in this repository; saved data only, no request sent), run after the gate
    * failed. Every AUC is pooled over the festival days with the same within-day ranks as the table above; every
    * interval is 95%.
    *
-   * - fullPrice: the price this app uses (taste overlap x share of the shorter set shared x combined draw x rarity
+   * - fullPrice: the pair score this app uses (taste overlap x share of the shorter set shared x combined draw x rarity
    *   factor, which is 1 here), interval by resampling whole festival days.
-   * - pairedVsPopularity: full price minus popularity, same resample for both.
-   * - shuffled: the full price with taste overlap dealt out at random among each day's pairs, `shuffles` times: the
+   * - pairedVsPopularity: pair score minus popularity, same resample for both.
+   * - shuffled: the pair score with taste overlap dealt out at random among each day's pairs, `shuffles` times: the
    *   mean and the middle 95% of the shuffles (a range of shuffles, not an interval).
-   * - tasteRemoved: the same price with taste overlap held the same for every pair, so only shared time and draw
+   * - tasteRemoved: the same score with taste overlap held the same for every pair, so only shared time and draw
    *   are left.
-   * - pairedVsTasteRemoved: full price minus the taste-removed price, resampled by festival day.
+   * - pairedVsTasteRemoved: pair score minus the taste-removed score, resampled by festival day.
    * - festivals: AUCs by festival, Glastonbury against the four US festivals pooled; Riot Fest (one of the four)
    *   has too few complaints to read alone, so the page prints its counts only.
-   * - glastonburyTasteAdds / usTasteAdds: full price minus taste-removed price at Glastonbury (resampled by
+   * - glastonburyTasteAdds / usTasteAdds: pair score minus taste-removed score at Glastonbury (resampled by
    *   complaint, since it has three days) and over the four US festivals (resampled by festival day).
    * - locationRequests: what re-asking the US festival days' audience rankings with each festival's city would
    *   cost (one request per usable act per day; nothing was sent).
@@ -198,14 +198,14 @@ export const METHOD_FIGURES = {
      * Where the two rankings disagree, in aggregate only (the pair-level table stays in the private folder):
      * complained-about pairs that taste overlap puts in their day's top quarter (within-day percentile 0.75 or more)
      * while popularity puts them in the bottom half (under 0.5), out of the 68 complained-about pairs, the complaint clusters
-     * they come from, and how many of them are also in the top quarter on time and draw (the taste-removed price).
+     * they come from, and how many of them are also in the top quarter on time and draw (the taste-removed score).
      */
     tasteOverPopularity: { pairs: 4, ofPairs: 68, clusters: 2, alsoTopOnTimeAndDraw: 4 },
   },
   /**
    * A replication test that has not been run: held-out bills that do not exist yet (`billsYear`, the same
-   * festivals), scored before any complaint is collected, with the paired difference (full price minus the
-   * taste-removed price) counted a success only if its interval lies above `successAbove`.
+   * festivals), scored before any complaint is collected, with the paired difference (pair score minus the
+   * taste-removed score) counted a success only if its interval lies above `successAbove`.
    */
   replication: { billsYear: 2027, successAbove: 0 },
   coverage: {
@@ -245,6 +245,41 @@ export const METHOD_FIGURES = {
     /** Requests one live re-check sends to Qloo: an audience ranking for each act and one comparison. */
     requests: 3,
   },
+  /**
+   * What the number of compare tags means (round 37, L60). This app keeps at most `tagCap` shared tags per compared
+   * pair, after keeping only genre, subgenre and theme tags (`TAG_TAKE = 8` in backend/app/pair.py;
+   * `shared_taste(..., take=8)` in backend/app/qloo/overlap.py). Counted on 21 Oct 2026 by count-tag-cap.mjs (lane
+   * evidence, round 37; kept in the entry's private critique folder, _private/critique/round-37/build/evidence/, not
+   * in this repository), GET only against the local API, over both published presets' saved compare tags, each
+   * unordered pair of Qloo entity ids counted once: `savedPairs` distinct pairs hold at least one tag and `fullPairs`
+   * of them hold all 8; none holds more. The samples, named as they are: the Glastonbury 2025 Sunday receipts (14
+   * pairs with tags, 10 full; the headline pair's receipt holds none) and the eight hidden-clash examples saved with
+   * that preset (8 pairs, 7 full), six from other festivals (Lollapalooza 2026, Outside Lands 2026, Coachella 2026
+   * weekend 1), one from the Glastonbury 2025 Saturday and one from the published Sunday. Riot Fest saved no compare
+   * tags. No median: with a cap of 8 it would be the cap, not a property of the pairs.
+   */
+  compareTags: { tagCap: 8, savedPairs: 22, fullPairs: 17 },
+  /**
+   * The acts Qloo has no usable signal for on the two published days (round 37, L38), read with GET from
+   * /api/presets/glastonbury-2025-sun and /api/presets/riot-fest-2026-sun on 21 Oct 2026 (`report.coverage.unscored`,
+   * reason `no_signal`: each was searched, status 200, and no entity was kept). For each day, one of their overlaps
+   * with a set on another stage, the longest (Glastonbury has two of 60 min; this is the one the ledger names).
+   * Neither preset's `report.clashes` holds a pair with any of them, and the drawing draws its lines from those
+   * clashes, so their overlaps are left out of the score and get no line. No claim about their places in the day:
+   * Abel Selaocoe & the Bantu Ensemble is second on West Holts, and William Shatner plays 17:25 on Rebel.
+   */
+  noSignal: [
+    {
+      festival: "Glastonbury",
+      acts: ["Thandii", "Abel Selaocoe & the Bantu Ensemble", "Westside Cowboy"],
+      example: { acts: ["Abel Selaocoe & the Bantu Ensemble", "Gurriers"], minutes: 60 },
+    },
+    {
+      festival: "Riot Fest",
+      acts: ["Largemouth", "William Shatner", "Rose of Demise"],
+      example: { acts: ["The Format", "William Shatner"], minutes: 35 },
+    },
+  ],
   /**
    * Qloo's artist-to-artist affinity read in both directions, over every saved backtest answer whose
    * reverse is also saved: affinity(A for B's audience) against affinity(B for A's audience).
@@ -336,9 +371,9 @@ export function formatDiffInterval([low, high]: readonly [number, number]): stri
 }
 
 /**
- * What the taste-inside-the-price figures say, read from the figures so the page can never contradict them: whether
- * the interval of the full price minus the taste-removed price holds zero (then the check did not establish that
- * taste adds to time and draw), and the same for the full price minus popularity.
+ * What the taste-inside-the-score figures say, read from the figures so the page can never contradict them: whether
+ * the interval of the pair score minus the taste-removed score holds zero (then the check did not establish that
+ * taste adds to time and draw), and the same for the pair score minus popularity.
  */
 export function tasteInPriceReading(
   figures: {
@@ -374,6 +409,44 @@ export function disagreementSentence(
       ? `all ${pairs} were also in the top quarter on time and draw`
       : `${alsoTopOnTimeAndDraw} of the ${pairs} were also in the top quarter on time and draw`;
   return `Complained-about clashes that taste overlap put in their day’s top quarter while popularity put them in the bottom half: ${pairs} of ${ofPairs}, from ${clusters} complaint ${clusters === 1 ? "cluster" : "clusters"}; ${also}.`;
+}
+
+/**
+ * What the number of compare tags means (round 37, L60), in the round's words, with the cap and the counts from the
+ * figures: "This app keeps at most 8 shared genre, subgenre or theme tags per compared pair, and 17 of the 22 saved
+ * pairs fill all 8, so the number of tags is not a measure of overlap; read them as examples."
+ */
+export function tagCapSentence(
+  figures: { readonly tagCap: number; readonly savedPairs: number; readonly fullPairs: number } = METHOD_FIGURES.compareTags,
+): string {
+  const { tagCap, savedPairs, fullPairs } = figures;
+  return `This app keeps at most ${tagCap} shared genre, subgenre or theme tags per compared pair, and ${fullPairs} of the ${savedPairs} saved pairs fill all ${tagCap}, so the number of tags is not a measure of overlap; read them as examples.`;
+}
+
+/** "A, B and C": names in running text, with "and" before the last. */
+function andList(names: readonly string[]): string {
+  if (names.length < 2) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+type NoSignalDay = {
+  readonly festival: string;
+  readonly acts: readonly string[];
+  readonly example: { readonly acts: readonly [string, string] | readonly string[]; readonly minutes: number };
+};
+
+/**
+ * The acts with no usable Qloo signal on the published days, and what happens to their overlaps (round 37, L38):
+ * names, one example overlap per day and the minutes from the figures; no claim about where they sit in the day.
+ */
+export function noSignalSentence(days: readonly NoSignalDay[] = METHOD_FIGURES.noSignal): string {
+  const total = days.reduce((sum, day) => sum + day.acts.length, 0);
+  const who = days.map((day) => `${andList(day.acts)} at ${day.festival}`);
+  const examples = days.map((day) => `${day.example.acts.join(" × ")} (${day.example.minutes} min)`);
+  return (
+    `Qloo has no usable signal for ${numberWord(total)} ${total === 1 ? "act" : "acts"} on the two published days: ${who.join(", and ")}. ` +
+    `Their overlaps, such as ${andList(examples)}, are left out, not scored as zero, and drawn with no line.`
+  );
 }
 
 /** "18,762": a count with thousands separators. */

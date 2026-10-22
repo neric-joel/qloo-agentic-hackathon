@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 
 import { noSignalLabel } from "@/lib/credit";
 import { formatDraw, partnerOf, type SetView } from "@/lib/clashes";
+import { lockLabel } from "@/lib/locks";
 import type { PairClash } from "@/lib/preset";
 import { formatClock, formatRange } from "@/lib/timetable";
 
@@ -76,16 +77,18 @@ export function TimetableList({ views, dayLabel, onOpen, synthetic = false, clas
                       >
                         {view.act.name}
                       </p>
-                      {view.slot.locked ? (
-                        <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold">
-                          <Lock aria-hidden="true" className="size-3" />
-                          Locked
-                        </span>
-                      ) : null}
                     </div>
                     <p className="mt-1 font-mono text-xs text-muted-foreground tabular-nums">
                       {formatRange(view.slot)} · {view.stage.name}
                     </p>
+                    {/* Whose lock it is, on its own line so the name keeps the card's full width: the board
+                        tile's words ("Locked by this app: kept in place"; the invented day's own sentence). */}
+                    {view.slot.locked ? (
+                      <p className="mt-0.5 flex items-center gap-1 text-xs font-semibold">
+                        <Lock aria-hidden="true" className="size-3 shrink-0" />
+                        {lockLabel({ synthetic, holds: false }).replace(/\.$/, "")}
+                      </p>
+                    ) : null}
                     {meta(view) ? <p className="mt-0.5 text-xs text-muted-foreground">{meta(view)}</p> : null}
                     {none ? (
                       <p className="mt-1.5 text-xs font-semibold text-muted-foreground">{noSignalLabel(synthetic)}, not scored</p>

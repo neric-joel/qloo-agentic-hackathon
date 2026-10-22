@@ -6,6 +6,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { topClashes } from "@/lib/clashes";
+import { buildDayGraph, drawingHeight, sideEffectText, type DayGraphModel } from "@/lib/day-graph";
+import type { Decision } from "@/lib/decision";
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
 import { mockPreset } from "@/lib/mock-preset";
 import { startingSets, type MovesResult, type PlacedOption } from "@/lib/moves";
@@ -17,22 +19,29 @@ import { formatClock } from "@/lib/timetable";
 import {
   BestPlaceColumn,
   MovesCard,
-  RULES_CHECKED,
+  PlacesRoom,
   START_WITH,
   TestedPlace,
   TryAMove,
   bestPlace,
+  dayRules,
+  heldHeight,
   listedLead,
+  mayGrowOutside,
   nextLabel,
   placeChanges,
+  placeDrawing,
+  rulesChecked,
   starterPairsOf,
   stripDomain,
+  testedDecision,
+  testedDrawing,
   type CardMove,
-  type MoveStripData,
   type PlaceChanges,
+  type PlaceRoom,
 } from "./try-a-move";
 import { scaleRange } from "./budget-move";
-import { clashParts, clashWords, listedPlace, moveCheck, sharedMinutesByName, splitKept, type MoveCheck } from "./use-moves";
+import { MOVES_LIMIT, clashParts, clashWords, listedPlace, moveCheck, sharedMinutesByName, splitKept, type MoveCheck } from "./use-moves";
 import { ChangeCard, SAME_STAGE_FIRST, STAGE_SIGN_OFF, sameStageFirst } from "./keep-apart";
 import { ScratchPlan } from "./scratch-plan";
 import { ClashList, bothLockedLabel, lockedShareLine } from "./clash-list";
@@ -81,6 +90,9 @@ const result: MovesResult = {
 
 const card: CardMove = { move, receipt: "Sprints and Katy J Pearson share 30 minutes after this plan." };
 
+/** The rules sentence Try a move passes its cards for the tiny fixture's day (`rulesChecked`). */
+const RULES = rulesChecked(parsePreset(rawTinyPreset())!, 0);
+
 function render(check: MoveCheck | null, changes: PlaceChanges = { ends: [{ name: "Wet Leg", points: 1.2 }], adds: [], keeps: [{ name: "Katy J Pearson", now: 3.4, after: 2.1 }] }) {
   return renderToStaticMarkup(
     createElement(TestedPlace, {
@@ -89,12 +101,13 @@ function render(check: MoveCheck | null, changes: PlaceChanges = { ends: [{ name
       stage: "Woodsies",
       end: "15:15",
       minutes: { partner: "Katy J Pearson", before: 45, after: 30 },
-      strip: null,
+      drawing: null,
       check,
       changes: check?.status === "ready" ? changes : null,
       keepFull: false,
       onKeep: () => {},
       onShowAll: () => {},
+      rules: RULES,
     }),
   );
 }
@@ -105,7 +118,7 @@ describe("the tested place's verdict before Keep this move", () => {
     expect(check.status).toBe("ready");
     const html = render(check);
     const words = text(html);
-    // (a) the Clash Budget Index before and after, in mono, with the signed change.
+    // (a) the Clash Budget Index before and after, in tabular figures, with the signed change.
     expect(words).toContain("Index 41.2 → 38.8 (−2.4, lower is better)");
     // Both readings are ink: the from-value is not muted, so it never reads as disabled.
     expect(html).toMatch(/<span class="font-mono tabular-nums"><span>41\.2<\/span> →/);
@@ -113,7 +126,7 @@ describe("the tested place's verdict before Keep this move", () => {
     // "Listed clashes of {mover} (its three costliest, as scored):" (the endpoint's lists stop at three, and the
     // line says so), the clashes it keeps (their minutes unread here), adds and removes, added and removed
     // always. A kept part still prints.
-    expect(words).toContain(`Adds no rule break. ${RULES_CHECKED}`);
+    expect(words).toContain(`Adds no rule break. ${RULES}`);
     expect(words).toContain(`Listed clashes of ${result.act} (its three costliest, as scored): 1 kept, 0 added, 1 removed.`);
     expect(words.indexOf("Adds no rule break.")).toBeLessThan(words.indexOf("Listed clashes of"));
     // The prefix is muted; the counts after it are not.
@@ -167,7 +180,7 @@ describe("the tested place's verdict before Keep this move", () => {
       { status: "ready", result, option },
       { ends: [], adds: [], keeps: [] },
     );
-    expect(text(html)).toContain(`Adds no rule break. ${RULES_CHECKED}`);
+    expect(text(html)).toContain(`Adds no rule break. ${RULES}`);
     expect(text(html)).toContain(`Listed clashes of ${result.act} (its three costliest, as scored): 0 added, 0 removed.`);
     const withCard = renderToStaticMarkup(
       createElement(TestedPlace, {
@@ -176,12 +189,13 @@ describe("the tested place's verdict before Keep this move", () => {
         stage: "Woodsies",
         end: "15:15",
         minutes: null,
-        strip: null,
+        drawing: null,
         check: null,
         changes: null,
         keepFull: false,
         onKeep: () => {},
         onShowAll: () => {},
+        rules: RULES,
       }),
     );
     expect(text(withCard)).toContain("Index 41.2 → 38.8");
@@ -202,12 +216,13 @@ describe("the tested place's verdict before Keep this move", () => {
         stage: "Woodsies",
         end: "15:15",
         minutes: null,
-        strip: null,
+        drawing: null,
         check: null,
         changes: null,
         keepFull: false,
         onKeep: () => {},
         onShowAll: () => {},
+        rules: RULES,
       }),
     );
     const plain = /<p data-dateline="true"[^>]*>([\s\S]*?)<\/p>/.exec(unnamed)?.[1] ?? "";
@@ -216,37 +231,65 @@ describe("the tested place's verdict before Keep this move", () => {
   });
 });
 
-describe("the tested-move card's actions and strip", () => {
-  const strip: MoveStripData = {
-    now: { start: 840, end: 900 },
-    tested: { start: 855, end: 915 },
-    partner: { start: 840, end: 885 },
-    moverName: "Sprints",
-    partnerName: "Katy J Pearson",
-    nowStage: "Woodsies",
-    testedStage: "Woodsies",
-    partnerStage: "Park",
+describe("the tested-move card's actions and its drawing (round 37, L21)", () => {
+  // Every name, time and figure here is invented (the tiny fixture festival): Bo Diddly Squat plays Side 20:30–22:00
+  // and shares 60 min with Ann Arbor (Main 20:00–21:30), the day's one ranked clash.
+  const tiny = parsePreset(rawTinyPreset())!;
+  const place = (start: string, end: string, after: number | null = 100.1, extra: Partial<PlacedOption> = {}): PlacedOption => ({
+    move: `Bo Diddly Squat: Side 20:30-22:00 -> Side ${start}-${end}`,
+    stage: "Side",
+    start,
+    after,
+    stageId: "side",
+    end,
+    day: 0,
+    clashesAfter: [],
+    ...extra,
+  });
+  const bo: MovesResult = {
+    act: "Bo Diddly Squat",
+    actId: "bo",
+    from: "Side 20:30-22:00",
+    movable: true,
+    why: null,
+    before: 104.2,
+    legalPlaces: 2,
+    priced: true,
+    clashesNow: [{ name: "Ann Arbor", points: 3 }],
+    options: [place("21:00", "22:30"), place("22:05", "23:35", 101)],
   };
-  function withStrip(): string {
+  const pairs = [{ aId: "ann", bId: "bo" }];
+  const later = testedDrawing(tiny, tiny.festival.timetable, { result: bo, option: bo.options[0] }, "ann")!;
+
+  function card(drawing: DayGraphModel | null): string {
     return renderToStaticMarkup(
       createElement(TestedPlace, {
-        card,
-        mover: strip.moverName,
-        stage: "Woodsies",
-        end: "15:15",
-        minutes: { partner: "Katy J Pearson", before: 45, after: 30 },
-        strip,
+        card: { move: { actId: "bo", stageId: "side", day: 0, start: "21:00" }, receipt: "" },
+        mover: "Bo Diddly Squat",
+        stage: "Side",
+        end: "22:30",
+        minutes: { partner: "Ann Arbor", before: 60, after: 30 },
+        drawing,
         check: null,
         changes: null,
         keepFull: false,
         onKeep: () => {},
         onShowAll: () => {},
+        rules: RULES,
       }),
     );
   }
+  const titleOf = (html: string) => {
+    const id = /<div data-day-graph="" data-view="moved" role="group" aria-labelledby="([^"]+)"/.exec(html)?.[1] ?? "";
+    return id ? text(new RegExp(`<p id="${id}"[^>]*>([^<]*)</p>`).exec(html)?.[1] ?? "") : "";
+  };
+  const descOf = (html: string) => {
+    const id = /<div data-day-graph=""[^>]*aria-describedby="([^"]+)"/.exec(html)?.[1] ?? "";
+    return id ? text(new RegExp(`<p id="${id}"[^>]*>([^<]*)</p>`).exec(html)?.[1] ?? "") : "";
+  };
 
   it("keeps 'Keep this move' word for word as the one ink action, with no check icon, and 'Show every legal place' ruled", () => {
-    const html = withStrip();
+    const html = card(later);
     const keep = html.match(/<button[^>]*>[^]*?<\/button>/g)!.find((button) => button.includes("Keep this move"))!;
     expect(keep).toMatch(/data-variant="default"/);
     expect(keep).not.toContain("<svg");
@@ -256,46 +299,216 @@ describe("the tested-move card's actions and strip", () => {
     expect(all).toMatch(/data-variant="ruled"/);
   });
 
-  it("draws the hero's pair strip: the staying set solid, and hatches only the open bars, where they share time with it", () => {
-    const html = withStrip();
-    const strip = /<div data-move-strip="true" class="mt-5 min-w-0">([\s\S]*)$/.exec(html)?.[1] ?? "";
-    expect(strip).toMatch(/^<div data-pair-strip="" class="min-w-0"><div aria-hidden="true"/);
-    const bars = [...html.matchAll(/<svg data-strip-bar="(staying|now|tested)"[^]*?<\/svg>/g)];
-    expect(bars.map((bar) => bar[1])).toEqual(["staying", "now", "tested"]);
-    const [solid, open, tested] = bars.map((bar) => bar[0]);
-    // The solid ink bar: one fill, never hatched, cut or clipped.
-    expect(solid).toContain('fill="var(--foreground)"');
-    expect(solid).not.toContain("url(#");
-    expect(solid).not.toContain("clip-path");
-    expect(solid).not.toContain("var(--primary)");
-    // One hatch for the whole strip, the 16 px one from marks.tsx.
-    expect(html.match(/<pattern/g)).toHaveLength(1);
-    expect(html).toMatch(/<pattern id="cc-overlap-[^"]*" patternUnits="userSpaceOnUse" width="16" height="16"/);
-    // Each open bar: its card fill, the window (clipped hatch and cuts), then the 1.5px ink outline last.
-    for (const bar of [open, tested]) {
-      expect(bar).toMatch(/<g clip-path="url\(#cc-overlap-[^"]*\)">/);
-      const fill = bar.indexOf('fill="var(--card)"');
-      const window = bar.indexOf("clip-path=");
-      const outline = bar.lastIndexOf('stroke="var(--foreground)" stroke-width="1.5"');
-      expect(fill).toBeGreaterThan(-1);
-      expect(window).toBeGreaterThan(fill);
-      expect(outline).toBeGreaterThan(window);
-    }
-    // Only the tested place is dashed: dashed always means tested.
-    expect(open).not.toContain("stroke-dasharray");
-    expect(tested).toContain('stroke-dasharray="4 3"');
-    // Each open bar's bracket and its minutes, in vermilion mono.
-    const minutes = [...html.matchAll(/<p data-strip-minutes=""[^>]*class="([^"]*)"[^>]*>([^<]*)<\/p>/g)];
-    expect(minutes.map((m) => m[2])).toEqual(["45 min shared", "30 min shared"]);
-    for (const m of minutes) expect(m[1]).toMatch(/font-mono text-\[0\.8125rem\][^"]*text-primary/);
-    // No wash, no opacity, no HTML hatch layer.
-    expect(html).not.toMatch(/fill-opacity|stroke-opacity|opacity="/);
-    // Labels: the act, then its meta muted. The place line above prints the stage and tested time once, so
-    // the lanes say only "Now" and "Tested" (and the partner's stage).
-    const labels = [...html.matchAll(/<p class="min-w-0 text-\[0\.8125rem\][^"]*"><span>([^<]*)<\/span><span class="text-xs leading-4 font-normal text-muted-foreground"><span class="sm:hidden"> · <\/span>([^<]*)<\/span><\/p>/g)].map((m) => `${m[1]} · ${m[2]}`);
-    expect(labels).toEqual(["Katy J Pearson · Park", "Sprints · Now", "Sprints · Tested"]);
-    expect(text(html).match(/14:15–15:15/g)).toHaveLength(1);
-    expect(text(html).match(/Woodsies/g)).toHaveLength(1);
+  it("builds the tested place as a decision from the engine's place and the timetable only", () => {
+    const decision = testedDecision(tiny, tiny.festival.timetable, { result: bo, option: bo.options[0] }, "ann")!;
+    // The clash is the set and its partner; the move is the engine's place for the set, on its own stage.
+    expect(decision.day).toBe(0);
+    expect(decision.clash).toEqual({ aId: "bo", bId: "ann", rank: 1, minutes: 60 });
+    expect(decision.move).toMatchObject({
+      actId: "bo",
+      act: "Bo Diddly Squat",
+      from: "Side 20:30-22:00",
+      stageId: "side",
+      stage: "Side",
+      day: 0,
+      start: "21:00",
+      end: "22:30",
+      minutesMoved: 30,
+      legalPlaces: 2,
+      stageChanged: false,
+      budgetAfter: 100.1,
+      minutesSharedAfter: 30,
+      alternative: null,
+      flagsNow: null,
+      flagsAfter: null,
+      costliestAfter: undefined,
+    });
+    expect(decision.rule).toBeNull();
+    expect(decision.ruleChange).toBeNull();
+    expect(decision.publishedBudget).toBeNull();
+    // A place on another stage says so; an unpriced place and an unranked pair carry no figure, not a default.
+    const elsewhere = testedDecision(tiny, tiny.festival.timetable, { result: bo, option: place("21:00", "22:30", null, { stageId: "main", stage: "Main" }) }, "ann")!;
+    expect(elsewhere.move?.stageChanged).toBe(true);
+    expect(elsewhere.move?.budgetAfter).toBeNaN();
+    const unranked = testedDecision(tiny, tiny.festival.timetable, { result: bo, option: bo.options[0] }, "cy")!;
+    expect(unranked.clash?.rank).toBeNaN();
+    // Nothing for a place on another day, a partner or set not on the timetable, or times that do not read.
+    expect(testedDecision(tiny, tiny.festival.timetable, { result: bo, option: { ...bo.options[0], day: 1 } }, "ann")).toBeNull();
+    expect(testedDecision(tiny, tiny.festival.timetable, { result: bo, option: bo.options[0] }, "nobody")).toBeNull();
+    expect(testedDecision(tiny, tiny.festival.timetable, { result: { ...bo, actId: "nobody" }, option: bo.options[0] }, "ann")).toBeNull();
+    expect(testedDecision(tiny, tiny.festival.timetable, { result: bo, option: { ...bo.options[0], start: "late" } }, "ann")).toBeNull();
+  });
+
+  it("draws every figure from the place and the timetable: the fields the drawing never reads change nothing", () => {
+    const decision = testedDecision(tiny, tiny.festival.timetable, { result: bo, option: bo.options[0] }, "ann")!;
+    expect(later).toEqual(buildDayGraph(tiny, decision, 0));
+    const scrambled: Decision = {
+      ...decision,
+      skippedLocked: 9,
+      skippedNoPlace: 9,
+      publishedBudget: 1,
+      clash: { ...decision.clash!, rank: 99, minutes: 999 },
+      move: { ...decision.move!, act: "Someone Else", from: "Nowhere 00:00-01:00", minutesMoved: 999, legalPlaces: 999, budgetAfter: 1, minutesSharedAfter: 999 },
+    };
+    expect(buildDayGraph(tiny, scrambled, 0)).toEqual(later);
+    // The drawing's move: Bo from Side 20:30–22:00 to Side 21:00–22:30, 60 → 30 min shared with Ann Arbor.
+    expect(later.move).toMatchObject({
+      actId: "bo",
+      partnerId: "ann",
+      partnerName: "Ann Arbor",
+      from: { start: 1230, end: 1320 },
+      to: { start: 1260, end: 1350 },
+      stageChanged: false,
+      minutesBefore: 60,
+      minutesAfter: 30,
+      label: "Bo Diddly Squat 30 min later",
+    });
+    // A place that ends the overlap is drawn too; a partner it shares no time with now gives no drawing.
+    const apart = testedDrawing(tiny, tiny.festival.timetable, { result: bo, option: bo.options[1] }, "ann")!;
+    expect(apart.move).toMatchObject({ minutesBefore: 60, minutesAfter: 0, sharedAfter: null, label: "Bo Diddly Squat 95 min later" });
+    expect(testedDrawing(tiny, tiny.festival.timetable, { result: bo, option: bo.options[0] }, "cy")).toBeNull();
+  });
+
+  it("draws the day on the plan's timetable, the one the place's lines read", () => {
+    // A kept move put Cy Twombly at Side 18:00–19:00: the drawing has Cy there, as the lists do.
+    const plan = applyMoves(tiny.festival.timetable, [{ actId: "cy", stageId: "side", day: 0, start: "18:00" }]);
+    const drawn = testedDrawing(tiny, plan, { result: bo, option: bo.options[0] }, "ann")!;
+    expect(drawn.sets.find((set) => set.actId === "cy")).toMatchObject({ start: 1080, end: 1140 });
+    expect(later.sets.find((set) => set.actId === "cy")).toMatchObject({ start: 1000, end: 1060 });
+  });
+
+  it("replaces the before/after strip with the hero's drawing of the tested place, short layout, after the lines and before the actions", () => {
+    const html = card(later);
+    expect(html).not.toContain("data-move-strip");
+    expect(html).not.toContain("data-pair-strip");
+    expect(html.match(/<div data-day-graph=""/g)).toHaveLength(1);
+    // Its frame: the drawing's own group with its title and description, in the moved view.
+    expect(html).toMatch(/<div data-tested-drawing="true" class="mt-5 min-w-0"><div data-day-graph="" data-view="moved" role="group" aria-labelledby="[^"]+" aria-describedby="[^"]+"/);
+    expect(titleOf(html)).toBe("Tiny Fest, Saturday, drawn with Bo Diddly Squat 30 min later: 3 sets on 2 stages");
+    expect(descOf(html)).toContain("Bo Diddly Squat 30 min later.");
+    expect(descOf(html)).toContain(sideEffectText(later.move!));
+    // Only the short layout, with no viewport class hiding it, so it shows at every width.
+    expect(html).toMatch(/data-layout="short" class="relative" style="height:\d+px"/);
+    expect(html).not.toMatch(/data-layout="(desktop|phone)"/);
+    // Its tag: the minutes still shared with the partner, as the large line above says them.
+    expect(html).toContain("30 min shared");
+    expect(text(html)).toContain("60 → 30 min shared with Ann Arbor");
+    // Under the rule status and the lists, over the one hairline above the actions.
+    expect(html.indexOf("data-place-verdict")).toBeLessThan(html.indexOf("data-tested-drawing"));
+    expect(html.indexOf("data-tested-drawing")).toBeLessThan(html.indexOf("data-actions-rule"));
+    // With no drawing passed (the card's own move: the hero draws it), none is drawn.
+    expect(card(null)).not.toContain("data-day-graph");
+  });
+
+  it("draws a picked set's best place in the right column and each place chosen in the full list, a new frame per place", () => {
+    const best = bestPlace(bo, tiny, tiny.festival.timetable, pairs)!;
+    expect(best.drawing).toEqual(later);
+    const column = renderToStaticMarkup(
+      createElement(BestPlaceColumn, {
+        status: "ready",
+        result: bo,
+        best,
+        pickedName: "Bo Diddly Squat",
+        synthetic: false,
+        keepFull: false,
+        onKeep: () => {},
+        open: false,
+        controls: "every-place",
+        onToggle: () => {},
+        rules: RULES,
+      }),
+    );
+    expect(titleOf(column)).toBe("Tiny Fest, Saturday, drawn with Bo Diddly Squat 30 min later: 3 sets on 2 stages");
+    const list = (option: PlacedOption) =>
+      renderToStaticMarkup(
+        createElement(MovesCard, {
+          result: bo,
+          preset: tiny,
+          timetable: tiny.festival.timetable,
+          kept: 0,
+          range: scaleRange(tiny.report.baseline),
+          chosen: option,
+          keep: { full: false, onKeep: () => {} },
+          onChoose: () => {},
+          rules: RULES,
+          drawing: placeDrawing(bo, option, tiny, tiny.festival.timetable, pairs),
+        }),
+      );
+    const first = list(bo.options[0]);
+    const second = list(bo.options[1]);
+    expect(titleOf(first)).toBe("Tiny Fest, Saturday, drawn with Bo Diddly Squat 30 min later: 3 sets on 2 stages");
+    expect(titleOf(second)).toBe("Tiny Fest, Saturday, drawn with Bo Diddly Squat 95 min later: 3 sets on 2 stages");
+    expect(descOf(second)).toContain(sideEffectText(placeDrawing(bo, bo.options[1], tiny, tiny.festival.timetable, pairs)!.move!));
+    // The drawing follows the place's lines, before the hairline over Keep this move.
+    expect(first.indexOf("data-tested-drawing")).toBeGreaterThan(first.indexOf("data-rules-line"));
+    // Without a drawing the list draws none.
+    expect(
+      renderToStaticMarkup(
+        createElement(MovesCard, {
+          result: bo,
+          preset: tiny,
+          timetable: tiny.festival.timetable,
+          kept: 0,
+          range: scaleRange(tiny.report.baseline),
+          chosen: bo.options[0],
+          keep: { full: false, onKeep: () => {} },
+          onChoose: () => {},
+          rules: RULES,
+        }),
+      ),
+    ).not.toContain("data-day-graph");
+    // Two drawings on one page share no id (each takes its ids from its own useId).
+    const page = renderToStaticMarkup(
+      createElement(
+        "div",
+        null,
+        createElement(BestPlaceColumn, {
+          status: "ready",
+          result: bo,
+          best,
+          pickedName: "Bo Diddly Squat",
+          synthetic: false,
+          keepFull: false,
+          onKeep: () => {},
+          open: true,
+          controls: "every-place",
+          onToggle: () => {},
+          rules: RULES,
+        }),
+        createElement(MovesCard, {
+          result: bo,
+          preset: tiny,
+          timetable: tiny.festival.timetable,
+          kept: 0,
+          range: scaleRange(tiny.report.baseline),
+          chosen: bo.options[1],
+          keep: { full: false, onKeep: () => {} },
+          onChoose: () => {},
+          rules: RULES,
+          drawing: placeDrawing(bo, bo.options[1], tiny, tiny.festival.timetable, pairs),
+        }),
+      ),
+    );
+    expect(page.match(/<div data-day-graph=""/g)).toHaveLength(2);
+    const ids = [...page.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
+    expect(ids.length).toBeGreaterThan(4);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("wires the drawing in the source: keyed by the place, the moved view, the short layout, no flight; the card's own move draws none", () => {
+    const source = readFileSync(join(__dirname, "try-a-move.tsx"), "utf8");
+    expect(source).toContain(
+      '<DayGraph key={`${model.presetId}|${model.day}|${place}`} model={model} view="moved" layout="short" />',
+    );
+    // No settle callback and no view change: a new place mounts a new frame, drawn at once.
+    expect(source).not.toMatch(/<DayGraph[^>]*onSettled/);
+    expect(source).not.toMatch(/<DayGraph[^>]*view="published"/);
+    expect(source.match(/<TestedDrawing model=\{drawing\} \/>/g)).toHaveLength(2);
+    expect(source.match(/^\s+drawing=\{null\}$/gm)).toHaveLength(1);
+    expect(source).toContain("drawing={best.drawing}");
+    expect(source).toContain("drawing={chosenDrawing}");
+    expect(source).not.toContain("PairStrip");
+    expect(source).not.toContain("MoveStrip");
   });
 });
 
@@ -363,7 +576,7 @@ describe("Try a move's picker", () => {
         expect(row).toMatch(/<span data-start-name="true" class="block text-\[0\.9375rem\] leading-snug font-semibold break-words">/);
         const meta = /<span data-start-meta="true" class="[^"]*">((?:[^<]|<span[^>]*>[^<]*<\/span>)*)<\/span>/.exec(row);
         if (meta) expect(text(meta[1])).not.toMatch(/ min|with/);
-        // No inline swatch: the minutes carry shared time, in 13px mono vermilion, then the set they are
+        // No inline swatch: the minutes carry shared time, in 13px raspberry tabular figures, then the set they are
         // shared with, by name; the list never says "min shared".
         expect(row).not.toContain('viewBox="0 0 40 12"');
         expect(row).not.toContain("<pattern");
@@ -490,7 +703,7 @@ describe("the clashes line tells a shorter clash from an unchanged one", () => {
 
   it("prints the row on the tested place in that order", () => {
     const html = render({ status: "ready", result, option }, { ...changes, shared });
-    expect(text(html)).toContain(`Adds no rule break. ${RULES_CHECKED}`);
+    expect(text(html)).toContain(`Adds no rule break. ${RULES}`);
     expect(text(html)).toContain(
       `Listed clashes of ${result.act} (its three costliest, as scored): ${clashWords(clashParts(changes, shared))}.`,
     );
@@ -504,8 +717,152 @@ describe("the clashes line tells a shorter clash from an unchanged one", () => {
     const html = render({ status: "ready", result, option }, { ...changes, shared: longer });
     const counts = clashWords(clashParts(changes, longer));
     expect(counts).toContain("1 lengthened (20 → 35 min)");
-    expect(text(html)).toContain(`Adds no rule break. ${RULES_CHECKED}`);
+    expect(text(html)).toContain(`Adds no rule break. ${RULES}`);
     expect(text(html)).toContain(`Listed clashes of ${result.act} (its three costliest, as scored): ${counts}.`);
+  });
+});
+
+describe("the rules a legal place was checked against, with the shown day's own values (round 37, L8)", () => {
+  // An invented day in the shape backend/app/lineups/timetable.py gives a published one: each stage's hours run
+  // from its first published start to its last published end, the closing set of each stage is locked, and every
+  // set carries a start window of its published start ± 120 minutes and the stages within one place of its own.
+  const reach = (start: number, stages: string[]) => ({ not_before: Math.max(0, start - 120), not_after: start + 120, stages });
+  function publishedShape(change: (festival: Record<string, unknown>) => Record<string, unknown> = (festival) => festival): Preset {
+    const raw = rawTinyPreset() as Record<string, unknown> & { festival: Record<string, unknown> };
+    const festival = {
+      ...raw.festival,
+      stages: [
+        { id: "main", name: "Main", tier: 1, hours: [{ day: 0, open: 720, close: 1395 }] },
+        { id: "side", name: "Side", tier: 2, hours: [{ day: 0, open: 1000, close: 1320 }] },
+        { id: "barn", name: "Barn", tier: 3, hours: [{ day: 0, open: 900, close: 1260 }] },
+      ],
+      acts: [
+        { id: "ann", name: "Ann Arbor", qloo_id: "Q-ANN", popularity: 0.9, genre: "Indie", billing_tier: 1 },
+        { id: "bo", name: "Bo Diddly Squat", qloo_id: "Q-BO", popularity: 0.8, genre: "Punk", billing_tier: 4 },
+        { id: "cy", name: "Cy Twombly", qloo_id: null, popularity: null, genre: null, billing_tier: 3 },
+        { id: "dee", name: "Dee Lite", qloo_id: "Q-DEE", popularity: 0.5, genre: "Pop", billing_tier: 2 },
+        { id: "eli", name: "Eli Paperboy", qloo_id: "Q-ELI", popularity: 0.4, genre: "Folk", billing_tier: 2 },
+      ],
+      timetable: [
+        { act_id: "bo", day: 0, stage_id: "main", start: 720, end: 800, locked: false, ...reach(720, ["main", "side"]) },
+        { act_id: "ann", day: 0, stage_id: "main", start: 1305, end: 1395, locked: true, ...reach(1305, ["main", "side"]) },
+        { act_id: "cy", day: 0, stage_id: "side", start: 1000, end: 1060, locked: false, ...reach(1000, ["main", "side", "barn"]) },
+        { act_id: "dee", day: 0, stage_id: "side", start: 1090, end: 1320, locked: true, ...reach(1090, ["main", "side", "barn"]) },
+        { act_id: "eli", day: 0, stage_id: "barn", start: 900, end: 1260, locked: true, ...reach(900, ["side", "barn"]) },
+      ],
+    };
+    return parsePreset({ ...raw, festival: change(festival) });
+  }
+  const PUBLISHED =
+    "Checked against this app’s rules for the day, read from the published timetable: each stage’s published hours, nothing after 23:15 (the day’s latest published end), at least 15 min between sets on a stage, sets this app locks, a start within two hours of the set’s published start, on its own stage or a neighbouring one, and pairs that must never overlap.";
+
+  it("on a published day: the latest published end, the changeover in minutes, the published hours and the reach limit", () => {
+    const day = publishedShape();
+    expect(dayRules(day.festival, 0)).toEqual({ curfew: 1395, changeover: 15, publishedHours: true, reach: true });
+    expect(rulesChecked(day, 0)).toBe(PUBLISHED);
+    // Every kind of rule the round-35 sentence named stays named.
+    for (const kind of ["hours", "nothing after", "between sets on a stage", "locks", "pairs that must never overlap"]) {
+      expect(rulesChecked(day, 0)).toContain(kind);
+    }
+  });
+
+  it("reads each value from the day, never a default: a 10-minute gap gives 10, a later end moves the time", () => {
+    // Dee Lite 20 minutes earlier: 10 minutes after Cy Twombly on the side stage (the stage's hours move with it).
+    const tight = publishedShape((festival) => ({
+      ...festival,
+      stages: (festival.stages as Record<string, unknown>[]).map((stage) =>
+        stage.id === "side" ? { ...stage, hours: [{ day: 0, open: 1000, close: 1300 }] } : stage,
+      ),
+      timetable: (festival.timetable as Record<string, unknown>[]).map((slot) =>
+        slot.act_id === "dee" ? { ...slot, start: 1070, end: 1300, ...reach(1070, ["main", "side", "barn"]) } : slot,
+      ),
+    }));
+    expect(dayRules(tight.festival, 0)).toMatchObject({ changeover: 10, curfew: 1395 });
+    expect(rulesChecked(tight, 0)).toContain("at least 10 min between sets on a stage");
+    // The engine caps the gap at 15 minutes (the base day's tightest published gap is 30 minutes), and a day with no
+    // two sets on one stage has no published gap at all: 15 minutes, as the engine gives it.
+    const wide = publishedShape((festival) => ({
+      ...festival,
+      timetable: (festival.timetable as Record<string, unknown>[]).filter((slot) => slot.act_id !== "bo" && slot.act_id !== "cy"),
+      stages: (festival.stages as Record<string, unknown>[]).map((stage) =>
+        stage.id === "main" ? { ...stage, hours: [{ day: 0, open: 1305, close: 1395 }] } : stage.id === "side" ? { ...stage, hours: [{ day: 0, open: 1090, close: 1320 }] } : stage,
+      ),
+    }));
+    expect(dayRules(wide.festival, 0)).toMatchObject({ changeover: 15, publishedHours: true });
+    // A day whose last set ends 23:40 says 23:40.
+    const late = publishedShape((festival) => ({
+      ...festival,
+      stages: (festival.stages as Record<string, unknown>[]).map((stage) =>
+        stage.id === "main" ? { ...stage, hours: [{ day: 0, open: 720, close: 1420 }] } : stage,
+      ),
+      timetable: (festival.timetable as Record<string, unknown>[]).map((slot) => (slot.act_id === "ann" ? { ...slot, start: 1330, end: 1420 } : slot)),
+    }));
+    expect(rulesChecked(late, 0)).toContain("nothing after 23:40 (the day’s latest published end)");
+  });
+
+  it("names a clause's value only where the day carries it: no reach clause without every window, no 'published hours' without them", () => {
+    // One movable set without its start window: the reach limit is not claimed.
+    const open = publishedShape((festival) => ({
+      ...festival,
+      timetable: (festival.timetable as Record<string, unknown>[]).map((slot) =>
+        slot.act_id === "cy" ? { ...slot, not_before: null, not_after: null, stages: null } : slot,
+      ),
+    }));
+    expect(dayRules(open.festival, 0)?.reach).toBe(false);
+    expect(rulesChecked(open, 0)).not.toContain("two hours");
+    expect(rulesChecked(open, 0)).not.toContain("neighbouring");
+    // A window wider than two hours, or a stage two places away, is not the reach limit either.
+    const wider = publishedShape((festival) => ({
+      ...festival,
+      timetable: (festival.timetable as Record<string, unknown>[]).map((slot) => (slot.act_id === "bo" ? { ...slot, not_after: 900 } : slot)),
+    }));
+    expect(dayRules(wider.festival, 0)?.reach).toBe(false);
+    const far = publishedShape((festival) => ({
+      ...festival,
+      timetable: (festival.timetable as Record<string, unknown>[]).map((slot) =>
+        slot.act_id === "bo" ? { ...slot, stages: ["main", "side", "barn"] } : slot,
+      ),
+    }));
+    expect(dayRules(far.festival, 0)?.reach).toBe(false);
+    // A locked set needs no window: the limit is about the sets that may move.
+    const lockedBare = publishedShape((festival) => ({
+      ...festival,
+      timetable: (festival.timetable as Record<string, unknown>[]).map((slot) =>
+        slot.act_id === "ann" ? { ...slot, not_before: null, not_after: null, stages: null } : slot,
+      ),
+    }));
+    expect(dayRules(lockedBare.festival, 0)?.reach).toBe(true);
+    // A stage whose hours are not its first published start to its last published end: "each stage’s hours".
+    const hours = publishedShape((festival) => ({
+      ...festival,
+      stages: (festival.stages as Record<string, unknown>[]).map((stage) =>
+        stage.id === "barn" ? { ...stage, hours: [{ day: 0, open: 870, close: 1260 }] } : stage,
+      ),
+    }));
+    expect(dayRules(hours.festival, 0)?.publishedHours).toBe(false);
+    expect(rulesChecked(hours, 0)).toContain(": each stage’s hours, nothing after 23:15");
+    expect(rulesChecked(hours, 0)).not.toContain("published hours");
+  });
+
+  it("on the invented day: the same kinds of rule, no 'published', and no value the day does not carry", () => {
+    const invented = { ...mockPreset(), synthetic: true };
+    const sentence = rulesChecked(invented, invented.festival.timetable[0]?.day ?? 0);
+    expect(sentence).toBe(
+      "Checked against the invented day’s rules: each stage’s hours, the curfew, the changeover gap, locked sets, and pairs that must never overlap.",
+    );
+    expect(sentence).not.toMatch(/published/i);
+    // Even an invented day shaped like a published one says no "published".
+    expect(rulesChecked({ ...publishedShape(), synthetic: true }, 0)).not.toMatch(/published/i);
+  });
+
+  it("is worked out once per day in Try a move and passed to every card that says 'Adds no rule break.'", () => {
+    const source = readFileSync(join(__dirname, "try-a-move.tsx"), "utf8");
+    expect(source).toContain("const rules = useMemo(() => rulesChecked(preset, day), [preset, day]);");
+    expect(source.match(/<RulesLine rules=\{rules\}/g)).toHaveLength(2);
+    expect(source).not.toContain("RULES_CHECKED");
+    // The tested place, the best tested place and the full list each take the day's sentence, and so does the full
+    // list's room while it loads (round 37 fix pass 2), so its rules' room is laid out from the same day's words.
+    expect(source.match(/^\s+rules=\{rules\}$/gm)).toHaveLength(5);
   });
 });
 
@@ -517,8 +874,9 @@ describe("Try a move says what 'listed' means, what grows outside the list and w
   const kept = { ends: [], adds: [], keeps: [{ name: "Katy J Pearson", now: 3.4, after: 2.1 }], shared: new Map([["Katy J Pearson", { before: 45, after: 30 }]]) };
 
   it("pins the rules sentence and the inline definition of 'listed'", () => {
-    expect(RULES_CHECKED).toBe(
-      "Checked against the stage’s hours, the curfew, the changeover gap, locked sets and pairs that must never overlap.",
+    // The tiny fixture's side stage has no hours and its sets carry no reach window, so neither clause claims more.
+    expect(RULES).toBe(
+      "Checked against this app’s rules for the day, read from the published timetable: each stage’s hours, nothing after 22:00 (the day’s latest published end), at least 15 min between sets on a stage, sets this app locks, and pairs that must never overlap.",
     );
     expect(listedLead("Sprints")).toBe("Listed clashes of Sprints (its three costliest, as scored): ");
   });
@@ -529,8 +887,8 @@ describe("Try a move says what 'listed' means, what grows outside the list and w
     for (const place of places) {
       const html = render({ status: "ready", result: all, option: place });
       // The rule status and its rules in one line: ink status, the rules muted beside it.
-      expect(paragraph(html, "data-rules-line")).toBe(`Adds no rule break. ${RULES_CHECKED}`);
-      expect(html).toContain(`<p data-rules-line="true">Adds no rule break. <span class="text-muted-foreground">${RULES_CHECKED}</span></p>`);
+      expect(paragraph(html, "data-rules-line")).toBe(`Adds no rule break. ${RULES}`);
+      expect(html).toContain(`<p data-rules-line="true">Adds no rule break. <span class="text-muted-foreground">${RULES}</span></p>`);
       // Under it, the listed clashes.
       expect(verdict(html).indexOf("data-rules-line")).toBeLessThan(verdict(html).indexOf("data-listed-line"));
     }
@@ -549,16 +907,17 @@ describe("Try a move says what 'listed' means, what grows outside the list and w
         open: false,
         controls: "every-place",
         onToggle: () => {},
+        rules: RULES,
       }),
     );
-    expect(text(column)).toContain(`Adds no rule break. ${RULES_CHECKED}`);
+    expect(text(column)).toContain(`Adds no rule break. ${RULES}`);
     // Not while checking, not for a place the list does not hold, not when the list failed.
     for (const check of [
       moveCheck({ status: "loading", options: null }, move),
       moveCheck({ status: "ready", options: result }, { ...move, start: "16:40" }),
       moveCheck({ status: "error", options: null }, move),
     ]) {
-      expect(render(check)).not.toContain(RULES_CHECKED);
+      expect(render(check)).not.toContain(RULES);
     }
   });
 
@@ -617,6 +976,7 @@ describe("Try a move says what 'listed' means, what grows outside the list and w
           chosen: place,
           keep: { full: false, onKeep: () => {} },
           onChoose: () => {},
+          rules: RULES,
         }),
       );
     const plain = card();
@@ -656,15 +1016,16 @@ describe("Try a move says what 'listed' means, what grows outside the list and w
           chosen,
           keep: { full: false, onKeep: () => {} },
           onChoose: () => {},
+          rules: RULES,
         }),
       );
     const rules = (html: string) => [...html.matchAll(/<p data-rules-line="true"[^>]*>([\s\S]*?)<\/p>/g)].map((match) => text(match[1]));
     for (const place of places) {
       const html = card(picked, place);
       // One line per chosen place, in the tested place's words: the status in ink, the rules muted beside it.
-      expect(rules(html)).toEqual([`Adds no rule break. ${RULES_CHECKED}`]);
+      expect(rules(html)).toEqual([`Adds no rule break. ${RULES}`]);
       expect(html).toContain(
-        `<p data-rules-line="true" class="mt-4 text-sm leading-snug break-words text-pretty">Adds no rule break. <span class="text-muted-foreground">${RULES_CHECKED}</span></p>`,
+        `<p data-rules-line="true" class="mt-4 text-sm leading-snug break-words text-pretty">Adds no rule break. <span class="text-muted-foreground">${RULES}</span></p>`,
       );
       // Under the place's Clash Budget move, above the lists of the clashes it changes.
       expect(html.indexOf("data-rules-line")).toBeLessThan(html.indexOf("Listed clashes it ends"));
@@ -689,12 +1050,13 @@ describe("Try a move says what 'listed' means, what grows outside the list and w
         stage: "Woodsies",
         end: "15:15",
         minutes: null,
-        strip: null,
+        drawing: null,
         check: { status: "error" },
         changes: null,
         keepFull: false,
         onKeep: () => {},
         onShowAll: () => {},
+        rules: RULES,
       }),
     );
     expect(text(unread)).toContain("Index not scored here");
@@ -892,15 +1254,16 @@ describe("Start with names the partner of every row, from the one map the card r
           stage,
           end,
           minutes: null,
-          strip: null,
+          drawing: null,
           check: { status: "ready", result: answer, option: place },
           changes,
           keepFull: false,
           onKeep: () => {},
           onShowAll: () => {},
+          rules: rulesChecked(preset, 0),
         }),
       );
-      expect(text(html)).toContain(`Adds no rule break. ${RULES_CHECKED}`);
+      expect(text(html)).toContain(`Adds no rule break. ${rulesChecked(preset, 0)}`);
       expect(text(html)).toContain(`Listed clashes of Sprints (its three costliest, as scored): ${counts}.`);
     },
   );
@@ -949,12 +1312,13 @@ describe("Start with names the partner of every row, from the one map the card r
           stage: "Woodsies",
           end: "15:15",
           minutes: null,
-          strip: null,
+          drawing: null,
           check: { status: "ready", result: answer, option: place },
           changes,
           keepFull: false,
           onKeep: () => {},
           onShowAll: () => {},
+          rules: rulesChecked(preset, 0),
         }),
       );
       const listed = text(/<p data-listed-line="true">([\s\S]*?)<\/p>/.exec(tested)?.[1] ?? "");
@@ -978,6 +1342,7 @@ describe("Start with names the partner of every row, from the one map the card r
           chosen: place,
           keep: { full: false, onKeep: () => {} },
           onChoose: () => {},
+          rules: rulesChecked(preset, 0),
         }),
       );
       const headings = [...card.matchAll(/<h4[^>]*>([^<]*)<\/h4>/g)].map((match) => match[1]);
@@ -986,7 +1351,7 @@ describe("Start with names the partner of every row, from the one map the card r
       expect(text(card)).toContain("Outside the listed clashes: new 15 min overlap with Joy Crookes.");
       expect(card.indexOf("data-outside-line")).toBeGreaterThan(card.indexOf("Listed clashes it keeps"));
       // The full list's place says which rules it passed, as the tested place does.
-      expect(text(card)).toContain(`Adds no rule break. ${RULES_CHECKED}`);
+      expect(text(card)).toContain(`Adds no rule break. ${rulesChecked(preset, 0)}`);
     },
   );
 
@@ -1081,6 +1446,7 @@ describe("after a set is picked, the right column is never empty from 1024 px", 
         open: false,
         controls: "every-place",
         onToggle: () => {},
+        rules: RULES,
         ...props,
       }),
     );
@@ -1126,8 +1492,238 @@ describe("after a set is picked, the right column is never empty from 1024 px", 
   it("from 1024 px keeps the full list closed under it until asked, and below 1024 px shows it as before", () => {
     const source = readFileSync(join(__dirname, "try-a-move.tsx"), "utf8");
     expect(source).toContain('<div className={cn("mt-6", !allOpen && "lg:hidden")}>');
-    // The loading box under the columns is the phone's copy only; the column says it from 1024 px.
-    expect(source).toMatch(/rounded-md border border-border bg-card p-6 text-sm text-muted-foreground lg:hidden"/);
+    // The list's room while it loads, under the columns, is the phone's copy only; the column holds its own from 1024 px.
+    expect(source).toMatch(/<div className="mt-6 lg:hidden">\s*<PlacesRoom\s+name=\{pickedName \?\? "this set"\}/);
+  });
+});
+
+describe("a late answer holds its room, so it moves nothing on screen (round 37, fix pass 2, F1)", () => {
+  // Every name and figure here is invented (the tiny fixture festival).
+  const tiny = parsePreset(rawTinyPreset())!;
+  const picked: MovesResult = {
+    act: "Bo Diddly Squat",
+    actId: "bo",
+    from: "Side 20:30-22:00",
+    movable: true,
+    why: null,
+    before: 104.2,
+    legalPlaces: 2,
+    priced: true,
+    clashesNow: [{ name: "Ann Arbor", points: 3 }],
+    options: [
+      { move: "Bo Diddly Squat: Side 20:30-22:00 -> Side 22:05-23:35", stage: "Side", start: "22:05", end: "23:35", after: 100.1, stageId: "side", day: 0, clashesAfter: [] },
+    ],
+  };
+  const pairs = [{ aId: "ann", bId: "bo" }];
+  const best = bestPlace(picked, tiny, tiny.festival.timetable, pairs)!;
+  const drawn = drawingHeight(best.drawing!, "short");
+  const room: PlaceRoom = { partner: { name: "Ann Arbor", minutes: 60 }, unscored: false, drawing: drawn };
+  const column = (props: Record<string, unknown>) =>
+    renderToStaticMarkup(
+      createElement(BestPlaceColumn, {
+        status: "ready",
+        result: picked,
+        best,
+        pickedName: "Bo Diddly Squat",
+        synthetic: false,
+        keepFull: false,
+        onKeep: () => {},
+        open: false,
+        controls: "every-place",
+        onToggle: () => {},
+        rules: RULES,
+        room,
+        roomKey: ":bo",
+        ...props,
+      }),
+    );
+  const pending = column({ status: "loading", result: null, best: null });
+  const settled = column({});
+  // The class lists that shape each line, in page order: what both frames must hold, line for line.
+  const LINES = [
+    "border-t border-border pt-5 sm:pt-6",
+    "text-[0.8125rem] leading-5 font-semibold text-muted-foreground",
+    "type-numeral text-2xl leading-tight break-words",
+    "mt-1.5 space-y-1 text-sm leading-snug break-words text-pretty",
+    "mt-6 border-t border-border",
+  ];
+  const at = (html: string, needle: string) => html.indexOf(`class="${needle}`);
+  // The rule status's room: "Adds no rule break." with its letters reversed, so no claim is in the page before the check.
+  const RULE_STATUS_ROOM_OF_TEST = ".kaerb elur on sddA";
+
+  it("keeps the place's room when the answer reads shorter and what sits under it is on screen, and only then", () => {
+    const was = { width: 600, height: 540 };
+    // A shorter answer whose end is on screen: the room stays, so nothing under it moves up.
+    expect(heldHeight(was, { width: 600, height: 500, end: 860 }, 900)).toBe(540);
+    // Scrolled past: the answer ends above the screen and what is under it is in view.
+    expect(heldHeight(was, { width: 600, height: 500, end: -40 }, 900)).toBe(540);
+    // The answer ends below the fold: nothing that moves is on screen, so it takes its own height.
+    expect(heldHeight(was, { width: 600, height: 500, end: 900 }, 900)).toBeNull();
+    // As tall or taller: nothing to hold.
+    expect(heldHeight(was, { width: 600, height: 540, end: 700 }, 900)).toBeNull();
+    expect(heldHeight(was, { width: 600, height: 620, end: 700 }, 900)).toBeNull();
+    // The width changed, or no room was measured (a hidden copy measures 0): the answer takes its own height.
+    expect(heldHeight(was, { width: 601, height: 500, end: 700 }, 900)).toBeNull();
+    expect(heldHeight({ width: 0, height: 0 }, { width: 0, height: 0, end: 0 }, 900)).toBeNull();
+    expect(heldHeight(null, { width: 600, height: 500, end: 700 }, 900)).toBeNull();
+    // An answer within 400 ms of the visitor's own press is part of what the press did: it takes its own height
+    // (so a quick answer never leaves space under it); from 400 ms on it is late, and the room is kept.
+    expect(heldHeight(was, { width: 600, height: 500, end: 860 }, 900, 120)).toBeNull();
+    expect(heldHeight(was, { width: 600, height: 500, end: 860 }, 900, 399)).toBeNull();
+    expect(heldHeight(was, { width: 600, height: 500, end: 860 }, 900, 400)).toBe(540);
+    expect(heldHeight(was, { width: 600, height: 500, end: 860 }, 900, 1500)).toBe(540);
+  });
+
+  it("draws the best place's pending frame line for line with the place it holds the room of", () => {
+    for (const line of LINES) {
+      expect(at(pending, line), line).toBeGreaterThan(-1);
+      expect(at(settled, line), line).toBeGreaterThan(-1);
+    }
+    // In the same order in both.
+    const order = (html: string) => LINES.map((line) => at(html, line));
+    expect(order(pending)).toEqual([...order(pending)].sort((p, q) => p - q));
+    expect(order(settled)).toEqual([...order(settled)].sort((p, q) => p - q));
+    // The dateline's one line: the same size and leading.
+    expect(pending).toMatch(/<p class="mt-1 flex items-start gap-2 text-\[0\.9375rem\] leading-snug text-muted-foreground">/);
+    expect(settled).toContain('<p data-dateline="true" class="mt-1 text-[0.9375rem] leading-snug">');
+    // The drawing's room is the drawing's own height, after the same 20px.
+    expect(settled).toContain('data-tested-drawing="true" class="mt-5 min-w-0"');
+    expect(pending).toContain(`data-drawing-room="true" class="mt-5 rounded-md bg-muted" style="height:${drawn}px"`);
+    // The actions' row: the buttons' 44px, 16px under the rule.
+    expect(settled).toMatch(/class="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2"><button[^>]*class="[^"]*h-11/);
+    expect(pending).toContain('data-actions-room="true" class="mt-4 h-11"');
+  });
+
+  it("sets in words only what the page already knows, and claims nothing before the answer", () => {
+    const words = text(pending);
+    expect(words).toContain("Best tested place");
+    expect(words).toContain("Scoring every legal place for Bo Diddly Squat");
+    // The set it shares time with and the minutes they share now; the minutes after wait for the answer.
+    expect(words).toContain("60 → min shared with Ann Arbor");
+    expect(words).toContain("Index checking…");
+    expect(words).toContain("Checking rules…");
+    for (const claim of ["Adds no rule break", "removed", "added", "Outside the listed clashes", "Keep this move", "Show every legal place", "100.1", "22:05"]) {
+      expect(words).not.toContain(claim);
+    }
+    // Not even in an attribute: the rule status's room is its letters reversed, the rules' room is worded for a
+    // check still running.
+    expect(pending).not.toContain(RULES);
+    expect(pending).not.toContain("Adds no rule break");
+    expect(pending).toContain('data-ghost=".kaerb elur on sddA"');
+    expect(pending).toContain(`data-ghost="${RULES.replace(/^Checked against/, "Checking against")}"`);
+    // Nothing in it can be pressed or focused.
+    expect(pending).not.toMatch(/<(button|a)\b/);
+    expect(pending).not.toContain("tabindex");
+  });
+
+  it("opens with the no-signal line when the day's coverage does not score the set, as the answer will", () => {
+    expect(text(column({ status: "loading", result: null, best: null, room: { ...room, unscored: true } }))).toContain(
+      "Qloo has no usable signal for Bo Diddly Squat, so its clashes are not scored and no place changes the Clash Budget Index.",
+    );
+    expect(text(pending)).not.toContain("no usable signal");
+  });
+
+  it("holds the tested place's verdict room while its rules are checked", () => {
+    const checking = render(moveCheck({ status: "loading", options: null }, move));
+    const done = render(moveCheck({ status: "ready", options: result }, move));
+    const verdictOf = (html: string) => /<div aria-live="polite" data-place-verdict="true"[^>]*>([\s\S]*?)<\/div>/.exec(html)?.[1] ?? "";
+    // The rule status's line, the listed line and one outside line, each in the lines' own block.
+    expect(verdictOf(checking)).toMatch(/^<p data-rules-room="true" class="text-muted-foreground"><span class="inline-grid whitespace-nowrap">/);
+    expect(verdictOf(checking)).toContain(`<p aria-hidden="true" data-listed-room="true"><span class="text-muted-foreground">${listedLead(result.act)}</span>`);
+    expect(verdictOf(checking)).toContain('<p aria-hidden="true" data-outside-room="true">');
+    expect(verdictOf(checking)).toContain('data-ghost="Outside the listed clashes: new 00 min overlap with Katy J Pearson."');
+    expect(verdictOf(done)).toContain("data-rules-line");
+    // A known move's listed room is the shape of a middling listed line, with no figure from any answer; while it
+    // is not known whether the place grows an overlap outside the list, the line's last sentence and the outside
+    // line keep their room.
+    expect(checking).toContain('data-ghost="0 shortened (00 → 00 min), 0 added, 0 removed. Outside the list, 0 overlaps start or grow."');
+    expect(text(checking)).toContain("Checking rules…");
+    expect(checking).not.toContain(RULES);
+    // A place that cannot grow an overlap outside the list holds no outside room.
+    const inside = renderToStaticMarkup(
+      createElement(TestedPlace, {
+        card,
+        mover: result.act,
+        stage: "Woodsies",
+        end: "15:15",
+        minutes: { partner: "Katy J Pearson", before: 45, after: 30 },
+        drawing: null,
+        check: { status: "checking" },
+        changes: null,
+        keepFull: false,
+        onKeep: () => {},
+        onShowAll: () => {},
+        rules: RULES,
+        outside: false,
+      }),
+    );
+    expect(inside).toContain('data-ghost="0 shortened (00 → 00 min), 0 added, 0 removed."');
+    expect(inside).not.toContain("data-outside-room");
+    // The best place's room, before the engine names a place, holds the long line and the outside line.
+    expect(pending).toContain('data-ghost="0 shortened (00 → 00 min), 0 lengthened (00 → 00 min), 0 added, 0 removed. Outside the list, 0 overlaps start or grow."');
+    expect(pending).toContain('data-ghost="Outside the listed clashes: new 00 min overlap with Ann Arbor."');
+  });
+
+  it("holds an outside line's room for a known move only when it can start or lengthen an overlap outside the list", () => {
+    // The tiny fixture's day (invented): Bo Diddly Squat 20:30–22:00 on Side; Ann Arbor 20:00–21:30 overlaps it (its
+    // one clash, so its costliest); Cy Twombly 16:40–17:40 overlaps nothing.
+    const at = (start: string) => mayGrowOutside(tiny, tiny.festival.timetable, { actId: "bo", day: 0, start });
+    // Where it plays now, or later (the overlap with Ann Arbor shrinks): nothing grows.
+    expect(at("20:30")).toBe(false);
+    expect(at("20:45")).toBe(false);
+    // Earlier, its overlap with Ann Arbor grows, but that clash is in the list: no outside line can come.
+    expect(at("20:15")).toBe(false);
+    // Over Cy Twombly, a new overlap outside its costliest clashes starts: the room is held.
+    expect(at("16:40")).toBe(true);
+    // A set that is not on the timetable, or a start that does not read: no room.
+    expect(mayGrowOutside(tiny, tiny.festival.timetable, { actId: "nobody", day: 0, start: "20:00" })).toBe(false);
+    expect(at("later")).toBe(false);
+    // The source passes the card's move through it.
+    const source = readFileSync(join(__dirname, "try-a-move.tsx"), "utf8");
+    expect(source).toContain("(seedShown ? mayGrowOutside(preset, timetable, seedShown.move) : false)");
+    expect(source).toMatch(/roomKey=\{encodeMoves\(moves\)\}\s+outside=\{seedOutside\}/);
+  });
+
+  it("holds the full list's room under 1024 px: its heading's words, a quiet row per place it can show, the drawing's height", () => {
+    const html = renderToStaticMarkup(
+      createElement(PlacesRoom, { name: "Bo Diddly Squat", rules: RULES, drawing: drawn, range: scaleRange(tiny.report.baseline) }),
+    );
+    expect(text(html)).toContain("Where Bo Diddly Squat could go");
+    // The card's blocks in its order: the index's room, the rules', the clashes', the drawing's, the action's, the footnote's.
+    const blocks = ['data-ghost="000.0 → 000.0"', `data-ghost="${RULE_STATUS_ROOM_OF_TEST} `, 'data-ghost="Listed clashes it ends"', `style="height:${drawn}px"`, 'class="mt-4 h-11"', 'data-ghost="00 legal places'];
+    const where = blocks.map((block) => html.indexOf(block));
+    expect(where.every((index) => index > -1), JSON.stringify(where)).toBe(true);
+    expect(where).toEqual([...where].sort((p, q) => p - q));
+    expect(text(html)).toContain("Scoring every legal place for Bo Diddly Squat");
+    // Not a heading: the answer's own heading is the one that takes focus and that a test waits for.
+    expect(html).not.toMatch(/<h[1-6]\b/);
+    expect(html).toContain('<p class="type-title break-words">Where Bo Diddly Squat could go</p>');
+    expect(html.match(/<li class="h-11 rounded-md bg-muted"><\/li>/g)).toHaveLength(MOVES_LIMIT);
+    expect(html).toContain(`style="height:${drawn}px"`);
+    expect(html).not.toMatch(/<(button|a)\b/);
+    expect(html).not.toContain(RULES);
+    expect(html).not.toContain("Adds no rule break");
+  });
+
+  it("wires the held room around the best place, the full list and the tested place, keyed by the question", () => {
+    const source = readFileSync(join(__dirname, "try-a-move.tsx"), "utf8");
+    expect(source).toContain('<HeldRoom room={roomKey ?? pickedName ?? ""} pending={status === "loading"} hold={status === "ready"}>');
+    expect(source).toContain('<HeldRoom room={choiceKey} pending={state.status === "loading"} hold={state.status === "ready"}>');
+    // The tested place holds its verdict's room (not the whole card), so its actions under the verdict never move.
+    expect(source).toMatch(
+      /<HeldRoom\s+room=\{`\$\{roomKey\}\|\$\{card\.move\.actId\}@\$\{card\.move\.stageId\}:\$\{card\.move\.day\}:\$\{card\.move\.start\}`\}\s+pending=\{checking\}\s+hold=\{check\?\.status === "ready" \|\| check\?\.status === "unlisted"\}\s*>\s*<div aria-live="polite" data-place-verdict/,
+    );
+    expect(source).toMatch(/rules=\{rules\}\s+roomKey=\{encodeMoves\(moves\)\}/);
+    expect(source).toMatch(/room=\{placeRoom\}\s+roomKey=\{choiceKey\}/);
+    // The only height it sets is the one `heldHeight` decides (with the time since the visitor's last key or pointer
+    // press, watched from the section's start), and it is dropped on a scroll or resize that leaves nothing on screen
+    // to move.
+    expect(source).toContain("const keep = hold ? heldHeight(was, now(), window.innerHeight, performance.now() - lastPress) : null;");
+    expect(source).toContain('window.addEventListener("pointerdown", note, { capture: true, passive: true });');
+    expect(source).toContain('window.addEventListener("keydown", note, { capture: true, passive: true });');
+    expect(source).toContain("useEffect(() => watchPresses(), []);");
+    expect(source.match(/element\.style\.minHeight = `\$\{keep\}px`;/g)).toHaveLength(1);
+    expect(source).toContain('window.addEventListener("scroll", release, { passive: true });');
   });
 });
 

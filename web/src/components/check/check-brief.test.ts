@@ -12,13 +12,18 @@ import { findChange, targetOfBreak } from "@/lib/check-trial";
 import {
   BRIEF_FOOTER,
   BRIEF_FOOTER_PUBLISHED,
+  BRIEF_OVERLAPS,
   BRIEF_ROWS,
   CheckBrief,
   DRAFT_HEADING,
   DRAFT_SIGN_OFF,
   briefFooter,
   draftHeading,
+  overlapLine,
   printedDate,
+  printedOverlaps,
+  printedSkipped,
+  skippedName,
   snapshotLine,
 } from "./check-brief";
 
@@ -162,8 +167,9 @@ describe("round 35: a brief of a partial check says what it left out", () => {
   const page = text(renderToStaticMarkup(createElement(CheckBrief, { report: outcome.report, applied: [], decisions: [], price: null })));
 
   it("prints the skipped sentence under its heading, and the pair rule it could not check", () => {
+    // Round 37: the skipped line is named by its act and the value the screen quotes, under the sentence.
     expect(page).toContain(
-      "Draft check, not a verdict Snapshot: the pasted grid as checked. 1 line skipped and not checked: line 4. The other 4 sets were checked. Pair line 1 not checked: Glass Harbour is on a skipped line. Read 4 sets on 3 stages.",
+      "Draft check, not a verdict Snapshot: the pasted grid as checked. 1 line skipped and not checked: line 4. The other 4 sets were checked. Line 4 (Glass Harbour, start “25:70”) skipped and not checked. Pair line 1 not checked: Glass Harbour is on a skipped line. Read 4 sets on 3 stages.",
     );
   });
 
@@ -223,5 +229,155 @@ describe("round 36: the printed draft has a heading, the day, the print date and
       expect(opening.split(" ")).toContain("hidden");
       expect(opening).toMatch(/print:(block|flex)/);
     }
+  });
+});
+
+describe("round 37: the printed draft lists its overlaps and names its skipped lines", () => {
+  // The messy 12-line paste of round 35 (invented acts; line 4 starts at 25:70; one stage written "Main   Stage").
+  const MESSY = [
+    "Tidal Fields,Main Stage,14:00,15:00",
+    "Cobalt Rows,Side Stage,14:15,15:15",
+    "Paper Lanterns,Tent,14:30,15:15",
+    "Glass Harbour,Tent,25:70,19:30",
+    "Saltmarsh,Main Stage,15:30,16:30",
+    "Quiet Engine,Side Stage,15:45,16:45",
+    "Nobody Has Heard Of Us,Tent,16:00,16:45",
+    "Velvet Static,Main   Stage,17:00,18:00",
+    "Orbit Choir,Side Stage,17:15,18:15",
+    "Lowland Kites,Tent,17:30,18:15",
+    "Amber Kite,Main Stage,18:30,19:30",
+    "Ember Coast,Side Stage,18:45,19:45",
+  ].join("\n");
+  const messy = runCheck({ grid: MESSY, changeover: "", curfew: "", pairs: "" });
+  if (!messy.ok) throw new Error("refused");
+  const messyPage = text(renderToStaticMarkup(createElement(CheckBrief, { report: messy.report, applied: [], decisions: [], price: null })));
+
+  it("lists every pair that shares time under the counts, longest first, as act × act: minutes (window)", () => {
+    expect(messy.report.shared).toHaveLength(10);
+    expect(messyPage).toContain(
+      [
+        "Read 11 sets on 3 stages. Rule breaks: 0. Sets that share time: 10 pairs.",
+        "Tidal Fields × Cobalt Rows: 45 min (14:15–15:00)",
+        "Cobalt Rows × Paper Lanterns: 45 min (14:30–15:15)",
+        "Saltmarsh × Quiet Engine: 45 min (15:45–16:30)",
+        "Quiet Engine × Nobody Has Heard Of Us: 45 min (16:00–16:45)",
+        "Velvet Static × Orbit Choir: 45 min (17:15–18:00)",
+        "Orbit Choir × Lowland Kites: 45 min (17:30–18:15)",
+        "Amber Kite × Ember Coast: 45 min (18:45–19:30)",
+        "Tidal Fields × Paper Lanterns: 30 min (14:30–15:00)",
+        "Saltmarsh × Nobody Has Heard Of Us: 30 min (16:00–16:30)",
+        "Velvet Static × Lowland Kites: 30 min (17:30–18:00)",
+        "Settings.",
+      ].join(" "),
+    );
+    // Ten fit: no overflow line.
+    expect(messyPage).not.toContain("not printed");
+    // The skipped line is named by its act and its rejected value, in the short form.
+    expect(messyPage).toContain(
+      "1 line skipped and not checked: line 4. The other 11 sets were checked. Line 4 (Glass Harbour, start “25:70”) skipped and not checked.",
+    );
+  });
+
+  it(`prints ${BRIEF_OVERLAPS} overlaps at most, then "and {k} more overlaps not printed." with their range and total`, () => {
+    const sample = runCheck({ grid: SAMPLE_GRID, ...SAMPLE_SETTINGS });
+    if (!sample.ok) throw new Error("refused");
+    const { shared } = sample.report;
+    expect(shared).toHaveLength(35);
+    const printed = printedOverlaps(shared);
+    expect(printed.lines).toHaveLength(BRIEF_OVERLAPS);
+    expect(printed.more).toMatch(/^and 23 more overlaps not printed\. They share \d+ to \d+ min each, \d+ min in all\.$/);
+    // Longest first: no printed line is longer than the one before it, and none left off is longer than the last printed.
+    const minutes = printed.lines.map((line) => Number(line.match(/: (\d+) min \(/)?.[1]));
+    expect(minutes.every((m, i) => i === 0 || m <= minutes[i - 1])).toBe(true);
+    expect(minutes[0]).toBe(Math.max(...shared.map((pair) => pair.minutes)));
+    const leftOff = [...shared].sort((x, y) => y.minutes - x.minutes).slice(BRIEF_OVERLAPS);
+    expect(Math.max(...leftOff.map((pair) => pair.minutes))).toBeLessThanOrEqual(minutes[BRIEF_OVERLAPS - 1]);
+    // The pairs left off are accounted for by length: their shortest, longest and summed minutes (L66).
+    const leftMinutes = leftOff.map((pair) => pair.minutes);
+    const rest = `They share ${Math.min(...leftMinutes)} to ${Math.max(...leftMinutes)} min each, ${leftMinutes.reduce((a, b) => a + b, 0)} min in all.`;
+    expect(printed.more).toBe(`and 23 more overlaps not printed. ${rest}`);
+    const page = text(renderToStaticMarkup(createElement(CheckBrief, { report: sample.report, applied: [], decisions: [], price: null })));
+    expect(page).toContain(`Sets that share time: 35 pairs. ${printed.lines.join(" ")} and 23 more overlaps not printed. ${rest} Settings.`);
+    // Exactly twelve print with no overflow line; one more pair is one more left off.
+    expect(printedOverlaps(shared.slice(0, BRIEF_OVERLAPS)).more).toBeNull();
+    const thirteen = shared.slice(0, BRIEF_OVERLAPS + 1);
+    const lastOff = [...thirteen].sort((x, y) => y.minutes - x.minutes)[BRIEF_OVERLAPS];
+    expect(printedOverlaps(thirteen).more).toBe(`and 1 more overlap not printed. It shares ${lastOff.minutes} min.`);
+    // Left-off pairs of one length say it once.
+    const same = Array.from({ length: BRIEF_OVERLAPS + 3 }, () => ({ ...shared[0], minutes: 15 }));
+    expect(printedOverlaps(same).more).toBe("and 3 more overlaps not printed. They share 15 min each, 45 min in all.");
+    expect(printedOverlaps([])).toEqual({ lines: [], more: null });
+  });
+
+  it("gives a window past midnight on the clock, as the screen does", () => {
+    const late = runCheck({ grid: "Night Owls,Tent,23:30,24:45\nLate Bloom,Barn,24:00,25:00", changeover: "", curfew: "", pairs: "" });
+    if (!late.ok) throw new Error(late.errors.join(" | "));
+    expect(late.report.shared.map(overlapLine)).toEqual(["Night Owls × Late Bloom: 45 min (00:00–00:45)"]);
+  });
+
+  it("names each skipped line by its act and the value the screen quotes, and only what the message names", () => {
+    const skippedOf = (grid: string) => {
+      const outcome = runCheck({ grid, changeover: "", curfew: "", pairs: "" });
+      if (!outcome.ok) throw new Error(outcome.errors.join(" | "));
+      return outcome.report.skipped ?? [];
+    };
+    const good = "Tidal Fields,Main Stage,14:00,15:00";
+    const names = skippedOf(
+      [
+        good,
+        "Glass Harbour,Tent,25:70,19:30",
+        "Amber Kite,Main Stage,18:00,soon",
+        "Orbit Choir,Side Stage,17:15,18:15,maybe",
+        "Ember Coast,Side Stage,19:00,18:00",
+        "just some words",
+        " ,Tent,14:00,15:00",
+      ].join("\n"),
+    ).map(skippedName);
+    expect(names).toEqual([
+      "Line 2 (Glass Harbour, start “25:70”) skipped and not checked.",
+      "Line 3 (Amber Kite, end “soon”) skipped and not checked.",
+      "Line 4 (Orbit Choir, locked “maybe”) skipped and not checked.",
+      "Line 5 (Ember Coast) skipped and not checked.",
+      // The screen names no act for a line that did not split: neither does the brief.
+      "Line 6 skipped and not checked.",
+      "Line 7 skipped and not checked.",
+    ]);
+    const ranged = skippedOf(["Act,Stage,Set time", "Tidal Fields,Main Stage,18:00-19:00", "Cobalt Rows,Side Stage,whenever"].join("\n"));
+    expect(ranged.map(skippedName)).toEqual(["Line 3 (Cobalt Rows, time “whenever”) skipped and not checked."]);
+    const repeated = skippedOf([good, good].join("\n"));
+    expect(repeated.map(skippedName)).toEqual(["Line 2 (Tidal Fields) skipped and not checked."]);
+  });
+
+  it("names five skipped lines at most, then the screen's own count of the rest", () => {
+    const lines = Array.from({ length: 7 }, (_, i) => `Act ${i},Tent,2${i}:70,23:00`);
+    const outcome = runCheck({ grid: ["Tidal Fields,Main Stage,14:00,15:00", ...lines].join("\n"), changeover: "", curfew: "", pairs: "" });
+    if (!outcome.ok) throw new Error(outcome.errors.join(" | "));
+    const skipped = outcome.report.skipped ?? [];
+    expect(skipped).toHaveLength(7);
+    expect(printedSkipped(skipped)).toEqual([
+      "Line 2 (Act 0, start “20:70”) skipped and not checked.",
+      "Line 3 (Act 1, start “21:70”) skipped and not checked.",
+      "Line 4 (Act 2, start “22:70”) skipped and not checked.",
+      "Line 5 (Act 3, start “23:70”) skipped and not checked.",
+      "Line 6 (Act 4, start “24:70”) skipped and not checked.",
+      "And 2 more problems.",
+    ]);
+    expect(printedSkipped(skipped.slice(0, 6)).at(-1)).toBe("And 1 more problem.");
+    expect(printedSkipped([])).toEqual([]);
+  });
+
+  it("adds nothing on screen: the preview draws neither the named skipped lines nor the overlap list", () => {
+    const preview = renderToStaticMarkup(createElement(CheckBrief, { report: messy.report, applied: [], decisions: [], price: null, preview: true }));
+    for (const hook of ["data-brief-overlaps", "data-brief-skipped-lines"]) {
+      const opening = preview.match(new RegExp(`<[a-z]+ ${hook}="" class="([^"]*)"`))?.[1] ?? "";
+      expect(opening.split(" ")).toContain("hidden");
+      expect(opening.split(" ")).toContain("print:block");
+    }
+    // And neither at all when the grid has no shared time and no skipped line.
+    const lone = runCheck({ grid: "Tidal Fields,Main Stage,14:00,15:00", changeover: "", curfew: "", pairs: "" });
+    if (!lone.ok) throw new Error("refused");
+    const html = renderToStaticMarkup(createElement(CheckBrief, { report: lone.report, applied: [], decisions: [], price: null }));
+    expect(html).not.toContain("data-brief-overlaps");
+    expect(html).not.toContain("data-brief-skipped-lines");
   });
 });

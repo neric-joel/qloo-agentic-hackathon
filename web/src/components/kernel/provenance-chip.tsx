@@ -36,13 +36,13 @@ const SYNTHETIC_DESCRIPTION: Partial<Record<Provenance, string>> = {
 
 export const PROVENANCE_ORDER: readonly Provenance[] = ["qloo", "derived", "llm", "recorded"];
 
-// No stamp and no box: the source prints as a plain 12px/500 word in sentence case, in the sans, like
+// No stamp and no box: the source prints as a plain 13px/500 word in sentence case, in the sans, like
 // a credit line on a running order. Each word takes its provenance ink: Qloo teal on a published day
 // (ink on the invented day, which credits nothing to Qloo), Derived ink, LLM and Recorded muted ink,
 // told apart by their words and Recorded's 14px clock. Both sizes print the same; the prop stays so
 // callers keep their API.
 const chipVariants = cva(
-  "inline-flex shrink-0 items-center gap-1 align-baseline font-sans text-[12px] leading-none font-medium [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:self-center",
+  "inline-flex shrink-0 items-center gap-1 align-baseline font-sans text-[13px] leading-none font-medium [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:self-center",
   {
     variants: {
       provenance: {
@@ -74,7 +74,7 @@ type ProvenanceChipProps = {
   look?: "tag" | "kicker";
 };
 
-const KICKER_CLASS = "inline font-sans text-[12px] font-medium tracking-normal text-muted-foreground normal-case";
+const KICKER_CLASS = "inline font-sans text-[13px] font-medium tracking-normal text-muted-foreground normal-case";
 
 /** Says where a value came from. Always a text label, never colour alone. */
 export function ProvenanceChip({ provenance, size = "md", className, synthetic = false, look = "tag" }: ProvenanceChipProps) {

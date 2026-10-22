@@ -12,8 +12,8 @@ import { parseAgentEvent, type AgentEvent, type QlooRequestRecord } from "@/lib/
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
 import { RECORDED_RUN_NOTE, isFromRecordedRun } from "@/lib/moves";
 import { parsePreset, type Preset } from "@/lib/preset";
-import { parseRecordings, replayFinalState, type RecordedRun } from "@/lib/recorded-run";
-import { reduceEvents, type RunResult } from "@/lib/run-state";
+import { parseRecordings, replayFinalState, toReplayBeats, type RecordedRun } from "@/lib/recorded-run";
+import { reduceEvents, type RunResult, type RunState } from "@/lib/run-state";
 import {
   encodeMoves,
   planBody,
@@ -26,7 +26,10 @@ import {
 } from "@/lib/stack";
 
 import {
+  ASK_IT,
   AgentPanel,
+  agentRoomFloor,
+  ExchangeView,
   KeepThisPlace,
   RECORDED_HEADING,
   SAVED_READING_LINE,
@@ -34,10 +37,12 @@ import {
   agentLayout,
   agentLimits,
   checkAdd,
+  headerTraceLabel,
   keepNote,
   keepPress,
   keepableMove,
   mayPointElsewhere,
+  offLede,
   placeToKeep,
   planHolds,
   pointerDay,
@@ -54,6 +59,7 @@ import {
   type AgentPlace,
   type PublishedDay,
 } from "./agent-panel";
+import { KEEP_MOVE } from "./decision-card";
 import { runQlooLine } from "./recorded-runs";
 import { ScratchPlan } from "./scratch-plan";
 import { seededPlan } from "./try-a-move";
@@ -62,14 +68,14 @@ import { seededPlan } from "./try-a-move";
  * The recorded runs the mocked hook serves, the other days' runs it answers with when the panel asks for them, and
  * each time the panel decided whether to ask for other days at all, set per test.
  */
-const served: { runs: RecordedRun[]; otherDays: Map<string, RecordedRun[]>; asks: boolean[] } = {
+const served: { runs: RecordedRun[]; otherDays: Map<string, RecordedRun[]>; asks: boolean[]; loading?: boolean } = {
   runs: [],
   otherDays: new Map(),
   asks: [],
 };
 
 vi.mock("./use-recordings", () => ({
-  useRecordings: () => ({ status: "ready", runs: served.runs }),
+  useRecordings: () => (served.loading ? { status: "loading", runs: [] } : { status: "ready", runs: served.runs }),
   useOtherDaysRecordings: (_shown: string, _ids: readonly string[], enabled: boolean) => {
     served.asks.push(enabled);
     return enabled ? served.otherDays : new Map();
@@ -168,7 +174,7 @@ function liveResults(toolData: ToolData, words = "Here is what I found.") {
 
 const BEST: StackMove = { actId: "bo", stageId: "side", day: 0, start: "22:05" };
 
-describe("Keep this place takes the move only from the run's own tool result", () => {
+describe("Keep this move takes the move only from the run's own tool result", () => {
   it("reads the first listed place of a replayed find_moves run", () => {
     const place = keepableMove(replayFinalState(recorded("find", FIND_MOVES)).results, tiny.festival, 0);
     expect(place?.move).toEqual(BEST);
@@ -270,13 +276,38 @@ describe("the agent section while the live agent is off", () => {
     expect(agentLimits()).toEqual([
       "It calls the same timetable engine as this page, and every figure in its result cards comes from that engine.",
       "Its answer in words is written by a language model and labelled as such.",
-      "It can test a move, but it never changes your timetable unless you press Keep this place.",
+      "It can test a move, but it never changes your timetable unless you press Keep this move.",
       "It never contacts anyone or publishes anything.",
-      "At most 12 Qloo requests and 6 model turns per run.",
+      "At most 12 Qloo requests and 6 agent turns per run.",
     ]);
+    // The invented day's cap names no Qloo, in the same words for the turns.
+    expect(agentLimits(true).at(-1)).toBe("At most 6 agent turns per run.");
+    // One name for the keep act: the hero's own label, never "Keep this place"; the turns are the agent's.
+    expect(KEEP_MOVE).toBe("Keep this move");
+    for (const words of [text(html), text(panel({ ...tiny, synthetic: true })), text(panel(tiny, "on"))]) {
+      expect(words).not.toContain("Keep this place");
+      expect(words).not.toContain("model turns");
+    }
     // An open list, not a disclosure.
     const list = html.slice(html.indexOf("What the agent can and cannot do"));
     expect(list.slice(0, list.indexOf("</ul>"))).not.toContain("<details");
+  });
+
+  it("says what to ask it right after what it does, on every day and whether the live agent is on or off", () => {
+    expect(ASK_IT).toBe("Ask it to set rules, find and test a move, then explain the result.");
+    const does = "The agent tests a move against every rule and scores it before it answers.";
+    // Off, with recorded runs: what it does, what to ask it, then that the runs replay with no live call.
+    expect(text(panel())).toContain(`${does} ${ASK_IT} Saved runs on this day replay with no live Qloo or model call.`);
+    expect(offLede(true, false)).toBe(`${does} ${ASK_IT} Saved runs on this day replay with no live Qloo or model call.`);
+    // The invented day says the same sentence (it names no Qloo).
+    expect(ASK_IT).not.toMatch(/Qloo/);
+    expect(text(panel({ ...tiny, synthetic: true }))).toContain(`${does} ${ASK_IT} Saved runs on this day replay with no live call.`);
+    // Off with no recorded runs: the sentence still follows what it does.
+    served.runs = [];
+    expect(text(panel())).toContain(`${does} ${ASK_IT}`);
+    expect(offLede(false, true)).toBe(`${does} ${ASK_IT}`);
+    // On: after the sentence that says what it does with a question.
+    expect(text(panel(tiny, "on"))).toContain(`it tests the move against every rule and scores it before saying anything. ${ASK_IT}`);
   });
 
   it("says the recorded runs send no new Qloo request when every recording says 0, read from the recordings", () => {
@@ -458,7 +489,44 @@ describe("the agent section's two columns (A1)", () => {
     expect(transcript).toContain("Found legal places");
     expect(transcript).not.toContain("Tested a move");
   });
+
+  it("lists first, as the still transcript, the keep run whose own events hold a Qloo request, and its row says so", () => {
+    // Served with the run that asked Qloo after one that did not, both ending with a place to keep.
+    served.runs = [recorded("refused", REFUSED), recorded("quiet", FIND_MOVES), keepAsking("asked")];
+    const html = renderToStaticMarkup(createElement(AgentPanel, { preset: tiny, day: 0, agentStatus: "off" }));
+    const list = html.slice(html.indexOf('aria-label="Recorded runs"'));
+    const rows = ["Run asked", "Run quiet", "Run refused"].map((title) => list.indexOf(`>${title}`));
+    rows.forEach((at) => expect(at).toBeGreaterThan(-1));
+    expect(rows).toEqual([...rows].sort((a, b) => a - b));
+    expect(text(list)).toContain("Run asked · This run made 1 Qloo request.");
+    expect(text(list)).toContain("Run quiet · This run made no Qloo request.");
+    // The transcript before any replay is that run: it explained a clash as well as finding legal places.
+    const transcript = html.slice(html.indexOf("data-agent-run"), html.indexOf("data-agent-picker"));
+    expect(transcript).toContain("Explained a clash");
+    expect(transcript).toContain("Found legal places");
+  });
 });
+
+/** A run that found legal places and explained a clash with one Qloo request, live when recorded, as the API serves it. */
+function keepAsking(id: string): RecordedRun {
+  const stream = streamOf(FIND_MOVES, "Here.", 1);
+  const explain = [
+    { type: "tool_call", id: "call_explain", tool: "explain_clash", input: {}, provenance: "qloo" },
+    {
+      type: "tool_result",
+      id: "call_explain",
+      tool: "explain_clash",
+      ok: true,
+      summary: "done",
+      latency_ms: 310,
+      provenance: "qloo",
+      requests: [{ path: "/v2/analysis/compare", params: {}, status: 200, latency_ms: 300, cached: false, recorded: false }],
+    },
+  ];
+  const events = [...stream.slice(0, 3), ...explain, ...stream.slice(3)].map((event, i) => ({ t: i * 100, event }));
+  const [run] = parseRecordings({ runs: [{ id, title: `Run ${id}`, question: "Why do they clash, and where could Bo go?", captured_at: "2026-10-01T10:00:00Z", model: "m", events }] });
+  return run;
+}
 
 describe("where a replayed run's question lands (the heading clear of the sticky bars)", () => {
   // At 1440 x 900 the page's scroll padding is 82 px and the section's own scroll margin 34 px, so a jump lands the
@@ -479,6 +547,22 @@ describe("where a replayed run's question lands (the heading clear of the sticky
   it("keeps the item's own margin on one column, and for a run far down the conversation", () => {
     // Below 1024 px the heading and the can/cannot list sit above the run: the question comes to the top.
     expect(replayScrollMargin({ ...wide, wide: false, offset: 148 })).toBeNull();
+    // That margin is the run card's own: 12 px (scroll-mt-3) under the phone's 63 px scroll padding puts its title
+    // row at 75 px, at least 8 px clear of the 56 px header, with the question under it.
+    const run = asking("asks");
+    const card = renderToStaticMarkup(
+      createElement(ExchangeView, {
+        exchange: { id: "q1", message: run.question, recording: run, recorded: true, state: replayFinalState(run) },
+        latest: true,
+        range: { low: 90, high: 110 },
+        festival: tiny.festival,
+        day: 0,
+        onRetry: () => {},
+        onSkip: () => {},
+      }),
+    );
+    expect(card).toMatch(/^<li id="agent-q1" class="scroll-mt-3 [^"]*\bmd:scroll-mt-10\b/);
+    expect(63 + 12).toBeGreaterThanOrEqual(56 + 8);
     // A later run, below an earlier one: bringing the section's top into view would leave its question low.
     expect(replayScrollMargin({ ...wide, offset: 1400 })).toBeNull();
   });
@@ -584,6 +668,87 @@ describe("the agent run's Qloo label (A2)", () => {
   });
 });
 
+describe("a replayed run's Qloo request line sits in its header, under its question", () => {
+  const range = { low: 90, high: 110 };
+  const view = (run: RecordedRun | undefined, state: RunState, synthetic = false) =>
+    renderToStaticMarkup(
+      createElement(ExchangeView, {
+        exchange: { id: "q1", message: run?.question ?? "Where could Bo go?", recording: run, recorded: run !== undefined, state },
+        latest: true,
+        range,
+        festival: tiny.festival,
+        day: 0,
+        synthetic,
+        onRetry: () => {},
+        onSkip: () => {},
+      }),
+    );
+  /** Every button in the markup that holds these words. */
+  const buttonsWith = (html: string, words: string) =>
+    [...html.matchAll(/<button\b[^>]*>[\s\S]*?<\/button>/g)].map((match) => match[0]).filter((button) => text(button).includes(words));
+
+  it("reads its count from the recording, for a replay only, never on the invented day", () => {
+    expect(headerTraceLabel(asking("asks"))).toBe("Qloo requests in this run: 1");
+    expect(headerTraceLabel(recorded("zero", FIND_MOVES))).toBe(ZERO_REQUESTS_LABEL);
+    expect(headerTraceLabel(undefined)).toBeNull();
+    expect(headerTraceLabel(asking("asks"), true)).toBeNull();
+  });
+
+  it("puts the same trace button under the question once the replay has played: 14 px, weight 600, ink, once", () => {
+    const run = asking("asks");
+    const html = view(run, replayFinalState(run));
+    const buttons = buttonsWith(html, "Qloo requests in this run: 1");
+    expect(buttons).toHaveLength(1);
+    // The trace trigger itself (it opens the trace dialog), its words the whole name, with no second count.
+    expect(buttons[0]).toContain('aria-haspopup="dialog"');
+    expect(text(buttons[0])).toBe("Qloo requests in this run: 1");
+    expect(buttons[0]).not.toContain("aria-label");
+    // 14 px (text-sm), weight 600 (font-semibold), ink (text-foreground); not the 12 px foot line it was.
+    expect(buttons[0]).toMatch(/class="[^"]*\btext-sm\b/);
+    expect(buttons[0]).toMatch(/class="[^"]*\bfont-semibold\b/);
+    expect(buttons[0]).toMatch(/class="[^"]*\btext-foreground\b/);
+    expect(buttons[0]).not.toMatch(/\btext-xs\b/);
+    // In the header: after the question, before the replay's notice and its steps; shown, not held hidden.
+    const question = html.indexOf("Why do they clash?");
+    const line = html.indexOf(buttons[0]);
+    expect(question).toBeGreaterThan(-1);
+    expect(line).toBeGreaterThan(question);
+    expect(line).toBeLessThan(html.indexOf("A real agent run, replayed from a saved stream."));
+    expect(line).toBeLessThan(html.indexOf('aria-label="What the agent did"'));
+    expect(html).toContain('<div data-run-trace="" class="mt-1">');
+    // Nowhere else, the run's foot included.
+    expect(html.match(/Qloo requests in this run/g)).toHaveLength(1);
+    expect(text(html)).not.toContain("How Qloo was used");
+  });
+
+  it("keeps the line's room, with the same words, from the replay's first beat, hidden until the replay has played", () => {
+    const run = asking("asks");
+    const playing = reduceEvents(toReplayBeats(run).slice(0, 2).map((beat) => beat.event));
+    expect(playing.status).toBe("running");
+    const html = view(run, playing);
+    expect(html).toContain('<div data-run-trace="" class="mt-1 invisible">');
+    expect(buttonsWith(html, "Qloo requests in this run: 1")).toHaveLength(1);
+  });
+
+  it("leaves a live run's trace at its foot, and the invented day's too", () => {
+    const events = streamOf(FIND_MOVES, "Here.").map((raw) => {
+      const parsed = parseAgentEvent(raw);
+      if (parsed.kind !== "event") throw new Error(`fixture event not read: ${JSON.stringify(raw)}`);
+      return parsed.event;
+    });
+    const live = view(undefined, reduceEvents(events as AgentEvent[]));
+    expect(live).not.toContain("data-run-trace");
+    expect(buttonsWith(live, "How Qloo was used")).toHaveLength(1);
+    const run = asking("asks");
+    const invented = view(run, replayFinalState(run), true);
+    expect(invented).not.toContain("data-run-trace");
+    expect(invented).not.toContain("Qloo requests in this run");
+    // On screen once, at the foot (the hidden copy that holds a replay's height draws it too, until it is measured).
+    const shown = invented.slice(0, invented.indexOf('aria-hidden="true" inert=""'));
+    expect(buttonsWith(shown, "Where the figures came from")).toHaveLength(1);
+  });
+});
+
 describe("the run against the move at the top of the page (A3)", () => {
   it("says why their index changes differ when the run moved another set", () => {
     const place = keepableMove(liveResults(FIND_MOVES), tiny.festival, 0);
@@ -608,7 +773,7 @@ const READY: PlanAnswer = {
 /** A move the plan already holds: another set (Cy Twombly), on this day. */
 const HELD: StackMove = { actId: "cy", stageId: "side", day: 0, start: "16:00" };
 
-describe("Keep this place with a plan that already holds a move (A4)", () => {
+describe("Keep this move with a plan that already holds a move (A4)", () => {
   const shapes: [string, () => AgentPlace][] = [
     ["a replayed run", () => keepableMove(replayFinalState(recorded("find", FIND_MOVES)).results, tiny.festival, 0) as AgentPlace],
     ["a live run", () => keepableMove(liveResults(FIND_MOVES), tiny.festival, 0) as AgentPlace],
@@ -684,22 +849,26 @@ describe("Keep this place with a plan that already holds a move (A4)", () => {
     expect(seededPlan([BEST], { step: BEST })).toBeNull();
   });
 
-  it("offers Add (first) and Replace when the plan holds a move, and one Keep this place when it is empty", () => {
+  it("offers Add (first) and Replace when the plan holds a move, and one Keep this move when it is empty", () => {
     const place = keepableMove(liveResults(FIND_MOVES), tiny.festival, 0) as AgentPlace;
     const render = (kept: readonly StackStep[]) =>
       renderToStaticMarkup(createElement(KeepThisPlace, { place, kept, onKeep: () => null, check: async () => READY }));
     const choosing = render([HELD]);
     const words = text(choosing);
-    expect(words).toContain("Keep this place : your plan already holds 1 kept move.");
+    expect(words).toContain("Keep this move : your plan already holds 1 kept move.");
     expect(words.indexOf("Add to your plan")).toBeLessThan(words.indexOf("Replace your plan"));
     expect(choosing).toContain('role="group"');
     // Existing Button variants, no pill, badge or chip.
     expect(choosing).toMatch(/data-variant="outline"[^>]*>Add to your plan/);
     expect(choosing).toMatch(/data-variant="ghost"[^>]*>Replace your plan/);
-    const empty = text(render([]));
-    expect(empty).toContain("Keep this place");
+    const emptyHtml = render([]);
+    const empty = text(emptyHtml);
+    expect(empty).toContain("Keep this move");
+    // The one button reads the hero's label, the decision card's KEEP_MOVE.
+    expect(emptyHtml).toMatch(new RegExp(`data-variant="outline"[^>]*>${KEEP_MOVE}</button>`));
     expect(empty).not.toContain("Add to your plan");
     expect(empty).not.toContain("Replace your plan");
+    expect(`${words} ${empty}`).not.toContain("Keep this place");
   });
 });
 
@@ -824,5 +993,64 @@ describe("the trace ledger's missing request ids (A8)", () => {
     expect(row({ recorded: true, cached: true }, true)).not.toContain("saved before request ids were kept");
     expect(row({ recorded: true, cached: false })).toContain("Request ID not saved with this response");
     expect(row({ cached: true })).toContain("Request ID none (served from cache)");
+  });
+});
+
+describe("the agent section while its recorded runs are still out (round 37 closeout, F3)", () => {
+  beforeEach(() => {
+    served.runs = [recorded("a", FIND_MOVES), recorded("b", {}), recorded("c", FIND_MOVES)];
+    served.otherDays = new Map();
+    served.asks = [];
+  });
+
+  /** The panel rendered pending (`loading`) or settled, and the part above its run: the heading and the can/cannot list. */
+  function render(loading: boolean, agentStatus: "off" | "checking" | "on" | "unknown" = "off") {
+    served.loading = loading;
+    try {
+      const html = renderToStaticMarkup(createElement(AgentPanel, { preset: tiny, day: 0, agentStatus }));
+      return { html, side: html.slice(html.indexOf("<div data-agent-side"), html.indexOf("<div data-agent-run")) };
+    } finally {
+      served.loading = false;
+    }
+  }
+
+  it("draws the heading and the can/cannot list exactly as the settled panel does, so nothing above the run moves when they land", () => {
+    const pending = render(true);
+    const settled = render(false);
+    expect(pending.html).toContain("Checking whether the live agent is on.");
+    expect(settled.html).not.toContain("Checking whether the live agent is on.");
+    expect(pending.side).toContain("data-agent-limits");
+    expect(pending.side.length).toBeGreaterThan(200);
+    expect(pending.side).toBe(settled.side);
+    // The run starts at the same place in both: the same column classes.
+    const runClass = (html: string) => html.match(/<div data-agent-run="" class="([^"]+)"/)?.[1];
+    expect(runClass(pending.html)).toBe(runClass(settled.html));
+  });
+
+  it.each(["on", "unknown"] as const)(
+    "keeps everything above the run unchanged when /api/health settles from checking to %s (F3 residual)",
+    (status) => {
+      const checking = render(true, "checking");
+      expect(checking.html).toContain("Checking whether the live agent is on.");
+      for (const loading of [true, false]) {
+        const settled = render(loading, status);
+        expect(settled.html).not.toContain("Checking whether the live agent is on.");
+        // The live agent's capabilities are drawn, but after the question form, never in the side column.
+        expect(settled.html).toContain("What it can do");
+        expect(settled.side).not.toContain("What it can do");
+        expect(settled.side).toBe(checking.side);
+        const runClass = (html: string) => html.match(/<div data-agent-run="" class="([^"]+)"/)?.[1];
+        expect(runClass(settled.html)).toBe(runClass(checking.html));
+      }
+    },
+  );
+
+  it("holds at least the tallest settled section measured on the published days at each width", () => {
+    // Settled #agent heights (px) measured on 21 to 22 Oct 2026 with the live agent off, Glastonbury's the taller.
+    const settled: [number, number][] = [
+      [320, 1819], [360, 1659], [375, 1587], [390, 1588], [430, 1571], [520, 1386], [640, 1215], [767, 1216],
+      [768, 1216], [900, 1217], [1023, 1193], [1024, 1004], [1100, 965], [1280, 879], [1440, 879], [1920, 879],
+    ];
+    for (const [width, height] of settled) expect(agentRoomFloor(width), `at ${width} px`).toBeGreaterThanOrEqual(height);
   });
 });

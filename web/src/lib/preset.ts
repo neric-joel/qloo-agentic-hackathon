@@ -189,6 +189,12 @@ export type Preset = {
   sources: SourceLink[];
   overlap_notes: string[];
   evidence: Evidence | null;
+  /**
+   * {act id: the name Qloo's saved /search returned for the act's entity}, added to the saved preset from its
+   * saved /search responses (no request sent). Empty or missing when the preset holds none; `parsePreset` always
+   * sets it and drops any entry that is not a non-empty string.
+   */
+  matched_names?: Record<string, string>;
 };
 
 export type PresetSummary = {
@@ -611,7 +617,18 @@ export function parsePreset(raw: unknown): Preset {
     sources: parseSources(o.sources),
     overlap_notes: strList(o.overlap_notes, "overlap_notes"),
     evidence: parseEvidence(o.evidence),
+    matched_names: parseMatchedNames(o.matched_names),
   };
+}
+
+/** `matched_names` as {act id: name}: lenient, since the names only label the drawer; anything else is dropped. */
+function parseMatchedNames(raw: unknown): Record<string, string> {
+  if (!isRecord(raw)) return {};
+  const out: Record<string, string> = {};
+  for (const [id, name] of Object.entries(raw)) {
+    if (typeof name === "string" && name.trim()) out[id] = name;
+  }
+  return out;
 }
 
 /** Validates the list from `GET /api/presets`. Throws `PresetFormatError`. */

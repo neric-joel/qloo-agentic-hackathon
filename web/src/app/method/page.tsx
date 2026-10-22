@@ -29,7 +29,9 @@ import {
   formatWholePct,
   formatWithin,
   methodRow,
+  noSignalSentence,
   numberWord,
+  tagCapSentence,
 } from "@/lib/method-figures";
 import { PUBLIC_SOURCES } from "@/lib/public-sources";
 import { cn } from "@/lib/utils";
@@ -171,11 +173,16 @@ function SubBlock({ id, title, children }: { id: string; title: ReactNode; child
  * tags and random are thin muted baselines. The chart is set at the prose's measure in the prose's own font size
  * (so 76ch resolves in the same metrics), and its last axis number ends at the prose's right edge. The sentences
  * that say so follow the figure directly. Drawn final.
+ *
+ * Taste overlap's own value label is not shown (round 37 fix pass 2, L58): the failed test's sentence directly under
+ * the chart states the share (CHARTER 2.1), so the first screen says the number once. Its bar stays, and its accessible
+ * name still carries the share and the bar. BacktestBars always writes a label beside each bar, so the figure hides
+ * the one that follows the bar named by `describe` below (TASTE_VALUE_HIDDEN).
  */
 function MethodsDiagram() {
   const bar = backtest.bar.topQuarterPct;
   return (
-    <figure className="mt-4 xl:mt-0 print:mt-4">
+    <figure className={`mt-4 xl:mt-0 print:mt-4 ${TASTE_VALUE_HIDDEN}`}>
       <figcaption className="text-[0.8125rem] leading-5 text-muted-foreground">
         Complained-about clashes in the day&rsquo;s highest {scale.topQuarterPct}%, by method
       </figcaption>
@@ -192,6 +199,12 @@ function MethodsDiagram() {
     </figure>
   );
 }
+
+/**
+ * Hides the value label beside taste overlap's bar, on screen and on paper: the label right after the one bar whose
+ * accessible name starts "Taste" (MethodsDiagram's `describe`; no other bar's name does).
+ */
+const TASTE_VALUE_HIDDEN = "[&_[role=img][aria-label^=Taste]+[data-bar-value]]:hidden";
 
 /** A link in running text: ink, with a 1px border-strong underline 4px off the text that turns ink on hover. */
 const TEXT_LINK = "underline decoration-border-strong decoration-1 underline-offset-4 hover:decoration-foreground";
@@ -228,22 +241,22 @@ function VerdictMeter({ value, bar, domain, space }: { value: number; bar: numbe
 }
 
 /**
- * The scale of the rail's two other meters, per unit of their bar: each runs from 0 to its bar times this, so its bar
- * rule sits where the first meter's does (the chart's bar over the chart's domain). Their units differ (points,
- * index points), so the rail says each line has its own scale.
+ * The scale of the rail's meters, per unit of their bar: each runs from 0 to its bar times this, so its bar rule sits
+ * at the chart's bar fraction (the chart's bar over the chart's domain), and both rules sit at one x. Their units
+ * differ (points, index points), so the rail says each line has its own scale.
  */
 const RAIL_SCALE = FIGURE_DOMAIN / backtest.bar.topQuarterPct;
 
 /**
- * The verdict in the short version's rail, from 1280px only: the three bars we set before building and how each was
- * missed. First, what the number measures (the chart caption's own words up to its comma), the chart's own row label,
- * taste overlap's share as one display numeral, the miss as a meter on the chart's own scale (VerdictMeter), the
- * chart's bar label and the page's own "It missed the bar.". Then the two other pre-set checks the body states in
- * prose, the lead over genre tags and the suggested moves against popularity-only, each as a 13px label, its value
- * and its bar, and a meter on its own scale whose bar rule sits at the first one's x; then one muted line saying
- * so. All in ink but that line, every number from the figures module. It repeats lines that stay visible beside it
- * (the caption, the chart, the failed test, the paragraph on popularity and the moves), so it is for the eye only:
- * aria-hidden, never printed, static (it scrolls with the page), and no box or raspberry.
+ * The verdict in the short version's rail, from 1280px only: the two checks we set before building that the chart
+ * beside it does not draw, and how each was missed. Round 37 (L58, fix pass 1): taste overlap's share is drawn once
+ * on the first screen, by the chart's bar with its value label and the chart's bar line; the rail draws no meter, label
+ * or bar line for it, so nothing on the first screen restates that bar. One 13px line names what follows; then the
+ * lead over genre tags and the suggested moves against popularity-only, each as a 13px label, its value and its bar,
+ * and a meter on its own scale whose bar rule sits at the chart's bar fraction; then one muted line saying so. All in
+ * ink but that line, every number from the figures module. Both checks are stated in the failed test's sentence
+ * beside it, so the rail is for the eye only: aria-hidden, never printed, static (it scrolls with the page), and no
+ * box or raspberry.
  */
 function ShortVerdict() {
   return (
@@ -252,17 +265,8 @@ function ShortVerdict() {
       data-short-verdict
       className="mt-8 hidden xl:block text-foreground xl:col-span-4 xl:col-start-1 xl:row-start-2 print:hidden"
     >
-      <p className="max-w-[20rem] text-[0.8125rem] leading-5">
-        Complained-about clashes in the day&rsquo;s highest {scale.topQuarterPct}%
-      </p>
-      <p className="mt-3 text-[0.8125rem] leading-5 font-semibold">Taste overlap</p>
-      <p className="type-numeral mt-1 text-[3.5rem] leading-none tabular-nums">{formatPct(taste.topQuarterPct)}</p>
-      <VerdictMeter value={taste.topQuarterPct} bar={backtest.bar.topQuarterPct} domain={FIGURE_DOMAIN} space="mt-3" />
-      <p className="mt-2 text-[0.8125rem] leading-5">
-        Bar we set: <span className="font-mono tabular-nums">{backtest.bar.topQuarterPct}%</span>
-      </p>
-      <p className="mt-1 text-[0.9375rem] leading-snug font-semibold">It missed the bar.</p>
-      <p className="mt-6 text-[0.8125rem] leading-5 font-semibold">Lead over genre tags</p>
+      <p className="max-w-[20rem] text-[0.8125rem] leading-5">Two other checks we set before building</p>
+      <p className="mt-3 text-[0.8125rem] leading-5 font-semibold">Lead over genre tags</p>
       <p className="mt-0.5 text-[0.8125rem] leading-5">
         <span className="font-mono tabular-nums">{backtest.leadOverGenrePoints}</span> points · bar{" "}
         <span className="font-mono tabular-nums">{backtest.bar.leadOverGenrePoints}</span>
@@ -309,7 +313,7 @@ function ShortVersion() {
               points back here or sits in the test's own section. */}
           <li className="pb-4 text-base font-medium sm:text-lg sm:leading-[1.5]">
             <strong className="font-semibold">The test we set before building failed.</strong>{" "}
-            Taste overlap put {formatPct(taste.topQuarterPct)} of complained-about clashes in the{" "}
+            Taste overlap put <span data-failed-figure>{formatPct(taste.topQuarterPct)}</span> of complained-about clashes in the{" "}
             {scale.topQuarterPct}% highest-ranked clashes among that day&rsquo;s pairs,{" "}
             {backtest.leadOverGenrePoints} points ahead of genre tags. The bar we wrote down before
             building was {backtest.bar.topQuarterPct}% and {backtest.bar.leadOverGenrePoints} points
@@ -464,95 +468,111 @@ const QLOO_CALLS: readonly {
 ];
 
 /**
- * The route from a timetable to the index, as four typed tokens: what passes from one step to the next. The two
- * Qloo returns (`qloo`) are teal, since Qloo /search and /v2/insights return them; the first and the last are ink,
- * the last, this app's index, semibold. Under each token, the step's existing label and sub-label (the endpoint).
+ * The chain from a timetable to a decision (round 37, L59), as seven typed steps: what each step hands on, who makes
+ * it, and Qloo's endpoint where it has one. Drawn as the chain's diagram (round 37, L59 LATE): every token in ink, the
+ * last, the visitor's Keep, semibold, and teal only for Qloo's endpoints (/search, /v2/insights and the branch's
+ * /v2/analysis/compare), as the endpoint cards below set them. Each step was
+ * checked against the code: /search and /v2/insights in backend/app/qloo/overlap.py, the percentile ranks and taste
+ * overlap in overlap.py, the pair score and the index in backend/app/schedule/metrics.py, the legal moves in the
+ * engine (backend/app/decision.py picks the hero's move from them alone), and the Keep in the hero. The agent is not a
+ * step every decision passes through, so it hangs off the engine as a branch (`branch`, FlowBranch): its one Qloo
+ * request when it explains a clash is a /v2/analysis/compare (explain_clash in backend/app/agent/clash_tools.py), and
+ * its moves are tested by the same engine.
  */
-const FLOW: readonly { token: string; name: string; path?: string; qloo?: boolean }[] = [
+const FLOW: readonly { token: string; name: string; path?: string; note?: string; branch?: boolean }[] = [
   { token: "act names", name: "Your timetable" },
-  { token: "entity IDs", name: "Qloo", path: "/search", qloo: true },
-  { token: "overlap ranks", name: "Qloo", path: "/v2/insights", qloo: true },
-  { token: "index (this app)", name: "Clash Budget Index" },
+  { token: "entity IDs", name: "Qloo", path: "/search" },
+  { token: "each act’s ranked row of the bill", name: "Qloo", path: "/v2/insights" },
+  { token: "percentile ranks and taste overlap", name: "This app" },
+  { token: "pair score and Clash Budget Index", name: "This app" },
+  { token: "legal moves under the day’s rules", name: "The engine", branch: true },
+  { token: "Keep this move", name: "You", note: "Nothing moves until the acts’ teams agree." },
 ];
 
 /**
- * The arrow's stroke: a 1.5px ink line with round caps and joins, so the four tokens read as one pipeline (ink on
- * paper 16.09 / 16.75). Never raspberry: the flow is not shared time.
+ * The arrow's stroke: a 1.5px ink line with round caps and joins, so the steps read as one chain (ink on paper
+ * 16.09 / 16.75). Never raspberry: the chain is not shared time.
  */
 const ARROW = { stroke: "var(--foreground)", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round", fill: "none" } as const;
 
 /**
- * The arrow on to the next token, as inline SVG, from 768px: it runs across, at least 40px long, filling the gap to
- * the next column; the line stops 0.75px short of the head's tip so its round cap ends there.
+ * The arrow down to the next step, under the step: 24px long, 8px clear of the step above and of the next token (the
+ * list's row gap), so the steps read as one column. The line stops where the head's tip is.
  */
-function FlowArrow() {
-  return (
-      <svg aria-hidden="true" data-flow-arrow="across" focusable="false" height={10} className="hidden min-w-10 flex-1 overflow-visible md:block">
-        <line x1={2.25} y1={5} x2="100%" y2={5} transform="translate(-1.5 0)" {...ARROW} />
-        <svg x="100%" y={0} overflow="visible">
-          <path d="M-5 1.25 L-0.75 5 L-5 8.75" {...ARROW} />
-        </svg>
-      </svg>
-  );
-}
-
-/**
- * On a phone, and in a stacked flow at any width, the same arrow points down under the step: 40px long on a phone;
- * 24px in the stacked form, 8px clear of the step above and of the next token (the list's row gap), so the four steps
- * read as one column. The head keeps the across arrow's size, its tip where the line ends.
- */
-function FlowArrowDown({ stacked = false }: { stacked?: boolean }) {
-  const length = stacked ? 24 : 40;
+function FlowArrowDown() {
+  const length = 24;
   const tip = length - 1.5;
   return (
-      <svg
-        aria-hidden="true"
-        data-flow-arrow="down"
-        focusable="false"
-        width={10}
-        height={length}
-        className={stacked ? "mt-2 block overflow-visible" : "mt-2 block overflow-visible md:hidden"}
-      >
-        <line x1={5} y1={0.75} x2={5} y2={tip} {...ARROW} />
-        <path d={`M1.25 ${tip - 4.25} L5 ${tip} L8.75 ${tip - 4.25}`} {...ARROW} />
-      </svg>
+    <svg aria-hidden="true" data-flow-arrow="down" focusable="false" width={10} height={length} className="mt-2 block overflow-visible">
+      <line x1={5} y1={0.75} x2={5} y2={tip} {...ARROW} />
+      <path d={`M1.25 ${tip - 4.25} L5 ${tip} L8.75 ${tip - 4.25}`} {...ARROW} />
+    </svg>
   );
 }
 
 /**
- * Request to result, before the endpoint details: the four tokens in 14px mono joined by arrows, across from 768px
- * and down on a phone. No dots, nodes, boxes or raspberry. Under each token its label in 13px ink and its endpoint,
- * where it has one, in 13px muted mono. `stacked` keeps the phone's downward form at every width, with no outer
- * margin of its own: the form that hangs under "How the rest works" from 1280px.
+ * The agent's branch off the engine. The chain's arrow on to the Keep runs down the left as the spine, as long as the
+ * branch beside it plus 24px, so the main line visibly goes on past the branch; the branch leaves the spine to the
+ * right with its own arrow and its one sentence, /v2/analysis/compare in teal mono (Qloo's endpoint). A nested list
+ * inside the engine's step, so a screen reader hears it as part of that step, not as a step between the engine and
+ * the Keep. No box, dot or raspberry.
+ */
+function FlowBranch() {
+  return (
+    <div className="mt-2 flex">
+      <div className="relative w-2.5 shrink-0">
+        <svg aria-hidden="true" data-flow-arrow="spine" focusable="false" className="absolute inset-0 h-full w-full overflow-visible">
+          <line x1={5} y1={2.25} x2={5} y2="100%" transform="translate(0 -1.5)" {...ARROW} />
+          <svg x={0} y="100%" overflow="visible">
+            <path d="M1.25 -5.75 L5 -1.5 L8.75 -5.75" {...ARROW} />
+          </svg>
+        </svg>
+      </div>
+      <ul data-flow-branch className="min-w-0 flex-1 pb-6">
+        <li className="flex items-start gap-1.5">
+          <svg aria-hidden="true" data-flow-arrow="branch" focusable="false" width={20} height={20} className="block shrink-0 overflow-visible">
+            {/* From the spine's centre (5px left of this column, after the 1.5px shift) to the head's tip. */}
+            <line x1={-3.5} y1={10} x2={18.75} y2={10} transform="translate(-1.5 0)" {...ARROW} />
+            <path d="M13 6.25 L17.25 10 L13 13.75" {...ARROW} />
+          </svg>
+          <p className="min-w-0 text-[0.8125rem] leading-5 text-foreground">
+            On request: the agent explains a clash with one{" "}
+            <code className="font-mono text-prov-qloo">/v2/analysis/compare</code> and tests moves through the same engine.
+          </p>
+        </li>
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * Request to decision, before the endpoint details: the seven steps as one column, each token in 14px ink mono joined
+ * to the next by an arrow down, the agent's branch off the engine (FlowBranch). No dots, nodes, boxes or raspberry.
+ * Under each token its maker in 13px ink and, where it has one, Qloo's endpoint in 13px teal mono on the same line,
+ * or the step's note in 13px muted. The list is both the drawing and its text: nothing is hidden from a screen reader. `stacked` drops the outer margin: the copy that hangs under "How the rest works"
+ * from 1280px. The ordered list is the chain's text: every step and the branch are read in order.
  */
 function RequestFlow({ stacked = false }: { stacked?: boolean }) {
   return (
-    <ol
-      aria-label="From your timetable to the index"
-      className={stacked ? "grid gap-y-2" : "my-6 grid gap-y-2 md:grid-cols-4 md:gap-y-0"}
-    >
+    <ol aria-label="From your timetable to the index" className={stacked ? "grid gap-y-2" : "my-6 grid gap-y-2"}>
       {FLOW.map((step, i) => {
         const last = i === FLOW.length - 1;
         return (
-          <li key={step.token} data-flow-node className={stacked ? "min-w-0" : "min-w-0 md:pr-3"}>
-            <div className="flex items-center gap-3">
-              <code
-                data-flow-token
-                className={cn(
-                  "font-mono text-sm leading-5 whitespace-nowrap",
-                  step.qloo ? "text-prov-qloo" : "text-foreground",
-                  last && "font-semibold",
-                )}
-              >
-                {step.token}
-              </code>
-              {last || stacked ? null : <FlowArrow />}
-            </div>
-            <p className="mt-1.5 text-[0.8125rem] leading-snug text-foreground">{step.name}</p>
-            {step.path ? (
-              <code className="block font-mono text-[0.8125rem] leading-snug text-muted-foreground">{step.path}</code>
-            ) : null}
-            {last ? null : <FlowArrowDown stacked={stacked} />}
+          <li key={step.token} data-flow-node className="min-w-0">
+            <code data-flow-token className={cn("block font-mono text-sm leading-5 text-foreground", last && "font-semibold")}>
+              {step.token}
+            </code>
+            <p className="mt-1 text-[0.8125rem] leading-snug text-foreground">
+              {step.name}
+              {step.path ? (
+                <>
+                  {" "}
+                  <code className="font-mono text-prov-qloo">{step.path}</code>
+                </>
+              ) : null}
+            </p>
+            {step.note ? <p className="text-[0.8125rem] leading-snug text-muted-foreground">{step.note}</p> : null}
+            {last ? null : step.branch ? <FlowBranch /> : <FlowArrowDown />}
           </li>
         );
       })}
@@ -696,15 +716,15 @@ function Exploratory() {
   );
 }
 
-/** The anchor of the taste-inside-the-price block, for links that point at it. */
+/** The anchor of the taste-inside-the-score block, for links that point at it. */
 const TASTE_IN_PRICE_ID = "taste-in-price";
 
-/** Said when the interval of the full price minus the taste-removed price holds zero. */
+/** Said when the interval of the pair score minus the taste-removed score holds zero. */
 const TASTE_ADDS_NOT_ESTABLISHED = "This check did not establish that taste adds to time and draw.";
 
 /**
- * Taste inside the full price, the second exploratory follow-up, in the open under its own heading: the full price
- * against popularity, against the same price with taste overlap held the same for every pair (time and draw only),
+ * Taste inside the pair score, the second exploratory follow-up, in the open under its own heading: the pair score
+ * against popularity, against the same score with taste overlap held the same for every pair (time and draw only),
  * and against shuffled taste values; then the same by festival, Glastonbury against the four US festivals; then
  * (round 33) what that split may mean for use, labelled a hypothesis, where taste overlap and popularity disagree,
  * what a location would cost, and a replication test that has not been run. Every
@@ -719,27 +739,27 @@ function TasteInPrice() {
   return (
     <div id={TASTE_IN_PRICE_ID} aria-labelledby={`${TASTE_IN_PRICE_ID}-heading`} role="group" className="scroll-mt-24 pt-4">
       <h3 id={`${TASTE_IN_PRICE_ID}-heading`} className="text-lg leading-snug font-semibold break-words">
-        Taste inside the full price (exploratory)
+        Taste inside the pair score (exploratory)
       </h3>
       {/* Its paragraphs keep the running text's measure from 1280px, as a section body's do; the table spans the column. */}
       <div className="mt-2 space-y-3 xl:[&>p]:max-w-[76ch]">
         <p>
           Run after the failed test above, on the same {backtest.scoredPairs} complained-about pairs, so it is exploratory. The
-          full price (the index&rsquo;s pair score: taste overlap &times; shared time &times; Qloo popularity) scored
+          pair score (taste overlap &times; shared time &times; Qloo popularity) scored
           AUC {formatAuc(fullPrice.auc)} (interval {formatInterval(fullPrice.auc95)}); popularity alone scored{" "}
           {formatAuc(pop)}. The difference is {formatDiff(pairedVsPopularity.diff)} (interval{" "}
-          {formatDiffInterval(pairedVsPopularity.interval)}), so the full price did not establish an advantage over
+          {formatDiffInterval(pairedVsPopularity.interval)}), so the pair score did not establish an advantage over
           popularity.
         </p>
         <p>
           With taste taken out, every pair given the same taste overlap so that only shared time and draw are left,
           the same score reached {formatAuc(tasteRemoved.auc)} (interval {formatInterval(tasteRemoved.auc95)}). The
-          full price minus that is {formatDiff(pairedVsTasteRemoved.diff)} (interval{" "}
+          pair score minus that is {formatDiff(pairedVsTasteRemoved.diff)} (interval{" "}
           {formatDiffInterval(pairedVsTasteRemoved.interval)}).{" "}
           {said.tasteAddsIncludesZero ? <strong className="font-semibold">{TASTE_ADDS_NOT_ESTABLISHED}</strong> : null}{" "}
-          With the taste values shuffled among each day&rsquo;s pairs, {formatCount(shuffled.shuffles)} times, the full
-          price fell to {formatAuc(shuffled.mean)} on average ({scale.intervalPct}% of shuffles between{" "}
-          {formatAuc(shuffled.range95[0])} and {formatAuc(shuffled.range95[1])}). So the full price depends on the
+          With the taste values shuffled among each day&rsquo;s pairs, {formatCount(shuffled.shuffles)} times, the pair
+          score fell to {formatAuc(shuffled.mean)} on average ({scale.intervalPct}% of shuffles between{" "}
+          {formatAuc(shuffled.range95[0])} and {formatAuc(shuffled.range95[1])}). So the pair score depends on the
           real taste values, which is not the same as taste adding to time and draw.
         </p>
         <TasteByFestival />
@@ -769,8 +789,8 @@ function ScopedReading() {
     <>
       <p>
         On the {glasto.label} complaints ({glasto.complaintPairs} complaint pairs in {glasto.complaints} clusters, all
-        from one {backtest.glastonbury.source} clash guide about mid-card acts), adding taste raised the full
-        price&rsquo;s AUC by {formatAuc(up.diff)} (interval {formatDiffInterval(up.interval)}, resampled by complaint).
+        from one {backtest.glastonbury.source} clash guide about mid-card acts), adding taste raised the pair
+        score&rsquo;s AUC by {formatAuc(up.diff)} (interval {formatDiffInterval(up.interval)}, resampled by complaint).
         On the {numberWord(backtest.usFestivals)} US festivals ({us.complaintPairs} complaint pairs in {us.complaints}{" "}
         clusters, press complaints that mostly named the day&rsquo;s biggest acts, which popularity already ranks
         well), adding taste lowered it by {formatAuc(Math.abs(down.diff))} (interval{" "}
@@ -799,8 +819,8 @@ function ReplicationTest() {
       <strong className="font-semibold">A replication test we have not run.</strong> It needs data that does not exist
       yet: the {replication.billsYear} bills of the same {numberWord(backtest.festivals)} festivals, scored when their
       set times are published and before any complaint is collected. The scoring would be fixed and written down before
-      that data arrives, and complaints collected the same way as here. On the same complained-about pairs, the full
-      price would be compared with the same score with taste held constant, as a paired difference, counted a success
+      that data arrives, and complaints collected the same way as here. On the same complained-about pairs, the pair
+      score would be compared with the same score with taste held constant, as a paired difference, counted a success
       only if that difference&rsquo;s {scale.intervalPct}% interval lies above {replication.successAbove}. Both arms
       keep Qloo&rsquo;s popularity; a baseline with no Qloo data has not been tested.
     </p>
@@ -808,8 +828,8 @@ function ReplicationTest() {
 }
 
 /**
- * The taste-inside-the-price figures by festival, as a ruled table on paper like the backtest's: popularity, the
- * price with taste taken out (time and draw) and the full price, Glastonbury against the four US festivals pooled.
+ * The taste-inside-the-score figures by festival, as a ruled table on paper like the backtest's: popularity, the
+ * score with taste taken out (time and draw) and the pair score, Glastonbury against the four US festivals pooled.
  * A festival with too few complaints to read alone (Riot Fest) prints its counts and says so, with no AUC.
  */
 function TasteByFestival() {
@@ -837,7 +857,7 @@ function TasteByFestival() {
                 Time and draw
               </th>
               <th scope="col" className="py-3 pl-2 text-right font-semibold sm:pl-4">
-                Full price
+                Pair score
               </th>
             </tr>
           </thead>
@@ -1117,6 +1137,9 @@ export default function MethodPage() {
               .join(" and ")}
             . Where there is none, the app leaves the clash out of the score and says so.
           </li>
+          {/* Round 37 (L38): which acts the published days have no signal for, and what happens to their overlaps,
+              from METHOD_FIGURES.noSignal; no claim about where those acts sit in the day. */}
+          <li>{noSignalSentence()}</li>
           <li>
             The Clash Budget Index compares a timetable with random valid timetables of the same
             lineup. It reads one kind of cost. Real programming weighs much more than taste overlap.
@@ -1148,6 +1171,9 @@ export default function MethodPage() {
       >
         <SubBlock id="qloo-calls" title="Qloo requests">
           <QlooCalls />
+          {/* What the number of compare tags means (round 37, L60): the cap is this app's, and most saved pairs fill
+              it, so the count is not a measure of overlap. Every figure from METHOD_FIGURES.compareTags. */}
+          <p>{tagCapSentence()}</p>
           <p>
             The cards show the timetable&rsquo;s own requests. Live calls come only from the re-check route, the
             pasted-grid route in live mode and the agent route, each limited per visitor; their Qloo requests

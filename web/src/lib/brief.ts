@@ -596,8 +596,11 @@ export function tableOnPaper(
   return lines / columns < TALL_PLAN_LINES;
 }
 
-/** Which of the plan's extras the printed sheet keeps: the shared-minutes line and the per-step decision lines. */
-export type PaperExtras = { minutes: boolean; decisions: boolean };
+/**
+ * Which of the plan's extras the printed sheet keeps: the shared-minutes line, always (since round 37 it leads the
+ * plan, above the index line, so it never leaves paper), and the per-step decision lines.
+ */
+export type PaperExtras = { minutes: true; decisions: boolean };
 
 /**
  * The most printed lines of steps, in one column, with which the drawing of the day prints: one single move. A
@@ -618,43 +621,27 @@ export function figureOnPaper(steps: readonly BriefStep[], columns: 1 | 2, withT
   return withTradeoff && columns === 1 && lines <= FIGURE_PAPER_LINES;
 }
 
-/** The most printed lines of steps (a kept change counting one more) that leave room on paper for the minutes line. */
-const MINUTES_PAPER_LINES = 6;
-
-/** The most printed lines of steps, counted the same way, that leave room for the decision lines in one column. */
+/** The most printed lines of steps (a kept change counting one more) that leave room for the decision lines in one column. */
 const DECISIONS_PAPER_LINES = 8;
 
 /**
- * What a full sheet leaves off paper first, so it stays one Letter and one A4 page without smaller type or a dropped
- * caveat: the shared-minutes line (two printed lines), then the decision lines. Both stay on the screen (where the
- * decision lines are not shown at all). In one column a decision line sits beside its step's first line, so it costs
- * no line for a single move and one for a kept change, whose long first line wraps around it; that line is counted
- * with the steps. In two columns each takes two lines under its step. Measured with headless Chrome on Letter and A4
- * (print media, 10 mm margins) on the Glastonbury Sunday, one to seven kept moves and kept changes, with and without
- * the comparison: with these limits no printed sheet ran past 97% of a Letter page except plans that already did
- * before these lines.
+ * What a full sheet leaves off paper, so it stays one Letter and one A4 page without smaller type or a dropped
+ * caveat. Never the shared-minutes line: it leads the plan (round 37). Only the decision lines, which the screen never
+ * shows. In one column a decision line sits beside its step's first line, so it costs no line for a single move and
+ * one for a kept change, whose long first line wraps around it; that line is counted with the steps. In two columns
+ * each takes two lines under its step. The decision lines print in one column for at most eight printed lines of
+ * steps, and in two columns for at most four lines down each column (four single moves).
  *
- * - The minutes line: one column only, never beside the comparison and the published day's one-row table together
- *   (the Devpost's single kept move: 96.8% of a Letter page without it, 100% with it), and at most six printed lines
- *   of steps.
- * - The decision lines: in one column, at most eight printed lines of steps; in two columns, at most four lines down
- *   each column (four single moves).
+ * Measured with headless Chrome on Letter and A4 (print media, 10 mm margins) at the round-37 type (running text
+ * 10 pt, the rest at least 9.5 pt), with the minutes line on every plan: 24 sheets on both published days, from no
+ * kept step to eight kept moves, kept changes with moves, and the card's move with and without other steps. The
+ * fullest, the card's single move with its comparison and the drawing, fills 97.0% of a Letter page.
  */
-export function onPaper(
-  steps: readonly BriefStep[],
-  columns: 1 | 2,
-  withTradeoff = false,
-  /** The drawing of the day prints: beside the comparison it holds the table's room, so the minutes line stays off. */
-  withFigure = false,
-): PaperExtras {
+export function onPaper(steps: readonly BriefStep[], columns: 1 | 2): PaperExtras {
   const lines = steps.reduce((sum, step) => sum + stepLines(step, columns), 0) / columns;
-  if (columns === 2) return { minutes: false, decisions: lines <= HEAVY_PLAN_LINES };
+  if (columns === 2) return { minutes: true, decisions: lines <= HEAVY_PLAN_LINES };
   const counted = lines + steps.filter(isBriefRuleStep).length;
-  const besideTable = withTradeoff && (withFigure || tableOnPaper(steps, columns, withTradeoff));
-  return {
-    minutes: !besideTable && counted <= MINUTES_PAPER_LINES,
-    decisions: counted <= DECISIONS_PAPER_LINES,
-  };
+  return { minutes: true, decisions: counted <= DECISIONS_PAPER_LINES };
 }
 
 /**
@@ -1019,9 +1006,11 @@ export function briefFigure(
 
 /**
  * The drawing's frame, in the SVG's own units. `wide` is the printed text column of an A4 page (190 mm), so on A4
- * a unit is a CSS pixel and the 10-unit names print at 7.5 pt (on Letter, 3% larger); on a wide screen it scales up
- * to the sheet's text column. It is kept low, because it prints on a full sheet. `narrow` is a phone's text column,
- * never printed, with taller bars. `minTick` is the least room between two labelled hours.
+ * a unit is a CSS pixel; on a wide screen it scales up to the sheet's text column. Its labels are 10 units on the
+ * screen, and on paper the sheet sets them at `printFont`, 12.7 units, which prints at 9.5 pt on A4 (on Letter, 3%
+ * larger), the sheet's smallest printed size. `narrow` is a phone's text column, never printed (so its `printFont`
+ * is its `font`), with taller bars. The layout leaves room for the larger of the two sizes. `minTick` is the least
+ * room between two labelled hours.
  *
  * Every lane is the same height, `gap` over `bar`, so the stages stand at one even pitch whether or not a lane names
  * a set: the gap is the air above each bar and the row its lane's names sit in, their baseline `nameRise` above the
@@ -1030,8 +1019,8 @@ export function briefFigure(
  * the day drawing's 6px corner on its 19px bars, so a set here is the same rounded rectangle, smaller, never a capsule.
  */
 export const FIGURE_FRAMES = {
-  wide: { width: 718, font: 10, minTick: 34, axis: 8.5, hourBaseline: 7.5, gap: 13, bar: 8, radius: 2.5, nameRise: 3.4 },
-  narrow: { width: 340, font: 10, minTick: 40, axis: 8.5, hourBaseline: 7.5, gap: 13, bar: 10, radius: 3, nameRise: 3.4 },
+  wide: { width: 718, font: 10, printFont: 12.7, minTick: 43, axis: 9, hourBaseline: 9.4, gap: 15.6, bar: 8, radius: 2.5, nameRise: 3.9 },
+  narrow: { width: 340, font: 10, printFont: 10, minTick: 40, axis: 8.5, hourBaseline: 7.5, gap: 13, bar: 10, radius: 3, nameRise: 3.4 },
 } as const;
 
 export type FigureFrame = (typeof FIGURE_FRAMES)[keyof typeof FIGURE_FRAMES];
@@ -1076,11 +1065,12 @@ export type FigureLayout = {
 /**
  * Positions for one frame. Every lane is `gap` + `bar` high, its bars at the foot; a lane that names a set writes the
  * name in the gap over its bar. Names start at their bar and move right of an earlier name in the same lane, never
- * past either edge.
+ * past either edge. Widths are measured at the frame's larger size, so a label fits on paper as on the screen.
  */
 export function layoutFigure(figure: BriefFigure, frame: FigureFrame): FigureLayout {
   const m = frame;
-  const { width, font } = frame;
+  const { width } = frame;
+  const font = Math.max(frame.font, frame.printFont);
   const longestStage = Math.max(0, ...figure.stages.map((stage) => textWidth(stage.name, font)));
   const plotX = Math.min(Math.max(longestStage + NAME_GAP + 2, 28), Math.round(width * 0.3));
   const plotW = width - plotX;

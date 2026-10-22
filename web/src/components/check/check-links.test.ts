@@ -12,10 +12,41 @@ async function render(live: boolean): Promise<{ header: string; footer: string; 
   const { ClashControlFallback } = await import("@/components/clash/clash-control");
   const { summarize } = await import("@/lib/server-summary");
   const { parsePreset } = await import("@/lib/preset");
+  const { parseDecision } = await import("@/lib/decision");
   const { rawTinyPreset } = await import("@/lib/fixtures/tiny-preset");
+  // The hero's group answers only with the day's decision in hand (round 37, L1; without it the server draws the
+  // group's skeleton, with nothing to press), so the hero is rendered with one. Every name and figure is invented.
+  const decision = parseDecision({
+    kind: "decision",
+    day: 0,
+    skipped_locked: 0,
+    skipped_no_place: 0,
+    clash: { a_id: "ann", b_id: "bo", rank: 1, minutes: 60 },
+    published_budget: 104.2,
+    move: {
+      act_id: "bo",
+      act: "Bo Diddly Squat",
+      from: "Side 20:30-22:00",
+      stage_id: "side",
+      stage: "Side",
+      day: 0,
+      start: "21:30",
+      end: "23:00",
+      minutes_moved: 60,
+      legal_places: 4,
+      stage_changed: false,
+      budget_after: 98.4,
+      minutes_shared_after: 0,
+      same_index_alternative: null,
+    },
+    rule: null,
+  });
   return {
     hero: renderToStaticMarkup(
-      createElement(ClashControlFallback, { intro: createElement("h1", null, "Pitch"), summary: summarize(parsePreset(rawTinyPreset())) }),
+      createElement(ClashControlFallback, {
+        intro: createElement("h1", null, "Pitch"),
+        summary: summarize(parsePreset(rawTinyPreset()), decision),
+      }),
     ),
     header: renderToStaticMarkup(createElement(ThemeProvider, null, createElement(SiteHeader))),
     footer: renderToStaticMarkup(createElement(SiteFooter)),
@@ -27,7 +58,9 @@ afterEach(() => {
   vi.resetModules();
 });
 
-describe("the check links follow the flag", () => {
+// Each test re-imports the header, footer and hero from a fresh module graph; the first, cold import can take
+// several seconds on a loaded machine, so the suite allows 30 s a test.
+describe("the check links follow the flag", { timeout: 30_000 }, () => {
   it("shows no /check link while the flag is false", async () => {
     const { header, footer } = await render(false);
     expect(header).not.toContain('href="/check"');

@@ -59,10 +59,10 @@ describe("the dial's reading", () => {
     // The Derived chip stays with the figure, worded for the day it reads.
     expect(plain(false)).toContain("Derived");
     expect(plain(true)).toContain("Derived");
-    // ...printed as a plain 12px/500 muted word in the sans after a middle dot: no mono caps, no box, tooltip kept.
+    // ...printed as a plain 13px/500 muted word in the sans after a middle dot: no mono caps, no box, tooltip kept.
     const markup = renderToStaticMarkup(createElement(BudgetDial, { index: 116.71, baseline: BASELINE, compact: true }));
     const chip = /<span class="([^"]*)"[^>]*data-provenance="derived"/.exec(markup)?.[1] ?? "";
-    expect(chip.split(" ")).toEqual(expect.arrayContaining(["font-sans", "text-[12px]", "font-medium", "text-muted-foreground"]));
+    expect(chip.split(" ")).toEqual(expect.arrayContaining(["font-sans", "text-[13px]", "font-medium", "text-muted-foreground"]));
     expect(chip.split(" ")).not.toEqual(expect.arrayContaining(["font-mono"]));
     expect(chip.split(" ")).not.toContain("uppercase");
     expect(markup).toMatch(/Clash Budget Index <span aria-hidden="true"[^>]*>·<\/span> <span[^>]*data-provenance="derived"/);

@@ -4,7 +4,7 @@ import { Download, Link2, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { pairCountLabel } from "@/lib/check";
 import type { ReviewCounts } from "@/lib/check-decisions";
-import { PRICE_COPY } from "@/lib/check-price";
+import { PRICE_COPY, PRICE_LIMITS, type PriceSource } from "@/lib/check-price";
 import { SHARE_COPY } from "@/lib/check-share";
 import { cn } from "@/lib/utils";
 
@@ -33,10 +33,29 @@ export function comparedLine(state: PriceState): { value: string; done: boolean 
   if (state.phase !== "ready") return { value: "Not yet", done: false };
   const { answer } = state;
   const compared = answer.pairs.filter((pair) => pair.status === "priced").length;
-  const pairs = `${compared} of ${pairCountLabel(answer.pairs.length)}`;
-  if (answer.source === "invented_day") return { value: `No · invented day, not Qloo data (${pairs})`, done: true };
-  if (answer.source === "saved_day") return { value: `${pairs} · saved day, no request now`, done: true };
-  return { value: `${pairs} · asked Qloo just now`, done: true };
+  return { value: answeredLine(answer.source, compared, answer.pairs.length), done: true };
+}
+
+/** The line once an answer is on show: how many pairs got a value, of how many sent, and from where. */
+function answeredLine(source: PriceSource, compared: number, sent: number): string {
+  const pairs = `${compared} of ${pairCountLabel(sent)}`;
+  if (source === "invented_day") return `No · invented day, not Qloo data (${pairs})`;
+  if (source === "saved_day") return `${pairs} · saved day, no request now`;
+  return `${pairs} · asked Qloo just now`;
+}
+
+/**
+ * The longest lines the "Compared with Qloo data" row can come to show for this grid, at the most pairs a press
+ * sends: the invented day's for the sample; else a saved day's, a live answer's and no saved day's. The row
+ * holds their room in every state, so an answer that lands late never pushes the rows under it down.
+ */
+export function comparedRoom(sample: boolean): string[] {
+  if (sample) return [answeredLine("invented_day", PRICE_LIMITS.pairs, PRICE_LIMITS.pairs)];
+  return [
+    answeredLine("saved_day", PRICE_LIMITS.savedPairs, PRICE_LIMITS.savedPairs),
+    answeredLine("qloo_live", PRICE_LIMITS.pairs, PRICE_LIMITS.pairs),
+    comparedLine({ phase: "not_saved" }).value,
+  ];
 }
 
 /**
@@ -156,18 +175,31 @@ export function CheckReview({
             {pairCountLabel(counts.pairs)} · {counts.pairsDecided} decided
           </Row>
           <Row label="Compared with Qloo data" strong={compared.done}>
-            {compared.value}
-            {!compared.done && price.phase !== "loading" && price.phase !== "not_saved" ? (
-              <>
-                <br />
-                <a
-                  href={`#${RESULT_IDS.price}`}
-                  className="font-semibold text-foreground underline decoration-border-strong decoration-1 underline-offset-4 hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-                >
-                  {PRICE_COPY.button}
-                </a>
-              </>
-            ) : null}
+            <span className="grid">
+              <span className="col-start-1 row-start-1">
+                {compared.value}
+                {!compared.done && price.phase !== "loading" && price.phase !== "not_saved" ? (
+                  <>
+                    <br />
+                    <a
+                      href={`#${RESULT_IDS.price}`}
+                      className="font-semibold text-foreground underline decoration-border-strong decoration-1 underline-offset-4 hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                    >
+                      {PRICE_COPY.button}
+                    </a>
+                  </>
+                ) : null}
+              </span>
+              {/* Unseen stand-ins: the room of the longest lines this row can come to show (`comparedRoom`). */}
+              {comparedRoom(sample).map((words) => (
+                <span
+                  key={words}
+                  aria-hidden="true"
+                  data-ghost={words}
+                  className="invisible col-start-1 row-start-1 font-semibold before:content-[attr(data-ghost)]"
+                />
+              ))}
+            </span>
           </Row>
           <Row label="Changes">
             {searched === 0 && applied === 0 ? "None tested yet" : `${searched} tested · ${applied} applied`}
@@ -201,10 +233,13 @@ export function CheckReview({
         </div>
       </div>
 
+      {/* The brief drawn small: paper on the card, set off by the rule above its label and with no border of its
+          own, so the card stays the one panel (a rule is not a box). Its white keeps the 10px tile corner on a
+          dark card. */}
       {preview ? (
         <div aria-hidden="true" className="mx-5 hidden border-t border-border pt-3 pb-5 lg:block">
           <p className="text-[0.8125rem] leading-5 font-semibold text-muted-foreground">{REVIEW_COPY.preview}</p>
-          <div className="relative mt-2 h-48 overflow-hidden rounded-md border border-border-strong bg-white">
+          <div data-review-preview="" className="relative mt-2 h-48 overflow-hidden rounded-md bg-white">
             <div inert className="pointer-events-none absolute top-0 left-0 w-[640px] origin-top-left scale-[0.4375] select-none">
               {preview}
             </div>

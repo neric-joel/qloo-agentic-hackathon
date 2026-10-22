@@ -310,7 +310,7 @@ describe("buildDayGraph: the lines", () => {
     expect(graph.threads[15]).toMatchObject({ rank: 16, aName: "Ivy", bName: "Hazel", taste: 47, lit: true, window: { start: 960, end: 990 } });
     expect(graph.litRank).toBe(16);
     expect(keyLine(graph)).toBe(
-      "Lines: the 15 costliest of 20 scored clashes (22 in all), plus the chosen clash; thicker means a higher taste overlap rank.",
+      "Lines: the 15 costliest of 20 scored clashes (22 in all), plus the chosen clash; thicker means a higher taste overlap rank. Lock: fixed by this app. Dotted: no Qloo signal.",
     );
   });
 
@@ -319,11 +319,19 @@ describe("buildDayGraph: the lines", () => {
     expect(model(makeDay({ clashes }), null).threads.map((thread) => thread.rank)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
   });
 
-  it("widens linearly with the taste rank", () => {
-    expect(threadWidth(0)).toBe(1.25);
-    expect(threadWidth(100)).toBe(4.75);
-    expect(threadWidth(50)).toBe(3);
-    expect(threadWidth(91)).toBeCloseTo(4.435, 6);
+  it("widens linearly with the taste rank, from 1px to 3px (round 37, L24: the lines stay quieter than the answer)", () => {
+    expect(threadWidth(0)).toBe(1);
+    expect(threadWidth(100)).toBe(3);
+    expect(threadWidth(50)).toBe(2);
+    expect(threadWidth(91)).toBeCloseTo(2.82, 6);
+  });
+
+  it("draws every line, the chosen clash's included, on that one scale, so a thicker line always has the higher taste rank", () => {
+    const threads = moved().threads.filter((thread) => thread.ranked);
+    expect(threads.some((thread) => thread.lit)).toBe(true);
+    for (const a of threads) {
+      for (const b of threads) if (a.taste > b.taste) expect(strokeWidth(a), `${a.aName} × ${a.bName} against ${b.aName} × ${b.bName}`).toBeGreaterThan(strokeWidth(b));
+    }
   });
 
   it("gives every line that touches the mover its overlap with the move: shortened, lengthened or ended", () => {
@@ -751,22 +759,40 @@ describe("settledAnnouncement", () => {
 });
 
 describe("keyLine", () => {
-  it("says what the lines are and what dashed means", () => {
+  it("says what the lines are, what dashed means, and what the lock and the dotted bars mean", () => {
     expect(keyLine(moved())).toBe(
-      "Lines: the 8 costliest of 9 scored clashes (11 in all); thicker means a higher taste overlap rank. Dashed: published slot or new overlap.",
+      "Lines: the 8 costliest of 9 scored clashes (11 in all); thicker means a higher taste overlap rank. Dashed: published slot or new overlap. Lock: fixed by this app. Dotted: no Qloo signal.",
     );
   });
 
   it("has no dashed sentence without a move", () => {
     expect(keyLine(model(makeDay(), decide(null)))).toBe(
-      "Lines: the 8 costliest of 9 scored clashes (11 in all); thicker means a higher taste overlap rank.",
+      "Lines: the 8 costliest of 9 scored clashes (11 in all); thicker means a higher taste overlap rank. Lock: fixed by this app. Dotted: no Qloo signal.",
     );
   });
 
   it("calls the rank invented on the invented day and never says published", () => {
     expect(keyLine(model(makeDay({ synthetic: true }), decide(LATER)))).toBe(
-      "Lines: the 8 costliest of 9 scored clashes (11 in all); thicker means a higher invented taste overlap rank. Dashed: slot before the move or new overlap.",
+      "Lines: the 8 costliest of 9 scored clashes (11 in all); thicker means a higher invented taste overlap rank. Dashed: slot before the move or new overlap. Lock: invented fixed slot. Dotted: no taste signal.",
     );
+  });
+
+  it("says what the lock and the dotted bars mean in 9 words on a published day and 8 on the invented day, each only when the day draws that mark", () => {
+    const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
+    const published = keyLine(moved());
+    const invented = keyLine(model(makeDay({ synthetic: true }), decide(LATER)));
+    expect(published.endsWith(" Lock: fixed by this app. Dotted: no Qloo signal.")).toBe(true);
+    expect(words("Lock: fixed by this app. Dotted: no Qloo signal.")).toBe(9);
+    expect(invented.endsWith(" Lock: invented fixed slot. Dotted: no taste signal.")).toBe(true);
+    expect(words("Lock: invented fixed slot. Dotted: no taste signal.")).toBe(8);
+    expect(invented).not.toMatch(/Qloo|published/i);
+    // A day with no lock says nothing of locks; a day where every set has a signal says nothing of dotted bars.
+    const plain = SETS.map((spec) => ({ ...spec, locked: false, unscored: false }));
+    expect(keyLine(model(makeDay({ sets: plain }), decide(LATER)))).toBe(
+      "Lines: the 8 costliest of 9 scored clashes (11 in all); thicker means a higher taste overlap rank. Dashed: published slot or new overlap.",
+    );
+    expect(keyLine(model(makeDay({ sets: SETS.map((spec) => ({ ...spec, unscored: false })) }), decide(LATER)))).toMatch(/ Lock: fixed by this app\.$/);
+    expect(keyLine(model(makeDay({ sets: SETS.map((spec) => ({ ...spec, locked: false })) }), decide(LATER)))).toMatch(/ Dotted: no Qloo signal\.$/);
   });
 });
 
@@ -875,8 +901,8 @@ describe("drawingHeight and the motion constants", () => {
   it("keeps the layout and the motion system's values", () => {
     expect(LAYOUT).toEqual({
       desktop: { axis: 22, row: 64, bar: 26 },
-      phone: { overview: 14, gap: 3, axis: 14, row: 42, bar: 24, foot: 15 },
-      short: { axis: 14, row: 37, bar: 19, foot: 15 },
+      phone: { overview: 14, gap: 3, axis: 14, row: 42, bar: 18, foot: 15 },
+      short: { axis: 14, row: 37, bar: 15, foot: 15 },
     });
     expect([MOVE_MS, PAN_MS, TAG_MS]).toEqual([450, 300, 120]);
     expect(EASE_MOVE).toBe("cubic-bezier(0.65, 0, 0.35, 1)");
@@ -1011,7 +1037,9 @@ describe("the keyboard note", () => {
   });
 });
 
-describe("the leaders", () => {
+// The leader test plans every band of both days (about 3.8 s alone); under a loaded runner it passed the 5-second
+// default (vitest flake, round 37), so this block allows 30 s. No assertion changes.
+describe("the leaders", { timeout: 30_000 }, () => {
   type Box = { x0: number; x1: number; y0: number; y1: number };
   type Point = { x: number; y: number };
   const OUTSIDE = ["beside", "above", "below"];

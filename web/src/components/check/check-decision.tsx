@@ -119,7 +119,7 @@ export function DecisionBadge({ decision, className }: { decision: Decision; cla
     <span
       className={cn(
         "tag",
-        // The words carry the status: green is for a lower index or a finished step, vermilion for a cost.
+        // The words carry the status: green is for a lower index or a finished step, raspberry for a cost.
         decision.status === "kept" && "text-foreground",
         decision.status === "not-changing" && "text-muted-foreground",
         decision.status === "changed" && "text-foreground",

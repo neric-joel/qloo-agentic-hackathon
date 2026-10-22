@@ -123,8 +123,19 @@ describe("ClashControlFallback", () => {
     expect(html).not.toContain("data-taste-line");
     expect(text(html)).not.toContain("Keep this move");
     expect(text(html)).not.toContain("See one decision");
-    // The heading names the day's costliest clash instead.
-    expect(/<h2 id="decision-heading"[^>]*>([^<]*)<\/h2>/.exec(html)?.[1]).toBe("Ann Arbor × Bo Diddly Squat: 60 min shared");
+    // Round 37 (L1): the group's skeleton holds the settled group's rows until the browser has the decision,
+    // never the no-decision words, so nothing moves when it comes; it names no pair and prints nothing.
+    const from = html.indexOf('<div aria-hidden="true" data-hero-skeleton="" data-hero-group="" data-hero-state="skeleton"');
+    const group = html.slice(from, html.lastIndexOf("<", html.indexOf("data-day-graph-key", from)));
+    expect(from).toBeGreaterThan(-1);
+    expect(group).toContain('data-hero-row="notice"');
+    expect(html.match(/data-hero-group=""/g)).toHaveLength(1);
+    expect(html).toContain('data-hero-state="skeleton"');
+    expect(html).not.toContain('id="decision-heading"');
+    expect(text(group)).toBe("");
+    // The toggle's room is held too, with nothing to press.
+    expect(html).toContain('<div aria-hidden="true" data-toggle-room="" class="h-11"></div>');
+    expect(html).not.toContain('aria-label="Drawing shows"');
   });
 
   it("falls back to skeletons without a summary", () => {

@@ -5,7 +5,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { BySyntheticDay } from "@/components/site/synthetic-context";
 import { CHECK_LIVE } from "@/lib/check-flag";
 
-import { DEMAND, PILOT_CONTACT, PILOT_TERMS, type Demand } from "@/lib/demand";
+import { DEMAND, DO_NOT_USE, PILOT_CONTACT, PILOT_TERMS, type Demand } from "@/lib/demand";
 import { METHOD_FIGURES, formatPct, methodRow, numberWord, type MethodId } from "@/lib/method-figures";
 import { PUBLIC_SOURCES } from "@/lib/public-sources";
 import { cn } from "@/lib/utils";
@@ -180,6 +180,16 @@ export const COMPLAINTS_ELSEWHERE = "Most of these complaints are about other fe
  */
 export const WHY_STAKE =
   "When two sets clash, anyone who wants to see both has to choose. Clash Control is for the time after acts are booked and before set times go out.";
+
+/**
+ * How to use it and what not to decide with it, the second paragraph under the heading, the same on every kind of
+ * day and with no Qloo word: that a clash can stay and where to keep it on purpose (owner-ordered closeout, round 37) (the decision "Kept on
+ * purpose" on Check a draft grid), `DO_NOT_USE` word for word (the sentence /method and the brief print), what an act's team would see if a
+ * festival used it (said as a condition: the brief is prepared for visitors and judges of this demo, and its
+ * sign-off names the head of programming, so no act's team receives it today), and that the app writes no artist
+ * content. It claims no benefit to an artist.
+ */
+export const WHY_USE = `A clash can stay: in Check a draft grid, choose “Kept on purpose”. ${DO_NOT_USE} If a festival used it, an act’s team would see the brief: the proposed time and the minutes shared before and after. This app writes no artist bios, images or messages.`;
 
 /** The published day the zero-request pilot walks through: its brief exists and costs no Qloo request. */
 export const PILOT_DAY = "Glastonbury 2025 Sunday";
@@ -458,7 +468,8 @@ export function FailedTestNote({
 /**
  * What is public about the problem and what is not known, right after the taste section and before the board,
  * open on the paper with no rule above it and no card around it. Under its heading, first, the stake and the moment
- * of use (`WHY_STAKE`), one paragraph at body size in ink across the container. From 1024px it is a 12-column composition: on
+ * of use (`WHY_STAKE`), one paragraph at body size in ink across the container, then, in the same type, how to use it
+ * and what not to decide with it (`WHY_USE`). From 1024px it is a 12-column composition: on
  * the left (5 columns) the problem, its finding set large at 20px as the column's heading; on the right (7
  * columns) what is not known, then the pilot offer, an unboxed block under a top rule set 24px below it (24px of
  * paper on each side of the rule), so the offer is read right after "Who would pay is not known.". Below 1024px it
@@ -492,6 +503,11 @@ export function WhyThisMatters({
         {/* The stake and the moment of use, first, at body size in ink across the container's full measure. */}
         <p data-why-stake className="mt-2 text-base leading-normal text-foreground">
           {WHY_STAKE}
+        </p>
+        {/* Directly under it, in the same type: how to keep a clash, what not to decide with this, and what the brief
+            holds. */}
+        <p data-why-use className="mt-2 text-base leading-normal text-foreground">
+          {WHY_USE}
         </p>
         <div className="mt-6 grid items-start gap-y-10 text-[0.9375rem] leading-[1.55] lg:grid-cols-12 lg:gap-x-12 lg:gap-y-6">
           <div data-why-col="problem" className="min-w-0 lg:col-span-5 lg:row-span-2 lg:row-start-1">

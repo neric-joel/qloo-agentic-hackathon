@@ -403,7 +403,7 @@ describe("the price words", () => {
       const note = formulaNote(synthetic);
       expect(note).toContain("0 to 1 scale");
       expect(note).toContain("shown out of 100");
-      expect(note).toContain("rounded when printed, so they may not multiply to exactly the printed price");
+      expect(note).toContain("rounded when printed, so they may not multiply to exactly the printed score");
       expect(note).toContain("stand-in draw set by its billing tier (0.9, 0.7, 0.5 and 0.3 for tiers 1 to 4)");
       expect(formulaNoteShort(synthetic)).toContain("0 to 1 scale and rounded when printed");
       expect(formulaNoteShort(synthetic)).toContain("so they may not multiply to exactly the score.");

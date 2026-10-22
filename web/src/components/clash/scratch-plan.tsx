@@ -153,7 +153,7 @@ export function ScratchPlan({
               );
             }
             const home = festival.timetable.find((slot) => slot.act_id === step.actId);
-            // A move kept through a recorded agent run's Keep this place says so after it.
+            // A move kept through a recorded agent run's Keep this move says so after it.
             const fromRun = moves.some((kept) => !isRuleStackStep(kept) && kept.actId === step.actId && isFromRecordedRun(kept));
             const shift = shiftText(currentPlacement(preset, step.actId), step, home ? stageName(home.stage_id) : "");
             return (

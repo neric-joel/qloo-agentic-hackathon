@@ -340,19 +340,19 @@ describe("what the search says when it cannot help", () => {
     const result = findChange(report, breakTarget(report, 3));
     expect(result.allLocked).toBe(true);
     expect(result.tested).toBe(0);
-    expect(result.summary).toBe("Both sets in this break are marked locked, and this search does not move locked sets.");
+    expect(result.summary).toBe("Both sets in this break are marked locked in this grid, and this search does not move locked sets.");
   });
 
-  it("says both sets of a locked pair are marked locked, and names a single locked set", () => {
+  it("says both sets of a locked pair are marked locked in this grid, and names a single locked set", () => {
     const report = plain(
       "act,stage,start,end,locked\nA,Main,18:00,19:00,yes\nB,Side,18:30,19:30,yes\nC,Tent,20:00,21:30,yes",
       { curfew: "21:00" },
     );
     const pair = findChange(report, targetOfPair(report.shared[0]));
     expect(pair.allLocked).toBe(true);
-    expect(pair.summary).toBe("Both sets of this pair are marked locked, and this search does not move locked sets.");
+    expect(pair.summary).toBe("Both sets of this pair are marked locked in this grid, and this search does not move locked sets.");
     const curfew = findChange(report, breakTarget(report, 4));
-    expect(curfew.summary).toBe("The set in this break is marked locked, and this search does not move locked sets.");
+    expect(curfew.summary).toBe("The set in this break is marked locked in this grid, and this search does not move locked sets.");
   });
 
   it("lists a move of more than three hours only when nothing smaller exists, and says so", () => {

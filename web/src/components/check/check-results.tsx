@@ -32,7 +32,7 @@ import { TrialButton, TrialResult, type TrialUi } from "./check-trial-panel";
 export const SHARED_SHOWN = 5;
 
 /** Under a pair whose two sets are both locked, in place of "Find a change": a lock says a set cannot move. */
-export const BOTH_LOCKED = "Both sets are locked, so this search would not move them.";
+export const BOTH_LOCKED = "Both sets are marked locked in this grid, so this search would not move them.";
 
 /** What a pair's locks say after its window: " (both are locked).", " (one is locked)." or ".". */
 export function lockNote(pair: Pick<SharedPair, "a" | "b">): string {

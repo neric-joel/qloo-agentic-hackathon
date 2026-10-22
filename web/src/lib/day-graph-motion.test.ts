@@ -3,20 +3,23 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { buildDayGraph, LAYOUT, MOVE_MS, threadWidth, type DayGraphModel } from "./day-graph";
+import { buildDayGraph, LAYOUT, MOVE_MS, planLeaders, threadWidth, type DayGraphModel } from "./day-graph";
 import {
   BANDS,
   BAR_STUB,
+  BENEATH_IN,
   barBottomOf,
   barTopOf,
   boxGap,
   CASING,
   CLEAR,
   clearPlace,
+  detailAt,
   ELLIPSIS,
   flightKeyframes,
   flightStops,
   LABEL_GAP,
+  labelRoom,
   LINE_CLEAR,
   LINE_GAP,
   LINE_SHIFT,
@@ -26,21 +29,30 @@ import {
   moverAt,
   moverTransform,
   NAME_INSET,
+  NAME_LINE,
   namePrefix,
   NARROW_TRACK,
   NOTE_GAP,
+  NOTE_REACH,
   noteSide,
+  OWN_RATIO,
   overlapX,
+  placeNote,
   planDrawing,
+  PLATE_OVER,
   PREFIX_MIN,
   retarget,
+  sharedTag,
   spotBox,
   spreadLines,
   TAG_BAR_CLEAR,
+  TAG_LINE,
   textWidth,
   trackOf,
   twoLines,
   viewP,
+  WIDE_GAP,
+  WIDE_GAP_TWO,
   WINDOW_INSET,
   windowAt,
   type Box,
@@ -333,6 +345,94 @@ describe("noteSide: a note kept inside the drawing", () => {
   });
 });
 
+describe("placeNote: a line's note off its neighbours", () => {
+  const overlaps = (a: Box, b: Box) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+  const boxAt = (spot: { x: number; y: number }, note: { width: number; height: number }) => ({ x0: spot.x, x1: spot.x + note.width, y0: spot.y, y1: spot.y + note.height });
+
+  it("takes the place beside, above or below the line's marks that covers the fewest other names, then bars, never its own marks", () => {
+    const column = { width: 600, height: 300 };
+    const note = { width: 200, height: 54 };
+    // The line at x 300, its two sets' bars above and below it, their names on plates.
+    const marks: Box[] = [
+      { x0: 296, x1: 304, y0: 60, y1: 200 },
+      { x0: 260, x1: 340, y0: 34, y1: 60 },
+      { x0: 270, x1: 330, y0: 200, y1: 226 },
+      { x0: 262, x1: 330, y0: 16, y1: 31 },
+    ];
+    // Names fill the left half; one name sits on the right at the marks' height.
+    const names: Box[] = [
+      { x0: 20, x1: 90, y0: 70, y1: 85 },
+      { x0: 110, x1: 180, y0: 70, y1: 85 },
+      { x0: 20, x1: 90, y0: 134, y1: 149 },
+      { x0: 110, x1: 180, y0: 134, y1: 149 },
+      { x0: 420, x1: 500, y0: 100, y1: 115 },
+    ];
+    const bars: Box[] = [
+      { x0: 10, x1: 200, y0: 90, y1: 116 },
+      { x0: 380, x1: 580, y0: 154, y1: 180 },
+    ];
+    const spot = placeNote(marks, names, bars, column, note, 300);
+    const box = boxAt(spot, note);
+    // Nothing of its own covered, and kept NOTE_GAP px off it.
+    const kept = { x0: box.x0 - NOTE_GAP, x1: box.x1 + NOTE_GAP, y0: box.y0 - NOTE_GAP, y1: box.y1 + NOTE_GAP };
+    for (const mark of marks) expect(overlaps(kept, mark)).toBe(false);
+    // The counts it reports are what it covers, and no place in the drawing covers fewer.
+    expect(spot.names).toBe(names.filter((name) => overlaps(box, name)).length);
+    expect(spot.bars).toBe(bars.filter((bar) => overlaps(box, bar)).length);
+    expect(spot.names).toBe(0);
+    expect(spot.bars).toBe(0);
+    expect(box.y0).toBeGreaterThanOrEqual(0);
+    expect(box.y1).toBeLessThanOrEqual(column.height);
+  });
+
+  it("reaches just past the drawing's top or foot when every place inside covers more other names", () => {
+    const column = { width: 400, height: 200 };
+    const note = { width: 380, height: 54 };
+    const marks: Box[] = [{ x0: 196, x1: 204, y0: 40, y1: 160 }];
+    // A name every 20px down both sides: any place inside covers at least two.
+    const names: Box[] = [];
+    for (let y = 0; y < 200; y += 20) names.push({ x0: 10, x1: 150, y0: y, y1: y + 15 }, { x0: 250, x1: 390, y0: y, y1: y + 15 });
+    const spot = placeNote(marks, names, [], column, note, 200);
+    const box = boxAt(spot, note);
+    expect(box.y0 < 0 || box.y1 > column.height).toBe(true);
+    expect(box.y0).toBeGreaterThanOrEqual(-NOTE_REACH.top);
+    expect(box.y1).toBeLessThanOrEqual(column.height + NOTE_REACH.bottom);
+    for (const mark of marks) expect(overlaps(box, mark)).toBe(false);
+    expect(spot.names).toBeLessThanOrEqual(1);
+    // With room inside that covers nothing, it stays inside.
+    const clear = placeNote(marks, names.filter((name) => name.y0 > 40), [], column, { width: 380, height: 30 }, 200);
+    expect(clear.names).toBe(0);
+    expect(clear.y).toBeGreaterThanOrEqual(0);
+    expect(clear.y + 30).toBeLessThanOrEqual(column.height);
+  });
+
+  it("puts every desktop line's note of the test day over at most one other name and two other bars", () => {
+    const m = model();
+    const plan = planDrawing(m, "desktop", BANDS.desktop[2].track);
+    const bar = LAYOUT.desktop.bar;
+    const x = (minute: number) => (minute - plan.track.start) * plan.scale;
+    const height = LAYOUT.desktop.axis + plan.rows.length * LAYOUT.desktop.row;
+    for (const view of ["published", "moved"] as const) {
+      const vp = plan.views[view];
+      for (const line of vp.lines) {
+        const own = [line.thread.aId, line.thread.bId];
+        const lineX = x(line.mid) + line.off;
+        const marks: Box[] = [
+          { x0: lineX - 4, x1: lineX + 4, y0: line.top, y1: line.bottom },
+          ...vp.bars.filter((item) => own.includes(item.set.actId)).map((item) => ({ x0: x(item.span.start), x1: x(item.span.end), y0: item.top, y1: item.top + bar })),
+          ...own.flatMap((id) => (vp.labels[id] ? [spotBox(plan, vp.labels[id])] : [])),
+        ];
+        const names = [...Object.entries(vp.labels).filter(([id]) => !own.includes(id)).map(([, spot]) => spotBox(plan, spot)), ...vp.tags.map((tag) => spotBox(plan, tag.spot))];
+        const bars = vp.bars.filter((item) => !own.includes(item.set.actId)).map((item) => ({ x0: x(item.span.start), x1: x(item.span.end), y0: item.top, y1: item.top + bar }));
+        const spot = placeNote(marks, names, bars, { width: plan.reference, height }, { width: 320, height: 54 }, lineX);
+        expect(spot.names, `${view} ${line.key}`).toBeLessThanOrEqual(1);
+        expect(spot.bars, `${view} ${line.key}`).toBeLessThanOrEqual(2);
+        for (const mark of marks) expect(overlaps(boxAt(spot, { width: 320, height: 54 }), mark)).toBe(false);
+      }
+    }
+  });
+});
+
 describe("textWidth", () => {
   it("measures Archivo at 12.5px a little over its advance", () => {
     expect(textWidth("Sprints")).toBeGreaterThan(41.4);
@@ -390,10 +490,19 @@ describe("planDrawing", () => {
     expect(plan.views.published.ghost).toBeNull();
   });
 
-  it("tags only the published or the moved minutes, and the grown windows by what the move adds", () => {
+  it("tags only the published or the moved minutes (a desktop's moved view the published ones first), and the grown windows by what the move adds", () => {
     const plan = planDrawing(m, "desktop");
     expect(plan.views.published.tags.map((tag) => tag.text)).toEqual(["45 min shared"]);
-    expect(plan.views.moved.tags.map((tag) => tag.text)).toEqual(["30 min shared", "new 15 min", "+15 min"]);
+    expect(plan.views.moved.tags.map((tag) => tag.text)).toEqual(["45 → 30 min shared", "new 15 min", "+15 min"]);
+    // A phone, short or tall, keeps the moved minutes alone.
+    for (const layout of ["phone", "short"] as const) {
+      const small = planDrawing(m, layout);
+      expect(small.views.published.tags.map((tag) => tag.text)).toContain("45 min shared");
+      expect(small.views.moved.tags.map((tag) => tag.text)).toContain("30 min shared");
+      expect([...small.views.published.tags, ...small.views.moved.tags].every((tag) => !tag.text.includes("→"))).toBe(true);
+    }
+    expect(sharedTag(30)).toBe("30 min shared");
+    expect(sharedTag(30, 45)).toBe("45 → 30 min shared");
   });
 
   it("spreads lines apart inside their windows", () => {
@@ -735,8 +844,9 @@ function problemsOf(m: DayGraphModel, plan: LayoutPlan, stretch = 1): string[] {
   const x = (minute: number) => (minute - plan.track.start) * scale;
   const lo = x(desktop ? plan.track.start : Math.max(plan.track.start, m.focus.start));
   const hi = x(desktop ? plan.track.end : Math.min(plan.track.end, m.focus.end));
-  const ceiling = LAYOUT[layout].axis;
-  const floor = LAYOUT[layout].axis + plan.rows.length * LAYOUT[layout].row + (layout === "desktop" ? 0 : LAYOUT[layout].foot);
+  // The band's label area: the track under the axis (the widest desktop band reaching 2px past the axis's foot and
+  // the drawing's foot; a phone's label lane under its last row included).
+  const { ceiling, floor } = labelRoom(layout, plan.reference, plan.rows.length);
   const name = (id: string) => m.sets.find((set) => set.actId === id)?.name ?? id;
   const seen = (box: Box): Box => ({ ...box, x0: Math.max(box.x0, lo), x1: Math.min(box.x1, hi) });
   for (const view of m.move ? (["published", "moved"] as View[]) : (["published"] as View[])) {
@@ -858,11 +968,15 @@ function lineCrowding(m: DayGraphModel, plan: LayoutPlan, view: View) {
         item.set.actId !== line.thread.bId &&
         Math.min(line.bottom, item.top + bar) - Math.max(line.top, item.top) >= 4,
     );
+  // A line runs by a bar's edge when it stands less than 8px inside it or less than 2px clear of it; one drawn beneath
+  // the bars, whose casing hides it from 2px above each bar it crosses to 2px below, only when its stroke stands less
+  // than BENEATH_IN px inside the edge or less than 2px clear of it (the bar and the casing hide the rest).
   const hugsAt = (line: PlanLine, cx: number) =>
     crossed(line).filter((item) => {
       const dl = cx - x(item.span.start);
       const dr = x(item.span.end) - cx;
-      return (dl > -line.width / 2 - 2 && dl < 8) || (dr > -line.width / 2 - 2 && dr < 8);
+      const inside = line.under ? line.width / 2 + BENEATH_IN - 1e-6 : 8;
+      return (dl > -line.width / 2 - 2 && dl < inside) || (dr > -line.width / 2 - 2 && dr < inside);
     });
   const freeOf = (line: PlanLine): number[] => {
     const half = line.width / 2;
@@ -1060,17 +1174,23 @@ describe("planDrawing: featured names are always whole", () => {
     expect(m.phoneRows.length).toBe(3);
     expect(LAYOUT.phone.overview + LAYOUT.phone.gap + LAYOUT.phone.axis + 3 * LAYOUT.phone.row + LAYOUT.phone.foot).toBe(172);
     expect(LAYOUT.short.axis + 3 * LAYOUT.short.row + LAYOUT.short.foot).toBe(140);
-    // A name under the bottom bar sits 1px under it and ends at the drawing's foot.
+    // A name under the bottom bar sits its gap under it (3px on a phone and on a short phone), in its line box (15px, and
+    // 13px on a short phone), and ends at the drawing's foot.
     for (const layout of ["phone", "short"] as const) {
       const plan = planDrawing(m, layout, BANDS[layout][0].track);
       const spot = plan.views.moved.labels["wren-t-hollowell"];
       expect(spot?.kind).toBe("below");
       expect(spot?.top).toBe(barBottomOf(layout, 2) + LABEL_GAP[layout]);
+      expect(spot?.height).toBe(NAME_LINE[layout]);
       expect((spot?.top ?? 0) + (spot?.height ?? 0)).toBe(LAYOUT[layout].axis + 3 * LAYOUT[layout].row + LAYOUT[layout].foot);
     }
-    // A short phone's row gap still holds a one-line plate: 1px to its own bar, 2px to the bar across the gap.
-    expect(LAYOUT.short.row - LAYOUT.short.bar).toBe(1 + 15 + 2);
-    expect(LAYOUT.phone.row - LAYOUT.phone.bar).toBe(1 + 15 + 2);
+    // Round 37 fix pass 2 (L4): a phone's row gap holds a one-line plate 3px off its own bar and twice that from the bar
+    // across the gap, and so does a short phone's, with its thinner 15px bars and its names' 13px line box (it held 1px
+    // and 2px before).
+    expect(LABEL_GAP).toMatchObject({ phone: 3, short: 3 });
+    expect(NAME_LINE).toEqual({ desktop: 15, phone: 15, short: 13 });
+    expect(LAYOUT.phone.row - LAYOUT.phone.bar).toBe(LABEL_GAP.phone + NAME_LINE.phone + OWN_RATIO * LABEL_GAP.phone);
+    expect(LAYOUT.short.row - LAYOUT.short.bar).toBe(LABEL_GAP.short + NAME_LINE.short + OWN_RATIO * LABEL_GAP.short);
   });
 });
 
@@ -1150,7 +1270,7 @@ describe("planDrawing: at each band's own track", () => {
 
 describe("planDrawing: lines clear of other bars' edges and of each other", () => {
   for (const [day, m] of DAYS) {
-    it.skipIf(m === null)(`on ${day}, at every desktop band, stands each line 8px inside or 2px clear of every other set's bar it crosses (8px of bar beside its casing when drawn over it), and 6px from every line over the same rows, wherever the names leave it such a place`, () => {
+    it.skipIf(m === null)(`on ${day}, at every desktop band, stands each line 8px inside or 2px clear of every other set's bar it crosses (8px of bar beside its casing when drawn over it; its stroke 1px inside when drawn beneath it, where its casing hides the rest), and 6px from every line over the same rows, wherever the names leave it such a place`, () => {
       const model = m as DayGraphModel;
       for (const band of BANDS.desktop) {
         const plan = planDrawing(model, "desktop", band.track);
@@ -1230,6 +1350,234 @@ describe("planDrawing: names first, featured first, then the lines", () => {
             const x = (line.mid - plan.track.start) * plan.scale + line.off;
             expect(x - line.width / 2).toBeGreaterThanOrEqual((line.window.start - plan.track.start) * plan.scale - 1e-6);
             expect(x + line.width / 2).toBeLessThanOrEqual((line.window.end - plan.track.start) * plan.scale + 1e-6);
+          }
+        }
+      }
+    }
+  });
+});
+
+describe("round 37 fix pass 1: every desktop band, short phones' tags and the notes above the drawing", () => {
+  const fixtures: [string, DayGraphModel][] = [
+    ["the fixture day", model(LATER, false, [...CROWDED, YARROW, LONG])],
+    ["the hatch day", underTheHatch()],
+  ];
+
+  it("sets names 6px off their bars on one line and 4px on two, twice as near their own bar where there is room, at every desktop band (L4)", () => {
+    for (const band of BANDS.desktop) {
+      expect(labelRoom("desktop", band.track, 5), `${band.from}px`).toMatchObject({ gap: WIDE_GAP, gapTwo: WIDE_GAP_TWO, beside: WIDE_GAP, ratio: OWN_RATIO });
+    }
+    expect([WIDE_GAP, WIDE_GAP_TWO, OWN_RATIO]).toEqual([6, 4, 2]);
+    // A two-line plate's 26px in a 38px row gap: 4px to its own bar, 8px to the bar across the gap.
+    expect(LAYOUT.desktop.row - LAYOUT.desktop.bar).toBe(WIDE_GAP_TWO + 2 * 13 + OWN_RATIO * WIDE_GAP_TWO);
+    for (const [label, m] of fixtures) {
+      for (const band of BANDS.desktop) {
+        const plan = planDrawing(m, "desktop", band.track);
+        const x = (minute: number) => (minute - plan.track.start) * plan.scale;
+        for (const view of ["published", "moved"] as const) {
+          const vp = plan.views[view];
+          for (const [id, spot] of Object.entries(vp.labels)) {
+            if (spot.kind === "inside" || spot.kind === "prefix") continue;
+            const own = vp.bars.find((item) => item.set.actId === id);
+            if (!own) continue;
+            const box = spotBox(plan, spot);
+            const gap = boxGap(box, { x0: x(own.span.start), x1: x(own.span.end), y0: own.top, y1: own.top + LAYOUT.desktop.bar });
+            expect(gap, `${label} at ${band.from}px, ${view}: ${id}`).toBeCloseTo(spot.lines.length > 1 ? WIDE_GAP_TWO : WIDE_GAP, 6);
+          }
+        }
+      }
+    }
+  });
+
+  it("keeps every name on a plate over its own bar for half its width and half a pixel more, so the page's rounding never leaves it under half (D7)", () => {
+    expect(PLATE_OVER).toBe(0.5);
+    for (const [label, m] of fixtures) {
+      for (const layout of ["desktop", "phone", "short"] as const) {
+        for (const band of BANDS[layout]) {
+          const plan = planDrawing(m, layout, band.track);
+          const x = (minute: number) => (minute - plan.track.start) * plan.scale;
+          for (const view of ["published", "moved"] as const) {
+            const vp = plan.views[view];
+            for (const [id, spot] of Object.entries(vp.labels)) {
+              if (spot.slot !== "c") continue;
+              const own = vp.bars.find((item) => item.set.actId === id);
+              if (!own) continue;
+              const box = spotBox(plan, spot);
+              const over = overlapX(box, { x0: x(own.span.start), x1: x(own.span.end), y0: 0, y1: 0 });
+              expect(over, `${label}, ${layout} at ${band.from}px, ${view}: ${id}`).toBeGreaterThanOrEqual((box.x1 - box.x0) / 2 + PLATE_OVER - 1e-6);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it("sets a short phone's tags in a 13px line box, in its 22px row gap at least 2.5px clear of every bar (L17)", () => {
+    expect(TAG_LINE).toEqual({ desktop: 15, phone: 15, short: 13 });
+    expect(TAG_BAR_CLEAR.short).toBe(2.5);
+    expect(LAYOUT.short.row - LAYOUT.short.bar).toBe(22);
+    expect(LAYOUT.short.row - LAYOUT.short.bar).toBeGreaterThanOrEqual(TAG_LINE.short + 2 * TAG_BAR_CLEAR.short);
+    const m = underTheHatch();
+    for (const band of BANDS.short) {
+      const plan = planDrawing(m, "short", band.track);
+      const x = (minute: number) => (minute - plan.track.start) * plan.scale;
+      for (const view of ["published", "moved"] as const) {
+        const vp = plan.views[view];
+        // The invented day's 224px moved view has no room for its tags (nor had it before); the wider bands draw both.
+        if (band.track > BANDS.short[0].track) expect(vp.tags.length, `${band.from}px, ${view}: tags drawn`).toBe(view === "moved" ? 2 : 1);
+        for (const tag of vp.tags) {
+          expect(tag.spot.height).toBe(TAG_LINE.short * tag.spot.lines.length);
+          expect(tag.spot.leading).toBe(TAG_LINE.short);
+          const box = spotBox(plan, tag.spot);
+          for (const item of vp.bars) {
+            const gap = boxGap(box, { x0: x(item.span.start), x1: x(item.span.end), y0: item.top, y1: item.top + LAYOUT.short.bar });
+            expect(gap, `${band.from}px, ${view}: "${tag.text}" from ${item.set.name}`).toBeGreaterThanOrEqual(TAG_BAR_CLEAR.short - 1e-6);
+          }
+        }
+      }
+    }
+  });
+
+  it("reaches above the drawing for a note, beside what the page shows there and never over it, when every place inside covers names (L13)", () => {
+    const column = { width: 800, height: 200 };
+    const marks: Box[] = [{ x0: 396, x1: 404, y0: 40, y1: 160 }];
+    // Names every 20px down the drawing, and no room under it: any place inside covers at least two.
+    const names: Box[] = [];
+    for (let y = 0; y < 200; y += 20) names.push({ x0: 10, x1: 380, y0: y, y1: y + 15 }, { x0: 420, x1: 790, y0: y, y1: y + 15 });
+    // The view toggle above the drawing's left end, and a button above its right end.
+    const keep: Box[] = [
+      { x0: -40, x1: 260, y0: -48, y1: -6 },
+      { x0: 640, x1: 800, y0: -96, y1: -60 },
+    ];
+    const note = { width: 360, height: 54 };
+    const spot = placeNote(marks, names, [], column, note, 400, { top: 96, bottom: 0 }, keep);
+    const box = { x0: spot.x, x1: spot.x + spot.width, y0: spot.y, y1: spot.y + spot.height };
+    expect(spot.names).toBe(0);
+    expect(box.y1).toBeLessThanOrEqual(0);
+    for (const item of keep) expect(hit({ x0: box.x0 - NOTE_GAP, x1: box.x1 + NOTE_GAP, y0: box.y0 - NOTE_GAP, y1: box.y1 + NOTE_GAP }, item), JSON.stringify(item)).toBe(false);
+    // Too tall for the room left beside the toggle, the usual shape gives way to a wider, shorter one.
+    const tall = { width: 360, height: 90 };
+    const wide = { width: 500, height: 54 };
+    const shaped = placeNote(marks, names, [], column, [tall, wide], 400, { top: 70, bottom: 0 }, [{ x0: -40, x1: 260, y0: -70, y1: -6 }]);
+    expect([shaped.width, shaped.height, shaped.names]).toEqual([500, 54, 0]);
+    // With room for the usual shape, it keeps it.
+    const roomy = placeNote(marks, names, [], column, [{ width: 360, height: 54 }, wide], 400, { top: 96, bottom: 0 }, keep);
+    expect(roomy.width).toBe(360);
+    // Where no place keeps clear of both, it keeps clear of the line's own marks and covers what it must.
+    const shut = placeNote(marks, names, [], column, note, 400, { top: 96, bottom: 0 }, [{ x0: -100, x1: 900, y0: -200, y1: 0 }]);
+    expect(hit({ x0: shut.x, x1: shut.x + shut.width, y0: shut.y, y1: shut.y + shut.height }, marks[0])).toBe(false);
+  });
+});
+
+describe("round 37 fix pass 2: a phone names the window it slides to, and a short phone's leaders", () => {
+  const fixtures: [string, DayGraphModel][] = [
+    ["the fixture day", model(LATER, false, [...CROWDED, YARROW, LONG])],
+    ["the hatch day", underTheHatch()],
+  ];
+  const phones = ["phone", "short"] as const;
+  /** The windows a phone slides to: one centred on each line it draws (a tap on the strip or a line reached by key). */
+  const windowsOf = (m: DayGraphModel, plan: LayoutPlan) => {
+    const length = m.focus.end - m.focus.start;
+    const starts = new Set<number>();
+    for (const view of ["published", "moved"] as const) for (const line of plan.views[view].lines) starts.add(detailAt(m, line.mid - length / 2).start);
+    return [...starts].map((start) => ({ start, end: start + length }));
+  };
+
+  it("keeps the detail window the opening window's length and on the track, and places the opening window as before", () => {
+    for (const [label, m] of fixtures) {
+      const track = trackOf(m);
+      const length = m.focus.end - m.focus.start;
+      expect(detailAt(m, m.focus.start), label).toEqual(m.focus);
+      expect(detailAt(m, track.start - 500), label).toEqual({ start: track.start, end: track.start + length });
+      expect(detailAt(m, track.end + 500), label).toEqual({ start: track.end - length, end: track.end });
+      for (const layout of phones) {
+        for (const band of BANDS[layout]) {
+          const opening = planDrawing(m, layout, band.track);
+          expect(opening.detail, `${label}, ${layout} at ${band.from}px`).toEqual(m.focus);
+          // The server frame and the first paint draw the opening window: the same plan with or without it named.
+          expect(planDrawing(m, layout, band.track, m.focus), `${label}, ${layout} at ${band.from}px`).toEqual(opening);
+        }
+      }
+      // A desktop shows the whole track whatever it is given.
+      expect(planDrawing(m, "desktop", BANDS.desktop[0].track, m.focus).detail, label).toEqual(track);
+    }
+  });
+
+  it("names every set the window it slides to shows whole, draws every name, tag and leader inside that window, and none of the opening window's names past it (N1)", () => {
+    for (const [label, m] of fixtures) {
+      for (const layout of phones) {
+        for (const band of BANDS[layout]) {
+          const opening = planDrawing(m, layout, band.track);
+          const windows = windowsOf(m, opening);
+          expect(windows.length, `${label}, ${layout} at ${band.from}px: windows`).toBeGreaterThan(1);
+          for (const detail of windows) {
+            const plan = planDrawing(m, layout, band.track, detail);
+            const where = `${label}, ${layout} at ${band.from}px, window from ${detail.start}`;
+            expect(plan.detail, where).toEqual(detail);
+            const x = (minute: number) => (minute - plan.track.start) * plan.scale;
+            const [lo, hi] = [x(detail.start), x(detail.end)];
+            const leaders = planLeaders(m, plan);
+            for (const view of ["published", "moved"] as const) {
+              const vp = plan.views[view];
+              const whole = vp.bars.filter((item) => item.span.start >= detail.start - 1e-6 && item.span.end <= detail.end + 1e-6);
+              // The fixture day's long name has, on a 320px phone, no prefix of 8 characters inside its bar and no plate
+              // at least half over it, wherever the window is, the opening one included (from 360px it is a prefix).
+              const placeless = label === "the fixture day" && band.track === NARROW_TRACK ? [LONG.name] : [];
+              expect(
+                whole.filter((item) => !vp.labels[item.set.actId] && !placeless.includes(item.set.name)).map((item) => item.set.name),
+                `${where}, ${view}: sets shown whole with no name`,
+              ).toEqual([]);
+              for (const spot of [...Object.values(vp.labels), ...vp.tags.map((tag) => tag.spot)]) {
+                const box = spotBox(plan, spot);
+                expect(box.x0, `${where}, ${view}: "${spot.lines.join(" ")}" starts in the window`).toBeGreaterThanOrEqual(lo - 1e-6);
+                expect(box.x1, `${where}, ${view}: "${spot.lines.join(" ")}" ends in the window`).toBeLessThanOrEqual(hi + 1e-6);
+              }
+              for (const leader of leaders[view].leaders) {
+                const at = x(leader.anchor);
+                for (const end of [leader.x0, leader.x1]) {
+                  expect(at + end, `${where}, ${view}: ${leader.id}'s leader in the window`).toBeGreaterThanOrEqual(lo - 1e-6);
+                  expect(at + end, `${where}, ${view}: ${leader.id}'s leader in the window`).toBeLessThanOrEqual(hi + 1e-6);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it("sets a short phone's names 3px off their bars, each twice as near its own bar as any other, as a phone's (L4)", () => {
+    expect(labelRoom("short", BANDS.short[0].track, 3)).toMatchObject({ gap: 3, gapTwo: 3, ratio: OWN_RATIO });
+    expect(labelRoom("phone", BANDS.phone[0].track, 3)).toMatchObject({ gap: 3, gapTwo: 3, ratio: OWN_RATIO });
+    for (const [label, m] of fixtures) {
+      for (const band of BANDS.short) {
+        const plan = planDrawing(m, "short", band.track);
+        const x = (minute: number) => (minute - plan.track.start) * plan.scale;
+        const [lo, hi] = [x(plan.detail.start), x(plan.detail.end)];
+        const barBox = (item: { span: { start: number; end: number }; top: number }): Box => ({
+          x0: Math.max(lo, x(item.span.start)),
+          x1: Math.min(hi, x(item.span.end)),
+          y0: item.top,
+          y1: item.top + LAYOUT.short.bar,
+        });
+        const leaders = planLeaders(m, plan);
+        for (const view of ["published", "moved"] as const) {
+          const vp = plan.views[view];
+          for (const leader of leaders[view].leaders) expect(leader.length, `${label}, ${band.from}px, ${view}: ${leader.id}'s leader`).toBeGreaterThanOrEqual(3 - 1e-6);
+          for (const [id, spot] of Object.entries(vp.labels)) {
+            if (spot.kind !== "above" && spot.kind !== "below") continue;
+            const box = spotBox(plan, spot);
+            const own = vp.bars.find((item) => item.set.actId === id);
+            if (!own) continue;
+            const mine = boxGap(box, barBox(own));
+            expect(mine, `${label}, ${band.from}px, ${view}: ${id} off its bar`).toBeCloseTo(3, 6);
+            expect(spot.height, `${label}, ${band.from}px, ${view}: ${id}'s line box`).toBe(NAME_LINE.short);
+            for (const other of [...vp.bars, ...(vp.ghost ? [vp.ghost] : [])]) {
+              if (other.set.actId === id) continue;
+              const seen = barBox(other);
+              if (seen.x1 <= seen.x0) continue;
+              expect(boxGap(box, seen), `${label}, ${band.from}px, ${view}: ${id} from ${other.set.name}`).toBeGreaterThanOrEqual(OWN_RATIO * mine - 0.01);
+            }
           }
         }
       }

@@ -796,12 +796,12 @@ describe("round-9 workspace: decisions, recovery, order and review", () => {
     expect(failedLive).toMatch(/<button[^>]*>Try again<span class="sr-only">: Ask Qloo for these 24 acts/);
     expect(text(failedLive)).toContain("The server did not answer, so nothing was compared. Your rule results are unchanged.");
     expect(render({ phase: "error", mode: "saved" })).toMatch(/>Try again<span class="sr-only">: Compare audience overlap/);
-    const timedOut = render({ phase: "refused", mode: "live", code: "no_answer", message: "Qloo did not answer in time; nothing was priced." });
+    const timedOut = render({ phase: "refused", mode: "live", code: "no_answer", message: "Qloo did not answer in time; nothing was compared." });
     expect(timedOut).toMatch(/>Try again</);
-    const capped = render({ phase: "refused", mode: "live", code: "limit", message: "Live pricing has reached today's limit." });
+    const capped = render({ phase: "refused", mode: "live", code: "limit", message: "The live comparison has reached today's limit." });
     expect(capped).not.toMatch(/>Try again</);
-    expect(text(capped)).toContain("Live pricing has reached today's limit. Try again later. Everything above stays as it is");
-    const off = render({ phase: "refused", mode: "live", code: "live_off", message: "Live pricing is switched off on this server." });
+    expect(text(capped)).toContain("The live comparison has reached today's limit. Try again later. Everything above stays as it is");
+    const off = render({ phase: "refused", mode: "live", code: "live_off", message: "The live comparison is switched off on this server. A saved day still compares." });
     expect(off).not.toMatch(/>Try again</);
     expect(text(off)).toContain("the checks, your decisions, Find a change, the brief and the exports do not need this step");
   });

@@ -40,7 +40,7 @@ describe("BudgetMove bars", () => {
     expect(lower).toMatch(/text-success"><svg/);
   });
 
-  it("draws After in vermilion when the index goes up, and grey when it does not move", () => {
+  it("draws After in raspberry when the index goes up, and grey when it does not move", () => {
     expect(html({ after: 112 })).toMatch(/rounded-bar[^"]*bg-primary/);
     expect(html({ after: 110.4 }).match(/bg-ink-3/g)).toHaveLength(2);
   });

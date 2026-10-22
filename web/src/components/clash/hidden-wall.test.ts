@@ -385,7 +385,7 @@ describe("HiddenWall: one definition of Hidden, the day's count, no lift figure"
     expect(plain.match(/Hidden means/g)).toHaveLength(1);
     // The definition and the day's count come before the examples' own rule, which goes further.
     expect(plain.indexOf(HIDDEN_DEFINITION)).toBeLessThan(plain.indexOf(WALL_LEAD));
-    expect(plain).toContain(`${HIDDEN_DEFINITION} On this day, 5 of the 15 ranked clashes carry the Hidden label.`);
+    expect(plain).toContain(`${HIDDEN_DEFINITION} On this day, 5 of the 15 ranked clashes carry the Hidden label; the costliest is Act 1A × Act 1B (#1).`);
     expect(plain).toContain(`${WALL_LEAD} How often such pairs drew complaints`);
     expect(WALL_LEAD).toContain("no genre tag in common");
     expect(WALL_LEAD).toContain("taste overlap is among the highest of that day");
@@ -400,7 +400,7 @@ describe("HiddenWall: one definition of Hidden, the day's count, no lift figure"
     const merged = paragraphs[0] ?? "";
     expect(merged).toMatch(/^<p data-hidden-definition="" class="mt-2 max-w-\[70ch\] text-\[0\.9375rem\] leading-\[1\.55\] lg:max-w-none">/);
     expect(text(merged)).toBe(
-      `${HIDDEN_DEFINITION} On this day, 5 of the 15 ranked clashes carry the Hidden label. ${WALL_LEAD} How often such pairs drew complaints`,
+      `${HIDDEN_DEFINITION} On this day, 5 of the 15 ranked clashes carry the Hidden label; the costliest is Act 1A × Act 1B (#1). ${WALL_LEAD} How often such pairs drew complaints`,
     );
     // Every wall line stays in the open: the rule, "no genre tag in common", the count line and "not a test".
     const open = text(html.replace(/<details[^>]*>[\s\S]*?<\/details>/g, ""));
@@ -414,17 +414,35 @@ describe("HiddenWall: one definition of Hidden, the day's count, no lift figure"
     }
     // With the examples only, or the day's line only, the paragraph holds what there is.
     expect(text(renderToStaticMarkup(createElement(HiddenWall, { evidence: null, day: five })))).toContain(
-      `${HIDDEN_DEFINITION} On this day, 5 of the 15 ranked clashes carry the Hidden label.`,
+      `${HIDDEN_DEFINITION} On this day, 5 of the 15 ranked clashes carry the Hidden label; the costliest is Act 1A × Act 1B (#1).`,
     );
   });
 
-  it("counts the day's Hidden clashes from the ranked list, naming one or two, and says so when there are none", () => {
-    expect(hiddenDayLine(five)).toBe("On this day, 5 of the 15 ranked clashes carry the Hidden label.");
+  it("counts the day's Hidden clashes from the ranked list, naming one or two, the costliest of three or more, and says so when there are none", () => {
+    expect(hiddenDayLine(five)).toBe("On this day, 5 of the 15 ranked clashes carry the Hidden label; the costliest is Act 1A × Act 1B (#1).");
     expect(hiddenDayLine(one)).toBe("On this day, 1 of the 15 ranked clashes carries the Hidden label: Ann Arbor × Bo Diddly Squat (#9).");
     expect(hiddenDayLine({ ranked: 15, hidden: five.hidden.slice(0, 2) })).toBe(
       "On this day, 2 of the 15 ranked clashes carry the Hidden label: Act 1A × Act 1B (#1) and Act 3A × Act 3B (#3).",
     );
     expect(hiddenDayLine(none)).toBe("No clash on this day carries the Hidden label.");
+  });
+
+  it("names the day's own costliest Hidden pair with three or more, by its rank, before any other festival's example", () => {
+    // Exactly three: the count, then the costliest one, with its rank.
+    const three: HiddenDay = { ranked: 68, hidden: [2, 7, 30].map((rank) => ({ rank, a: `Act ${rank}A`, b: `Act ${rank}B` })) };
+    expect(hiddenDayLine(three)).toBe("On this day, 3 of the 68 ranked clashes carry the Hidden label; the costliest is Act 2A × Act 2B (#2).");
+    // The costliest is the lowest rank, whatever order the list arrives in.
+    const shuffled: HiddenDay = { ranked: 15, hidden: [...five.hidden].reverse() };
+    expect(hiddenDayLine(shuffled)).toBe(hiddenDayLine(five));
+    // One pair named, never the others.
+    const line = hiddenDayLine(five);
+    expect(line.match(/ × /g)).toHaveLength(1);
+    for (const rank of [3, 4, 5, 9]) expect(line).not.toContain(`Act ${rank}A`);
+    // In the section, the day's own pair is the first clash named: before the examples' lead and the switcher's first pair.
+    const plain = text(renderToStaticMarkup(createElement(HiddenWall, { evidence: evidence(8, 13), day: five })));
+    expect(plain.indexOf("Act 1A × Act 1B (#1)")).toBeGreaterThan(-1);
+    expect(plain.indexOf("Act 1A × Act 1B (#1)")).toBeLessThan(plain.indexOf(WALL_LEAD));
+    expect(plain.indexOf("Act 1A × Act 1B (#1)")).toBeLessThan(plain.indexOf("Pair 1 of 8"));
   });
 
   it("links the complaint rate on /method instead of setting a lift figure beside the label", () => {

@@ -42,7 +42,7 @@ import { formatLatency, humanizeIdentifier, pluralize } from "@/lib/format";
 import { clockMinutes, fromRecordedRun } from "@/lib/moves";
 import type { Festival, Preset } from "@/lib/preset";
 import { askedQlooWhenRecorded, orderRecordings, replayFinalState, savedRequests, type RecordedRun } from "@/lib/recorded-run";
-import type { RunResult, ToolCallState } from "@/lib/run-state";
+import type { RunResult, RunState, ToolCallState } from "@/lib/run-state";
 import {
   checkAdd,
   encodeMoves,
@@ -59,9 +59,9 @@ import { formatClock } from "@/lib/timetable";
 import { cn } from "@/lib/utils";
 
 import { scaleRange, signedDelta, type ScaleRange } from "./budget-move";
-import { IndexChange } from "./decision-card";
+import { IndexChange, KEEP_MOVE } from "./decision-card";
 import { RecordedNotice, RecordedRuns, recordedQlooCalls } from "./recorded-runs";
-import { AgentSkeleton } from "./skeletons";
+import { AgentSkeleton, useHeldRoom } from "./skeletons";
 import type { SeedMode } from "./try-a-move";
 import { checkPlan } from "./use-moves";
 import { useOtherDaysRecordings, useRecordings } from "./use-recordings";
@@ -122,14 +122,15 @@ export function agentLimits(synthetic = false): string[] {
     // backend/app/agent/loop.py:41-43 streams the model's own text; the panel labels it with the LLM chip.
     "Its answer in words is written by a language model and labelled as such.",
     // backend/app/agent/clash_tools.py:358-369 and :789-797: try_move and find_moves do not change the
-    // timetable; only Keep this place below hands a tested place to your plan.
-    "It can test a move, but it never changes your timetable unless you press Keep this place.",
+    // timetable; only Keep this move below (`KEEP_MOVE`, the hero's own label) hands a tested place to your plan.
+    `It can test a move, but it never changes your timetable unless you press ${KEEP_MOVE}.`,
     // backend/app/agent/clash_tools.py:1003 (CLASH_TOOLS): its seven tools read and test the timetable;
     // none sends a message or publishes anything.
     "It never contacts anyone or publishes anything.",
     // backend/app/config.py:29-33: agent_max_qloo_calls_per_run = 12 (the run refuses further Qloo-backed
-    // tools, backend/app/agent/tools.py:78-89) and agent_max_turns = 6 (backend/app/main.py:160).
-    synthetic ? "At most 6 model turns per run." : "At most 12 Qloo requests and 6 model turns per run.",
+    // tools, backend/app/agent/tools.py:78-89) and agent_max_turns = 6 (backend/app/main.py:160), the agent
+    // loop's turns.
+    synthetic ? "At most 6 agent turns per run." : "At most 12 Qloo requests and 6 agent turns per run.",
   ];
 }
 
@@ -259,6 +260,58 @@ export function recordedQloo(
   if (!recording || synthetic) return { label: null, savedReading: false };
   const calls = recordedQlooCalls(recording);
   return { label: requestsLabel(calls), savedReading: calls === 0 && pricedEveryPlace(reply) };
+}
+
+/**
+ * The trace line a replayed run shows in its header, directly under its question: "Qloo requests in this run: N",
+ * N read from the recording, so its words are known (and its room kept) from the replay's first beat. Null for a
+ * live run and on the invented day, whose trace stays at the run's foot.
+ */
+export function headerTraceLabel(recording: RecordedRun | undefined, synthetic = false): string | null {
+  return recording && !synthetic ? requestsLabel(recordedQlooCalls(recording)) : null;
+}
+
+/** The trace drawer of a run's answer, as its header line (a replay) or at its foot (a live run). */
+function RunTrace({
+  state,
+  recorded,
+  synthetic,
+  label,
+  countInLabel = false,
+  savedReading,
+  triggerVariant,
+  triggerClassName,
+}: {
+  state: RunState;
+  recorded: boolean;
+  synthetic: boolean;
+  label: string;
+  countInLabel?: boolean;
+  savedReading: boolean;
+  triggerVariant: "ghost" | "ruled";
+  triggerClassName: string;
+}) {
+  const qlooCalls = state.summary?.qlooCalls ?? state.toolCalls.reduce((sum, call) => sum + call.requests.length, 0);
+  return (
+    <TraceDrawer
+      toolCalls={state.toolCalls}
+      runId={state.runId}
+      mode={state.mode}
+      qlooCalls={qlooCalls}
+      triggerVariant={triggerVariant}
+      triggerClassName={triggerClassName}
+      triggerLabel={label}
+      countInLabel={countInLabel}
+      title={usedTitle(synthetic)}
+      synthetic={synthetic}
+      savedReading={savedReading}
+      description={
+        recorded
+          ? "The Qloo requests this run made when it was recorded. They are listed from the saved stream; none were made just now."
+          : "The Qloo requests this answer made. Scores and what-ifs reuse the day's saved Qloo data; explaining a clash asks Qloo live for the taste both audiences share."
+      }
+    />
+  );
 }
 
 /**
@@ -698,7 +751,7 @@ export function planHolds(steps: readonly StackStep[], move: StackMove): boolean
 }
 
 /**
- * How Keep this place hands its place to the plan: `replace` makes it the whole plan (the decision card's
+ * How Keep this move hands its place to the plan: `replace` makes it the whole plan (the decision card's
  * path); `add` puts it after the kept steps the engine just priced it with (`base`). Shaped as "Try a move"
  * reads a seed (`SeedMode`, try-a-move.tsx), so the page can pass it straight through.
  */
@@ -708,7 +761,7 @@ export type KeepChoice = SeedMode;
 export type KeepPlace = (move: StackMove, choice?: KeepChoice) => string | null;
 
 /**
- * The place Keep this place offers: the run's tested place, marked as kept from a recorded agent run when the run
+ * The place Keep this move offers: the run's tested place, marked as kept from a recorded agent run when the run
  * on show is a replay, so the plan list says "(from a recorded agent run)" after it. A live run's place carries no
  * source. The mark changes nothing about the place: not how it compares, encodes or is sent.
  */
@@ -717,7 +770,7 @@ export function placeToKeep(tested: AgentPlace | null, recorded: boolean): Agent
   return recorded ? { ...tested, move: fromRecordedRun(tested.move) } : tested;
 }
 
-/** The press behind Keep this place: it hands the run's tested place, unchanged, to the page's keep path. */
+/** The press behind Keep this move: it hands the run's tested place, unchanged, to the page's keep path. */
 export function keepPress(
   place: AgentPlace,
   onKeep: KeepPlace,
@@ -734,13 +787,13 @@ export { checkAdd, keepNote, type AddCheck };
 
 /**
  * Under a finished run whose own tool results hold a place the engine found legal: the place, and Keep
- * this place, which hands it to the plan through the same path as the decision card's Keep this move (the
- * plan's own /whatif prices it again). Nothing is kept until it is pressed. With an empty plan it is one
- * button; when the plan already holds kept steps it offers "Add to your plan" (first) and "Replace your
- * plan": Add is priced with the kept steps first (`checkAdd`) and changes nothing if the engine refuses
- * it, saying why and leaving Replace. "Kept in your plan." (ink, in a status region) shows only once the
- * plan holds the place, with what happened ("Added: 2 kept moves."), and focus then moves to its "See your
- * plan" link, which takes the visitor to the plan.
+ * this move (`KEEP_MOVE`, the decision card's own label), which hands it to the plan through the same path
+ * as the decision card's Keep this move (the plan's own /whatif prices it again). Nothing is kept until it
+ * is pressed. With an empty plan it is one button; when the plan already holds kept steps it offers "Add to
+ * your plan" (first) and "Replace your plan": Add is priced with the kept steps first (`checkAdd`) and
+ * changes nothing if the engine refuses it, saying why and leaving Replace. "Kept in your plan." (ink, in a
+ * status region) shows only once the plan holds the place, with what happened ("Added: 2 kept moves."), and
+ * focus then moves to its "See your plan" link, which takes the visitor to the plan.
  */
 export function KeepThisPlace({
   place,
@@ -852,7 +905,7 @@ export function KeepThisPlace({
       {held && pressed ? null : choose ? (
         <div role="group" aria-labelledby={labelId} className="mt-3">
           <p id={labelId} className="text-sm">
-            <span className="font-semibold text-foreground">Keep this place</span>
+            <span className="font-semibold text-foreground">{KEEP_MOVE}</span>
             <span className="text-muted-foreground">: your plan already holds {pluralize(kept.length, keptWord(kept))}.</span>
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
@@ -878,7 +931,7 @@ export function KeepThisPlace({
             keepPress(place, onKeep, { mode: "replace" })();
           }}
         >
-          Keep this place
+          {KEEP_MOVE}
         </Button>
       )}
       <p role="status" className="mt-2 text-sm">
@@ -971,10 +1024,11 @@ function ExchangeBody({
   );
   const running = state.status === "running";
   const text = reply?.text || state.text;
-  const qlooCalls = state.summary?.qlooCalls ?? state.toolCalls.reduce((sum, call) => sum + call.requests.length, 0);
   // A recorded run's Qloo use, read from its own recording: "Qloo requests in this run: 0" and, when it priced
-  // every place it tested, where that taste came from. A run with requests keeps the drawer's label and count.
+  // every place it tested, where that taste came from. That trace line sits in the run's header, under its
+  // question (`ExchangeView`); here only the saved-reading line, and the trace of a live run at the foot.
   const qloo = state.status === "done" ? recordedQloo(recording, reply, synthetic) : { label: null, savedReading: false };
+  const traceInHeader = headerTraceLabel(recording, synthetic) !== null;
   const versus = runVersusCard(tested, cardActId);
   // What the run is doing while it waits: said in the next step's place while a replay has steps still to come
   // (so the words never move), else under the steps, as for a live run.
@@ -1077,24 +1131,17 @@ function ExchangeBody({
               {pluralize(state.toolCalls.length, "step")} · {formatLatency(state.summary.elapsedMs)}
             </span>
           ) : null}
-          <TraceDrawer
-            toolCalls={state.toolCalls}
-            runId={state.runId}
-            mode={state.mode}
-            qlooCalls={qlooCalls}
-            triggerVariant="ghost"
-            triggerClassName="h-8 px-2 text-xs"
-            triggerLabel={qloo.label ?? usedTitle(synthetic)}
-            countInLabel={qloo.label !== null}
-            title={usedTitle(synthetic)}
-            synthetic={synthetic}
-            savedReading={qloo.savedReading}
-            description={
-              recording
-                ? "The Qloo requests this run made when it was recorded. They are listed from the saved stream; none were made just now."
-                : "The Qloo requests this answer made. Scores and what-ifs reuse the day's saved Qloo data; explaining a clash asks Qloo live for the taste both audiences share."
-            }
-          />
+          {traceInHeader ? null : (
+            <RunTrace
+              state={state}
+              recorded={recording !== undefined}
+              synthetic={synthetic}
+              label={usedTitle(synthetic)}
+              savedReading={qloo.savedReading}
+              triggerVariant="ghost"
+              triggerClassName="h-8 px-2 text-xs"
+            />
+          )}
           {latest && onStartOver ? (
             <Button type="button" variant="ghost" size="sm" onClick={onStartOver}>
               <RotateCcw aria-hidden="true" /> Start over
@@ -1133,7 +1180,8 @@ function HeldHeight({ measure, children }: { measure: ReactNode | null; children
   );
 }
 
-function ExchangeView({
+/** One question and its answer in the conversation: a live run, or a replayed recording. */
+export function ExchangeView({
   exchange,
   latest,
   range,
@@ -1156,9 +1204,9 @@ function ExchangeView({
   festival: Festival;
   /** The festival day on show: a tested place is offered to keep only on it. */
   day: number;
-  /** The steps the plan holds, so Keep this place can say when its place is kept. */
+  /** The steps the plan holds, so Keep this move can say when its place is kept. */
   kept?: readonly StackStep[];
-  /** Keeps a tested place through the page's keep path; absent, no Keep this place is offered. */
+  /** Keeps a tested place through the page's keep path; absent, no Keep this move is offered. */
   onKeepPlace?: KeepPlace;
   /** Prices a whole plan before Add keeps anything (the page's /whatif). */
   check?: (steps: readonly StackStep[]) => Promise<PlanAnswer>;
@@ -1200,11 +1248,19 @@ function ExchangeView({
     final && latest ? (
       <ExchangeBody {...body} state={final} onStartOver={onStartOver ?? noop} onRetry={noop} still />
     ) : null;
+  // A replay's trace line, under its question: its words come from the recording, so its room is kept from the
+  // first beat (hidden, not focusable) and it shows, without moving anything, once the replay has played.
+  const traceLabel = headerTraceLabel(recording, synthetic);
+  const reply = useMemo(() => readClashReply(state.results), [state.results]);
+  const done = state.status === "done";
+  const savedReading = done && recordedQloo(recording, reply, synthetic).savedReading;
 
   return (
     // Brought to the top when it starts, below the page's own scroll padding and, from 768 px, clear of the
     // sticky section nav, so its question and Skip are in view (from 1024 px the first run's margin is set as it
-    // starts, so the section's heading beside it stays in view too: `replayScrollMargin`).
+    // starts, so the section's heading beside it stays in view too: `replayScrollMargin`). On a phone its title row
+    // (Asked, with Skip while it plays) lands 12 px under the 63 px scroll padding, 19 px clear of the 56 px header,
+    // with the question and the replay's Recorded notice under it; the section's heading is then above the screen.
     <li id={`agent-${exchange.id}`} className="scroll-mt-3 space-y-4 md:scroll-mt-10">
       <div>
         {/* A replay's label shares its line with Skip, in a line that keeps Skip's height once it goes, so the
@@ -1224,6 +1280,20 @@ function ExchangeView({
           <span className="sr-only">{recording ? "The recorded run was asked: " : "You asked: "}</span>
           {exchange.message}
         </p>
+        {traceLabel ? (
+          <div data-run-trace="" className={cn("mt-1", !done && "invisible")}>
+            <RunTrace
+              state={state}
+              recorded
+              synthetic={synthetic}
+              label={traceLabel}
+              countInLabel
+              savedReading={savedReading}
+              triggerVariant="ruled"
+              triggerClassName="text-sm"
+            />
+          </div>
+        ) : null}
       </div>
 
       <HeldHeight measure={measure}>
@@ -1258,11 +1328,20 @@ function Capabilities({ synthetic = false }: { synthetic?: boolean }) {
 const NEVER_CHANGES = "It never changes the real festival, which does not use Clash Control.";
 
 /**
- * The lede under the heading while the live agent is off: what the agent does, and that a replay calls
- * nothing (the off card below says it is off). The invented day names no Qloo call, since it never had one.
+ * What to ask the agent, said in the section's intro right after what it does, on every day (it names no Qloo).
+ * Each clause is one of its tools (backend/app/agent/clash_tools.py): set rules, add_constraint (:832); find a
+ * move, find_moves (:387) and reslot (:930); test a move, try_move (:281); explain, explain_clash (:202) and the
+ * run's answer in words, written from those tools' results (backend/app/agent/loop.py streams it).
  */
-function offLede(withRecordings: boolean, synthetic: boolean): string {
-  const does = "The agent tests a move against every rule and scores it before it answers.";
+export const ASK_IT = "Ask it to set rules, find and test a move, then explain the result.";
+
+/**
+ * The lede under the heading while the live agent is off: what the agent does, what to ask it (`ASK_IT`), and that
+ * a replay calls nothing (the off card below says it is off). The invented day names no Qloo call, since it never
+ * had one.
+ */
+export function offLede(withRecordings: boolean, synthetic: boolean): string {
+  const does = `The agent tests a move against every rule and scores it before it answers. ${ASK_IT}`;
   if (!withRecordings) return does;
   return synthetic
     ? `${does} Saved runs on this day replay with no live call.`
@@ -1318,7 +1397,8 @@ export function AgentHeading({
         {lede ?? (
           <>
             The agent works on this day&rsquo;s timetable {agentDataLine(synthetic)}. Ask why two sets clash, give it a
-            rule, or ask it to try a move: it tests the move against every rule and scores it before saying anything.
+            rule, or ask it to try a move: it tests the move against every rule and scores it before saying anything.{" "}
+            {ASK_IT}
           </>
         )}
       </p>
@@ -1458,6 +1538,19 @@ function RecordedTranscript({
 }
 
 /**
+ * The least height (px) the agent section holds at a width (`width`, px) while its recorded runs are still out: above
+ * the tallest settled section measured on the published days (round 37, F3; with the recordings of 21 Oct 2026,
+ * Glastonbury's is the taller: 1,819 px at 320, 1,588 at 390, 1,217 from 640 to 1,023, 1,004 at 1,024 and 879 from
+ * 1,280; Riot Fest's 1,360, 1,168, 994, 653 and 611). Room the runs do not fill stays under them only while it is on
+ * screen (`useHeldRoom`).
+ */
+export function agentRoomFloor(width: number): number {
+  if (width >= 1024) return 1100;
+  if (width >= 640) return 1350;
+  return 2000;
+}
+
+/**
  * "Ask the agent": a conversation about this festival day. The agent scores clashes, explains them
  * with Qloo's shared taste, records rules and tests moves; each answer shows its steps, the budget
  * before and after a tested move, and the Qloo requests behind it.
@@ -1484,12 +1577,12 @@ export function AgentPanel({
    * runs line can point to another day's run that asked Qloo without asking for the list again.
    */
   publishedDays?: readonly PublishedDay[];
-  /** The steps the kept plan holds (priced), so a run's Keep this place says when its place is kept. */
+  /** The steps the kept plan holds (priced), so a run's Keep this move says when its place is kept. */
   keptSteps?: readonly StackStep[];
   /**
    * Keeps a place a run tested through the page's keep path (the decision card's), with how (`choice`:
    * replace the plan, or add after the kept steps it was priced with), returning the note on any steps it
-   * replaced. Absent: no run offers Keep this place.
+   * replaced. Absent: no run offers Keep this move.
    */
   onKeepPlace?: KeepPlace;
   /** The set the decision card's move moves, so a run that moved another set says why their changes differ. */
@@ -1507,11 +1600,17 @@ export function AgentPanel({
   const counter = useRef(0);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // A run that ends with a place to keep is listed first and is the default replay; a run the rules refuse is
-  // listed last (`orderRecordings`, read from each run's own tool results).
+  // A run that ends with a place to keep is listed first and is the default replay, one whose saved events hold a
+  // Qloo request ahead of one whose events hold none; a run the rules refuse is listed last (`orderRecordings`,
+  // read from each run's own tool results and saved requests, never its id, title or place in the file).
   const runs = useMemo(() => orderRecordings(recordings.runs), [recordings.runs]);
   const mode = panelMode(agentStatus, runs.length > 0, recordings.status === "loading");
   const off = mode === "off" || mode === "off-recorded";
+  // While the agent's state or this day's recorded runs are still out, the section holds the room the settled panel
+  // takes at its width (`agentRoomFloor`) and reaches past the screen's foot while it is on screen, so the runs land
+  // without moving the sources or the footer under it, even for a visitor at the page's foot (round 37, F3). The heading and the can/cannot list are drawn as they will settle, so nothing above the run moves.
+  const sectionRef = useRef<HTMLElement | null>(null);
+  useHeldRoom(sectionRef, mode === "checking" || recordings.status === "loading", agentRoomFloor);
   const range = useMemo<ScaleRange>(() => scaleRange(preset.report.baseline), [preset]);
 
   const all = useMemo<PanelExchange[]>(
@@ -1729,15 +1828,17 @@ export function AgentPanel({
   const recordedOff = (
     <RecordedRuns runs={runs} onPlay={play} disabled={busy} description={null} qlooCounts={!synthetic && runsLine === null} />
   );
-  // The side column, under the heading: the rules said so far, the capabilities (live agent only) and what
-  // the agent can and cannot do. Start over sits with the latest run's own controls, not here.
-  const aside = mode !== "checking";
+  // The side column, under the heading: the rules said so far and what the agent can and cannot do (drawn in the
+  // section below), the same in every mode. Start over sits with the latest run's own controls, not here. It is drawn
+  // while the panel is still checking too (none of it waits on the runs or on /api/health), so the run under it on a
+  // phone never moves down when they land. The live agent's capabilities follow the question form instead, so a late
+  // health answer (or its timeout to unknown) adds nothing above the run.
   // From 1024 px the run picker sits in the side column, under the can/cannot list, in every state, so it never
   // jumps between columns; while and after a run plays it stays in view as the answer scrolls (sticky under the
   // site header and section nav). It is one element, never re-mounted, so a pressed Replay keeps focus. On a
   // phone it follows the run, after the can/cannot list and the run.
   const playing = all.length > 0;
-  const layout = agentLayout(playing, aside);
+  const layout = agentLayout(playing);
   const picker =
     mode !== "checking" && runs.length > 0 ? (
       <div data-agent-picker data-beside-run={playing ? "" : undefined} className={layout.picker}>
@@ -1845,13 +1946,15 @@ export function AgentPanel({
           Answers are written live by a language model from the tools&rsquo; results. Questions are limited per visitor
           to keep the demo free.
         </p>
-
+        <div className="mt-8">
+          <Capabilities synthetic={synthetic} />
+        </div>
       </>
     );
   }
 
   return (
-    <section id="agent" aria-labelledby="agent-heading">
+    <section ref={sectionRef} id="agent" aria-labelledby="agent-heading">
       {/* From 1024 px two columns: on the left the heading and what the agent can and cannot do; on the right the
           off notice and the run (a still transcript, or the replay). The run picker sits under the transcript
           before any run plays, and under the can/cannot list (sticky) while and after one does. On a phone one
@@ -1865,25 +1968,22 @@ export function AgentPanel({
             lede={off || agentStatus === "off" ? offLede(mode !== "off", synthetic) : undefined}
           />
 
-          {aside ? (
-            <aside data-agent-limits className="mt-8 min-w-0 space-y-8">
-              {rules.length > 0 ? (
-                <div>
-                  <h3 className="pb-2 text-[0.8125rem] leading-5 font-semibold text-foreground">Your rules</h3>
-                  <ul className="mt-4 space-y-1.5 text-sm">
-                    {rules.map((rule) => (
-                      <li key={rule} className="flex gap-2">
-                        <Check aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-foreground" />
-                        {rule}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {mode === "live" ? <Capabilities synthetic={synthetic} /> : null}
-              <AgentLimits synthetic={synthetic} />
-            </aside>
-          ) : null}
+          <aside data-agent-limits className="mt-8 min-w-0 space-y-8">
+            {rules.length > 0 ? (
+              <div>
+                <h3 className="pb-2 text-[0.8125rem] leading-5 font-semibold text-foreground">Your rules</h3>
+                <ul className="mt-4 space-y-1.5 text-sm">
+                  {rules.map((rule) => (
+                    <li key={rule} className="flex gap-2">
+                      <Check aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-foreground" />
+                      {rule}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            <AgentLimits synthetic={synthetic} />
+          </aside>
         </div>
 
         <div data-agent-run className={layout.run}>

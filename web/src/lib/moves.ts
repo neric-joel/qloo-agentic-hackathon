@@ -351,7 +351,7 @@ export function outsideCount(count: number): string | null {
 
 /**
  * Where a kept move came from, when the plan should say so: a place a recorded agent run tested and the
- * visitor kept with Keep this place. A move kept any other way carries no source.
+ * visitor kept with Keep this move. A move kept any other way carries no source.
  */
 export type MoveSource = "recorded-run";
 

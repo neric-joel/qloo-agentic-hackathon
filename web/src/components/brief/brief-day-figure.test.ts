@@ -157,7 +157,7 @@ describe("the brief's day figure (round 36)", () => {
     }
   });
 
-  it("sets its names at 10 units, which is 7.5 pt on paper in the wide frame, in ink, with the caption at 9 pt", () => {
+  it("sets its names at 10 units in the wide frame, in ink, with its caption's own print size at 9 pt (the brief sheet prints both at 9.5 pt, round 37 L75)", () => {
     const html = render(keptFigure());
     const [wide = ""] = svgs(html);
     expect(attr(wide, "font-size")).toBe("10");

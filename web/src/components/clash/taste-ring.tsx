@@ -121,9 +121,9 @@ export function DayRank({ value }: { value: number }) {
  * A rank as a position, under its DayRank sentence: the site's rank axis (as the why-qloo figure draws it), a 2px
  * border-strong line with 1px by 8px border-strong end ticks, and a 12px ink dot at the percentile the sentence
  * prints, ringed by a 2px halo in the fill it sits on (paper here, card in a printed card). Under the ends its scale,
- * "0" flush with the first tick's left edge and "100" with the last tick's right edge, in 12px mono muted figures,
+ * "0" flush with the first tick's left edge and "100" with the last tick's right edge, in 12px muted tabular figures,
  * 4px under the dot's halo so a dot at either end never meets its label. At most 12rem wide. Ink, border-strong and
- * muted only: no fill, no bar, no vermilion. It is a picture of the sentence and nothing more, so the whole axis,
+ * muted only: no fill, no bar, no raspberry. It is a picture of the sentence and nothing more, so the whole axis,
  * scale included, is aria-hidden and holds nothing focusable; the sentence stays the reading. A missing rank gets
  * no axis.
  */
@@ -161,7 +161,7 @@ function NoRank() {
 const LABEL = "text-[0.8125rem] leading-5 font-semibold";
 
 /**
- * The time two sets share: the minutes in vermilion mono, then the words in sans. The saved examples carry no set
+ * The time two sets share: the minutes in raspberry tabular figures, then the words. The saved examples carry no set
  * times, only these minutes, so nothing is drawn for them: no set bars, no time axis and no hatch key.
  */
 function SharedTimeStrip({ minutes, className }: { minutes: number | null; className?: string }) {
@@ -496,7 +496,7 @@ export function pairKeyTarget(key: string, index: number, last: number): number 
  * The hidden-clash examples, one pair at a time, as an open exhibit on the page's paper: one 1px decorative rule
  * along its top and nothing else (no corner, no side edge, no fill), its text starting at the column's own left
  * edge, as the hero receipt is drawn. One row leads it: the dateline at the left and, from 640px, the pager at the
- * right edge (Previous, the mono "1 of 8", Next); below 640px the pager is its own row under the dateline, its
+ * right edge (Previous, the tabular "1 of 8", Next); below 640px the pager is its own row under the dateline, its
  * Previous arrow on the dateline's x. The pair's names are not repeated in the row: they are printed large directly
  * below. The arrow keys, Home and End move between pairs from either button; a visually hidden live label, "Pair 1
  * of 8: A and B", is announced when the pair changes. The markup runs in reading order: the comparison (the two

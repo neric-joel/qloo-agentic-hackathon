@@ -53,7 +53,6 @@ import {
   tableOnPaper,
   type BriefRow,
   type BriefTradeoff,
-  type SharedMinutes,
 } from "@/lib/brief";
 import { daysWithSets } from "@/lib/clashes";
 import { requestDecision, type Decision } from "@/lib/decision";
@@ -79,19 +78,6 @@ export const SIGN_OFF = ["Prepared by", "Reviewed by (head of programming)", "Da
 
 /** A link that names a day this page cannot read, or carries moves with no day. */
 export const UNAVAILABLE = "This brief link is unavailable. Open the timetable and choose ‘Open as a one-page brief’.";
-
-/**
- * On paper, when a full sheet leaves the shared-minutes line off: what the plan does outside the published day's
- * ranked clashes, in that line's own words and figures, with the set named (the line's first sentence, which names
- * it, is not printed). So a printed sheet always shows the new overlap a kept move creates.
- */
-export function outsideOnPaper(minutes: SharedMinutes): string {
-  const set = minutes.ranked === 1 ? "the published day’s one ranked clash" : `the published day’s ${minutes.ranked} ranked clashes`;
-  const { added, longest } = minutes.outside;
-  return longest
-    ? `Outside ${set}, the plan adds ${added} min of new or longer overlap (longest: ${longest.a} × ${longest.b}, ${longest.minutes} min).`
-    : `Outside ${set}, no overlap gets longer.`;
-}
 
 // ------------------------------------------------------------------------------------ loading
 
@@ -381,6 +367,40 @@ export function BriefScreen({
 
 // ------------------------------------------------------------------------------------ the sheet
 
+/**
+ * The printed sheet's type (round 37): its running text (paragraphs, list lines, notes, caveats, the sign-off) at
+ * 10 pt and everything else at 9.5 pt or more. Each size carries its own leading, because `text-sm` and `text-xs` set a
+ * screen line height that would otherwise print at 1.33 to 1.43 and push the sheet onto a second page.
+ */
+const PRINT_TEXT = "print:text-[10pt] print:leading-[1.15]";
+const PRINT_SMALL = "print:text-[9.5pt] print:leading-[1.15]";
+
+/**
+ * The comparison table and the drawing's caption are shared components with their own 9 pt print sizes; on this sheet
+ * they print at its sizes: the comparison's sentences at 10 pt, its table and heads at 9.5 pt, and the caption at
+ * 9.5 pt. The table's cells keep the sheet's leading (their screen `text-sm` would print at 1.43), and its frame sits
+ * 2 pt under the sentence above it, not the screen's 8px. Set from here, by descendant, so the components and their
+ * other uses stay as they are.
+ */
+const TRADEOFF_PRINT = [
+  "print:[&>div]:mt-[2pt]",
+  "print:[&_p]:text-[10pt] print:[&_h3]:text-[10pt]",
+  "print:[&_table]:text-[9.5pt] print:[&_th]:text-[9.5pt] print:[&_td]:text-[9.5pt] print:[&_th_span]:text-[9.5pt]",
+  "print:[&_th]:leading-[1.15] print:[&_td]:leading-[1.15]",
+].join(" ");
+
+/**
+ * The drawing's labels print at the wide frame's `printFont`, 12.7 units, so on A4 they are 9.5 pt like the rest of
+ * the sheet's small type (lib/brief.ts FIGURE_FRAMES: the layout leaves room for that size). The stage names sit 0.35
+ * of a unit lower for each unit they grow, so they stay centred on their bars. Set from here, by descendant, as the
+ * caption is: the drawing itself, and the screen, stay at 10 units.
+ */
+const FIGURE_PRINT = [
+  "print:[&_figcaption]:text-[9.5pt]",
+  "print:[&_svg[data-frame=wide]]:text-[12.7px]",
+  "print:[&_svg[data-frame=wide]_[data-stage]]:translate-y-[0.945px]",
+].join(" ");
+
 function Block({
   title,
   children,
@@ -400,13 +420,13 @@ function Block({
       <h2
         id={id}
         className={cn(
-          "type-kicker pb-1.5 print:pb-[1pt] print:text-[10pt] print:leading-[1.17]",
+          "type-kicker pb-1.5 print:pb-0 print:text-[10pt] print:leading-[1.15]",
           quietInPrint && "print:sr-only",
         )}
       >
         {title}
       </h2>
-      <div className="mt-3 print:mt-[3pt]">{children}</div>
+      <div className="mt-3 print:mt-[1pt]">{children}</div>
     </section>
   );
 }
@@ -416,13 +436,13 @@ function Block({
  * chip or fill (the note under the table says what it means). Raspberry stays on shared minutes.
  */
 function HiddenMark() {
-  return <span className="font-semibold whitespace-nowrap text-foreground print:text-[9pt]">Hidden</span>;
+  return <span className="font-semibold whitespace-nowrap text-foreground print:text-[9.5pt]">Hidden</span>;
 }
 
 function LockedMark() {
   return (
     <span className="inline-flex items-center gap-1 font-semibold whitespace-nowrap text-foreground">
-      <Lock aria-hidden="true" className="size-3 print:size-[9pt]" />
+      <Lock aria-hidden="true" className="size-3 print:size-[9.5pt]" />
       both locked
     </span>
   );
@@ -439,7 +459,7 @@ function DecisionMark({ beside }: { beside: boolean }) {
     <span
       data-decision
       className={cn(
-        "hidden text-muted-foreground print:text-[9pt]",
+        "hidden text-muted-foreground print:text-[10pt]",
         beside ? "print:float-right print:ml-[10pt] print:block" : "print:block",
       )}
     >
@@ -450,7 +470,7 @@ function DecisionMark({ beside }: { beside: boolean }) {
   );
 }
 
-const TH = "px-2 py-2 font-semibold align-bottom print:px-[2pt] print:py-[2pt]";
+const TH = "px-2 py-2 font-semibold align-bottom print:px-[2pt] print:py-[1pt]";
 const TD = "px-2 py-2 align-top print:px-[2pt] print:py-[1pt]";
 
 /** The costliest clashes as a table (wide screens and print). */
@@ -458,14 +478,15 @@ function ClashTable({ rows, captionId }: { rows: readonly BriefRow[]; captionId:
   return (
     <table
       aria-labelledby={captionId}
-      className="hidden w-full border-collapse text-left text-sm sm:table print:table print:text-[9pt] print:leading-[1.25]"
+      className="hidden w-full border-collapse text-left text-sm sm:table print:table print:text-[9.5pt] print:leading-[1.15]"
     >
       <thead>
-        <tr className="border-b border-border-strong text-xs print:text-[9pt]">
+        <tr className={cn("border-b border-border-strong text-xs", PRINT_SMALL)}>
           <th scope="col" className={cn(TH, "w-8 text-right")}>
             #
           </th>
-          <th scope="col" className={TH}>
+          {/* On paper the names get the room, so a pair prints on one line and the figures' heads wrap instead. */}
+          <th scope="col" className={cn(TH, "print:w-[40%]")}>
             Clash
           </th>
           <th scope="col" className={TH}>
@@ -493,7 +514,7 @@ function ClashTable({ rows, captionId }: { rows: readonly BriefRow[]; captionId:
               <span className="font-semibold">
                 {row.a} and {row.b}
               </span>
-              <span className="block text-xs text-muted-foreground print:text-[9pt]">
+              <span className={cn("block text-xs text-muted-foreground", PRINT_SMALL)}>
                 {row.stageA} + {row.stageB}
                 {row.bothLocked ? (
                   <>
@@ -503,7 +524,7 @@ function ClashTable({ rows, captionId }: { rows: readonly BriefRow[]; captionId:
                 ) : null}
               </span>
             </td>
-            <td className={cn(TD, "font-mono text-xs whitespace-nowrap tabular-nums print:text-[9pt]")}>
+            <td className={cn(TD, "font-mono text-xs whitespace-nowrap tabular-nums", PRINT_SMALL)}>
               {row.window ?? "Times not known"}
               <span className="block text-muted-foreground">{row.minutes} min</span>
             </td>
@@ -633,10 +654,9 @@ export function BriefContent({
   const candidate = fallen ? candidateLine(fallen, synthetic) : null;
   // What the plan does to the timetable's shared minutes, over the published day's ranked clashes and outside them.
   const minutes = plan && withMoves ? sharedMinutes(preset, day, plan) : null;
-  // The minutes line and the decision lines are the first things a full sheet leaves off paper (they stay on the
-  // screen, where the decision line is not shown at all): the minutes line first, then the decision lines. Without
-  // the minutes line, its second sentence (what the plan adds outside the ranked clashes) still prints.
-  const paper = onPaper(steps, columns, tradeoff !== null, figurePrinted);
+  // The decision lines are what a full sheet leaves off paper (the screen never shows them). The minutes line, which
+  // leads the plan, always prints.
+  const paper = onPaper(steps, columns);
   // The day, drawn: as the plan leaves it, or as published; partners only where the sheet names them.
   const figure = briefFigure(preset, day, dayLabel, withMoves ? plan : null, { pair: tradeoff?.pair ?? null, minutes });
   // Under the table, once: whose locks the "both locked" rows are, only when a shown row has the mark.
@@ -665,21 +685,20 @@ export function BriefContent({
           <ClashTable rows={rows} captionId={tableCaption} />
           <ClashCards rows={rows} />
           {lockLine ? (
-            <p data-lock-rule className="mt-2 text-sm text-muted-foreground print:mt-[2pt] print:text-[9pt] print:leading-[1.17]">
+            <p data-lock-rule className={cn("mt-2 text-sm text-muted-foreground print:mt-[2pt]", PRINT_TEXT)}>
               {lockLine}
             </p>
           ) : null}
           <p
-            className={
-              lockLine
-                ? "mt-1 text-sm text-muted-foreground print:mt-[1pt] print:text-[9pt]"
-                : "mt-2 text-sm text-muted-foreground print:mt-[3pt] print:text-[9pt]"
-            }
+            className={cn(
+              lockLine ? "mt-1 text-sm text-muted-foreground print:mt-[1pt]" : "mt-2 text-sm text-muted-foreground print:mt-[2pt]",
+              PRINT_TEXT,
+            )}
           >
             {HIDDEN_NOTE} {READING_NOTE}
           </p>
           {candidate ? (
-            <p data-candidate className="mt-1 text-sm print:mt-[1pt] print:text-[9pt]">
+            <p data-candidate className={cn("mt-1 text-sm print:mt-[1pt]", PRINT_TEXT)}>
               {candidate}
             </p>
           ) : null}
@@ -692,7 +711,7 @@ export function BriefContent({
   const hiddenOnPaper = !(tradeoff || (withMoves && heavyPlan(steps, columns)));
   const hiddenBlock = hidden ? (
     <Block title="Hidden clashes" quietInPrint className={hiddenOnPaper ? undefined : "print:hidden"}>
-      <p className="print:text-[9pt]">{hidden}</p>
+      <p>{hidden}</p>
     </Block>
   ) : null;
   // What the printed page leaves off the published day is said on paper, in one line, so a sheet that fits one page
@@ -702,17 +721,17 @@ export function BriefContent({
       ? baselineNote(preset, day, { rows: tableOnPage ? rows.length : 0, hiddenListed: hiddenOnPaper })
       : null;
   const baselineBlock = baseline ? (
-    <p className="mt-2 hidden text-sm text-muted-foreground print:mt-[3pt] print:block print:text-[9pt]">{baseline}</p>
+    <p className={cn("mt-2 hidden text-sm text-muted-foreground print:mt-[2pt] print:block", PRINT_TEXT)}>{baseline}</p>
   ) : null;
 
   const howBlock = (
     <Block title="How to read this">
-      <ul className="list-disc space-y-1 pl-5 marker:text-muted-foreground print:space-y-[1pt] print:pl-[12pt] print:text-[9pt]">
+      <ul className="list-disc space-y-1 pl-5 marker:text-muted-foreground print:space-y-0 print:pl-[12pt]">
         {howToRead(synthetic).map((line) => (
           <li key={line}>{line}</li>
         ))}
       </ul>
-      <p data-do-not-use className="mt-2 font-semibold print:mt-[2pt] print:text-[9pt]">
+      <p data-do-not-use className={cn("mt-2 font-semibold print:mt-[1pt]", PRINT_TEXT)}>
         {DO_NOT_USE}
       </p>
     </Block>
@@ -725,33 +744,26 @@ export function BriefContent({
     plan && withMoves ? (
       <>
         <Block title="Your plan">
-          <p className="text-lg leading-snug font-bold print:inline print:text-[10pt]">{planSummary(plan)}</p>
+          {/* The plan leads with its minutes (round 37, R5): the timetable minutes the published day's ranked clashes
+              share before and with the plan, and what it adds outside them, on the screen and on paper; then the
+              index line and its band. */}
+          {minutes ? (
+            <p data-shared-minutes className="mb-1 print:mb-[1pt]">
+              {sharedMinutesSentence(minutes)}
+            </p>
+          ) : null}
+          <p className="text-lg leading-snug font-bold print:inline print:text-[10pt] print:leading-[1.15]">{planSummary(plan)}</p>
           {verdict ? (
             <>
               {" "}
               <p className="mt-1 print:mt-0 print:inline">{verdict}</p>
             </>
           ) : null}
-          {/* On paper only, where the minutes line below is left off: what the plan adds outside the ranked clashes,
-              run on after the verdict in the room its last line leaves. The screen has the whole minutes line. */}
-          {minutes && !paper.minutes ? (
-            <>
-              {" "}
-              <p data-new-overlap className="hidden print:inline">
-                {outsideOnPaper(minutes)}
-              </p>
-            </>
-          ) : null}
-          {minutes ? (
-            <p data-shared-minutes className={cn("mt-1 print:mt-[2pt]", !paper.minutes && "print:hidden")}>
-              {sharedMinutesSentence(minutes)}
-            </p>
-          ) : null}
           {/* Up to three steps are one column. More are two columns, and on paper they flow down the
               first column and then the second, so a long kept change never stretches a row. */}
           <ol
             className={cn(
-              "mt-2 grid gap-x-6 gap-y-2 print:mt-[2pt] print:gap-y-[2pt]",
+              "mt-2 grid gap-x-6 gap-y-2 print:mt-[1pt] print:gap-y-[1pt]",
               twoColumns && "md:grid-cols-2 print:block print:columns-2 print:gap-x-[24px]",
             )}
           >
@@ -761,10 +773,10 @@ export function BriefContent({
               return isBriefRuleStep(step) ? (
                 <li key={step.n} className={cn("min-w-0 break-inside-avoid", twoColumns && "print:mb-[2pt]")}>
                   {twoColumns ? null : decision}
-                  <span className="font-semibold break-words print:text-[9pt]">
+                  <span className="font-semibold break-words">
                     <span className="tabular-nums">{step.n}.</span> {step.line}
                   </span>
-                  <span className="block text-sm text-muted-foreground print:text-[9pt]">
+                  <span className={cn("block text-sm text-muted-foreground", PRINT_TEXT)}>
                     <span className="font-mono tabular-nums">
                       {step.before} → {step.after}
                     </span>
@@ -775,10 +787,10 @@ export function BriefContent({
               ) : (
                 <li key={step.n} className={cn("min-w-0 break-inside-avoid", twoColumns && "print:mb-[2pt]")}>
                   {twoColumns ? null : decision}
-                  <span className="font-semibold break-words print:text-[9pt]">
+                  <span className="font-semibold break-words">
                     <span className="tabular-nums">{step.n}.</span> {step.act} · {step.place}
                   </span>
-                  <span className="block text-sm text-muted-foreground print:text-[9pt]">
+                  <span className={cn("block text-sm text-muted-foreground", PRINT_TEXT)}>
                     {step.shift} ·{" "}
                     <span className="font-mono tabular-nums">
                       {step.before} → {step.after}
@@ -797,18 +809,19 @@ export function BriefContent({
               tradeoff={tradeoff.tradeoff}
               held={tradeoff.held}
               className={cn(
-                "mt-4 border-t border-border pt-2 print:mt-[3pt] print:pt-[2pt]",
+                "mt-4 border-t border-border pt-2 print:mt-[1pt] print:pt-[1pt]",
+                TRADEOFF_PRINT,
                 // Tested alone, so it sits below the plan's own receipts in lighter type, never as the plan's result.
                 tradeoff.alone && "text-[0.9375rem]",
               )}
             />
           ) : null}
           {tradeoff?.pairNote ? (
-            <p className="mt-1 text-sm text-muted-foreground print:mt-[1pt] print:text-[9pt] print:leading-[1.15]">
+            <p className={cn("mt-1 text-sm text-muted-foreground print:mt-[1pt]", PRINT_TEXT)}>
               {tradeoff.pairNote}
             </p>
           ) : null}
-          <p className="mt-2 text-sm text-muted-foreground print:mt-[4pt] print:text-[9pt]">{PLAN_CAVEAT}</p>
+          <p className={cn("mt-2 text-sm text-muted-foreground print:mt-[1pt]", PRINT_TEXT)}>{PLAN_CAVEAT}</p>
         </Block>
 
         <Block title={planClashesTitle(planLines.length)}>
@@ -817,7 +830,7 @@ export function BriefContent({
           ) : (
             <ol
               className={cn(
-                "grid gap-x-6 gap-y-1 print:flex print:flex-wrap print:gap-x-[14pt] print:gap-y-[1pt] print:text-[9pt]",
+                "grid gap-x-6 gap-y-1 print:flex print:flex-wrap print:gap-x-[14pt] print:gap-y-0",
                 planLines.length > 2 && "md:grid-cols-2",
               )}
             >
@@ -830,7 +843,7 @@ export function BriefContent({
           )}
         </Block>
 
-        <p className="mt-5 font-semibold print:mt-[4pt]">
+        <p className="mt-5 font-semibold print:mt-[3pt]">
           {TO_DECIDE} {TEAMS_AGREE}
         </p>
       </>
@@ -845,11 +858,11 @@ export function BriefContent({
       aria-labelledby="brief-heading"
       className={cn(
         "rounded-lg border border-surface-edge bg-card p-5 text-[0.9375rem] leading-relaxed sm:p-8 lg:p-10",
-        "print:rounded-none print:border-0 print:bg-transparent print:p-0 print:text-[9pt] print:leading-[1.17]",
+        "print:rounded-none print:border-0 print:bg-transparent print:p-0 print:text-[10pt] print:leading-[1.15]",
         className,
       )}
     >
-      <p className="type-kicker text-muted-foreground print:text-[9pt] print:leading-[1.17]">
+      <p className="type-kicker text-muted-foreground print:text-[10pt] print:leading-[1.15]">
         Clash brief · {festival}, {dayLabel}
       </p>
       <h1
@@ -858,9 +871,9 @@ export function BriefContent({
       >
         {festival} {dayLabel}: {BRIEF_HEADING_TAIL}
       </h1>
-      <p className="mt-2 text-muted-foreground print:mt-[3pt]">{briefIntro(festival, synthetic)}</p>
+      <p className="mt-2 text-muted-foreground print:mt-[2pt]">{briefIntro(festival, synthetic)}</p>
       {figure ? (
-        <BriefDayFigure figure={figure} className={cn("mt-5 print:mt-[3pt]", !figurePrinted && "print:hidden")} />
+        <BriefDayFigure figure={figure} className={cn("mt-5 print:mt-[2pt]", FIGURE_PRINT, !figurePrinted && "print:hidden")} />
       ) : null}
 
       {withMoves ? (
@@ -881,7 +894,7 @@ export function BriefContent({
       )}
       {howBlock}
 
-      <div className="mt-8 border-t border-border pt-3 text-xs leading-relaxed text-muted-foreground print:mt-[6pt] print:pt-[3pt] print:text-[9pt] print:leading-[1.25]">
+      <div className={cn("mt-8 border-t border-border pt-3 text-xs leading-relaxed text-muted-foreground print:mt-[3pt] print:pt-[2pt]", PRINT_TEXT)}>
         <p>{figuresAttribution(preset, festival)}</p>
         {hosts.length > 0 ? <p className="mt-1 print:mt-0">Timetable sources: {hosts.join(", ")}.</p> : null}
       </div>
@@ -889,7 +902,7 @@ export function BriefContent({
           line to write on, a 1px rule in the control-edge ink (a mark, never text). */}
       <dl
         data-sign-off
-        className="mt-6 flex flex-wrap gap-x-8 gap-y-4 text-sm print:mt-[7pt] print:gap-x-[18pt] print:text-[9pt]"
+        className={cn("mt-6 flex flex-wrap gap-x-8 gap-y-4 text-sm print:mt-[4pt] print:gap-x-[14pt]", PRINT_TEXT)}
       >
         {SIGN_OFF.map((label) => (
           // On a phone each label takes its own row and its line runs to the edge; from 640px and on paper the three
@@ -900,7 +913,7 @@ export function BriefContent({
               aria-label="blank, to fill in"
               className={cn(
                 "h-5 min-w-16 flex-1 border-b border-border-strong sm:flex-none print:h-[12pt] print:flex-none",
-                label === "Date" ? "sm:w-24 print:w-[64pt]" : "sm:w-36 print:w-[96pt]",
+                label === "Date" ? "sm:w-24 print:w-[52pt]" : "sm:w-36 print:w-[80pt]",
               )}
             />
           </div>

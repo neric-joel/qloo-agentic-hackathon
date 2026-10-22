@@ -298,12 +298,19 @@ export function runEnding(run: RecordedRun): "keep" | "refused" | "other" {
 
 /**
  * The runs in the order the panel lists them, and the first one its default: a run that ends with a place to
- * keep first, a run the rules refuse last, the rest between, each group in the server's order.
+ * keep first, a run the rules refuse last, the rest between. Among the runs that end with a place to keep, one
+ * whose own saved events hold at least one Qloo request (`savedRequests`) comes before one whose events hold
+ * none. Decided only from each run's own events, never from its id, title or place in the file; runs that tie
+ * keep the server's order.
  */
 export function orderRecordings(runs: readonly RecordedRun[]): RecordedRun[] {
   const rank = { keep: 0, other: 1, refused: 2 } as const;
   return runs
-    .map((run, i) => ({ run, i, rank: rank[runEnding(run)] }))
-    .sort((a, b) => a.rank - b.rank || a.i - b.i)
+    .map((run, i) => {
+      const ending = runEnding(run);
+      const asked = ending === "keep" && savedRequests(run).length > 0;
+      return { run, i, rank: rank[ending], asked };
+    })
+    .sort((a, b) => a.rank - b.rank || Number(b.asked) - Number(a.asked) || a.i - b.i)
     .map((item) => item.run);
 }

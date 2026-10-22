@@ -8,7 +8,7 @@ import { ProvenanceChip } from "@/components/kernel";
 import { Button } from "@/components/ui/button";
 import { CHECK_LIVE } from "@/lib/check-flag";
 import { sideEffectText, type DayGraphModel, type GraphView } from "@/lib/day-graph";
-import { ATTRIBUTION, NO_MOVE, type DecisionCopy } from "@/lib/decision";
+import { ATTRIBUTION, NO_MOVE, type Decision, type DecisionCopy } from "@/lib/decision";
 import { pluralize } from "@/lib/format";
 import { ALREADY_KEPT } from "@/lib/rule-fix";
 import {
@@ -41,6 +41,54 @@ const NO_STEPS: readonly StackStep[] = [];
 /** What "Keep this move" reads once the plan holds the move, in the same cell, so the button keeps its width. */
 export const KEPT_LABEL = "Kept in your plan";
 
+/**
+ * The hero group's rows, in order, each with the space above it and the room it holds at every width. Every
+ * state the group can be painted in builds from these: the settled answer, the same answer before the
+ * interactive view mounts (`pending`), and the skeleton while a day's decision loads, so one never replaces
+ * another at a different height. The rooms are min-heights, never fixed heights: a longer line grows its row
+ * and is never clipped. Each is the settled row's own height on the published days at that width (the move
+ * lead is screen-reader only below 1024 px; the readout's figures 34 px on 1.1, then 48 px; one 20 px line of
+ * words, then 28 px; the side effects and the taste line two 20 px lines below 640 px, one from 640 px, two 22
+ * px lines from 1024 px and, for the taste line, one from 1280 px, where it holds the 13 px Derived stamp; the
+ * attribution two 18 px lines below 640 px, then one; Keep's 48 px; the confirmation's room three 18 px lines,
+ * two from 640 px, two 20 px lines from 1024 px). If a settled row is taller than its room at some width, its
+ * room for that width is raised; the text is never shortened.
+ */
+export const HERO_ROWS = [
+  { name: "lead", space: "", min: "lg:min-h-[1.625rem]" },
+  { name: "readout", space: "lg:mt-2", min: "min-h-[3.7125rem] lg:min-h-[5.05rem]" },
+  { name: "side-effects", space: "mt-1.5 lg:mt-2", min: "min-h-10 sm:min-h-5 lg:min-h-11" },
+  { name: "taste", space: "mt-1 lg:mt-2", min: "min-h-10 sm:min-h-5 lg:min-h-11 xl:min-h-[1.375rem]" },
+  { name: "attribution", space: "mt-1 lg:mt-2", min: "min-h-9 sm:min-h-[1.125rem] lg:min-h-5" },
+  { name: "actions", space: "mt-2 lg:mt-4", min: "min-h-12" },
+  { name: "notice", space: "mt-1", min: "min-h-[3.375rem] sm:min-h-9 lg:min-h-10" },
+] as const;
+
+export type HeroRowName = (typeof HERO_ROWS)[number]["name"];
+
+/**
+ * The room the hero layout's group cell holds from 1024 px, from first paint: the sum of `HERO_ROWS` at that
+ * width (354.8 px from 1024 px, 332.8 px from 1280 px, where the taste line takes one line), so a group that
+ * comes later, or one with an empty row, never moves the toggle and the drawing beside it.
+ */
+export const HERO_CELL_MIN = "lg:min-h-[22.175rem] xl:min-h-[20.8rem]";
+
+/** A row's space and room (`HERO_ROWS`), then the classes of what it holds. */
+function rowClass(name: HeroRowName, ...rest: Parameters<typeof cn>): string {
+  const row = HERO_ROWS.find((item) => item.name === name);
+  return cn(row?.space, row?.min, ...rest);
+}
+
+/**
+ * The actions grid: Keep, then the room its confirmation fills, then the paste, in that order at every width.
+ * From 1024 px the paste sits beside Keep and the confirmation runs under both.
+ */
+const ACTIONS_GRID =
+  "grid grid-cols-[minmax(0,1fr)] justify-items-start [grid-template-areas:'keep'_'notice'_'paste'] lg:grid-cols-[auto_minmax(0,1fr)] lg:gap-x-3 lg:[grid-template-areas:'keep_paste'_'notice_notice']";
+
+/** The paste's cell: 44 px under the confirmation's room on a phone, 48 px beside Keep from 1024 px. */
+const PASTE_CELL = "mt-2 [grid-area:paste] lg:mt-0 lg:h-12";
+
 function reducedMotion(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
@@ -54,6 +102,52 @@ export function tasteLineText(taste: number, synthetic: boolean): string {
   return synthetic
     ? `Taste overlap: ${taste} of 100 on this invented bill (an invented rank, not attendance)`
     : `Taste overlap: ${taste} of 100 on this bill (a rank, not attendance)`;
+}
+
+/** The desktop note's sentences, word for word. */
+export const NOTE_LOWEST = "Of the legal moves checked, this gives the lowest index.";
+export const NOTE_TIED = "Of the legal moves checked, this ties for the lowest index.";
+export const NOTE_TWO_SETS = "Moving two sets ends the overlap instead.";
+export const NOTE_NEAR_100 = "Near 100 means closer tastes among the acts compared.";
+export const NOTE_NEAR_100_INVENTED = "Near 100 means closer invented tastes among the acts compared.";
+
+/**
+ * The note under the dateline for a day's decision: every sentence whose condition holds, none dropped to fit.
+ * First, why this move: the engine checks every legal single-set place of the clash's two sets (each start on a
+ * 5-minute grid in the free time it may use, minus any place that breaks a rule) and takes the place with the lowest
+ * index (`backend/app/decision.py`, `_candidates`, from `compute_move_options`), so it "gives" the lowest index, or
+ * "ties for" it when the other set's first place gives the same (`move.alternative`). Then, only when the rule
+ * answer's first change moves two sets and leaves the pair 0 minutes shared, that two sets end the overlap (no figure:
+ * the index block keeps its own). Last, what the taste line's scale means. Null without a move; nothing credits Qloo.
+ */
+export function heroNote(decision: Decision | null, synthetic: boolean): string | null {
+  if (!decision?.move) return null;
+  const first = decision.rule && !decision.rule.holds ? decision.rule.fixes[0] : undefined;
+  const twoSets = first?.setsMoved === 2 && decision.ruleChange?.minutesSharedAfter === 0;
+  return [
+    decision.move.alternative ? NOTE_TIED : NOTE_LOWEST,
+    twoSets ? NOTE_TWO_SETS : null,
+    synthetic ? NOTE_NEAR_100_INVENTED : NOTE_NEAR_100,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/**
+ * The note in the hero's left column, under the dateline: 13 px on 20 px, muted ink, at most two lines in the
+ * column's 704 px. Shown only from 1280 px wide and 791 px tall, where the column has 46 px free under the dateline
+ * (it takes 44), so it moves nothing; hidden on a phone and on shorter screens. Nothing without a note.
+ */
+export function HeroNote({ text }: { text: string | null }) {
+  if (!text) return null;
+  return (
+    <p
+      data-hero-note=""
+      className="mt-1 hidden max-w-[44rem] text-[0.8125rem] leading-5 text-muted-foreground xl:[@media(min-height:791px)]:block"
+    >
+      {text}
+    </p>
+  );
 }
 
 /**
@@ -115,7 +209,9 @@ type HeroDecisionProps = {
  * room, so nothing moves when it fills), and "Paste your own draft grid". Keep writes the real plan through
  * `onOpenMove` (Add or Replace when the plan holds other steps); a press confirms in place and moves focus to
  * the confirmation's link, scrolling the whole confirmation into view when it is not. With no move the heading
- * names the pair and says no legal place lowers the index; with no decision the taste line goes too.
+ * names the pair and says no legal place lowers the index; with no decision the taste line goes too. Every row
+ * keeps its room (`HERO_ROWS`) in every state, an empty one hidden from assistive tech, so the group's height
+ * never changes from one state to the next.
  */
 export function HeroDecision({ model, copy, view, onOpenMove, plan, kept, check, pending = false, className }: HeroDecisionProps) {
   const [status, say] = useAnnouncement();
@@ -168,7 +264,7 @@ export function HeroDecision({ model, copy, view, onOpenMove, plan, kept, check,
   }, [focusAsk, keptShown]);
 
   // A press on a plan that already holds other steps never replaces it silently: it offers Add (scored whole
-  // first, exactly as Keep this place does) or Replace, for the plan it was pressed on (`steps`; `stored` when that
+  // first, exactly as an agent run's Keep this move does) or Replace, for the plan it was pressed on (`steps`; `stored` when that
   // was the tab's stored plan, before the page had the plan's first answer). A changed plan, or the move kept,
   // puts the offer away.
   const [offer, setOffer] = useState<{
@@ -201,9 +297,10 @@ export function HeroDecision({ model, copy, view, onOpenMove, plan, kept, check,
     return () => window.clearTimeout(timer);
   }, [sentKey]);
   // Focus follows the offer: to Add when it opens, to Replace when an Add is refused (the way still open). The
-  // offer takes the actions' own places (below 380 px Replace sits where the paste was, under the confirmation's
-  // room), which on a short phone can run under the fold: the whole offer, Add, Replace and the words in that
-  // room, then comes into view by the least scroll ("nearest"), at once under reduced motion.
+  // offer takes the actions' own places: Add in Keep's, Replace beside it from 380 px and, below 380 px, directly
+  // under it (the paste's row comes up under Keep's while the offer shows), then the words in the confirmation's
+  // room. On a short phone that can run under the fold: the whole offer, Add, Replace and those words, then comes
+  // into view by the least scroll ("nearest"), at once under reduced motion.
   const groupRef = useRef<HTMLDivElement | null>(null);
   const offerFocus = offerShown && (offerShown.state === "open" || offerShown.state === "rejected") ? `${offer?.key}:${offerShown.state}` : null;
   useEffect(() => {
@@ -300,62 +397,93 @@ export function HeroDecision({ model, copy, view, onOpenMove, plan, kept, check,
   const taste = copy !== null ? model.tasteOfLit : null;
   // While the drawing shows the day without the move, a kept move says the drawing does not show it.
   const drawn = view === "published" && move ? (synthetic ? "invented" : "published") : null;
+  // The move lead, or the pair without a move: 20 px from 1024 px; below it the drawing's toggle names the move, so
+  // it is read only. scratch-plan.tsx scrolls to and focuses this heading.
+  const headingElement = (
+    <h2
+      id={DECISION_HEADING_ID}
+      tabIndex={-1}
+      className="text-[1.25rem] leading-[1.625rem] font-[620] tracking-[-0.015em] text-balance outline-none max-lg:sr-only"
+    >
+      {heading}
+    </h2>
+  );
 
   return (
-    <div ref={groupRef} id={DECISION_ID} data-hero-group="" className={cn("min-w-0", className)}>
-      {/* The move lead: 20 px from 1024 px; below it the drawing's toggle names the move, so it is read only.
-          scratch-plan.tsx scrolls to and focuses this heading. */}
-      <h2
-        id={DECISION_HEADING_ID}
-        tabIndex={-1}
-        className="text-[1.25rem] leading-[1.625rem] font-[620] tracking-[-0.015em] text-balance outline-none max-lg:sr-only"
-      >
-        {heading}
-      </h2>
+    <div
+      ref={groupRef}
+      id={DECISION_ID}
+      data-hero-group=""
+      data-hero-state={pending ? "pending" : "settled"}
+      className={cn("min-w-0", className)}
+    >
+      {/* Every row holds its room (`HERO_ROWS`) in every state, filled or not, so the group keeps one height. With
+          a move the heading is the lead's one line. Without one it names a pair ("A × B: 40 min shared"), which
+          can take two or three lines at 26rem, so it sits in the readout's room, empty then and as tall as three
+          of its lines, and the lead's room stays empty: the group keeps its height when a day's decision does not
+          come (a failed request) or comes with no move. */}
+      <div data-hero-row="lead" aria-hidden={move ? undefined : true} className={rowClass("lead")}>
+        {move ? headingElement : null}
+      </div>
 
-      {move ? (
-        // The figures on their own line and the words under them, on both days and at every width, so the
-        // answer keeps one shape (the words cannot share a 448 px line with 48 px figures anyway).
-        <p data-readout="" className="lg:mt-2">
-          <span className="type-numeral block text-[2.125rem] leading-[1.1] tracking-[-0.02em] lg:text-5xl lg:leading-[1.1]">
-            {move.minutesBefore}
-            <span aria-hidden="true"> → </span>
-            <span className="sr-only"> to </span>
-            <span className="text-primary">{move.minutesAfter}</span>
-          </span>{" "}
-          <span className="block text-[0.9375rem] leading-[1.375rem] lg:text-xl lg:leading-7">
-            min shared with {move.partnerName}
-          </span>
-        </p>
-      ) : null}
+      <div data-hero-row="readout" className={rowClass("readout")}>
+        {!move ? (
+          headingElement
+        ) : (
+          // The figures on their own line and the words under them, on both days and at every width, so the
+          // answer keeps one shape (the words cannot share a 448 px line with 48 px figures anyway).
+          <p data-readout="">
+            <span className="type-numeral block text-[2.125rem] leading-[1.1] tracking-[-0.02em] lg:text-5xl lg:leading-[1.1]">
+              {move.minutesBefore}
+              <span aria-hidden="true"> → </span>
+              <span className="sr-only"> to </span>
+              <span className="text-primary">{move.minutesAfter}</span>
+            </span>{" "}
+            <span className="block text-[0.9375rem] leading-[1.375rem] lg:text-xl lg:leading-7">
+              min shared with {move.partnerName}
+            </span>
+          </p>
+        )}
+      </div>
 
-      {move ? (
-        <p data-side-effects="" className="mt-1.5 text-sm leading-5 lg:mt-2 lg:text-[0.9375rem] lg:leading-[1.375rem]">
-          {sideEffectText(move)}
-        </p>
-      ) : copy !== null ? (
-        <p data-no-move="" className="mt-1.5 text-sm leading-5 lg:mt-2 lg:text-[0.9375rem] lg:leading-[1.375rem]">
-          {NO_MOVE}
-        </p>
-      ) : null}
+      <div data-hero-row="side-effects" aria-hidden={move || copy !== null ? undefined : true} className={rowClass("side-effects")}>
+        {move ? (
+          <p data-side-effects="" className="text-sm leading-5 lg:text-[0.9375rem] lg:leading-[1.375rem]">
+            {sideEffectText(move)}
+          </p>
+        ) : copy !== null ? (
+          <p data-no-move="" className="text-sm leading-5 lg:text-[0.9375rem] lg:leading-[1.375rem]">
+            {NO_MOVE}
+          </p>
+        ) : null}
+      </div>
 
-      {taste !== null ? (
-        <p data-taste-line="" className="mt-1 text-sm leading-5 lg:mt-2 lg:text-[0.9375rem] lg:leading-[1.375rem]">
-          {tasteLineText(taste, synthetic)} <ProvenanceChip provenance="derived" synthetic={synthetic} className="rounded-sm" />
-        </p>
-      ) : null}
+      {/* Without the decision's pair (copy null) the taste row holds its room with nothing in it: no number
+          and no qualifier. */}
+      <div data-hero-row="taste" aria-hidden={taste !== null ? undefined : true} className={rowClass("taste")}>
+        {taste !== null ? (
+          <p data-taste-line="" className="text-sm leading-5 lg:text-[0.9375rem] lg:leading-[1.375rem]">
+            {tasteLineText(taste, synthetic)} <ProvenanceChip provenance="derived" synthetic={synthetic} className="rounded-sm" />
+          </p>
+        ) : null}
+      </div>
 
-      <p
-        data-attribution=""
-        className="mt-1 text-[0.8125rem] leading-[1.125rem] text-muted-foreground lg:mt-2 lg:text-sm lg:leading-5"
-      >
-        {ATTRIBUTION}. A reading, not a verdict.
-      </p>
+      <div data-hero-row="attribution" className={rowClass("attribution")}>
+        <p data-attribution="" className="text-[0.8125rem] leading-[1.125rem] text-muted-foreground lg:text-sm lg:leading-5">
+          {ATTRIBUTION}. A reading, not a verdict.
+        </p>
+      </div>
 
       {/* The actions: Keep, then the room its confirmation fills, then the paste, in that order at every width.
           From 1024 px the paste sits beside Keep and the confirmation runs under both. The Add / Replace offer
-          is drawn in these places while Keep and the paste hold theirs unseen, so nothing moves. */}
-      <div className="mt-2 grid grid-cols-[minmax(0,1fr)] justify-items-start [grid-template-areas:'keep'_'notice'_'paste'] lg:mt-4 lg:grid-cols-[auto_minmax(0,1fr)] lg:gap-x-3 lg:[grid-template-areas:'keep_paste'_'notice_notice']">
+          is drawn in these places while Keep and the paste hold theirs unseen, so nothing moves; below 380 px,
+          while it shows, the paste's row comes up under Keep's, so Replace sits directly under Add and the
+          confirmation's room, which holds the offer's words, follows them (the same three rows, so the group
+          keeps its height). Without Keep, its place and its room are held empty. */}
+      <div
+        data-hero-row="actions"
+        className={rowClass("actions", ACTIONS_GRID, showKeep && offerShown && "max-[379px]:[grid-template-areas:'keep'_'paste'_'notice']")}
+      >
         {showKeep ? (
           <Button
             ref={keepRef}
@@ -382,7 +510,9 @@ export function HeroDecision({ model, copy, view, onOpenMove, plan, kept, check,
               </span>
             </span>
           </Button>
-        ) : null}
+        ) : (
+          <div aria-hidden="true" className="h-12 [grid-area:keep]" />
+        )}
         {showKeep && offerShown ? (
           <KeepMoveOffer
             offer={offerShown}
@@ -394,24 +524,21 @@ export function HeroDecision({ model, copy, view, onOpenMove, plan, kept, check,
             replaceRef={replaceRef}
           />
         ) : null}
-        {showKeep ? (
-          // The room is held at every width: three 18 px lines on a phone (the longest confirmation as it wraps
-          // at 320 px), two from 640 px, where it cannot take more, and two 20 px lines from 1024 px.
-          <KeptNotice
-            shown={keptShown}
-            linkRef={linkRef}
-            boxRef={noticeRef}
-            drawn={drawn}
-            className="mt-1 min-h-[3.375rem] w-full text-[0.8125rem] leading-[1.125rem] [grid-area:notice] sm:min-h-9 lg:min-h-10 lg:text-sm lg:leading-5"
-          />
-        ) : null}
+        <div data-hero-row="notice" className={rowClass("notice", "w-full [grid-area:notice]")}>
+          {showKeep ? (
+            // The room is held at every width: three 18 px lines on a phone (the longest confirmation as it wraps
+            // at 320 px), two from 640 px, where it cannot take more, and two 20 px lines from 1024 px.
+            <KeptNotice
+              shown={keptShown}
+              linkRef={linkRef}
+              boxRef={noticeRef}
+              drawn={drawn}
+              className="min-h-[3.375rem] w-full text-[0.8125rem] leading-[1.125rem] sm:min-h-9 lg:min-h-10 lg:text-sm lg:leading-5"
+            />
+          ) : null}
+        </div>
         {CHECK_LIVE ? (
-          <Button
-            asChild
-            variant="outline"
-            size="default"
-            className={cn("mt-2 [grid-area:paste] lg:mt-0 lg:h-12", showKeep && offerShown && "invisible")}
-          >
+          <Button asChild variant="outline" size="default" className={cn(PASTE_CELL, showKeep && offerShown && "invisible")}>
             <Link href="/check">
               Paste your own draft grid
               <ArrowRight aria-hidden="true" />
@@ -428,34 +555,38 @@ export function HeroDecision({ model, copy, view, onOpenMove, plan, kept, check,
 }
 
 /**
- * Holds the hero group's footprint while a day's decision loads, at the heights its own rows take: the move
- * lead (from 1024 px), the readout, the side-effect and taste lines, the attribution and the 48 px button with
- * its confirmation's room. Nothing to read, nothing focusable.
+ * Holds the hero group's footprint while a day's decision loads, built from the same rows as the answer
+ * (`HERO_ROWS`), so the answer takes exactly its place when it comes: the move lead (from 1024 px), the readout,
+ * the side-effect and taste rows, the attribution, then Keep's place, its confirmation's room and the paste's.
+ * It shows no move and no pair, so it prints nothing: no text, no figure, no attribution, and nothing to press
+ * or focus. Each row holds a quiet bar inside its room.
  */
 export function HeroDecisionSkeleton({ className }: { className?: string }) {
   const bar = "rounded-xs bg-muted";
+  const lines = "flex flex-col justify-center gap-2";
   return (
-    <div aria-hidden="true" data-hero-skeleton="" className={cn("min-w-0", className)}>
-      <div className="flex h-[1.625rem] items-center max-lg:hidden">
+    <div aria-hidden="true" data-hero-skeleton="" data-hero-group="" data-hero-state="skeleton" className={cn("min-w-0", className)}>
+      <div data-hero-row="lead" className={rowClass("lead", lines, "max-lg:hidden")}>
         <div className={cn(bar, "h-4 w-3/5")} />
       </div>
-      <div className="flex h-15 flex-col justify-center gap-2 lg:mt-2 lg:h-[5.125rem]">
+      <div data-hero-row="readout" className={rowClass("readout", lines)}>
         <div className={cn(bar, "h-7 w-2/5 lg:h-10")} />
         <div className={cn(bar, "h-3 w-3/4")} />
       </div>
-      <div className="mt-1.5 flex h-10 flex-col justify-center gap-2 lg:mt-2 lg:h-11">
+      <div data-hero-row="side-effects" className={rowClass("side-effects", lines)}>
         <div className={cn(bar, "h-3 w-11/12")} />
-        <div className={cn(bar, "h-3 w-2/3")} />
       </div>
-      <div className="mt-1 flex h-10 flex-col justify-center gap-2 lg:mt-2 lg:h-11">
+      <div data-hero-row="taste" className={rowClass("taste", lines)}>
         <div className={cn(bar, "h-3 w-4/5")} />
-        <div className={cn(bar, "h-3 w-1/2")} />
       </div>
-      <div className="mt-1 flex h-9 flex-col justify-center gap-2 lg:mt-2 lg:h-10">
+      <div data-hero-row="attribution" className={rowClass("attribution", lines)}>
         <div className={cn(bar, "h-3 w-3/4")} />
       </div>
-      <div className={cn("mt-2 h-12 w-40 rounded-md bg-muted lg:mt-4")} />
-      <div className="mt-1 h-[3.375rem] sm:h-9 lg:h-10" />
+      <div data-hero-row="actions" className={rowClass("actions", ACTIONS_GRID)}>
+        <div className="h-12 w-40 rounded-md bg-muted [grid-area:keep]" />
+        <div data-hero-row="notice" className={rowClass("notice", "w-full [grid-area:notice]")} />
+        {CHECK_LIVE ? <div className={cn(PASTE_CELL, "h-11 w-56 rounded-md bg-muted")} /> : null}
+      </div>
     </div>
   );
 }

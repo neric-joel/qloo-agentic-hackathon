@@ -18,6 +18,7 @@ import {
   OverlapWindow,
   SeenDiscGlyph,
 } from "./marks";
+import { TimetableLegend } from "./timetable-legend";
 
 describe("Meter", () => {
   it("is drawn at its final width in the server HTML, with nothing waiting to play", () => {
@@ -166,26 +167,18 @@ describe("ClashDisc", () => {
 
 describe("Hidden in ink where another file draws it", () => {
   // The list's label word (clash-list.tsx) and the key's swatch (timetable-legend.tsx) carry their own
-  // colour classes; globals.css holds both to ink, outside every layer, so those classes cannot win.
+  // ink classes; globals.css holds no override for either.
   const css = readFileSync(join(__dirname, "../../app/globals.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
-  const depthAt = (index: number) => {
-    let depth = 0;
-    for (let i = 0; i < index; i++) {
-      if (css[i] === "{") depth++;
-      else if (css[i] === "}") depth--;
-    }
-    return depth;
-  };
 
-  it("draws the key's Hidden clash swatch as an ink ring and the list's label word in ink, outside any layer", () => {
-    for (const rule of [
-      /span\[data-mark="hidden"\]\s*\{\s*border-color:\s*var\(--foreground\);\s*\}/,
-      /\[data-clash-badge\]\s*\{\s*color:\s*var\(--foreground\);\s*\}/,
-    ]) {
-      const match = rule.exec(css);
-      expect(match).not.toBeNull();
-      expect(depthAt(match!.index)).toBe(0);
-    }
+  it("draws the key's Hidden clash swatch as an ink ring and the list's label word in ink, in their own classes", () => {
+    const key = renderToStaticMarkup(createElement(TimetableLegend, {}));
+    const swatch = /<span data-mark="hidden" class="([^"]*)"/.exec(key)?.[1] ?? "";
+    expect(swatch.split(" ")).toEqual(expect.arrayContaining(["border-foreground", "bg-card"]));
+    expect(swatch).not.toMatch(/primary/);
+    const listSource = readFileSync(join(__dirname, "clash-list.tsx"), "utf8");
+    expect(listSource).toContain('<span data-clash-badge="" className="mr-1.5 text-xs font-semibold whitespace-nowrap text-foreground">');
+    expect(css).not.toMatch(/\[data-clash-badge\][^{]*\{/);
+    expect(css).not.toMatch(/\[data-mark="hidden"\][^{]*\{/);
     expect(css).not.toMatch(/\[data-mark="hidden"\][^{]*\{[^}]*var\(--primary\)/);
   });
 });

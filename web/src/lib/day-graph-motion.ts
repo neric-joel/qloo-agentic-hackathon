@@ -182,12 +182,18 @@ export const EDGE_OUT = 3;
  * bar never reads as cut into a sliver; nearer its end, the line passes beneath the bar.
  */
 export const BAR_STUB = 8;
-/** Two lines over the same rows keep their middles at least this far apart (px), so they never read as one doubled rule. */
+/** Two lines over the same rows keep their middles at least this far apart (px), so they never read as one doubled rule... */
 export const LINE_APART = 7;
+/** ...or, where their windows leave no room for that, at least this far (px). */
+export const LINE_NEAR = 6.25;
+/** A line passing beneath another set's bar keeps its stroke this far inside the bar's edge (px): its casing hides the rest. */
+export const BENEATH_IN = 1;
 /** The room (px of places for its middle) a name tries to leave a line clear of bar edges, so a neighbour still fits beside it. */
 export const LINE_ROOM = 8;
 /** The most steps the names' search takes before it keeps the best it has found. */
 export const SEARCH_STEPS = 3000;
+/** What a name's place that is not as plainly its own as the band asks (`labelRoom`) adds to the names' search; a name cut costs 1. */
+export const NOT_FIRM_COST = 0.01;
 
 /**
  * Where a line may stand in its shared window: of the points that cross the fewest names (`inks`, the minutes the
@@ -272,6 +278,86 @@ export function notePlace(
   }
   const { above, offset } = noteSide(marks.y0, marks.y1, column.height);
   return { side: above ? "above" : "below", x: null, y: offset };
+}
+
+/** A box on the note's column, in px across and down. */
+export type NoteBox = { x0: number; x1: number; y0: number; y1: number };
+
+/**
+ * How far a line's note may reach past the drawing's top and past its foot (px): over the axis and the room the page
+ * leaves above the drawing (beside the view toggle, never over what the page shows there), or over the key line.
+ */
+export const NOTE_REACH = { top: 96, bottom: 60 } as const;
+
+/**
+ * Where a line's note goes so it covers as little of the drawing as it can: of the places beside the line's marks
+ * (left or right of them, at any height) and above or below them (centred on the line, then slid along), never over
+ * `marks` (the line and its two sets' bars and names) or `keep` (what the page shows past the drawing's edge, such
+ * as the view toggle above it), each kept `NOTE_GAP` px off, the one that covers the fewest other names and tags
+ * (`names`) while covering at most one of them and two other bars (`bars`), then lies inside the drawing, then covers
+ * the fewest bars, then takes the first of the note's shapes (`note`: one size, or several, the usual first), then lies
+ * nearest the marks. Where the drawing has no such place inside it, the note may reach past the drawing's top or foot
+ * by `reach`. Returns the note's top left corner, its size and what it covers.
+ */
+export function placeNote(
+  marks: readonly NoteBox[],
+  names: readonly NoteBox[],
+  bars: readonly NoteBox[],
+  column: { width: number; height: number },
+  note: { width: number; height: number } | readonly { width: number; height: number }[],
+  at: number,
+  reach: { top: number; bottom: number } = NOTE_REACH,
+  keep: readonly NoteBox[] = [],
+): { x: number; y: number; names: number; bars: number; width: number; height: number } {
+  const hits = (box: NoteBox, list: readonly NoteBox[]) => list.filter((item) => box.x0 < item.x1 && item.x0 < box.x1 && box.y0 < item.y1 && item.y0 < box.y1).length;
+  const union = {
+    x0: Math.min(...marks.map((item) => item.x0)),
+    x1: Math.max(...marks.map((item) => item.x1)),
+    y0: Math.min(...marks.map((item) => item.y0)),
+    y1: Math.max(...marks.map((item) => item.y1)),
+  };
+  const shapes = "width" in note ? [note] : note.length > 0 ? note : [{ width: column.width, height: 0 }];
+  type Place = { x: number; y: number; width: number; height: number; names: number; bars: number; inside: boolean; shape: number; far: number };
+  let best: Place | null = null;
+  const rank = (place: Place) => [place.names > 1 || place.bars > 2 ? 1 : 0, place.names, place.inside ? 0 : 1, place.bars, place.shape, place.far];
+  const better = (a: Place, b: Place) => {
+    const [p, q] = [rank(a), rank(b)];
+    for (let i = 0; i < p.length; i += 1) if (p[i] !== q[i]) return p[i] < q[i];
+    return false;
+  };
+  const lowest = -reach.top;
+  for (const [shape, { width, height }] of shapes.entries()) {
+    const right = Math.max(0, column.width - width);
+    const xs = new Set<number>([0, right, union.x1 + NOTE_GAP, union.x0 - NOTE_GAP - width, at - width / 2]);
+    for (let x = 0; x <= right; x += 8) xs.add(x);
+    // Beside each box to keep clear of, so a note can sit right up against the view toggle.
+    for (const item of keep) xs.add(item.x1 + NOTE_GAP).add(item.x0 - NOTE_GAP - width);
+    const highest = column.height + reach.bottom - height;
+    const ys = new Set<number>([0, column.height - height, union.y0 - NOTE_GAP - height, union.y1 + NOTE_GAP, lowest, highest]);
+    for (let y = lowest; y <= highest; y += 4) ys.add(y);
+    for (const item of keep) ys.add(item.y1 + NOTE_GAP);
+    for (const x of xs) {
+      if (x < -1e-6 || x > right + 1e-6) continue;
+      for (const y of ys) {
+        if (y < lowest - 1e-6 || y > highest + 1e-6) continue;
+        const box = { x0: x, x1: x + width, y0: y, y1: y + height };
+        const kept = { x0: box.x0 - NOTE_GAP, x1: box.x1 + NOTE_GAP, y0: box.y0 - NOTE_GAP, y1: box.y1 + NOTE_GAP };
+        if (hits(kept, marks) > 0 || hits(kept, keep) > 0) continue;
+        const far = Math.hypot(Math.max(0, union.x0 - box.x1, box.x0 - union.x1), Math.max(0, union.y0 - box.y1, box.y0 - union.y1));
+        const place: Place = { x, y, width, height, names: hits(box, names), bars: hits(box, bars), inside: box.y0 >= -1e-6 && box.y1 <= column.height + 1e-6, shape, far };
+        if (!best || better(place, best)) best = place;
+      }
+    }
+  }
+  if (best) return { x: best.x, y: best.y, width: best.width, height: best.height, names: best.names, bars: best.bars };
+  // No place keeps clear of both (a small screen): the best place that keeps clear of the marks alone.
+  if (keep.length > 0) return placeNote(marks, names, bars, column, note, at, reach);
+  // No place keeps clear of the marks (a note wider than the drawing's room): above them, centred on the line.
+  const { width, height } = shapes[0];
+  const x = Math.min(Math.max(0, column.width - width), Math.max(0, at - width / 2));
+  const y = Math.max(lowest, union.y0 - NOTE_GAP - height);
+  const box = { x0: x, x1: x + width, y0: y, y1: y + height };
+  return { x, y, width, height, names: hits(box, names), bars: hits(box, bars) };
 }
 
 // ------------------------------------------------------------------------------------ the lines' keys and colours
@@ -437,24 +523,52 @@ export const BANDS: Record<DrawingLayout, readonly { from: number; track: number
 export const REFERENCE_TRACK: Record<DrawingLayout, number> = { desktop: 848, phone: 264, short: 264 };
 /** The detail track of a 320px phone (px). */
 export const NARROW_TRACK = 224;
-/** Where a bar starts in its row (px): room above it for a name. */
-export const BAR_TOP: Record<DrawingLayout, number> = { desktop: 19, phone: 17, short: 17 };
+/**
+ * Where a bar starts in its row (px): room above it for a name. A phone's 18px bar starts 21px down its 42px row,
+ * so its row gap is 24px: a 15px name with 3px to its own bar and 6px to the bar across the gap. A short phone's 15px
+ * bar starts 21px down its 37px row, so its row gap is 22px: a name in its 13px line box (`NAME_LINE`) with the same
+ * 3px and 6px, and a name under its bottom bar ends at the drawing's foot.
+ */
+export const BAR_TOP: Record<DrawingLayout, number> = { desktop: 19, phone: 21, short: 21 };
 /** Where the phone's detail starts under the overview strip and its gap (px). */
 export const DETAIL_TOP = LAYOUT.phone.overview + LAYOUT.phone.gap;
 
 /**
- * The gap between a name on a plate and its own bar (px): 1px on a phone, whose 18px row gap holds a 15px line
- * with 1px to its own bar and 2px to the bar across the gap. A tag keeps the same gap to the two bars of the
- * window it names.
+ * The gap between a name on a plate and its own bar (px), and the least gap a name keeps from it: 3px on a phone and
+ * a short phone, whose row gaps hold a name with 3px to its own bar and 6px to the bar across the gap. A tag keeps the
+ * same gap to the two bars of the window it names, and at least `TAG_BAR_CLEAR`. A desktop sets its names off their
+ * bars farther than this (`labelRoom`).
  */
-export const LABEL_GAP: Record<DrawingLayout, number> = { desktop: 3, phone: 1, short: 1 };
+export const LABEL_GAP: Record<DrawingLayout, number> = { desktop: 3, phone: 3, short: 3 };
+/**
+ * The line box of a name on one line outside its bar (px): a label's 15px, and 13px on a short phone, so its 22px row
+ * gap holds the name 3px off its own bar and 6px off the bar across. A name inside its bar keeps the label's 15px.
+ */
+export const NAME_LINE: Record<DrawingLayout, number> = { desktop: LABEL_LINE, phone: LABEL_LINE, short: 13 };
+/** On a desktop, at every band, a one-line plate and a name beside its bar sit this far from it (px)... */
+export const WIDE_GAP = 6;
+/** ...and a two-line plate this far, so the bar across its 38px row gap is twice as far away (px). */
+export const WIDE_GAP_TWO = 4;
+/** The line box of each line of a name set on two lines (px): closer than one line's 15px, so the two read as one name. */
+export const TWO_LINE_LEADING = 13;
+/** How far a desktop's names may reach past the axis's foot and past the drawing's foot (px). */
+export const WIDE_REACH = 2;
+/** How many times farther from every other bar than from its own a name outside its bar sits wherever the drawing has the room. */
+export const OWN_RATIO = 2;
 /** Clear space kept between a name, tag or plate and every other set's bar, every window and every other label (px). */
 export const CLEAR: Record<DrawingLayout, number> = { desktop: 2, phone: 2, short: 2 };
 /**
- * A tag's clear space from a bar that is not one of its window's two (px): on a phone it sits centred in an 18px
- * row gap, 1.5px from the bars either side, the clearance a phone's row gap allows.
+ * A tag's clear space from every bar (px): on a phone it sits in a 24px row gap, at least 2px from the bars either
+ * side; on a short phone its 13px line box (`TAG_LINE`) sits in a 22px row gap, at least 2.5px from them.
  */
-export const TAG_BAR_CLEAR: Record<DrawingLayout, number> = { desktop: 2, phone: 1, short: 1 };
+export const TAG_BAR_CLEAR: Record<DrawingLayout, number> = { desktop: 2, phone: 2, short: 2.5 };
+/** A tag's line box (px): a label's, and 13px on a short phone, as its names' (`NAME_LINE`). */
+export const TAG_LINE: Record<DrawingLayout, number> = { desktop: LABEL_LINE, phone: LABEL_LINE, short: 13 };
+/** On a phone, how many of each tag's places the search for a place for every tag tries, and how many in all. */
+const TAG_TRIES = 12;
+const TAG_STEPS = 600;
+/** How many steps the search for a place for every tag and name together may take when a label's place is weighed. */
+const SHUT_STEPS = 4000;
 /** A name's inset inside its bar (px). */
 export const NAME_INSET = 6;
 /** The room a prefix keeps after its ellipsis, before its bar's end (px): the ellipsis sits clear of the rounded end. */
@@ -468,12 +582,41 @@ export const MARK_RADIUS = 6;
 const TAG_GAP = 4;
 /** The paper plate behind a name or tag in a row gap, where lines run (px each side). */
 export const PLATE = 2;
-/** A name beside its bar starts this far past the bar's end (px)... */
+/** How far past half its width a name's plate stays over its own bar (px), so the page's rounding never leaves it under half. */
+export const PLATE_OVER = 0.5;
+/** On a phone, a name beside its bar starts this far past the bar's end (px; on a desktop, `WIDE_GAP`)... */
 export const BESIDE_GAP = 4;
-/** ...and stops at least this far before the next bar on its row (px): three times its gap to its own bar, so it reads as that bar's. */
+/** ...and stops at least this far before the next bar on its row (px): at least twice its gap to its own bar, so it reads as that bar's. */
 export const BESIDE_STOP = 12;
 /** A name on the paper prefers to keep this far from every other name and tag (px), so two never read as one. */
 export const ROOMY = 6;
+
+/**
+ * Where one band's names go off their bars, in px: a one-line plate's gap from its bar, a two-line plate's gap and
+ * line box, a name beside its bar's start past the bar's end, how many times farther than its own bar every other
+ * bar should be (`OWN_RATIO` where there is room), and the band's ceiling and floor for names, down the track. A
+ * desktop, at every band, sets one-line names 6px off their bars and two-line plates 4px off, its ceiling 2px into
+ * the axis (clear of the hour ticks) and its floor 2px past the drawing's foot; a phone and a short phone keep names
+ * 3px off and twice as near their own bar. `reference` stays for callers that name a band; every desktop band places
+ * alike.
+ */
+export function labelRoom(
+  layout: DrawingLayout,
+  reference: number,
+  rows: number,
+): { gap: number; gapTwo: number; leading: number; beside: number; ratio: number; ceiling: number; floor: number } {
+  const desktop = layout === "desktop";
+  const base = LAYOUT[layout].axis + rows * LAYOUT[layout].row + (desktop ? 0 : LAYOUT[layout].foot);
+  return {
+    gap: desktop ? WIDE_GAP : LABEL_GAP[layout],
+    gapTwo: desktop ? WIDE_GAP_TWO : LABEL_GAP[layout],
+    leading: desktop ? TWO_LINE_LEADING : LABEL_LINE,
+    beside: desktop ? WIDE_GAP : BESIDE_GAP,
+    ratio: OWN_RATIO,
+    ceiling: LAYOUT[layout].axis - (desktop ? WIDE_REACH : 0),
+    floor: base + (desktop ? WIDE_REACH : 0),
+  };
+}
 
 /** The drawing's time track: the day, widened to hold the phone's detail window. */
 export function trackOf(model: Pick<DayGraphModel, "domain" | "focus">): Span {
@@ -546,6 +689,8 @@ export type Spot = {
   lines: string[];
   /** Whether it sits on a paper plate (it is in a row gap, where lines run). */
   plate: boolean;
+  /** Each line's box when it is not `LABEL_LINE` (px): a name set on two lines on a desktop. */
+  leading?: number;
 };
 
 export type PlanBar = { set: DayGraphSet; span: Span; row: number; top: number; mover: boolean };
@@ -599,6 +744,11 @@ export type LayoutPlan = {
   reference: number;
   /** Stage indices drawn, top to bottom. */
   rows: number[];
+  /**
+   * The minutes the plan names sets and spreads lines for: the whole track on a desktop, the detail window a phone
+   * shows (the opening window, or the window it has slid to; see `detailAt`).
+   */
+  detail: Span;
   views: Record<GraphView, ViewPlan>;
 };
 
@@ -622,9 +772,12 @@ export function createdTag(change: Pick<OverlapChange, "before" | "after">): str
   return change.before === 0 ? `new ${change.after} min` : `+${change.after - change.before} min`;
 }
 
-/** The tag on the chosen clash's window: its minutes in that view. */
-export function sharedTag(minutes: number): string {
-  return `${minutes} min shared`;
+/**
+ * The tag on the chosen clash's window: its minutes in that view, or, given the published minutes `before`, both
+ * ("45 → 30 min shared"), as a desktop's moved view prints it.
+ */
+export function sharedTag(minutes: number, before?: number): string {
+  return before === undefined ? `${minutes} min shared` : `${before} → ${minutes} min shared`;
 }
 
 /** A candidate place for a name: its spot (null for slot e) and what makes it the same place in another view. */
@@ -639,7 +792,77 @@ type Candidate = { slot: NameSlot; spot: Spot | null; sig: string };
  * the same place in both views whenever one fits both, so it only travels with its bar; otherwise each view takes
  * its own and the drawing swaps them when it settles.
  */
-export function planDrawing(model: DayGraphModel, layout: DrawingLayout, reference = REFERENCE_TRACK[layout]): LayoutPlan {
+export function planDrawing(model: DayGraphModel, layout: DrawingLayout, reference = REFERENCE_TRACK[layout], detail?: Span): LayoutPlan {
+  const first = planOnce(model, layout, reference, false, detail);
+  if (layout === "desktop") return first;
+  // A phone whose featured names leave a tag no place tries them once more with the grown sets' names placed
+  // before the partner's, and keeps whichever plan draws more tags (only the windows the detail shows can carry
+  // one). Then, on a window the phone has slid to, when a set it shows whole is left with no name, it tries once more
+  // with those names placed before the featured names, and keeps that plan when it names more of them and draws as
+  // many tags. (On the window it opens on, the featured names and the tags come first whatever the other names.)
+  let plan = first;
+  let growsFirst = false;
+  if (model.move && tagCount(first) < tagsWanted(first)) {
+    const second = planOnce(model, layout, reference, true, detail);
+    if (tagCount(second) > tagCount(first)) {
+      plan = second;
+      growsFirst = true;
+    }
+  }
+  const left = unnamedWhole(plan);
+  if (left.size === 0 || Math.abs(plan.detail.start - model.focus.start) <= EMPTY) return plan;
+  const retry = planOnce(model, layout, reference, growsFirst, detail, left);
+  return tagCount(retry) >= tagCount(plan) && unnamedWhole(retry).size < left.size ? retry : plan;
+}
+
+/** How many tags a plan draws, in both views. */
+function tagCount(plan: LayoutPlan): number {
+  return plan.views.published.tags.length + (plan.views.moved === plan.views.published ? 0 : plan.views.moved.tags.length);
+}
+
+/** How many tags a plan would draw with room for all: one for each window its detail shows. */
+function tagsWanted(plan: LayoutPlan): number {
+  const shows = (window: PlanWindow | null) =>
+    window !== null && Math.min(window.window.end, plan.detail.end) - Math.max(window.window.start, plan.detail.start) > EMPTY ? 1 : 0;
+  const views: GraphView[] = plan.views.moved === plan.views.published ? ["published"] : ["published", "moved"];
+  return views.reduce((sum, view) => sum + shows(plan.views[view].hatch) + plan.views[view].created.reduce((count, window) => count + shows(window), 0), 0);
+}
+
+/** The sets a plan's detail shows whole, in any view, that it draws no name for. */
+function unnamedWhole(plan: LayoutPlan): Set<string> {
+  const out = new Set<string>();
+  for (const view of ["published", "moved"] as const) {
+    for (const item of plan.views[view].bars) {
+      const whole = item.span.start >= plan.detail.start - EMPTY && item.span.end <= plan.detail.end + EMPTY;
+      if (whole && !plan.views[view].labels[item.set.actId]) out.add(item.set.actId);
+    }
+  }
+  return out;
+}
+
+/**
+ * The detail window of a phone slid to start at `start` (minutes): the opening window's length, kept on the track, as
+ * the drawing's pan keeps it.
+ */
+export function detailAt(model: Pick<DayGraphModel, "domain" | "focus">, start: number): Span {
+  const track = trackOf(model);
+  const length = Math.max(1, model.focus.end - model.focus.start);
+  const from = Math.min(Math.max(track.start, track.end - length), Math.max(track.start, start));
+  return { start: from, end: from + length };
+}
+
+/**
+ * One pass of `planDrawing`, the featured names placed in rank order or, with `growsFirst`, the grown sets' before the
+ * partner's; on a phone, the names of the sets in `early` before them all.
+ */
+function planOnce(
+  model: DayGraphModel,
+  layout: DrawingLayout,
+  reference: number,
+  growsFirst: boolean,
+  detail?: Span,
+  early: ReadonlySet<string> = new Set(),
+): LayoutPlan {
   const track = trackOf(model);
   const rows = rowsOf(model, layout);
   const rowOfStage = new Map(rows.map((stage, row) => [stage, row]));
@@ -648,19 +871,24 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
   const scale = reference / (desktop ? Math.max(1, track.end - track.start) : focusLength);
   const x = (minute: number) => (minute - track.start) * scale;
   const minuteAt = (px: number) => track.start + px / scale;
-  // What the reader sees of the track: all of it on a desktop, the detail window a phone opens on.
-  const seenFrom = desktop ? track.start : Math.max(track.start, model.focus.start);
-  const seenTo = desktop ? track.end : Math.min(track.end, model.focus.end);
+  // What the reader sees of the track: all of it on a desktop; on a phone the detail window it opens on, or the one
+  // it has slid to (`detail`), so a phone names the sets of whichever window it shows.
+  const shownDetail = desktop ? track : detailAt(model, (detail ?? model.focus).start);
+  const seenFrom = Math.max(track.start, shownDetail.start);
+  const seenTo = Math.min(track.end, shownDetail.end);
   const left = x(seenFrom);
   const right = x(seenTo);
-  const ceiling = LAYOUT[layout].axis;
-  // A phone's label lane under its last row holds names too.
-  const floor = LAYOUT[layout].axis + rows.length * LAYOUT[layout].row + (layout === "desktop" ? 0 : LAYOUT[layout].foot);
+  // A phone's label lane under its last row holds names too; a desktop reaches a little past the axis's foot and the
+  // drawing's foot, so its names sit 6px off their bars on the top and bottom rows too.
+  const room = labelRoom(layout, reference, rows.length);
+  const { ceiling, floor } = room;
   const setById = new Map(model.sets.map((set) => [set.actId, set]));
   const { move } = model;
   const bar = LAYOUT[layout].bar;
   const clear = CLEAR[layout];
   const gapV = LABEL_GAP[layout];
+  /** A tag's gap from the two bars of the window it names: its layout's label gap, and at least `TAG_BAR_CLEAR`. */
+  const tagGap = Math.max(gapV, TAG_BAR_CLEAR[layout]);
   const seen = (span: Span): Span | null => {
     const start = Math.max(span.start, seenFrom);
     const end = Math.min(span.end, seenTo);
@@ -754,8 +982,12 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
   // ---- what a label may not come near, per view: every bar, the ghost, every window and every label placed
   type Thing = { id: string | null; box: Box; kind: "bar" | "ghost" | "window" | "label" };
   const things: Record<GraphView, Thing[]> = { published: [], moved: [] };
-  /** The names, tags and plates on the paper: lines may never cross them. */
-  const paper: Record<GraphView, Box[]> = { published: [], moved: [] };
+  /**
+   * The names, tags and plates on the paper, each with the set it names (null for a tag): lines may never cross them.
+   * A line may stop short of its own set's name in the gap next to that set's bar (see `landsOn`).
+   */
+  type Paper = { box: Box; owner: string | null };
+  const paper: Record<GraphView, Paper[]> = { published: [], moved: [] };
   /** The names (and locks) inside bars, by row: a line clears them or passes beneath their bars. */
   const inks: Record<GraphView, { row: number; box: Box }[]> = { published: [], moved: [] };
   const barBox = (place: Pick<PlanBar, "span" | "top">): Box => ({ x0: x(place.span.start), x1: x(place.span.end), y0: place.top, y1: place.top + bar });
@@ -792,11 +1024,36 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
    * The minutes a line's middle may not stand in for each name, tag or plate on the paper: within its stroke plus
    * 2px of the box along its run, and within its end dot plus 1px of the box at either end (measured round the dot).
    */
-  const wallsOf = (line: PlanLine, boxes: readonly Box[]): Span[] => {
+  /** Each drawn line's two ends, by view: the set at its upper row and the set at its lower row. */
+  const endsOf = new Map<PlanLine, { upper: string; lower: string }>();
+  for (const view of drawnViews) {
+    for (const line of views[view].lines) {
+      const ids = [line.thread.aId, line.thread.bId];
+      const upper = views[view].bars.find((item) => ids.includes(item.set.actId) && item.row === line.upper)?.set.actId ?? "";
+      endsOf.set(line, { upper, lower: upper === line.thread.aId ? line.thread.bId : line.thread.aId });
+    }
+  }
+  /**
+   * Whether a line may stop short of `item`: it names one of the line's two sets and sits in the row gap next to that
+   * set's bar on the line's side, so the line can end on that set's name instead of crossing it. Never the chosen
+   * clash's line or a line that follows the move.
+   */
+  const landsOn = (line: PlanLine, item: Paper): boolean => {
+    if (!item.owner || line.thread.lit || line.moving) return false;
+    const ends = endsOf.get(line);
+    if (!ends) return false;
+    const { box } = item;
+    if (item.owner === ends.upper) return box.y0 >= line.top - 0.5 && box.y1 <= barTopOf(layout, line.upper + 1) + 0.5;
+    if (item.owner === ends.lower) return box.y1 <= line.bottom + 0.5 && box.y0 >= barBottomOf(layout, line.lower - 1) - 0.5;
+    return false;
+  };
+  const wallsOf = (line: PlanLine, items: readonly Paper[], landing = false): Span[] => {
     const stroke = line.width / 2 + LINE_CLEAR;
     const dot = dotReach(line);
     const gapTo = (y: number, box: Box) => Math.max(0, box.y0 - y, y - box.y1);
-    return boxes.flatMap((box) => {
+    return items.flatMap((item) => {
+      if (landing && landsOn(line, item)) return [];
+      const { box } = item;
       let reach = box.y0 < line.bottom && line.top < box.y1 ? stroke : Number.NEGATIVE_INFINITY;
       for (const end of [line.top, line.bottom]) {
         const dy = gapTo(end, box);
@@ -813,14 +1070,19 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
       const reach = Math.max(line.width / 2 + LINE_CLEAR, dotReach(line)) + 1;
       return box.y0 < line.bottom + reach && line.top - reach < box.y1 && box.x0 - reach < x(window.end) && box.x1 + reach > x(window.start);
     });
-  /** Whether each of `lines` still has a way clear of the paper's names once `box` is added. */
-  const wayOn = (view: GraphView, box: Box, lines: readonly PlanLine[]): boolean =>
+  /** Whether a line may end on its own set's name to keep a way (only once no other way draws every name). */
+  let landing = false;
+  /**
+   * Whether each of `lines` still has a way clear of the paper's names once `box` (the name of the set `owner`, or a
+   * tag) is added; while `landing` holds, a line may end on its own set's name instead.
+   */
+  const wayOn = (view: GraphView, box: Box, lines: readonly PlanLine[], owner: string | null = null): boolean =>
     lines.every((line) => {
       const window = shownWindow(line);
-      return !window || clearPlace(window, line.width / 2, [], scale, wallsOf(line, [...paper[view], box])) !== null;
+      return !window || clearPlace(window, line.width / 2, [], scale, wallsOf(line, [...paper[view], { box, owner }], landing)) !== null;
     });
   /** Whether every line of the view still has a way clear of the paper's names once `box` is added. */
-  const leavesWay = (view: GraphView, box: Box): boolean => wayOn(view, box, touchingLines(view, box));
+  const leavesWay = (view: GraphView, box: Box, owner: string | null = null): boolean => wayOn(view, box, touchingLines(view, box), owner);
 
   /**
    * The edges of the bars a line crosses that are not its own two sets' (and of the ghost): minutes its middle keeps
@@ -852,13 +1114,13 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
     return zones;
   };
   /** How many px of places a line's middle has in its window clear of the paper's names (and `extra`) and of the edges of the bars it crosses. */
-  const roomOf = (view: GraphView, line: PlanLine, extra: readonly Box[]): number => {
+  const roomOf = (view: GraphView, line: PlanLine, extra: readonly Paper[], bare = false, ending = false): number => {
     const window = shownWindow(line);
     if (!window) return Number.POSITIVE_INFINITY;
     const lo = x(window.start) + line.width / 2;
     const hi = x(window.end) - line.width / 2;
     if (lo > hi) return 0;
-    const spans = [...wallsOf(line, [...paper[view], ...extra]), ...edgesOf(view, line)]
+    const spans = [...wallsOf(line, bare ? extra : [...paper[view], ...extra], ending), ...edgesOf(view, line)]
       .map((span) => [Math.max(lo, x(span.start)), Math.min(hi, x(span.end))] as const)
       .filter(([a, b]) => b > a)
       .sort((a, b) => a[0] - b[0]);
@@ -881,11 +1143,27 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
     for (const line of touchingLines(view, box)) {
       const before = roomOf(view, line, []);
       if (before <= 0) continue;
-      const after = roomOf(view, line, [box]);
+      const after = roomOf(view, line, [{ box, owner: null }]);
       if (after <= 0) return 2;
       if (after < LINE_ROOM && before >= LINE_ROOM) worst = 1;
     }
     return worst;
+  };
+
+  /**
+   * How many pairs of lines over the same rows and minutes a box on the paper leaves each with less than `LINE_APART`
+   * px of places, so that they could only stand as one doubled rule.
+   */
+  const crowdOf = (view: GraphView, box: Box): number => {
+    const tight = touchingLines(view, box).filter((line) => roomOf(view, line, [{ box, owner: null }]) < LINE_APART);
+    let pairs = 0;
+    for (let i = 0; i < tight.length; i += 1) {
+      for (let j = i + 1; j < tight.length; j += 1) {
+        const [a, b] = [tight[i], tight[j]];
+        if (a.top < b.bottom && b.top < a.bottom && a.window.start < b.window.end && b.window.start < a.window.end) pairs += 1;
+      }
+    }
+    return pairs;
   };
 
   /** A name beside its bar stops `BESIDE_STOP` px before the next bar or slot on its row. */
@@ -908,9 +1186,10 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
 
   /**
    * Whether a name's box is plainly its own bar's: nearer that bar than any other set's bar (or the mover's
-   * published slot), and for a plate, over its own bar for at least half its width.
+   * published slot), or at least `ratio` times as near when `ratio` is over 1, and for a plate, over its own bar for
+   * at least half its width.
    */
-  const ownedBy = (view: GraphView, box: Box, own: string, plate: boolean): boolean => {
+  const ownedBy = (view: GraphView, box: Box, own: string, plate: boolean, ratio = 1): boolean => {
     const ownThing = things[view].find((thing) => thing.kind === "bar" && thing.id === own);
     if (!ownThing) return false;
     const ownBox = { ...ownThing.box, x0: Math.max(ownThing.box.x0, left), x1: Math.min(ownThing.box.x1, right) };
@@ -921,10 +1200,13 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
       if (!(thing.kind === "bar" || thing.kind === "ghost") || thing.id === own) continue;
       const other = { ...thing.box, x0: Math.max(thing.box.x0, left), x1: Math.min(thing.box.x1, right) };
       if (other.x1 <= other.x0) continue;
-      if (boxGap(box, other) <= mine + 1e-6) return false;
+      const gap = boxGap(box, other);
+      if (ratio > 1 ? gap < ratio * mine - 1e-6 : gap <= mine + 1e-6) return false;
     }
-    return !plate || overlapX(box, ownBox) >= (box.x1 - box.x0) / 2 - 1e-6;
+    return !plate || overlapX(box, ownBox) >= (box.x1 - box.x0) / 2 + PLATE_OVER - 1e-6;
   };
+  /** Whether a name outside its bar is as plainly its own as the band asks where there is room (`labelRoom`). */
+  const firmly = (view: GraphView, box: Box, own: string) => room.ratio <= 1 || ownedBy(view, box, own, false, room.ratio);
 
   const paperOk = (view: GraphView, spot: Spot, own: string, plate: boolean, strict: boolean) => {
     const box = boxOf(spot);
@@ -933,7 +1215,7 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
       clearOf(view, box, [own]) &&
       (spot.kind !== "beside" || besideStops(view, box)) &&
       (!strict || ownedBy(view, box, own, plate)) &&
-      leavesWay(view, box)
+      leavesWay(view, box, own)
     );
   };
 
@@ -976,7 +1258,7 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
     return {
       slot: "b",
       sig: "b",
-      spot: { kind: "beside", slot: "b", anchor: place.span.end, dx: BESIDE_GAP, align: "start", top: inline(place), width, height: LABEL_LINE, lines: [place.set.name], plate: false },
+      spot: { kind: "beside", slot: "b", anchor: place.span.end, dx: room.beside, align: "start", top: inline(place), width, height: LABEL_LINE, lines: [place.set.name], plate: false },
     };
   };
 
@@ -984,19 +1266,25 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
    * Slot c: the name on a plate in the gap directly above or below its bar, aligned with the bar's start, its
    * end or its middle, then slid along in 8px steps while it still covers its bar for half its width, and last
    * slid as far each way as that and its neighbours on the row allow (so a line by the bar keeps a way past it).
+   * A name on two lines sets them `TWO_LINE_LEADING` apart.
    */
   const platesOf = (view: GraphView, place: PlanBar, side: "above" | "below", lines: string[], weight: LabelWeight): Candidate[] => {
     const shown = seen(place.span);
     if (!shown) return [];
     const width = Math.max(...lines.map((line) => textWidth(line, LABEL_SIZE, weight))) + 2 * PLATE;
-    const height = LABEL_LINE * lines.length;
-    const top = side === "above" ? place.top - gapV - height : place.top + bar + gapV;
+    const two = lines.length > 1;
+    const line = two ? room.leading : NAME_LINE[layout];
+    const height = line * lines.length;
+    const gap = two ? room.gapTwo : room.gap;
+    const top = side === "above" ? place.top - gap - height : place.top + bar + gap;
     const out: Candidate[] = [];
     const add = (role: "start" | "end" | "center", dx: number) => {
       const anchor = role === "start" ? shown.start : role === "end" ? shown.end : (shown.start + shown.end) / 2;
       const sig = `c|${side}|${role}|${Math.round(dx * 100)}|${lines.join("/")}`;
       if (out.some((item) => item.sig === sig)) return;
-      out.push({ slot: "c", sig, spot: { kind: side, slot: "c", anchor, dx, align: role, top, width, height, lines, plate: true } });
+      const spot: Spot = { kind: side, slot: "c", anchor, dx, align: role, top, width, height, lines, plate: true };
+      if (line !== LABEL_LINE) spot.leading = line;
+      out.push({ slot: "c", sig, spot });
     };
     add("start", 0);
     add("end", 0);
@@ -1013,12 +1301,22 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
     const row = things[view].filter((thing) => (thing.kind === "bar" || thing.kind === "ghost") && thing.id !== place.set.actId && thing.box.y0 === place.top);
     const before = Math.max(Number.NEGATIVE_INFINITY, ...row.filter((thing) => thing.box.x1 <= x0 + 1e-6).map((thing) => thing.box.x1));
     const after = Math.min(Number.POSITIVE_INFINITY, ...row.filter((thing) => thing.box.x0 >= x1 - 1e-6).map((thing) => thing.box.x0));
-    add("start", -width / 2);
-    add("end", width / 2);
-    const lo = Math.max(x0 - width / 2, before + 0.5);
-    const hi = Math.min(x1 + width / 2, after - 0.5);
+    const reach = width / 2 - PLATE_OVER;
+    add("start", -reach);
+    add("end", reach);
+    const lo = Math.max(x0 - reach, before + 0.5);
+    const hi = Math.min(x1 + reach, after - 0.5);
     if (lo < x0) add("start", lo - x0);
     if (hi > x1) add("end", hi - x1);
+    // And as far each way as keeps the row's next bars `room.ratio` times farther off than its own bar (a corner
+    // away, across its gap), so a line by the bar can still pass on the other side.
+    if (room.ratio > 1) {
+      const off = gap * Math.sqrt(room.ratio * room.ratio - 1) + 0.01;
+      const firmLo = Math.max(x0 - reach, before + off);
+      const firmHi = Math.min(x1 + reach, after - off);
+      if (Number.isFinite(before) && firmLo > lo && firmLo < x1) add("start", firmLo - x0);
+      if (Number.isFinite(after) && firmHi < hi && firmHi > x0) add("end", firmHi - x1);
+    }
     return out;
   };
 
@@ -1035,7 +1333,7 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
       inks[view].push({ row: place?.row ?? -1, box: { ...box, x0: box.x0 - spot.dx, y0: place?.top ?? box.y0, y1: (place?.top ?? box.y0) + bar } });
     } else {
       things[view].push({ id: null, box, kind: "label" });
-      paper[view].push(box);
+      paper[view].push({ box, owner: setId });
     }
   };
 
@@ -1044,19 +1342,25 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
    * first fits are of one slot and one tier (a featured name's places that keep every rule, then the looser ones)
    * and some candidate of that slot and tier fits both, that one in both.
    */
-  const settle = (set: DayGraphSet, ladder: (view: GraphView, place: PlanBar) => { candidate: Candidate; ok: boolean }[]): void => {
+  const settle = (set: DayGraphSet, ladder: (view: GraphView, place: PlanBar) => { candidate: Candidate; ok: boolean; shut?: number; firm?: boolean }[]): void => {
     const places = drawnViews.flatMap((view) => {
       const place = views[view].bars.find((item) => item.set.actId === set.actId);
       return place && seen(place.span) ? [{ view, place }] : [];
     });
     if (places.length === 0) return;
-    const fits = places.map(({ view, place }) => ladder(view, place).filter((item) => item.ok).map((item) => item.candidate));
+    const items = places.map(({ view, place }) => ladder(view, place).filter((item) => item.ok));
+    const fits = items.map((list) => list.map((item) => item.candidate));
     const firsts = fits.map((list) => list[0]);
     if (firsts.some((first) => !first)) return;
+    // A place both views share must leave each view's tags as much room as that view's own first place does.
+    const leastShut = items.map((list) => list[0]?.shut ?? 0);
+    const roomy = (candidate: Candidate) => items.every((list, i) => (list.find((item) => item.candidate.sig === candidate.sig)?.shut ?? 0) <= leastShut[i]);
+    // ...and be as plainly the name's own as the band asks in each view whose own first place is.
+    const steady = (candidate: Candidate) => items.every((list) => !list[0]?.firm || list.find((item) => item.candidate.sig === candidate.sig)?.firm === true);
     const tier = (candidate: Candidate) => `${candidate.slot}|${/^(loose|forced)\|/.exec(candidate.sig)?.[1] ?? ""}`;
     const slot = tier(firsts[0]);
     if (firsts.every((first) => tier(first) === slot)) {
-      const shared = fits[0].find((candidate) => tier(candidate) === slot && fits.every((list) => list.some((other) => other.sig === candidate.sig)));
+      const shared = fits[0].find((candidate) => tier(candidate) === slot && fits.every((list) => list.some((other) => other.sig === candidate.sig)) && roomy(candidate) && steady(candidate));
       if (shared) {
         places.forEach(({ view }, i) => take(view, set.actId, fits[i].find((candidate) => candidate.sig === shared.sig) as Candidate));
         return;
@@ -1067,32 +1371,215 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
 
   const none: Candidate = { slot: "e", sig: "e", spot: null };
 
+  /**
+   * Whether a featured set is named as one here (whole, outside its bar, before every other name): always, but where
+   * a phone's window has slid off the one it opens on and its edge cuts the featured bar. That set is named like any
+   * other, on the part of the bar the window shows, in the featured set's heavier type.
+   */
+  const slid = !desktop && Math.abs(shownDetail.start - model.focus.start) > EMPTY;
+  const featuredHere = (set: DayGraphSet): boolean =>
+    set.featured &&
+    (!slid ||
+      drawnViews.every((view) => {
+        const place = views[view].bars.find((item) => item.set.actId === set.actId);
+        const shown = place ? seen(place.span) : null;
+        return !place || !shown || (shown.start <= place.span.start + EMPTY && shown.end >= place.span.end - EMPTY);
+      }));
+  /** A phone's second try (see `planDrawing`): its labels weigh the room every name has left. */
+  const aware = early.size > 0 && !desktop;
+  /** The weight a set's name is drawn in: a featured set's heavier, wherever it is placed. */
+  const weightOf = (set: DayGraphSet): LabelWeight => (set.featured ? 600 : 500);
+
   // Featured names first: the mover, its partner, then every set whose overlap grows; always whole and outside the
   // bar, at every width: above it, below it (a phone's bottom row has its label lane) or beside it, plainly its
   // own; then anywhere outside it that is clear and nearer its own bar than any other; then, so a featured name is
   // never cut or left out, the first place above or below that is on the drawing and plainly its own.
   const order = [...model.sets]
-    .filter((set) => set.featured)
+    .filter((set) => featuredHere(set))
     .sort((a, b) => rank(a) - rank(b) || a.stageIndex - b.stageIndex || a.start - b.start);
   function rank(set: DayGraphSet): number {
     if (!move) return 0;
     if (set.actId === move.actId) return 0;
-    if (set.actId === move.partnerId) return 1;
     const grown = move.grows.findIndex((change) => change.actId === set.actId);
+    if (set.actId === move.partnerId) return growsFirst ? 2 + move.grows.length : 1;
     return grown >= 0 ? 2 + grown : 99;
   }
+  // Tags: beside their window in the gap nearest its lower bar first, so the figure sits by the hatch it names;
+  // on a desktop, set on two lines when one line would close a line's way; on a phone, left out rather than cut
+  // when no place on the screen holds it (the readout under the drawing gives the same minutes).
+  const tagSpots = (window: PlanWindow, lines: string[]): Spot[] => {
+    const width = Math.max(...lines.map((line) => textWidth(line))) + 2 * PLATE;
+    const line = TAG_LINE[layout];
+    const height = line * lines.length;
+    const spot = (anchor: number, dx: number, align: Spot["align"], top: number): Spot => ({
+      kind: "tag",
+      slot: null,
+      anchor,
+      dx,
+      align,
+      top,
+      width,
+      height,
+      lines,
+      plate: true,
+      ...(line !== LABEL_LINE ? { leading: line } : {}),
+    });
+    const spots: Spot[] = [];
+    for (let gap = window.lower - 1; gap >= window.upper; gap -= 1) {
+      // Centred in the gap; else against the bar below or above it, `tagGap` off it (one of the window's own bars, as
+      // `clearOf` checks) and `TAG_BAR_CLEAR` off the bar across the gap.
+      const middle = (barBottomOf(layout, gap) + barTopOf(layout, gap + 1)) / 2 - height / 2;
+      const tops = [middle, barTopOf(layout, gap + 1) - tagGap - height, barBottomOf(layout, gap) + tagGap];
+      for (const top of tops) spots.push(spot(window.window.end, TAG_GAP, "start", top), spot(window.window.start, -TAG_GAP, "end", top));
+    }
+    if (lines.length === 1) {
+      const under = barBottomOf(layout, window.lower) + tagGap;
+      const over = barTopOf(layout, window.upper) - tagGap - height;
+      spots.push(spot(window.window.start, 0, "start", under), spot(window.window.start, 0, "start", over));
+      // A phone's detail window may be too narrow for a tag beside its window: under or over the window's bars,
+      // level with its end or centred on it, too.
+      if (!desktop) {
+        const middle = (window.window.start + window.window.end) / 2;
+        for (const top of [under, over]) spots.push(spot(window.window.end, 0, "end", top), spot(middle, 0, "center", top));
+        // Then slid along those lanes in 8px steps, still reaching over the window's minutes.
+        for (let step = 8; step < width; step += 8) {
+          for (const top of [under, over]) spots.push(spot(window.window.start, -step, "start", top), spot(window.window.end, step, "end", top));
+        }
+      }
+    }
+    return spots;
+  };
+  // The tags each view draws, worked out before any name: the chosen clash's minutes, then each grown window's.
+  type WantedTag = { key: string; text: string; window: PlanWindow; owners: string[] };
+  const wantedOf = (view: GraphView): WantedTag[] => {
+    const plan = views[view];
+    const wanted: WantedTag[] = [];
+    if (plan.hatch) {
+      const lit = model.threads.find((thread) => thread.lit);
+      const minutes = move ? (view === "moved" ? move.minutesAfter : move.minutesBefore) : (lit?.minutes ?? 0);
+      const owners = move ? [move.actId, move.partnerId] : lit ? [lit.aId, lit.bId] : [];
+      // A desktop's moved view says what the move changed: the published minutes, then the moved ones.
+      const text = desktop && move && view === "moved" ? sharedTag(minutes, move.minutesBefore) : sharedTag(minutes);
+      wanted.push({ key: "hatch", text, window: plan.hatch, owners });
+    }
+    for (const window of plan.created) wanted.push({ key: window.key, text: createdTag(window.change), window, owners: move ? [move.actId, window.change.actId] : [] });
+    return wanted;
+  };
+  // On a phone, where a tag can find no place at all once the featured names are down, the featured names leave
+  // the tags' places free when one of their own places does: each tag's places on the screen that keep clear of
+  // the bars and windows.
+  const tagRoom: Record<GraphView, Box[][]> = { published: [], moved: [] };
+  if (!desktop) {
+    for (const view of drawnViews) {
+      tagRoom[view] = wantedOf(view).map((item) =>
+        tagSpots(item.window, [item.text])
+          .map(boxOf)
+          .filter((box) => within(box) && clearOf(view, box, item.owners, TAG_BAR_CLEAR[layout]) && leavesWay(view, box)),
+      );
+    }
+  }
+  // ...and of the names that fit nowhere inside their bars: each such set's places on the paper that keep every rule,
+  // so a featured name takes, where it can, a place that leaves each of them one (`namesShut`).
+  /** A set's places on the paper outside its bar on a phone: beside it, then a plate above or below it, on one line. */
+  const paperPlaces = (view: GraphView, place: PlanBar): Candidate[] => {
+    const weight = weightOf(place.set);
+    const beside = besideOf(place, weight);
+    return [...(beside ? [beside] : []), ...platesOf(view, place, "above", [place.set.name], weight), ...platesOf(view, place, "below", [place.set.name], weight)];
+  };
+  // The featured names' own places are counted too (they are placed before every other name but the early ones).
+  const nameRoom: Record<GraphView, { id: string; boxes: Box[] }[]> = { published: [], moved: [] };
+  if (aware) {
+    for (const view of drawnViews) {
+      for (const set of model.sets) {
+        const place = views[view].bars.find((item) => item.set.actId === set.actId);
+        if (!place || !seen(place.span) || (!featuredHere(set) && insideOf(place, weightOf(set))?.slot === "a")) continue;
+        const boxes = paperPlaces(view, place).flatMap((candidate) =>
+          candidate.spot && paperOk(view, candidate.spot, set.actId, candidate.spot.plate, true) ? [boxOf(candidate.spot)] : [],
+        );
+        if (boxes.length > 0) nameRoom[view].push({ id: set.actId, boxes });
+      }
+    }
+  }
+  /**
+   * How many of those sets, other than `own` and not yet named, `box` on the paper would leave with no name at all: it
+   * comes within `CLEAR` of every place they have.
+   */
+  const namesShut = (view: GraphView, box: Box, own: string | null = null) =>
+    nameRoom[view].filter((item) => item.id !== own && !views[view].labels[item.id] && item.boxes.every((other) => near(other, box, clear))).length;
+  /**
+   * How many of a view's tags, and on a phone of the names that fit nowhere inside their bars, could not all be given
+   * a place at once, clear of one another, with `box` on the paper (tags that had no place to begin with are not
+   * counted).
+   */
+  const tagsShut = (view: GraphView, box: Box, own: string | null = null, withNames = false) => {
+    // `withNames`: the names that fit nowhere inside their bars (other than `own` and not yet named) are given a place
+    // too, each clear of the tags and of one another (at most `SHUT_STEPS` steps of the search).
+    const names = withNames ? nameRoom[view].filter((item) => item.id !== own && !views[view].labels[item.id]) : [];
+    const lists = [
+      ...tagRoom[view].filter((spots) => spots.length > 0).map((spots) => spots.filter((spot) => !near(spot, box, clear) && clearOf(view, spot, [], clear))),
+      ...names.map((item) => item.boxes.filter((spot) => !near(spot, box, clear) && clearOf(view, spot, [item.id]))),
+    ];
+    let most = 0;
+    let steps = 0;
+    const taken: Box[] = [];
+    const fill = (index: number, count: number) => {
+      steps += 1;
+      if (most === lists.length || count + (lists.length - index) <= most || steps > SHUT_STEPS) return;
+      if (index === lists.length) {
+        most = count;
+        return;
+      }
+      for (const spot of lists[index]) {
+        if (taken.some((other) => near(spot, other, clear))) continue;
+        taken.push(spot);
+        fill(index + 1, count + 1);
+        taken.pop();
+        if (most === lists.length) return;
+      }
+      fill(index + 1, count);
+    };
+    fill(0, 0);
+    return lists.length - most;
+  };
+  /**
+   * How a label's place weighs on the rest: the tags it leaves no place; on a phone's second try (`aware`), first those
+   * and then the tags and names together, so the featured names and the tags leave the names a first pass left out
+   * their places where they can.
+   */
+  const shutWeight = (view: GraphView, box: Box, own: string | null = null) =>
+    aware ? tagsShut(view, box) * 100 + tagsShut(view, box, own, true) : tagsShut(view, box);
+
+  // On a phone's second try (see `planDrawing`), the names a first pass left out go first, each in the first of its
+  // places that keeps every rule and leaves the tags and the other names theirs.
+  for (const set of model.sets) {
+    if (desktop || !early.has(set.actId) || featuredHere(set)) continue;
+    settle(set, (view, place) =>
+      paperPlaces(view, place)
+        .map((candidate, i) => {
+          const ok = candidate.spot !== null && paperOk(view, candidate.spot, set.actId, candidate.spot.plate, true);
+          const box = ok ? boxOf(candidate.spot as Spot) : null;
+          return { candidate, ok, i, firm: box && firmly(view, box, set.actId) ? 0 : 1, shut: box ? shutWeight(view, box, set.actId) : 0 };
+        })
+        .sort((a, b) => (a.ok === b.ok ? 0 : a.ok ? -1 : 1) || a.shut - b.shut || a.firm - b.firm || a.i - b.i)
+        .map(({ candidate, ok, shut, firm }) => ({ candidate, ok, shut, firm: firm === 0 })),
+    );
+  }
+
   for (const set of order) {
     settle(set, (view, place) => {
       const outside = [...platesOf(view, place, "above", [set.name], 600), ...platesOf(view, place, "below", [set.name], 600)];
       const beside = besideOf(place, 600);
-      // Of the places that keep every rule, the ones that leave the lines nearby their room come first.
+      // Of the places that keep every rule, those that leave a phone's tags a place together, and every other name a
+      // place, come first, then the ones as plainly the name's own as the band asks, then those that leave the lines
+      // nearby their room.
       const strict = [...outside, ...(beside ? [beside] : [])]
         .map((candidate, i) => {
           const ok = candidate.spot !== null && paperOk(view, candidate.spot, set.actId, candidate.spot.plate, true);
-          return { candidate, ok, i, cost: ok ? roomCost(view, boxOf(candidate.spot as Spot)) : 3 };
+          const box = ok ? boxOf(candidate.spot as Spot) : null;
+          return { candidate, ok, i, firm: box && firmly(view, box, set.actId) ? 0 : 1, shut: box ? shutWeight(view, box, set.actId) : 0, cost: box ? roomCost(view, box) : 3 };
         })
-        .sort((a, b) => a.cost - b.cost || a.i - b.i)
-        .map(({ candidate, ok }) => ({ candidate, ok }));
+        .sort((a, b) => (a.ok === b.ok ? 0 : a.ok ? -1 : 1) || a.shut - b.shut || a.firm - b.firm || a.cost - b.cost || a.i - b.i)
+        .map(({ candidate, ok, shut, firm }) => ({ candidate, ok, shut, firm: firm === 0 }));
       const loose = outside.map((candidate) => ({
         candidate: { ...candidate, sig: `loose|${candidate.sig}` },
         ok: candidate.spot !== null && paperOk(view, candidate.spot, set.actId, false, false) && ownedBy(view, boxOf(candidate.spot), set.actId, false),
@@ -1105,85 +1592,118 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
     });
   }
 
-  // Tags: beside their window in the gap nearest its lower bar first, so the figure sits by the hatch it names;
-  // on a desktop, set on two lines when one line would close a line's way; on a phone, left out rather than cut
-  // when no place on the screen holds it (the readout under the drawing gives the same minutes).
-  const tagSpots = (window: PlanWindow, lines: string[]): Spot[] => {
-    const width = Math.max(...lines.map((line) => textWidth(line))) + 2 * PLATE;
-    const height = LABEL_LINE * lines.length;
-    const spot = (anchor: number, dx: number, align: Spot["align"], top: number): Spot => ({ kind: "tag", slot: null, anchor, dx, align, top, width, height, lines, plate: true });
-    const spots: Spot[] = [];
-    for (let gap = window.lower - 1; gap >= window.upper; gap -= 1) {
-      // Centred in the gap; else against the bar below or above it, `LABEL_GAP` off it (one of the window's own
-      // bars, as `clearOf` checks) and `CLEAR` off the bar across the gap.
-      const middle = (barBottomOf(layout, gap) + barTopOf(layout, gap + 1)) / 2 - height / 2;
-      const tops = [middle, barTopOf(layout, gap + 1) - gapV - height, barBottomOf(layout, gap) + gapV];
-      for (const top of tops) spots.push(spot(window.window.end, TAG_GAP, "start", top), spot(window.window.start, -TAG_GAP, "end", top));
-    }
-    if (desktop && lines.length === 1) {
-      spots.push(spot(window.window.start, 0, "start", barBottomOf(layout, window.lower) + LABEL_GAP[layout]));
-      spots.push(spot(window.window.start, 0, "start", barTopOf(layout, window.upper) - LABEL_GAP[layout] - LABEL_LINE));
-    }
-    return spots;
-  };
+  // The tags, after the featured names: beside their window first (see `tagSpots`).
   for (const view of drawnViews) {
     const plan = views[view];
-    const wanted: { key: string; text: string; window: PlanWindow; owners: string[] }[] = [];
-    if (plan.hatch) {
-      const lit = model.threads.find((thread) => thread.lit);
-      const minutes = move ? (view === "moved" ? move.minutesAfter : move.minutesBefore) : (lit?.minutes ?? 0);
-      const owners = move ? [move.actId, move.partnerId] : lit ? [lit.aId, lit.bId] : [];
-      wanted.push({ key: "hatch", text: sharedTag(minutes), window: plan.hatch, owners });
-    }
-    for (const window of plan.created) wanted.push({ key: window.key, text: createdTag(window.change), window, owners: move ? [move.actId, window.change.actId] : [] });
-    for (const item of wanted) {
-      const ok = (candidate: Spot) => {
-        const box = boxOf(candidate);
-        return within(box) && clearOf(view, box, item.owners, TAG_BAR_CLEAR[layout]) && leavesWay(view, box);
-      };
-      const one = tagSpots(item.window, [item.text]);
-      const split = desktop ? twoLines(item.text, 600) : null;
-      const spot =
-        one.find(ok) ??
-        (split ? tagSpots(item.window, split).find(ok) : undefined) ??
-        (desktop ? (one.find((candidate) => within(boxOf(candidate)) && clearOf(view, boxOf(candidate), item.owners, TAG_BAR_CLEAR[layout])) ?? one[0]) : undefined);
-      if (!spot) continue;
+    const wanted = wantedOf(view);
+    const okFor = (item: WantedTag) => (candidate: Spot) => {
+      const box = boxOf(candidate);
+      return within(box) && clearOf(view, box, item.owners, TAG_BAR_CLEAR[layout]) && leavesWay(view, box);
+    };
+    const put = (item: WantedTag, spot: Spot) => {
       plan.tags.push({ key: item.key, text: item.text, spot });
       things[view].push({ id: null, box: boxOf(spot), kind: "label" });
-      paper[view].push(boxOf(spot));
+      paper[view].push({ box: boxOf(spot), owner: null });
+    };
+    const lift = () => {
+      plan.tags.pop();
+      things[view].pop();
+      paper[view].pop();
+    };
+    // A phone first looks for a place for every tag together: a tag that finds none may move an earlier tag to
+    // another of its places (each tag's first few places, a bounded search), so no tag is left out where the
+    // screen holds them all.
+    if (!desktop && wanted.length > 1) {
+      let steps = 0;
+      // First with each tag's places that leave every other name a place tried first, then, if that finds no place for
+      // every tag, in their own order.
+      const all = (index: number, friendly: boolean): boolean => {
+        if (index === wanted.length) return true;
+        const item = wanted[index];
+        const seenBoxes = new Set<string>();
+        const spots = tagSpots(item.window, [item.text])
+          .filter((candidate) => {
+            const box = boxOf(candidate);
+            const sig = [box.x0, box.y0].map((value) => Math.round(value * 10)).join("|");
+            if (seenBoxes.has(sig)) return false;
+            seenBoxes.add(sig);
+            return true;
+          })
+          .map((candidate, i) => ({ candidate, i, shut: friendly ? namesShut(view, boxOf(candidate)) : 0 }))
+          .sort((a, b) => a.shut - b.shut || a.i - b.i)
+          .map(({ candidate }) => candidate);
+        let tried = 0;
+        for (const spot of spots) {
+          if (tried >= TAG_TRIES || steps >= TAG_STEPS) break;
+          steps += 1;
+          if (!okFor(item)(spot)) continue;
+          tried += 1;
+          put(item, spot);
+          if (all(index + 1, friendly)) return true;
+          lift();
+        }
+        return false;
+      };
+      if (aware && all(0, true)) continue;
+      steps = 0;
+      if (all(0, false)) continue;
+    }
+    for (const item of wanted) {
+      const ok = okFor(item);
+      const one = tagSpots(item.window, [item.text]);
+      const split = desktop ? twoLines(item.text, 600) : null;
+      // Of the places that fit, the first that leaves no two lines over the same rows and minutes too little room to
+      // stand apart (`crowdOf`), so a tag never squeezes two lines into one.
+      // On a phone's second try (`early`), of the places that fit, the first that leaves every other name a place.
+      const roomiest = (spots: Spot[]) => {
+        const fits = spots.filter(ok);
+        if ((!desktop && !aware) || fits.length < 2) return fits[0];
+        const costs = fits.map((spot) => (desktop ? crowdOf(view, boxOf(spot)) : namesShut(view, boxOf(spot))));
+        return fits[costs.indexOf(Math.min(...costs))];
+      };
+      const spot =
+        roomiest(one) ??
+        (split ? roomiest(tagSpots(item.window, split)) : undefined) ??
+        (desktop ? (one.find((candidate) => within(boxOf(candidate)) && clearOf(view, boxOf(candidate), item.owners, TAG_BAR_CLEAR[layout])) ?? one[0]) : undefined);
+      if (!spot) continue;
+      put(item, spot);
     }
   }
 
   // Every other name: whole inside its bar where it fits; then beside its bar or on a plate in a gap by it (on two
   // lines on a desktop when one is too wide); then a prefix of 8 characters or more; then none. The names that do
   // not fit inside their bars are placed together by a search that draws as many of them whole as the drawing can
-  // hold (see `placeRest`). A phone names only the sets its detail window shows.
+  // hold (see `placeRest`). A phone names only the sets its detail window shows: the window it opens on, or the one
+  // it has slid to, planned again for each (`detail`).
   type Prepared = { view: GraphView; place: PlanBar; paper: Candidate[]; tail: Candidate[] };
   const prepared = new Map<string, Prepared[]>();
   const waiting: DayGraphSet[] = [];
   for (const set of model.sets) {
-    if (set.featured) continue;
+    if (featuredHere(set)) continue;
+    // A name placed early (see `early`) keeps its place.
+    if (drawnViews.some((view) => views[view].slots[set.actId] !== undefined)) continue;
+    const weight = weightOf(set);
     const places = drawnViews.flatMap((view) => {
       const place = views[view].bars.find((item) => item.set.actId === set.actId);
       return place && seen(place.span) ? [{ view, place }] : [];
     });
     if (places.length === 0) continue;
-    const inside = places.map(({ place }) => insideOf(place, 500));
+    const inside = places.map(({ place }) => insideOf(place, weight));
     if (inside.every((candidate) => candidate?.slot === "a")) {
       places.forEach(({ view }, i) => take(view, set.actId, inside[i] as Candidate));
       continue;
     }
     // The places that hold whatever else is placed: on the drawing, and plainly this set's own.
-    const split = desktop ? twoLines(set.name, 500) : null;
+    const split = desktop ? twoLines(set.name, weight) : null;
     prepared.set(
       set.actId,
       places.map(({ view, place }, i) => {
-        const beside = besideOf(place, 500);
+        const beside = besideOf(place, weight);
         const all = [
           ...(beside ? [beside] : []),
-          ...platesOf(view, place, "above", [set.name], 500),
-          ...platesOf(view, place, "below", [set.name], 500),
-          ...(split ? [...platesOf(view, place, "above", split, 500), ...platesOf(view, place, "below", split, 500)] : []),
+          ...platesOf(view, place, "above", [set.name], weight),
+          ...platesOf(view, place, "below", [set.name], weight),
+          ...(split ? [...platesOf(view, place, "above", split, weight), ...platesOf(view, place, "below", split, weight)] : []),
         ];
         const paper = all.filter((candidate) => candidate.spot && within(boxOf(candidate.spot)) && ownedBy(view, boxOf(candidate.spot), set.actId, candidate.spot.plate));
         const own = inside[i];
@@ -1202,7 +1722,7 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
    * the best: fewest names left out, then fewest cut.
    */
   function placeRest(sets: readonly DayGraphSet[]): void {
-    type Place = { view: GraphView; candidate: Candidate; box: Box; near: PlanLine[] };
+    type Place = { id: string; view: GraphView; candidate: Candidate; box: Box; near: PlanLine[]; firm: boolean };
     type Option = { places: Place[]; tails: GraphView[]; cost: number; slot: NameSlot; lines: number };
     type Entry = { set: DayGraphSet; views: GraphView[]; joint: Option[]; own: Map<GraphView, Place[]>; tails: Map<GraphView, Candidate[]> };
     const entries: Entry[] = sets.map((set) => {
@@ -1212,7 +1732,7 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
       for (const item of ready) {
         const mine = item.paper.map((candidate) => {
           const box = boxOf(candidate.spot as Spot);
-          return { view: item.view, candidate, box, near: touchingLines(item.view, box) };
+          return { id: set.actId, view: item.view, candidate, box, near: touchingLines(item.view, box), firm: firmly(item.view, box, set.actId) };
         });
         own.set(item.view, mine);
         for (const place of mine) bySig.set(place.candidate.sig, [...(bySig.get(place.candidate.sig) ?? []), place]);
@@ -1223,7 +1743,7 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
       return { set, views: ready.map((item) => item.view), joint, own, tails: new Map(ready.map((item) => [item.view, item.tail])) };
     });
     const fits = (entry: Entry, place: Place) =>
-      clearOf(place.view, place.box, [entry.set.actId]) && (place.candidate.spot?.kind !== "beside" || besideStops(place.view, place.box)) && wayOn(place.view, place.box, place.near);
+      clearOf(place.view, place.box, [entry.set.actId]) && (place.candidate.spot?.kind !== "beside" || besideStops(place.view, place.box)) && wayOn(place.view, place.box, place.near, place.id);
     const valid = (entry: Entry, option: Option) => option.places.every((place) => fits(entry, place));
     /** A view's prefix costs 1, nothing at all 1000: a name cut is better than a name left out. */
     const tailCost = (entry: Entry, view: GraphView) => (entry.tails.get(view)?.[0]?.slot === "d" ? 1 : 1000);
@@ -1245,9 +1765,9 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
       return out;
     };
     const push = (option: Option) => {
-      for (const { view, box } of option.places) {
+      for (const { view, box, id } of option.places) {
         things[view].push({ id: null, box, kind: "label" });
-        paper[view].push(box);
+        paper[view].push({ box, owner: id });
       }
     };
     const pop = (option: Option) => {
@@ -1256,15 +1776,78 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
         paper[view].pop();
       }
     };
+    /**
+     * A place as plainly the name's own as the band asks (`firmly`) comes before one that is not, unless taking it
+     * leaves a nearby line no place clear of the bars' edges (a line run down a bar's edge reads worse than a name a
+     * little nearer the next bar's corner).
+     */
     const rankOf = (option: Option) => {
-      const room = option.places.every(({ view, box }) => roomy(view, box));
-      const base = option.slot === "b" ? (room ? 0 : 1) : room ? (option.lines === 1 ? 2 : 3) : option.lines === 1 ? 4 : 5;
-      return base + 6 * Math.max(...option.places.map(({ view, box }) => roomCost(view, box)));
+      const spacious = option.places.every(({ view, box }) => roomy(view, box));
+      const base = option.slot === "b" ? (spacious ? 0 : 1) : spacious ? (option.lines === 1 ? 2 : 3) : option.lines === 1 ? 4 : 5;
+      const firm = option.places.every((place) => place.firm);
+      const cost = Math.max(...option.places.map(({ view, box }) => roomCost(view, box)));
+      return base + [0, 6, 18][cost] + (firm ? 0 : 9);
+    };
+    /** Takes `option`'s boxes off the paper wherever they sit (`pop` takes only the last ones placed). */
+    const remove = (option: Option) => {
+      for (const { view, box } of option.places) {
+        const thing = things[view].findIndex((item) => item.box === box);
+        if (thing >= 0) things[view].splice(thing, 1);
+        const sheet = paper[view].findIndex((item) => item.box === box);
+        if (sheet >= 0) paper[view].splice(sheet, 1);
+      }
+    };
+    /** Whether the names on the paper leave a line no place clear of the edges of the bars it crosses, where the bare drawing has one. */
+    const shut = (view: GraphView, line: PlanLine) => shownWindow(line) !== null && roomOf(view, line, [], false, landing) <= 0 && roomOf(view, line, [], true) > 0;
+    /**
+     * After the search: while some line is left no place clear of the bars' edges, a name near it takes another of its
+     * places of the same cost, still clear of everything, that leaves fewer such lines (a few passes at most).
+     */
+    const repair = (picks: Map<string, Option | null>) => {
+      for (const option of picks.values()) if (option) push(option);
+      for (let round = 0; round < 3; round += 1) {
+        let better = false;
+        for (const entry of entries) {
+          const current = picks.get(entry.set.actId);
+          if (!current) continue;
+          const lines = (option: Option) => option.places.flatMap((place) => place.near.map((line) => ({ view: place.view, line })));
+          const shutBy = (option: Option) => new Set(lines(option).filter(({ view, line }) => shut(view, line)).map(({ view, line }) => `${view}|${line.key}`)).size;
+          const before = shutBy(current);
+          if (before === 0) continue;
+          remove(current);
+          let pickNow = current;
+          let fewest = before;
+          for (const option of [...entry.joint, ...splits(entry)]) {
+            if (option.cost !== current.cost || option.places.some((place) => current.places.includes(place)) || !valid(entry, option)) continue;
+            push(option);
+            // Counted over the lines either place could narrow, so a line freed here is never shut elsewhere.
+            const around = new Set([...lines(current), ...lines(option)].filter(({ view, line }) => shut(view, line)).map(({ view, line }) => `${view}|${line.key}`)).size;
+            pop(option);
+            if (around < fewest) {
+              fewest = around;
+              pickNow = option;
+            }
+          }
+          push(pickNow);
+          if (pickNow !== current) {
+            picks.set(entry.set.actId, pickNow);
+            better = true;
+          }
+        }
+        if (!better) break;
+      }
+      for (const option of picks.values()) if (option) remove(option);
     };
     /** Whether placing `option` can change whether `place` still fits: it comes near it, or narrows a line they share. */
     const touches = (option: Option, place: Place) =>
       option.places.some((other) => other.view === place.view && (near(other.box, place.box, Math.max(clear, gapV) + 1) || other.near.some((line) => place.near.includes(line))));
 
+    /**
+     * What an option adds to a search's cost: its prefixes and names left out, and, where the band asks names to be
+     * plainly their own (`labelRoom`), `NOT_FIRM_COST` for a place that is not, so the search keeps looking for an
+     * arrangement where every name is.
+     */
+    const priceOf = (option: Option) => option.cost + (room.ratio > 1 && !option.places.every((place) => place.firm) ? NOT_FIRM_COST : 0);
     let best = Number.POSITIVE_INFINITY;
     let bestPick = new Map<string, Option | null>();
     const pick = new Map<string, Option | null>();
@@ -1286,11 +1869,11 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
       const rest = left.filter((_, i) => i !== at);
       const joint = open.get(entry.set.actId) ?? [];
       const choices = (joint.length > 0 ? joint : splits(entry))
-        .map((option, i) => ({ option, rank: rankOf(option), i }))
-        .sort((a, b) => a.option.cost - b.option.cost || a.rank - b.rank || a.i - b.i);
-      for (const { option } of choices) {
+        .map((option, i) => ({ option, rank: rankOf(option), i, price: priceOf(option) }))
+        .sort((a, b) => a.price - b.price || a.rank - b.rank || a.i - b.i);
+      for (const { option, price } of choices) {
         if (steps > SEARCH_STEPS && best < Number.POSITIVE_INFINITY) return;
-        if (cost + option.cost >= best) continue;
+        if (cost + price >= best) continue;
         push(option);
         const saved = open;
         open = new Map(saved);
@@ -1299,7 +1882,7 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
           open.set(other.set.actId, list.filter((candidate) => !candidate.places.some((place) => touches(option, place)) || valid(other, candidate)));
         }
         pick.set(entry.set.actId, option);
-        search(rest, cost + option.cost);
+        search(rest, cost + price);
         pick.delete(entry.set.actId);
         open = saved;
         pop(option);
@@ -1309,10 +1892,29 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
       search(rest, cost + entry.views.reduce((sum, view) => sum + tailCost(entry, view), 0));
       pick.delete(entry.set.actId);
     };
-    search(entries, 0);
+    // First with every line kept clear of every name; then, only when that leaves a name out or cut, letting a line
+    // end on its own set's name; the better of the two.
+    const tries: { best: number; pick: Map<string, Option | null> }[] = [];
+    for (const allow of [false, true]) {
+      landing = allow;
+      // Worth a second search only when a name left out or cut there has a place that ending a line on it frees.
+      if (allow && !entries.some((entry) => (tries[0].pick.get(entry.set.actId)?.tails.length ?? 1) > 0 && entry.joint.some((option) => valid(entry, option)))) break;
+      best = Number.POSITIVE_INFINITY;
+      bestPick = new Map();
+      pick.clear();
+      steps = 0;
+      open = new Map(entries.map((entry) => [entry.set.actId, entry.joint.filter((option) => valid(entry, option))]));
+      search(entries, 0);
+      tries.push({ best, pick: bestPick });
+      if (best < 1) break;
+    }
+    const chosen = tries.reduce((a, b) => (b.best < a.best ? b : a));
+    landing = chosen === tries[1];
+    repair(chosen.pick);
+    landing = false;
 
     for (const entry of entries) {
-      const option = bestPick.get(entry.set.actId);
+      const option = chosen.pick.get(entry.set.actId);
       for (const place of option?.places ?? []) take(place.view, entry.set.actId, place.candidate);
       for (const view of option ? option.tails : entry.views) take(view, entry.set.actId, entry.tails.get(view)?.[0] ?? none);
     }
@@ -1324,8 +1926,10 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
   // names, beneath those bars. Where its window allows, a line also stands at least `EDGE_IN` px inside every other
   // set's bar it crosses or clear of it (so the bar's rounded corner and edge read whole) and `LINE_APART` px from
   // every line already standing over the same rows (so two never read as one doubled rule), giving up the spacing
-  // first and the edges next. A line that runs beside the chosen clash's window also keeps 8px off its edges where
-  // its own window allows, so it never reads as the window's outline.
+  // first (to `LINE_NEAR` px, then wholly) and the edges next; a line drawn beneath the bars it crosses keeps its stroke
+  // only `BENEATH_IN` px inside them, since its casing hides it at each of those bars. A line that runs beside the chosen clash's window also keeps 8px off its edges where
+  // its own window allows, so it never reads as the window's outline. Where its own set's name sits in its way, in
+  // the gap next to that set's bar, a line may end on that name instead (`landsOn`), its end dot 1px off the plate.
   for (const view of drawnViews) {
     const plan = views[view];
     const rooms = new Map<string, Span>();
@@ -1335,7 +1939,8 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
     for (const line of ordered) {
       const window = shownWindow(line) ?? line.window;
       const half = line.width / 2;
-      const walls = wallsOf(line, paper[view]);
+      const held = wallsOf(line, paper[view]);
+      const landed = wallsOf(line, paper[view], true);
       const crossed = inks[view].filter((item) => item.row > line.upper && item.row < line.lower).map((item) => ({ start: minuteAt(item.box.x0), end: minuteAt(item.box.x1) }));
       const besideHatch = hatch !== null && !line.thread.lit && hatch.top < line.bottom && line.top < hatch.bottom;
       const edges = (reach: number): Span[] =>
@@ -1351,40 +1956,50 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
         return Math.floor(Math.max(off(lo), off(hi), (a + b) / 2 >= lo && (a + b) / 2 <= hi ? off((a + b) / 2) : 0) * 100) / 100 - 0.01;
       })();
       const reaches = besideHatch ? [half + HATCH_CLEAR, HATCH_CLEAR, ...(farthest > 0 && farthest < HATCH_CLEAR ? [farthest] : []), 6, 4, 2, 0] : [0];
-      const barEdges = edgesOf(view, line);
       const overMarks = [...plan.bars, ...(plan.ghost ? [plan.ghost] : [])];
+      // Beneath the bars, its paper casing hides it from 2px above each bar it crosses to 2px below, corners included,
+      // so it need only keep its stroke 1px inside each bar's edge.
+      const beneathEdges = barEdgesOf(line, overMarks, half + BENEATH_IN);
       const overEdges = barEdgesOf(line, overMarks, half + CASING + BAR_STUB);
       /** Whether a middle at `at` passes over another set's bar in a row the line crosses. */
       const overABar = (at: number) =>
         overMarks.some((item) => item.row > line.upper && item.row < line.lower && item.set.actId !== line.thread.aId && item.set.actId !== line.thread.bId && at > item.span.start && at < item.span.end);
-      const neighbours = stood
-        .filter((other) => other.top < line.bottom && line.top < other.bottom)
-        .map((other) => {
-          const apart = Math.max(LINE_APART, other.half + half + 3);
-          return { start: minuteAt(other.x - apart), end: minuteAt(other.x + apart) };
-        });
+      const neighboursAt = (least: number) =>
+        stood
+          .filter((other) => other.top < line.bottom && line.top < other.bottom)
+          .map((other) => {
+            const apart = Math.max(least, other.half + half + (least === LINE_APART ? 3 : 0));
+            return { start: minuteAt(other.x - apart), end: minuteAt(other.x + apart) };
+          });
+      const neighbours = neighboursAt(LINE_APART);
+      const nearNeighbours = neighboursAt(LINE_NEAR);
       let place: { at: number; room: Span; crosses: number } | null = null;
       let under = false;
       // Drawn over the bars it crosses, it always keeps `BAR_STUB` px of each bar beside its casing; passing beneath
       // them, the bar hides it and only its corner needs keeping, where the names allow.
-      ladder: for (const [edgeSoft, apartSoft] of [
-        [true, true],
-        [true, false],
-        [false, true],
-        [false, false],
-      ]) {
+      // The spacing gives way in two steps (`LINE_APART`, then `LINE_NEAR`) before it goes.
+      ladder: for (const [edgeSoft, apart] of [
+        [true, neighbours],
+        [true, nearNeighbours],
+        [true, []],
+        [false, neighbours],
+        [false, nearNeighbours],
+        [false, []],
+      ] as const) {
         for (const reach of reaches) {
-          const fence = [...walls, ...(apartSoft ? neighbours : []), ...(reach > 0 ? edges(reach) : [])];
-          const over = clearPlace(window, half, crossed, scale, [...fence, ...overEdges]);
-          if (over && over.crosses === 0) {
-            place = over;
-            break ladder;
-          }
-          const beneath = clearPlace(window, half, [], scale, [...fence, ...(edgeSoft ? barEdges : [])]);
-          if (beneath) {
-            place = beneath;
-            under = overABar(beneath.at);
-            break ladder;
+          for (const walls of [held, landed]) {
+            const fence = [...walls, ...apart, ...(reach > 0 ? edges(reach) : [])];
+            const over = clearPlace(window, half, crossed, scale, [...fence, ...overEdges]);
+            if (over && over.crosses === 0) {
+              place = over;
+              break ladder;
+            }
+            const beneath = clearPlace(window, half, [], scale, [...fence, ...(edgeSoft ? beneathEdges : [])]);
+            if (beneath) {
+              place = beneath;
+              under = overABar(beneath.at);
+              break ladder;
+            }
           }
         }
       }
@@ -1407,10 +2022,21 @@ export function planDrawing(model: DayGraphModel, layout: DrawingLayout, referen
       }),
     );
     for (const line of plan.lines) line.off = Math.round((spread.get(line.key) ?? 0) * 100) / 100;
+    // A line whose stroke reaches its own set's name in the gap next to that set's bar ends on that name.
+    for (const line of plan.lines) {
+      const cx = x(line.mid) + line.off;
+      const reach = line.width / 2 + LINE_CLEAR;
+      const ends = endsOf.get(line);
+      for (const item of paper[view]) {
+        if (!ends || !landsOn(line, item) || !(cx + reach > item.box.x0 && cx - reach < item.box.x1)) continue;
+        if (item.owner === ends.upper) line.top = Math.max(line.top, item.box.y1 + dotReach(line));
+        else line.bottom = Math.min(line.bottom, item.box.y0 - dotReach(line));
+      }
+    }
   }
 
   if (!move) views.moved = views.published;
-  return { layout, track, scale, reference, rows, views };
+  return { layout, track, scale, reference, rows, detail: { start: seenFrom, end: seenTo }, views };
 }
 
 /** A label's box at `plan`'s scale (px), for the geometry checks. */

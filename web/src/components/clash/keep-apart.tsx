@@ -110,20 +110,20 @@ function SetOptions({ groups }: { groups: readonly Group[] }) {
       {group.sets.map((set) => (
         <option key={set.actId} value={set.actId}>
           {set.start} {set.name}
-          {set.locked ? " (locked)" : ""}
+          {set.locked ? " (locked by this app)" : ""}
         </option>
       ))}
     </optgroup>
   ));
 }
 
-/** What an underline field shows for its chosen set: the start time in mono, then the act. */
+/** What an underline field shows for its chosen set: the start time in tabular figures, then the act. */
 export type SetFieldDisplay = { time: string; name: string } | null;
 
 /**
  * A native select drawn as a card control: 48px tall, the 12px control corner, a 1px border-strong edge
  * (3:1, so the edge itself names the control) that turns ink on hover (keyboard focus adds the 2px focus
- * ring), 16px side padding, the chosen set's start time in mono at 13px and then its name at 15px
+ * ring), 16px side padding, the chosen set's start time in 13px tabular figures and then its name at 15px
  * semibold, and one 12px chevron at the right in place of the browser's. The platform control sits over
  * the whole box (transparent, `appearance-none`), so a click, the keyboard and screen readers all reach the
  * real select; the drawn text is only what it shows.
@@ -197,7 +197,7 @@ export function setWhere(preset: Pick<Preset, "festival">, actId: string): strin
   return `${stage} · ${formatRange(slot)}`;
 }
 
-/** Where a set plays, split so the stage is set in the sans and the time in mono. Null off the timetable. */
+/** Where a set plays, split so the stage is set in the sans and the time in tabular figures. Null off the timetable. */
 export function setPlace(preset: Pick<Preset, "festival">, actId: string): { stage: string; time: string } | null {
   const slot = preset.festival.timetable.find((candidate) => candidate.act_id === actId);
   if (!slot) return null;
@@ -207,7 +207,7 @@ export function setPlace(preset: Pick<Preset, "festival">, actId: string): { sta
 
 /**
  * The chosen set under its select, as a line of a running order: the act, then its stage and time in
- * mono. `id` lets the select point at it.
+ * tabular figures. `id` lets the select point at it.
  */
 export function SetCard({
   name,
@@ -239,7 +239,7 @@ type StripSet = { name: string; start: number; end: number };
  * second the open capsule, hatched in its card window over the minutes they share, with straight cuts where
  * the shared time starts and ends, on the one strip domain and the same 9.5rem label column as the other
  * strips. The figure is the strip's own bracket and the minutes under it, as on the hero and in Try a move,
- * worded "N min at the same time" in 13px vermilion mono. The drawing is hidden from readers; a live line
+ * worded "N min at the same time" in 13px raspberry tabular figures. The drawing is hidden from readers; a live line
  * says both names and the same figure for them. Drawn from the published timetable; nothing is requested.
  */
 export function ChosenPairStrip({ a, b }: { a: StripSet; b: StripSet }) {
@@ -775,7 +775,7 @@ export function KeepApart({
                       group.sets.map((set) => (
                         <option key={set.actId} value={set.actId}>
                           {set.start} {set.name} · {group.label}
-                          {set.locked ? " (locked)" : ""}
+                          {set.locked ? " (locked by this app)" : ""}
                         </option>
                       )),
                     )}

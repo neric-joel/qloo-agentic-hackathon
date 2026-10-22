@@ -128,7 +128,7 @@ describe("PairStrip", () => {
     expect(apart).toContain(">no time shared</p>");
   });
 
-  it("puts a bracket 4px under each open lane that shares time, and the minutes under it in 13px vermilion mono", () => {
+  it("puts a bracket 4px under each open lane that shares time, and the minutes under it in 13px raspberry tabular figures", () => {
     const html = render([staying, now, tested]);
     const brackets = html.match(/<div data-strip-bracket=""><svg width="100%" height="6" aria-hidden="true" focusable="false" class="mt-1 block overflow-visible">[\s\S]*?<\/svg>/g) ?? [];
     expect(brackets).toHaveLength(2);

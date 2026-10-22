@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 
@@ -29,7 +29,7 @@ import { lockRuleHolds } from "@/lib/locks";
 import { MOCK_STREAM_ENABLED } from "@/lib/mock-stream";
 import { parsePreset, type Evidence, type PairClash, type Preset, type PresetSummary } from "@/lib/preset";
 import type { RulePreview } from "@/lib/rule-fix";
-import type { ServerSummary } from "@/lib/server-summary";
+import { carriedDecision, type ServerSummary } from "@/lib/server-summary";
 import { isRuleStackStep, sameStep, seedOutcome, type PlanChoice, type PlanPreview, type StackStep } from "@/lib/stack";
 import { cn } from "@/lib/utils";
 
@@ -40,7 +40,7 @@ import { ClashList, liveClashRow } from "./clash-list";
 import { CoverageMeter } from "./coverage-meter";
 import { DayGraph, DayGraphKey } from "./day-graph";
 import { builtDate, DecisionDetails, isHiddenDecision } from "./decision-card";
-import { HeroDecision, HeroDecisionSkeleton } from "./hero-decision";
+import { HERO_CELL_MIN, HeroDecision, HeroDecisionSkeleton, HeroNote, heroNote } from "./hero-decision";
 import { HiddenWall, type HiddenDay } from "./hidden-wall";
 import { MoreDetails } from "./more-details";
 import { PresetSources } from "./preset-sources";
@@ -127,7 +127,8 @@ export function datelineLead(
 ): string | null {
   if (!model) return null;
   if (synthetic) return "Invented timetable.";
-  const date = model.builtAt ? builtDate(model.builtAt) : null;
+  // The date's three parts are joined by no-break spaces, so "3 Oct 2026" never breaks inside itself.
+  const date = model.builtAt ? (builtDate(model.builtAt)?.replaceAll(" ", "\u00a0") ?? null) : null;
   const reading = location === null ? "saved global Qloo reading" : "saved Qloo reading";
   return `${model.dayName ? `${model.dayName}. ` : ""}Published timetable${date ? `; ${reading} built ${date}` : ""}.`;
 }
@@ -198,13 +199,25 @@ function ViewToggle({
 }
 
 /**
+ * The toggle's 44 px room while the drawn day has no move to toggle (its decision still coming, or none), so
+ * the drawing under it never moves when one comes. Nothing to read or press.
+ */
+function ToggleRoom() {
+  return <div aria-hidden="true" data-toggle-room="" className="h-11" />;
+}
+
+/**
  * The hero, "the day is the graph", in one DOM order at every width: the pitch, the festival day (its picker
  * and dateline), the drawing's toggle, the drawing, the decision group, the drawing's key. Below 1024 px it
  * reads in that order. From 1024 px a grid puts the pitch, the day and the toggle in the left column, the
  * decision group in a right column 26rem wide (28rem from 1280 px) beside all three, and the drawing and its
  * key across both: the toggle sits at the foot of its row, directly over the drawing, which starts 24 px
  * under the taller column. Every track is minmax(0, ...) and every item min-w-0, so nothing pushes past the
- * page gutter on a phone. `busy` while another festival day is on its way to replace the one drawn.
+ * page gutter on a phone. `busy` while another festival day is on its way to replace the one drawn. With
+ * `reserve` (a decision group in any state) an empty room in the group's cell holds the settled group's height
+ * from 1024 px (`HERO_CELL_MIN`). It comes second in the DOM, before the toggle and the drawing, so it is there
+ * from the first painted bytes: the left column, which follows the taller column, never moves when the group
+ * streams in after the drawing, or comes later still.
  */
 function HeroLayout({
   intro,
@@ -214,6 +227,7 @@ function HeroLayout({
   group,
   graphKey,
   busy = false,
+  reserve = false,
 }: {
   intro: ReactNode;
   day?: ReactNode;
@@ -222,18 +236,24 @@ function HeroLayout({
   group?: ReactNode;
   graphKey?: ReactNode;
   busy?: boolean;
+  reserve?: boolean;
 }) {
   return (
     <section aria-labelledby="pitch-heading" aria-busy={busy || undefined}>
-      <div className="container-page pt-4 pb-8 sm:pt-6 lg:pt-8 lg:pb-6">
+      {/* From 1024 px on a screen 790 px tall or less (1366 x 768) the top padding and the drawing's top margin
+          tighten (32 to 16 px, 24 to 12 px), so the whole drawing fits above the fold; no text gets smaller. From
+          1024 px the key sits 4 px above the section nav (whose 44 px row centres its links), so a key that takes a
+          second line still leaves the nav on a 900 px first screen. */}
+      <div className="container-page pt-4 pb-8 sm:pt-6 lg:pt-8 lg:pb-1 lg:[@media(max-height:790px)]:pt-4">
         <div
           data-hero=""
           className="grid min-w-0 grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_26rem] lg:grid-rows-[auto_auto_1fr_auto_auto] lg:gap-x-12 lg:[grid-template-areas:'pitch_group'_'day_group'_'toggle_group'_'graph_graph'_'key_key'] xl:grid-cols-[minmax(0,1fr)_28rem]"
         >
           <div className="min-w-0 lg:[grid-area:pitch]">{intro}</div>
+          {reserve ? <div aria-hidden="true" data-hero-room="" className={cn("hidden lg:block lg:[grid-area:group]", HERO_CELL_MIN)} /> : null}
           {day ? <div className="mt-2 min-w-0 lg:mt-6 lg:[grid-area:day]">{day}</div> : null}
           {toggle ? <div className="mt-2 min-w-0 lg:mt-6 lg:self-end lg:[grid-area:toggle]">{toggle}</div> : null}
-          {graph ? <div className="mt-1 min-w-0 lg:mt-6 lg:[grid-area:graph]">{graph}</div> : null}
+          {graph ? <div className="mt-1 min-w-0 lg:mt-6 lg:[@media(max-height:790px)]:mt-3 lg:[grid-area:graph]">{graph}</div> : null}
           {group ? <div className="mt-2 min-w-0 lg:mt-0 lg:self-start lg:[grid-area:group]">{group}</div> : null}
           {graphKey ? <div className="mt-4 min-w-0 lg:mt-3 lg:[grid-area:key]">{graphKey}</div> : null}
         </div>
@@ -260,10 +280,209 @@ function BoardFrame({
   children: ReactNode;
 }) {
   return (
-    <section aria-label={label} aria-labelledby={labelledBy}>
+    <section aria-label={label} aria-labelledby={labelledBy} data-board-frame="">
       {/* Open sections are parted by space, not rules: 64 px above and below (80 px from 1024 px). */}
       <div className="container-page py-16 lg:py-20 2xl:max-w-[96rem]">{children}</div>
     </section>
+  );
+}
+
+/**
+ * The board's disclosure label: what the opened board shows, "Show 39 sets on 5 stages". It makes no claim about
+ * numbering: the board numbers only the costliest clashes (`TOP_LINKS`).
+ */
+export function boardFoldSummary(sets: number, stages: number): string {
+  return `Show ${pluralize(sets, "set")} on ${pluralize(stages, "stage")}`;
+}
+
+/** What the board fold just taken off the page showed: whether it was open, and whether its summary had focus. */
+export type BoardFoldCarry = { open: boolean; focused: boolean };
+
+/** The parts of the fold's `<details>` that `carryBoardFold` reads, so a test can hand it a stand-in. */
+type FoldNode = Pick<HTMLDetailsElement, "open" | "ownerDocument"> & {
+  querySelector(selector: "summary"): Pick<HTMLElement, "focus"> | null;
+};
+
+/**
+ * The board fold's ref, so a visitor's press on the board's summary is never undone and the fold never shuts by
+ * itself when the page swaps one fold for another (the server's frame for the interactive board, one festival
+ * day's board for the next). Reported through `onToggle`, the page draws the next board in the reported state from
+ * its first frame (so its chevron does not turn by itself); the server's frame, which React has not seen until the
+ * page is interactive, reports a press made before then as soon as it is (`takeOver` false). On leaving the page a
+ * fold also records in `carryRef` what the page itself showed: whether it was open and whether its summary had
+ * focus. The fold that replaces it in the same commit (`takeOver` true) takes both over before the browser paints:
+ * the focus, and an open state that no report reached in time (a press in the swap's own frame). It only opens,
+ * never closes. Returns the ref's cleanup.
+ */
+export function carryBoardFold(
+  node: FoldNode,
+  carryRef: { current: BoardFoldCarry | null },
+  { onToggle, takeOver }: { onToggle?: (open: boolean) => void; takeOver: boolean },
+): () => void {
+  const carried = carryRef.current;
+  carryRef.current = null;
+  if (!takeOver) {
+    if (node.open) onToggle?.(true);
+  } else if (carried) {
+    if (carried.open && !node.open) {
+      node.open = true;
+      onToggle?.(true);
+    }
+    if (carried.focused) node.querySelector("summary")?.focus({ preventScroll: true });
+  }
+  return () => {
+    const summary = node.querySelector("summary");
+    carryRef.current = { open: node.open, focused: summary !== null && Object.is(node.ownerDocument.activeElement, summary) };
+  };
+}
+
+/** Whether the board's fold now on the page is open: the server's copy, which a visitor may press before React runs. */
+function foldOpenOnPage(): boolean {
+  return typeof document !== "undefined" && document.querySelector<HTMLDetailsElement>("details[data-board-fold]")?.open === true;
+}
+
+/**
+ * Where a visitor who scrolled on the server's frame is when the interactive page replaces it. The frame has the
+ * board right under the hero; the page puts What Qloo changes, Hidden clashes and Why this matters before it, so
+ * without this the page would rebuild under the visitor. The thing they look at keeps its place on the screen:
+ * the board's summary when it is on screen (`fold`, its top), else the page's end when the footer is on screen
+ * (`end`, the distance from the page's end; the frame holds the footer back while scripts run, so this is for a
+ * browser that cannot), else the board when it fills the lower half of the screen or more (`board`, its top).
+ * Null when the visitor has not scrolled, or mostly sees the hero, which both draw in one place.
+ */
+export type PagePlace = { anchor: "fold" | "board"; top: number } | { anchor: "end"; fromEnd: number };
+
+/** A box on the screen (its top and bottom, in px from the top of the viewport), or null when it is not drawn. */
+export type ScreenBox = { top: number; bottom: number } | null;
+
+type PageView = { innerHeight: number; scrollY: number; scrollHeight: number };
+
+/** The place to keep (`PagePlace`) from the frame's boxes and the screen, read just before the frame leaves. */
+export function pagePlace(view: PageView, boxes: { fold: ScreenBox; board: ScreenBox; footer: ScreenBox }): PagePlace | null {
+  if (view.scrollY <= 0) return null;
+  const onScreen = (box: ScreenBox): box is { top: number; bottom: number } =>
+    box !== null && box.bottom > 0 && box.top < view.innerHeight;
+  if (onScreen(boxes.fold)) return { anchor: "fold", top: boxes.fold.top };
+  if (onScreen(boxes.footer)) return { anchor: "end", fromEnd: view.scrollHeight - view.scrollY };
+  if (boxes.board !== null && boxes.board.top < view.innerHeight / 2) return { anchor: "board", top: boxes.board.top };
+  return null;
+}
+
+/**
+ * The scroll position that puts the kept place where it was, read on the page that replaced the frame: the
+ * summary's or the board's top on the same line of the screen, or the same distance from the page's end. The
+ * summary, a control, never lands under the section nav where it sticks (`minTop`, the nav's foot), and no place
+ * goes past either end of the page. Null when the page draws no such box.
+ */
+export function pagePlaceTarget(
+  place: PagePlace,
+  view: PageView,
+  boxes: { fold: ScreenBox; board: ScreenBox },
+  minTop = 0,
+): number | null {
+  let target: number;
+  if (place.anchor === "end") target = view.scrollHeight - place.fromEnd;
+  else {
+    const box = boxes[place.anchor];
+    if (box === null) return null;
+    target = view.scrollY + box.top - (place.anchor === "fold" ? Math.max(place.top, minTop) : place.top);
+  }
+  return Math.min(Math.max(0, target), Math.max(0, view.scrollHeight - view.innerHeight));
+}
+
+/** A box as `pagePlace` reads it. */
+function screenBox(element: Element | null): ScreenBox {
+  if (element === null) return null;
+  const rect = element.getBoundingClientRect();
+  return { top: rect.top, bottom: rect.bottom };
+}
+
+/** The board's summary and the board's section on the page now: the frame's, or the interactive page's. */
+function boardBoxes(): { fold: ScreenBox; board: ScreenBox } {
+  return {
+    fold: screenBox(document.querySelector("details[data-board-fold] > summary")),
+    board: screenBox(document.querySelector("section[data-board-frame]")),
+  };
+}
+
+function pageView(): PageView {
+  return { innerHeight: window.innerHeight, scrollY: window.scrollY, scrollHeight: document.documentElement.scrollHeight };
+}
+
+/** Read on the frame, while it is still whole: the place to keep (`pagePlace`). */
+function readPagePlace(): PagePlace | null {
+  return pagePlace(pageView(), { ...boardBoxes(), footer: screenBox(document.querySelector("main ~ footer")) });
+}
+
+/**
+ * Run on the interactive page in the commit that drew it, before the browser paints: one instant scroll, so the
+ * kept place is where it was. The section nav sticks from 768 px, so a kept top never lands under it.
+ */
+function keepPagePlace(place: PagePlace): void {
+  // The section nav's foot where it sticks (from 768 px: under the 64 px header, 44 px tall).
+  const nav = document.querySelector<HTMLElement>('nav[aria-label="On this page"]');
+  const style = nav === null ? null : getComputedStyle(nav);
+  const minTop = nav !== null && style !== null && style.position === "sticky" ? (parseFloat(style.top) || 0) + nav.offsetHeight : 0;
+  const target = pagePlaceTarget(place, pageView(), boardBoxes(), minTop);
+  if (target !== null && Math.abs(target - window.scrollY) > 0.5) window.scrollTo({ top: target, behavior: "instant" });
+}
+
+/**
+ * The board behind one disclosure: closed on arrival, its summary a 44 px control in the 10 px
+ * button shape with the chevron, so the home reaches Try a move and the agent sooner. Opening is instant. With
+ * `open` the page holds its state (it opens itself for a preview); without it the fold is the server's frame,
+ * closed until pressed, and `onToggle` only reports. With `carryRef` (the page's one carrier) the fold hands its
+ * state to the fold that replaces it (`carryBoardFold`). `inert` is for the copy of the server's frame that the
+ * streamed page replaces before any script runs (the page's loading fallback, on screen for about two frames):
+ * nothing could carry a press on it over, so it takes none.
+ */
+function BoardFold({
+  summary,
+  open,
+  onToggle,
+  carryRef,
+  inert = false,
+  className,
+  children,
+}: {
+  summary: string;
+  open?: boolean;
+  onToggle?: (open: boolean) => void;
+  carryRef?: { current: BoardFoldCarry | null };
+  inert?: boolean;
+  className?: string;
+  children: ReactNode;
+}) {
+  const takeOver = open !== undefined;
+  // The server's frame drawn anew over the server's HTML (React does that, instead of taking the HTML over, when the
+  // page changes before it has): open if the visitor opened the copy it replaces. Read from the page once, while that
+  // copy is still there; when React takes the HTML over, it reads this very fold.
+  const [openOnPage] = useState(() => !takeOver && carryRef !== undefined && foldOpenOnPage());
+  const carry = useCallback(
+    (node: HTMLDetailsElement | null) => (node && carryRef ? carryBoardFold(node, carryRef, { onToggle, takeOver }) : undefined),
+    [carryRef, onToggle, takeOver],
+  );
+  return (
+    <details
+      ref={carry}
+      data-board-fold=""
+      open={takeOver ? open : openOnPage || undefined}
+      onToggle={onToggle ? (event) => onToggle(event.currentTarget.open) : undefined}
+      inert={inert || undefined}
+      // A press on the server's frame before the page is interactive adds `open`, which React would otherwise report
+      // as a mismatch with the server's HTML when it takes the frame over.
+      suppressHydrationWarning={!takeOver}
+      className={cn("group/board", className)}
+    >
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-md border border-border-strong bg-card px-4 py-2.5 text-sm font-semibold hover:bg-accent [&::-webkit-details-marker]:hidden">
+        {summary}
+        <ChevronDown
+          aria-hidden="true"
+          className="size-4 shrink-0 group-open/board:rotate-180 motion-safe:transition-transform motion-safe:duration-[160ms] motion-safe:ease-(--ease-out)"
+        />
+      </summary>
+      {children}
+    </details>
   );
 }
 
@@ -464,21 +683,50 @@ function JumpNav({ agent, wall, qloo = null }: { agent: JumpLink; wall: boolean;
  * there is one (the server HTML carries it), skeletons otherwise. Its hero is the interactive hero's final
  * frame, drawn from the same model: the festival picker with the same options, the toggle on the moved view,
  * the drawing, the decision group with "Keep this move" in place, and the key, none of them pressable until
- * the interactive view mounts, so the swap changes no box.
+ * the interactive view mounts, so the swap changes no box. A summary without its decision (the API had none
+ * for the day, or the older API's separate request failed) draws the group's skeleton, which holds the settled
+ * group's rows, and the toggle's 44 px room, so the decision moves nothing when the browser's own request
+ * brings it. The board's disclosure is the one thing a visitor can already press: `onFoldToggle` and
+ * `foldCarryRef` let the interactive board open if it was pressed open here (`carryBoardFold`); `foldInert` keeps
+ * the loading fallback's copy from taking a press it could not hand over. A visitor may also scroll here: the
+ * frame records where they are as it leaves (`placeRef`, `pagePlace`) and holds the site's footer back while
+ * scripts run, so the page that puts three sections before the board keeps the board where they were looking.
  */
 function LoadingView({
   intro,
   summary,
   picker,
   status,
+  onFoldToggle,
+  foldCarryRef,
+  foldInert = false,
+  placeRef,
 }: {
   intro: ReactNode;
   summary: HomeSummary | null;
   picker?: ReactNode;
   status?: ReactNode;
+  onFoldToggle?: (open: boolean) => void;
+  foldCarryRef?: { current: BoardFoldCarry | null };
+  foldInert?: boolean;
+  placeRef?: { current: PagePlace | null };
 }) {
+  // As the frame leaves, while it is still whole: where the visitor is on it, for the page that replaces it in the
+  // same commit (`keepPagePlace`). Taken in that commit or never, so nothing stale is left for a later page.
+  useLayoutEffect(() => {
+    if (!placeRef) return;
+    placeRef.current = null;
+    return () => {
+      placeRef.current = readPagePlace();
+      queueMicrotask(() => {
+        placeRef.current = null;
+      });
+    };
+  }, [placeRef]);
   const model = summary?.dayGraph ?? null;
   const synthetic = summary?.synthetic === true;
+  // The group answers only with the day's decision in hand; without it, its skeleton, never the no-decision words.
+  const decided = model !== null && summary?.decisionData != null;
   return (
     <>
       <HeroLayout
@@ -487,13 +735,14 @@ function LoadingView({
           <>
             {picker}
             <HeroDateline model={model} synthetic={synthetic} location={summary?.location} />
+            <HeroNote text={model ? heroNote(summary?.decisionData ?? null, synthetic) : null} />
           </>
         }
-        toggle={model ? <ViewToggle model={model} view="moved" /> : null}
+        toggle={model ? model.move ? <ViewToggle model={model} view="moved" /> : <ToggleRoom /> : null}
         graph={model ? <DayGraph model={model} view={model.move ? "moved" : "published"} /> : null}
         group={
           <>
-            {model ? (
+            {decided ? (
               <HeroDecision model={model} copy={summary?.decision ?? null} view={model.move ? "moved" : "published"} pending />
             ) : (
               <HeroDecisionSkeleton />
@@ -502,6 +751,7 @@ function LoadingView({
           </>
         }
         graphKey={model ? <DayGraphKey model={model} className={KEY_CLASS} /> : null}
+        reserve
       />
       <BoardFrame label="Timetable">
         {/* The day's score beside the clashes it adds up, where the interactive board puts its dial. */}
@@ -509,12 +759,34 @@ function LoadingView({
           <div className="min-w-0 max-w-[28rem]">{summary ? <SummaryScore summary={summary} /> : <ScoreSkeleton />}</div>
           {summary ? <SummaryBoard summary={summary} /> : null}
         </div>
-        {summary ? null : <BoardSkeleton className="mt-8" />}
+        {model ? (
+          // The board's disclosure, closed, as the interactive board draws it.
+          <BoardFold
+            summary={boardFoldSummary(model.sets.length, model.stages.length)}
+            onToggle={onFoldToggle}
+            carryRef={foldCarryRef}
+            inert={foldInert}
+            className="mt-8"
+          >
+            <BoardSkeleton className="mt-6" />
+          </BoardFold>
+        ) : (
+          <BoardSkeleton className="mt-8" />
+        )}
       </BoardFrame>
+      {/* While scripts run, the site's footer waits for the page: drawn under the frame's board, it would be pushed
+          down by the sections the page adds (Try a move, the agent, the sources) under a visitor who scrolled to it.
+          With scripts off nothing replaces the frame, and the footer shows. */}
+      <div hidden data-frame-end="" className="[@media(scripting:enabled)]:[main:has(&)~footer]:hidden" />
     </>
   );
 }
 
+/**
+ * The home page's loading fallback: the same first screen as `ClashControl`'s own before the festival day loads. The
+ * streamed page swaps it for that one before any script runs (about two frames after the first paint), so its board
+ * fold takes no press (`foldInert`): a press there could only be undone by the swap.
+ */
 export function ClashControlFallback({
   intro,
   summary = null,
@@ -527,6 +799,7 @@ export function ClashControlFallback({
       intro={intro}
       summary={summary}
       picker={<PresetPicker presets={summary?.presets ?? []} selectedId={summary?.id ?? null} />}
+      foldInert
     />
   );
 }
@@ -561,21 +834,26 @@ export function dayToDraw(
 }
 
 /**
- * Another festival day's saved preset and decision, read ahead so that choosing it redraws at once: two GETs
- * of saved files (the decision route takes no what-if slot), and no Qloo request. Null on any failure, and no
- * decision when the route gives none; the switch then asks for what is missing.
+ * Another festival day's saved preset and decision, read ahead so that choosing it redraws at once: a GET of
+ * the saved preset, whose response carries the day's decision (`carriedDecision`), and no Qloo request. Only a
+ * response without that field (an API that predates it) is followed by `GET /decision` (which takes no what-if
+ * slot). Null on any failure; `known` is false when no decision came back (the switch then asks for it) and true
+ * when the decision, or the answer that there is none, is in hand.
  */
-async function readDayAhead(id: string, signal: AbortSignal): Promise<DrawnDay | null> {
+async function readDayAhead(id: string, signal: AbortSignal): Promise<(DrawnDay & { known: boolean }) | null> {
   try {
     const response = await fetch(`/api/presets/${encodeURIComponent(id)}`, {
       signal,
       headers: { Accept: "application/json" },
     });
     if (!response.ok) return null;
-    const preset = parsePreset(await response.json());
+    const raw: unknown = await response.json();
+    const preset = parsePreset(raw);
     const day = decisionDay(preset);
-    const decision = await requestDecision(preset.id, day, signal);
-    return { preset, decision: decision && decision.day === day ? decision : null };
+    const carried = carriedDecision(raw);
+    const decision = carried === undefined ? await requestDecision(preset.id, day, signal) : carried;
+    const known = carried !== undefined || decision !== null;
+    return { preset, decision: decision && decision.day === day ? decision : null, known };
   } catch {
     return null;
   }
@@ -604,6 +882,21 @@ export function ClashControl({
   // Asked once per page, alongside the presets, so the hero and the agent panel already know
   // whether the live agent is on when the festival day first renders.
   const agentStatus = useAgentStatus();
+  // The board fold's state, handed from each fold to the one that replaces it (`carryBoardFold`): the server's
+  // frame to the interactive board, and one festival day's board to the next. `foldOpen` is what the fold on the
+  // page last reported, so the next board is drawn in it; the carrier holds what the page showed at the swap.
+  const [foldOpen, setFoldOpen] = useState(false);
+  const foldCarryRef = useRef<BoardFoldCarry | null>(null);
+  // Where a visitor who scrolled on the server's frame was when it left (`pagePlace`), kept on the page that
+  // replaced it in the same commit, before the browser paints. This effect runs after every child's, once the page
+  // is whole (its board fold carried open, if it was pressed open).
+  const pagePlaceRef = useRef<PagePlace | null>(null);
+  useLayoutEffect(() => {
+    const place = pagePlaceRef.current;
+    if (place === null) return;
+    pagePlaceRef.current = null;
+    keepPagePlace(place);
+  });
 
   // Other festival days read ahead (`readDayAhead`), and the decisions of days chosen before their read ahead
   // landed, by preset id; and the day drawn now (`dayToDraw`).
@@ -669,7 +962,7 @@ export function ClashControl({
           if (!day) return;
           setAhead((previous) => ({ ...previous, [id]: day.preset }));
           const decision = day.decision;
-          if (decision) setDecisions((previous) => (Object.hasOwn(previous, id) ? previous : { ...previous, [id]: decision }));
+          if (day.known) setDecisions((previous) => (Object.hasOwn(previous, id) ? previous : { ...previous, [id]: decision }));
         });
       }
     };
@@ -752,6 +1045,9 @@ export function ClashControl({
       <LoadingView
         intro={intro}
         summary={summary && summary.id === loadingId ? summary : null}
+        onFoldToggle={setFoldOpen}
+        foldCarryRef={foldCarryRef}
+        placeRef={pagePlaceRef}
         status={
           inBrowser ? (
             <p role="status" className="sr-only">
@@ -780,6 +1076,9 @@ export function ClashControl({
       serverDecision={shown.decision}
       presets={list.value}
       loading={holding}
+      boardOpenAtStart={foldOpen}
+      onBoardToggle={setFoldOpen}
+      foldCarryRef={foldCarryRef}
       // The picker names the day drawn: while another is on its way it stays on this one.
       picker={<PresetPicker presets={list.value} selectedId={shown.preset.id} onChange={choosePreset} />}
     />
@@ -890,6 +1189,9 @@ function PresetView({
   presets,
   picker,
   loading = false,
+  boardOpenAtStart = false,
+  onBoardToggle,
+  foldCarryRef,
 }: {
   intro: ReactNode;
   preset: Preset;
@@ -901,6 +1203,12 @@ function PresetView({
   picker: ReactNode;
   /** Another festival day is chosen and on its way to replace this one. */
   loading?: boolean;
+  /** Whether the board's fold starts open: the state the fold this view's board replaces last reported. */
+  boardOpenAtStart?: boolean;
+  /** Told each time the board's fold opens or closes, so the next festival day's board starts the same way. */
+  onBoardToggle?: (open: boolean) => void;
+  /** The page's board-fold carrier: the fold this view's board replaces left its state there (`carryBoardFold`). */
+  foldCarryRef?: { current: BoardFoldCarry | null };
 }) {
   const days = useMemo(() => daysWithSets(preset), [preset]);
   const [day, setDay] = useState(days[0] ?? 0);
@@ -910,6 +1218,76 @@ function PresetView({
   const [planPreview, setPlanPreview] = useState<PlanPreview | null>(null);
   // A change from "Keep two sets apart", previewed as two ghosts. Separate from the plan above.
   const [rulePreview, setRulePreview] = useState<RulePreview | null>(null);
+  // The board's disclosure: closed on arrival, opened by a press on its summary (also one made on the server's frame,
+  // or on the board of the festival day this view replaces: its fold hands the state over, `carryBoardFold`), or by
+  // the visitor's own preview (a tested place in Try a move, a change from Keep two sets apart) the moment one first
+  // shows. That is latched here, while rendering, so the disclosure is open in the same commit in which the grid
+  // scrolls the preview into view (its effect runs after that commit). It never closes on its own.
+  const [boardOpen, setBoardOpen] = useState(boardOpenAtStart);
+  const toggleBoard = useCallback(
+    (open: boolean) => {
+      setBoardOpen(open);
+      onBoardToggle?.(open);
+    },
+    [onBoardToggle],
+  );
+  const preview = planPreview ?? rulePreview;
+  const [previewSeen, setPreviewSeen] = useState<PlanPreview | RulePreview | null>(null);
+  if (preview !== previewSeen) {
+    setPreviewSeen(preview);
+    if (preview !== null) setBoardOpen(true);
+  }
+  // The board's fold sits above Try a move. When a tested place opens it while the visitor is at that section or past
+  // it, the opened board (about 1,200 px at 1440) would carry what they just pressed down the page, out of view: the
+  // browser's scroll anchoring picks the fold's own summary when it is the first thing on screen (under the sticky
+  // bars), and a summary does not move when its disclosure opens. So, as the plan arrives and while the fold is still
+  // closed, the board's section is taken out of anchor selection for that one commit; the browser then anchors on Try a
+  // move and keeps it where it was, before paint, and nothing on screen moves. Where a browser has no scroll anchoring
+  // the page is scrolled by however far the section moved instead. A plan that arrives while the section is below the
+  // screen (a Keep pressed in the hero) moves nothing on screen and is left alone, a press on the fold's own summary is
+  // never touched, and a rule's preview keeps its own scroll to the board. This never opens or closes the fold. Only a
+  // new plan notes a place (the plan state changes, so the commit that reads the note always follows it).
+  const placeHold = useRef<{ top: number; board: HTMLElement | null } | null>(null);
+  const lastPlan = useRef<PlanPreview | null>(null);
+  // Notes where Try a move is before the fold opens over it, when it is on screen and the fold is still closed.
+  const holdPlace = useCallback((opening: boolean) => {
+    const fold = document.querySelector<HTMLDetailsElement>("details[data-board-fold]");
+    const top = document.getElementById(TRY_A_MOVE_ID)?.getBoundingClientRect().top;
+    if (opening && fold !== null && !fold.open && top !== undefined && top < window.innerHeight) {
+      const board = fold.closest<HTMLElement>("section");
+      if (board) board.style.overflowAnchor = "none";
+      placeHold.current = { top, board };
+    } else placeHold.current = null;
+  }, []);
+  // A pressed-for tested place that has not landed yet: the inline key lists the tested slot from the press, so the
+  // key's row does not wrap anew above Try a move when a late answer draws the slot. Cleared when a tested place shows.
+  const [placeComing, setPlaceComing] = useState(false);
+  const changePlan = useCallback(
+    (plan: PlanPreview | null) => {
+      const fresh = plan !== lastPlan.current;
+      lastPlan.current = plan;
+      if (fresh) holdPlace(plan !== null);
+      if (fresh && plan !== null) setPlaceComing(false);
+      setPlanPreview(plan);
+    },
+    [holdPlace],
+  );
+  // A press for a set's places in Try a move opens the fold at once, in the press, the same way: its tested place is
+  // coming, and an answer that lands after the browser's 500 ms input window would otherwise open the fold then, and
+  // the slice of the opened board that enters the top of the screen would count as a shift no one asked for.
+  const pickPress = useCallback(() => {
+    holdPlace(true);
+    setBoardOpen(true);
+    setPlaceComing(true);
+  }, [holdPlace]);
+  useLayoutEffect(() => {
+    const hold = placeHold.current;
+    if (hold === null) return;
+    placeHold.current = null;
+    const top = document.getElementById(TRY_A_MOVE_ID)?.getBoundingClientRect().top;
+    if (top !== undefined && Math.abs(top - hold.top) > 0.5) window.scrollBy({ top: top - hold.top, behavior: "instant" });
+    if (hold.board) hold.board.style.overflowAnchor = "";
+  });
   // The decision card's buttons hand "Try a move" a seed (a move, or line 3's change as one step); a
   // new nonce replays it, the same one never does.
   // An agent run's tested place reaches the plan the same way, marked as the agent's (`from`).
@@ -1107,14 +1485,16 @@ function PresetView({
           <>
             {picker}
             <HeroDateline model={model} synthetic={synthetic} location={preset.location} />
+            <HeroNote text={model ? heroNote(decision, synthetic) : null} />
           </>
         }
         toggle={
           model?.move ? (
             <ViewToggle model={model} view={view} onChange={setView} />
-          ) : loadingDecision ? (
-            // The toggle's room while the day's decision loads, so the drawing does not jump when it comes.
-            <div aria-hidden="true" className="h-11" />
+          ) : model ? (
+            // The toggle's room while the day's decision loads, and after it if there is no move, so the drawing
+            // does not jump when a decision comes or does not.
+            <ToggleRoom />
           ) : null
         }
         graph={model ? <DayGraph model={model} view={shownView} /> : null}
@@ -1132,6 +1512,7 @@ function PresetView({
         }
         graphKey={model ? <DayGraphKey model={model} className={KEY_CLASS} /> : null}
         busy={loading}
+        reserve={heroGroup !== null}
       />
 
       <JumpNav
@@ -1265,10 +1646,16 @@ function PresetView({
                   child keeps its own surface. */}
               <div className="min-w-0 max-xl:contents xl:sticky xl:top-31 xl:max-h-[calc(100dvh-8.75rem)] xl:self-start xl:overflow-y-auto xl:overscroll-contain xl:-mx-3 xl:scroll-py-1 xl:px-3 xl:pb-1">
                 <div className="flex min-w-0 flex-col gap-10 max-xl:contents xl:gap-6 xl:border-t xl:border-border xl:pt-6">
-                <Scorecard className="order-3 max-w-[28rem] xl:order-1 xl:max-w-none">
+                {/* Below 1280 px the score is drawn after the board and, under 768 px, so is the list, though both come
+                    first in the source. The browser's scroll anchoring walks the source, so either could be picked as
+                    the anchor while it shows under a closed board, and a press on the board's summary would then
+                    scroll the page down by the opened board (about 1,800 px on a phone): the summary left the screen.
+                    Out of anchor selection where they are drawn after the board, the summary anchors itself and the
+                    board opens under it. */}
+                <Scorecard className="order-3 max-w-[28rem] max-xl:[overflow-anchor:none] xl:order-1 xl:max-w-none">
                   <BudgetDial index={index} baseline={report.baseline} reach={reach} compact synthetic={synthetic} />
                 </Scorecard>
-                <div className="order-2 min-w-0 md:order-1 xl:order-2">
+                <div className="order-2 min-w-0 max-md:[overflow-anchor:none] md:order-1 xl:order-2">
                   <ClashList
                     clashes={links}
                     slots={slots}
@@ -1293,16 +1680,11 @@ function PresetView({
                   legend={
                     <TimetableLegend
                       inline
-                      planShown={planShown}
+                      planShown={planShown || placeComing}
                       synthetic={synthetic}
                       holds={holds}
                       className="max-md:hidden"
-                      note={
-                        <>
-                          Lines join the {links.length} costliest clashes. Open any set or clash for its figures,
-                          including its draw ({popularityName(synthetic)}).
-                        </>
-                      }
+                      note={<>Open any set or clash for its figures, including its draw ({popularityName(synthetic)}).</>}
                     />
                   }
                 />
@@ -1325,36 +1707,51 @@ function PresetView({
                     <TimetableLegend synthetic={synthetic} holds={holds} className="mt-4 mb-3 hidden sm:flex md:hidden" />
                   </>
                 )}
-                <p className="mb-3 text-xs text-muted-foreground md:hidden">Scroll sideways to see every stage.</p>
-                <div className="max-md:snap-x max-md:snap-mandatory max-md:scroll-pl-[72px] max-md:overflow-x-auto max-md:overscroll-x-contain max-md:pb-3 md:mt-6">
-                  <TimetableGrid
-                    className="max-md:min-w-[760px]"
-                    views={views}
-                    stages={festival.stages}
-                    links={links}
-                    dayLabel={dayLabel}
-                    activeSetIds={activeSetIds}
-                    activeClashKeys={activeClashKeys}
-                    dimmed={highlight !== null}
-                    focusSetId={highlight?.kind === "set" ? highlight.id : null}
-                    onHighlightSet={(id) => setHighlight(id ? { kind: "set", id } : null)}
-                    onHighlightClash={(key) => setHighlight(key ? { kind: "clash", key } : null)}
-                    onOpen={openClash}
-                    plan={planPreview}
-                    rulePreview={rulePreview}
-                    synthetic={synthetic}
-                  />
-                </div>
-                <details className="group mt-8 md:hidden">
-                  <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-md border border-border-strong bg-card px-4 py-2.5 text-sm font-semibold hover:bg-accent [&::-webkit-details-marker]:hidden">
-                    Show the start-order list ({pluralize(views.length, "set")})
-                    <ChevronDown
-                      aria-hidden="true"
-                      className="size-4 shrink-0 group-open:rotate-180 motion-safe:transition-transform motion-safe:duration-[160ms] motion-safe:ease-(--ease-out)"
+                {/* The board's caption, read with no click: which lines the board draws, and how its numbers and
+                    the drawing's lines differ (the board numbers clash cost; the hero's lines show taste overlap). */}
+                <p data-board-caption="" className="mt-3 max-w-prose text-[0.8125rem] leading-5 text-muted-foreground md:mt-6">
+                  Lines join the {links.length} costliest clashes. Board numbers rank clash cost; drawing lines show taste overlap.
+                </p>
+                {/* The board itself behind one disclosure: the phone's scroll hint, the grid in its
+                    sideways scroller and the phone's start-order list. Everything above stays open. */}
+                <BoardFold
+                  summary={boardFoldSummary(views.length, festival.stages.length)}
+                  open={boardOpen}
+                  onToggle={toggleBoard}
+                  carryRef={foldCarryRef}
+                  className="mt-4"
+                >
+                  <p className="mt-4 mb-3 text-xs text-muted-foreground md:hidden">Scroll sideways to see every stage.</p>
+                  <div className="max-md:snap-x max-md:snap-mandatory max-md:scroll-pl-[72px] max-md:overflow-x-auto max-md:overscroll-x-contain max-md:pb-3 md:mt-6">
+                    <TimetableGrid
+                      className="max-md:min-w-[760px]"
+                      views={views}
+                      stages={festival.stages}
+                      links={links}
+                      dayLabel={dayLabel}
+                      activeSetIds={activeSetIds}
+                      activeClashKeys={activeClashKeys}
+                      dimmed={highlight !== null}
+                      focusSetId={highlight?.kind === "set" ? highlight.id : null}
+                      onHighlightSet={(id) => setHighlight(id ? { kind: "set", id } : null)}
+                      onHighlightClash={(key) => setHighlight(key ? { kind: "clash", key } : null)}
+                      onOpen={openClash}
+                      plan={planPreview}
+                      rulePreview={rulePreview}
+                      synthetic={synthetic}
                     />
-                  </summary>
-                  <TimetableList className="mt-4" views={views} dayLabel={dayLabel} onOpen={openClash} synthetic={synthetic} />
-                </details>
+                  </div>
+                  <details className="group mt-8 md:hidden">
+                    <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-md border border-border-strong bg-card px-4 py-2.5 text-sm font-semibold hover:bg-accent [&::-webkit-details-marker]:hidden">
+                      Show the start-order list ({pluralize(views.length, "set")})
+                      <ChevronDown
+                        aria-hidden="true"
+                        className="size-4 shrink-0 group-open:rotate-180 motion-safe:transition-transform motion-safe:duration-[160ms] motion-safe:ease-(--ease-out)"
+                      />
+                    </summary>
+                    <TimetableList className="mt-4" views={views} dayLabel={dayLabel} onOpen={openClash} synthetic={synthetic} />
+                  </details>
+                </BoardFold>
               </div>
             </div>
           </BoardFrame>
@@ -1365,7 +1762,8 @@ function PresetView({
             day={day}
             ranked={ranked}
             isLocked={isLocked}
-            onPlanChange={setPlanPreview}
+            onPlanChange={changePlan}
+            onPick={pickPress}
             onRulePreview={setRulePreview}
             seedStep={seedStep}
             seedRule={seedRule}

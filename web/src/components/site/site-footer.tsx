@@ -9,9 +9,9 @@ import { useSynthetic } from "./synthetic-context";
 
 /** What the footer says about where the figures come from, on a real day and on the invented one. */
 export const FOOTER_SOURCES =
-  "Popularity and audience comparisons are saved Qloo responses; taste overlap and prices are calculated by this app from them. The festivals shown do not use Clash Control; their published timetables are scored by this app.";
+  "Popularity and audience comparisons are saved Qloo responses; taste overlap and clash scores are calculated by this app from them. The festivals shown do not use Clash Control; their published timetables are scored by this app.";
 export const FOOTER_SYNTHETIC =
-  "This server is showing an invented example day, not a festival: its acts, times and figures are made up, and no Qloo request was made. Prices are calculated by this app from the invented figures.";
+  "This server is showing an invented example day, not a festival: its acts, times and figures are made up, and no Qloo request was made. Scores are calculated by this app from the invented figures.";
 
 /** The licence and the source code, linked from every page (the repository is made public with the entry). */
 export const LICENSE_URL = "https://github.com/neric-joel/qloo-agentic-hackathon/blob/main/LICENSE";

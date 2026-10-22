@@ -164,7 +164,7 @@ describe("buildDecisionCopy", () => {
     expect(copy.rangeLine).toBe(
       "The middle 80% of random valid timetables of this lineup score 90 to 110. This plan scores inside that range.",
     );
-    expect(copy.ruleLine).toContain("Ann Arbor is locked, so only Bo Diddly Squat can move.");
+    expect(copy.ruleLine).toContain("Ann Arbor is locked by this app, so only Bo Diddly Squat can move.");
     expect(copy.limitsLine).toBe(LIMITS_WITH_RULE);
     expect(LIMITS_WITH_RULE).toBe("Checked against the timetable’s rules; its index is shown for information.");
     expect(LIMITS_WITH_RULE).not.toMatch(/Line \d|Lines 1/);
@@ -213,7 +213,7 @@ describe("buildDecisionCopy", () => {
     expect(copy.ruleLine).toContain(
       "The smallest change this search found that ends it moves 1 set, 60 start-time minutes in all; index 104.2 → 98.4.",
     );
-    expect(copy.ruleLine).toContain("Ann Arbor is locked, so only Bo Diddly Squat can move. 1 single-set place ends it.");
+    expect(copy.ruleLine).toContain("Ann Arbor is locked by this app, so only Bo Diddly Squat can move. 1 single-set place ends it.");
     const alt = rawDecision();
     alt.move.same_index_alternative = {
       act_id: "ann",
@@ -268,7 +268,7 @@ describe("buildDecisionCopy", () => {
   it("offers no rule to try when both sets are locked", () => {
     const both = rawRule({ b: { act_id: "bo", act: "Bo Diddly Squat", locked: true, place: "y" }, fixes: [] });
     const copy = buildDecisionCopy(preset(), parseDecision(rawDecision({ rule: both })))!;
-    expect(copy.ruleLine).toContain("Both sets are locked.");
+    expect(copy.ruleLine).toContain("Both sets are locked by this app, so neither can move.");
     expect(copy.seedRule).toBeNull();
   });
 

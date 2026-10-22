@@ -45,6 +45,7 @@ import {
   barTopOf,
   CASING,
   DETAIL_TOP,
+  detailAt,
   edgeTransform,
   flightKeyframes,
   GUTTER,
@@ -57,17 +58,21 @@ import {
   moverTransform,
   movingLineAt,
   NOTE_GAP,
+  NOTE_REACH,
   notePlace,
   pct,
+  placeNote,
   planDrawing,
   retarget,
   spotBox,
   textWidth,
+  trackOf,
   trackPct,
   viewP,
   washTransform,
   windowAt,
   type LayoutPlan,
+  type NoteBox,
   type PlanBar,
   type PlanLine,
   type PlanWindow,
@@ -106,8 +111,77 @@ type Settled = { id: number; view: GraphView };
 type Swap = { id: number; from: GraphView; to: GraphView };
 type Note = { kind: "line"; key: string } | { kind: "set"; id: string };
 
+/** The marks a phone's slide names afresh: names, tags and leaders. */
+const PAN_NAMES = "[data-label], [data-shared-tag], [data-leader]";
+/** What identifies one of `PAN_NAMES` on screen: which name it is, its words and where it sits. */
+function nameSig(element: Element): string {
+  return [
+    element.getAttribute("data-label") ?? "",
+    element.getAttribute("data-shared-tag") ?? "",
+    element.getAttribute("data-leader") ?? "",
+    element.textContent ?? "",
+    element.getAttribute("style") ?? "",
+    ...["x1", "y1", "x2", "y2"].map((name) => element.querySelector("line")?.getAttribute(name) ?? ""),
+  ].join("|");
+}
+
 function prefersReducedMotion(): boolean {
   return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/**
+ * The room on screen above and below the drawing that a line's note may reach into (px), the boxes of what the page
+ * shows in the room above the drawing (px from the drawing's top left corner) and the drawing's width when they were
+ * measured.
+ */
+type Reach = { top: number; bottom: number; keep: readonly NoteBox[]; width: number };
+/** Before anything is measured: the full reach, nothing known above, no width. */
+const OPEN_REACH: Reach = { top: NOTE_REACH.top, bottom: NOTE_REACH.bottom, keep: [], width: 0 };
+/**
+ * How far a phone's line note may reach under the drawing (px): its narrow drawing has no room inside that keeps clear
+ * of the names, so the note sits under it, over the decision there, until it closes.
+ */
+const PHONE_NOTE_BELOW = 140;
+/**
+ * How far a phone's line note may reach above the drawing (px): a screen too short to hold it under the drawing (a
+ * 320px phone) lets it cover the lines above the drawing, the dateline and the view toggle, until it closes, rather
+ * than the drawing's own names. What it covers there takes no press while it shows (it lets every press through).
+ */
+const PHONE_NOTE_ABOVE = 140;
+
+/**
+ * What the page shows in the `room` px above the drawing `root` (text, controls, figures and any painted box), as
+ * boxes in px from the drawing's top left corner, so a note reaching above the drawing never covers them. Read from
+ * the nearest box that holds that room; hidden and screen-reader-only elements are left out.
+ */
+function shownAbove(root: HTMLElement, room: number): NoteBox[] {
+  const box = root.getBoundingClientRect();
+  let scope: HTMLElement = root;
+  while (scope.parentElement && scope.getBoundingClientRect().top > box.top - room) scope = scope.parentElement;
+  const out: NoteBox[] = [];
+  for (const element of scope.querySelectorAll<Element>("*")) {
+    if (root.contains(element) || element.contains(root)) continue;
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 1 || rect.height <= 1 || rect.bottom <= box.top - room || rect.top >= box.top || rect.right <= box.left || rect.left >= box.right) continue;
+    if (!paints(element)) continue;
+    out.push({ x0: rect.left - box.left, x1: rect.right - box.left, y0: rect.top - box.top, y1: rect.bottom - box.top });
+  }
+  return out;
+}
+
+/** Whether an element draws anything: text of its own, a control or figure, or a filled or bordered box. */
+function paints(element: Element): boolean {
+  const seen = { checkOpacity: true, checkVisibilityCSS: true, opacityProperty: true, visibilityProperty: true };
+  if (typeof element.checkVisibility === "function" && !element.checkVisibility(seen)) return false;
+  if (element instanceof SVGElement || /^(BUTTON|INPUT|SELECT|TEXTAREA|IMG|VIDEO|CANVAS|A|LABEL)$/.test(element.tagName)) return true;
+  if ([...element.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim() !== "")) return true;
+  const style = getComputedStyle(element);
+  const filled = style.backgroundColor !== "transparent" && !/^rgba\(.*,\s*0\)$/.test(style.backgroundColor);
+  return filled || ["Top", "Right", "Bottom", "Left"].some((side) => parseFloat(style.getPropertyValue(`border-${side.toLowerCase()}-width`)) > 0 && style.getPropertyValue(`border-${side.toLowerCase()}-style`) !== "none");
+}
+
+function sameBoxes(a: readonly NoteBox[], b: readonly NoteBox[]): boolean {
+  return a.length === b.length && a.every((item, i) => item.x0 === b[i].x0 && item.x1 === b[i].x1 && item.y0 === b[i].y0 && item.y1 === b[i].y1);
 }
 
 /** The band drawing the visitor sees (every other one is display: none). */
@@ -153,18 +227,34 @@ export function DayGraph(props: {
   view: GraphView;
   onSettled?: (view: GraphView) => void;
   className?: string;
+  /**
+   * One layout drawn whatever the screen: only its markup, placed at its narrowest band and shown with no viewport
+   * class (every element id already comes from this instance's `useId`, so two drawings on a page never share one).
+   * Left out, the drawing picks its layout and band by CSS, as the hero's does.
+   */
+  layout?: DrawingLayout;
 }) {
-  const { model, view, onSettled, className } = props;
+  const { model, view, onSettled, className, layout: forced } = props;
   const uid = useId().replace(/[^A-Za-z0-9_-]/g, "");
   const rootRef = useRef<HTMLDivElement>(null);
-  // One plan per band of each layout; a short phone has its own, with thinner bars and rows and no strip.
+  // Where the phone's detail window starts (minutes): the opening window, until a line or a tap on the strip slides it.
+  const [pan, setPan] = useState(model.focus.start);
+  // One plan per band of each layout; a short phone has its own, with thinner bars and rows and no strip. A forced
+  // layout plans only its narrowest band. A phone's plans are placed for the detail window it shows, and again each
+  // time it slides, so every set it shows is named; the server frame and the first paint place the opening window.
+  const layouts: readonly DrawingLayout[] = forced ? [forced] : LAYOUTS;
+  const bandsOf = useCallback(
+    (layout: DrawingLayout) => (forced ? (layout === forced ? [BANDS[layout][0]] : []) : BANDS[layout]),
+    [forced],
+  );
+  const desktopPlans = useMemo(() => bandsOf("desktop").map((band) => planDrawing(model, "desktop", band.track)), [model, bandsOf]);
+  const phonePlans = useMemo(() => {
+    const detail = detailAt(model, pan);
+    return (["phone", "short"] as const).map((layout) => bandsOf(layout).map((band) => planDrawing(model, layout, band.track, detail)));
+  }, [model, bandsOf, pan]);
   const plans = useMemo(
-    () =>
-      Object.fromEntries(LAYOUTS.map((layout) => [layout, BANDS[layout].map((band) => planDrawing(model, layout, band.track))])) as Record<
-        DrawingLayout,
-        LayoutPlan[]
-      >,
-    [model],
+    () => ({ desktop: desktopPlans, phone: phonePlans[0], short: phonePlans[1] }) as Record<DrawingLayout, LayoutPlan[]>,
+    [desktopPlans, phonePlans],
   );
   const planOf = useCallback(
     (band: HTMLElement | null): LayoutPlan | null => {
@@ -176,13 +266,11 @@ export function DayGraph(props: {
     [plans],
   );
   // Each band's leaders, from its plan: placed once with the names, so the server frame draws them too.
+  const desktopLeaders = useMemo(() => desktopPlans.map((plan) => planLeaders(model, plan)), [model, desktopPlans]);
+  const phoneLeaders = useMemo(() => phonePlans.map((list) => list.map((plan) => planLeaders(model, plan))), [model, phonePlans]);
   const leaders = useMemo(
-    () =>
-      Object.fromEntries(LAYOUTS.map((layout) => [layout, plans[layout].map((plan) => planLeaders(model, plan))])) as Record<
-        DrawingLayout,
-        Record<GraphView, ViewLeaders>[]
-      >,
-    [model, plans],
+    () => ({ desktop: desktopLeaders, phone: phoneLeaders[0], short: phoneLeaders[1] }) as Record<DrawingLayout, Record<GraphView, ViewLeaders>[]>,
+    [desktopLeaders, phoneLeaders],
   );
   const lockTitle = useMemo(() => lockWords(model), [model]);
   const modelKey = [model.presetId, model.day, model.synthetic, model.builtAt, model.move?.label ?? "", model.sets.length, model.threads.length].join("|");
@@ -198,7 +286,9 @@ export function DayGraph(props: {
   const [hover, setHover] = useState<Note | null>(null);
   const [keyed, setKeyed] = useState<Note | null>(null);
   const [active, setActive] = useState<string | null>(null);
-  const [pan, setPan] = useState(model.focus.start);
+  // How far a line's note may reach past the drawing's top and foot: `NOTE_REACH`, or less where the window ends sooner,
+  // and what the page shows in the room above the drawing, which a note reaching there keeps clear of.
+  const [reach, setReach] = useState<Reach>(OPEN_REACH);
   if (seen !== modelKey) {
     // Another day: one state value per day, drawn at once from the new model with nothing carried over,
     // and no announcement left pending.
@@ -233,6 +323,8 @@ export function DayGraph(props: {
   const swapAnims = useRef<Animation[]>([]);
   const panAnims = useRef<Animation[]>([]);
   const panFrom = useRef<[HTMLElement, string][] | null>(null);
+  /** The names, tags and leaders the band drew before a slide, so only the ones the new window adds fade in. */
+  const panNames = useRef<Set<string> | null>(null);
   const running = useRef<{ fromP: number; toP: number } | null>(null);
   const latest = useRef({ model, onSettled });
   useLayoutEffect(() => {
@@ -359,19 +451,25 @@ export function DayGraph(props: {
     return () => query.removeEventListener("change", onChange);
   }, []);
 
-  // The phone's detail window: slide from where it is to the new place, or jump under reduced motion.
+  // The phone's detail window: slide from where it is to the new place, or jump under reduced motion. The names the
+  // new window adds (it is named again for the window it shows) fade in as it slides; the rest ride with their bars.
   useLayoutEffect(() => {
     const from = panFrom.current;
+    const before = panNames.current;
     panFrom.current = null;
+    panNames.current = null;
     if (!from) return;
-    panAnims.current = from.map(([element, transform]) =>
-      element.animate([{ transform }, { transform: element.style.transform }], { duration: PAN_MS, easing: EASE_MOVE }),
-    );
+    const band = visibleBand(rootRef.current);
+    const added = band && before ? [...band.querySelectorAll<HTMLElement | SVGElement>(PAN_NAMES)].filter((element) => !before.has(nameSig(element))) : [];
+    panAnims.current = [
+      ...from.map(([element, transform]) => element.animate([{ transform }, { transform: element.style.transform }], { duration: PAN_MS, easing: EASE_MOVE })),
+      ...added.map((element) => element.animate([{ opacity: 0 }, { opacity: 1 }], { duration: TAG_MS, easing: EASE_OUT })),
+    ];
   }, [pan]);
 
   const panTo = useCallback(
     (minute: number) => {
-      const track = plans.phone[0].track;
+      const track = trackOf(model);
       const length = model.focus.end - model.focus.start;
       const next = Math.min(Math.max(track.start, track.end - length), Math.max(track.start, minute));
       if (Math.abs(next - pan) < 0.01) return;
@@ -379,10 +477,12 @@ export function DayGraph(props: {
       const elements = band ? [...band.querySelectorAll<HTMLElement>("[data-pan-track], [data-bracket]")] : [];
       const from = elements.map((element): [HTMLElement, string] => [element, getComputedStyle(element).transform]);
       cancelAll(panAnims);
-      panFrom.current = prefersReducedMotion() ? null : from;
+      const still = prefersReducedMotion();
+      panFrom.current = still ? null : from;
+      panNames.current = still || !band ? null : new Set([...band.querySelectorAll<HTMLElement | SVGElement>(PAN_NAMES)].map(nameSig));
       setPan(next);
     },
-    [model.focus, pan, plans.phone],
+    [model, pan],
   );
 
   // A pinned note closes on a press anywhere outside the drawing.
@@ -394,6 +494,24 @@ export function DayGraph(props: {
     document.addEventListener("pointerdown", onDown);
     return () => document.removeEventListener("pointerdown", onDown);
   }, [pin]);
+
+  /**
+   * Measured when a note opens: the room on screen above and below the drawing, up to the farthest a note may reach
+   * (`NOTE_REACH`, `PHONE_NOTE_BELOW`), and the boxes of what the page shows in the room above it (`shownAbove`).
+   */
+  const measureReach = () => {
+    const root = rootRef.current;
+    if (!root || typeof window === "undefined") return;
+    const box = root.getBoundingClientRect();
+    const phone = visibleBand(root)?.dataset.layout !== "desktop";
+    const top = Math.max(0, Math.min(phone ? PHONE_NOTE_ABOVE : NOTE_REACH.top, Math.floor(box.top - NOTE_GAP)));
+    const bottom = Math.max(0, Math.min(Math.max(NOTE_REACH.bottom, PHONE_NOTE_BELOW), Math.floor(window.innerHeight - box.bottom - NOTE_GAP)));
+    const keep = top > 0 ? shownAbove(root, top + NOTE_GAP) : [];
+    const width = box.width;
+    setReach((current) =>
+      current.top === top && current.bottom === bottom && current.width === width && sameBoxes(current.keep, keep) ? current : { top, bottom, keep, width },
+    );
+  };
 
   const shown: GraphView = flight ? flight.target : drawn;
   const { move } = model;
@@ -410,7 +528,9 @@ export function DayGraph(props: {
     pan,
     note: hover ?? pin ?? keyed,
     active,
+    reach,
     onLineFocus: (plan, key, event) => {
+      measureReach();
       setActive(key);
       // A line reached from the keyboard shows its note, as on hover, without a press.
       if (event.currentTarget.matches(":focus-visible")) setKeyed({ kind: "line", key });
@@ -436,6 +556,7 @@ export function DayGraph(props: {
       }
       if (!next) return;
       event.preventDefault();
+      measureReach();
       setActive(next);
       setKeyed({ kind: "line", key: next });
       if (pin?.kind === "line") setPin({ kind: "line", key: next });
@@ -443,10 +564,14 @@ export function DayGraph(props: {
       target?.focus({ preventScroll: true });
     },
     onLineClick: (key) => {
+      measureReach();
       setActive(key);
       setPin((current) => (current?.kind === "line" && current.key === key ? null : { kind: "line", key }));
     },
-    onHover: (note) => setHover(note),
+    onHover: (note) => {
+      if (note) measureReach();
+      setHover(note);
+    },
     onSetClick: (id) => setPin((current) => (current?.kind === "set" && current.id === id ? null : { kind: "set", id })),
     onStripTap: (plan, minute) => {
       const lines = plan.views[shown].lines;
@@ -483,10 +608,10 @@ export function DayGraph(props: {
       <p id={`${uid}-desc`} className="sr-only">
         {description}
       </p>
-      {LAYOUTS.map((layout) => (
-        <div key={layout} data-layout={layout} className={LAYOUT_CLASS[layout]} style={{ height: drawingHeight(model, layout) }}>
+      {layouts.map((layout) => (
+        <div key={layout} data-layout={layout} className={forced ? "relative" : LAYOUT_CLASS[layout]} style={{ height: drawingHeight(model, layout) }}>
           {plans[layout].map((plan, index) => (
-            <Drawing key={plan.reference} plan={plan} leaders={leaders[layout][index]} ctx={ctx} className={BAND_CLASS[plan.reference]} />
+            <Drawing key={plan.reference} plan={plan} leaders={leaders[layout][index]} ctx={ctx} className={forced ? undefined : BAND_CLASS[plan.reference]} />
           ))}
         </div>
       ))}
@@ -509,6 +634,8 @@ type Ctx = {
   pan: number;
   note: Note | null;
   active: string | null;
+  /** The room a line's note may reach into past the drawing's top and foot (px), and what it keeps clear of above the drawing. */
+  reach: Reach;
   onLineFocus: (plan: LayoutPlan, key: string, event: FocusEvent<HTMLButtonElement>) => void;
   onLineBlur: (event: FocusEvent<HTMLButtonElement>) => void;
   onLineKey: (plan: LayoutPlan, key: string, event: KeyboardEvent<HTMLButtonElement>) => void;
@@ -604,9 +731,10 @@ function Axis({ layout, plan }: { layout: DrawingLayout; plan: LayoutPlan }) {
 }
 
 /**
- * A set's bar: white with a hairline edge and 6px corners; an unscored set is muted with no edge. A locked set
- * carries its lock at the start. Its name is drawn by the label layer, inside the bar or beside it; a set whose
- * name is cut or not drawn keeps its whole name as the bar's title.
+ * A set's bar: white with a hairline edge and 6px corners; a set with no taste signal is muted with a dotted edge
+ * (dotted, so a dashed outline keeps its one meaning: the published slot or a new overlap). A locked set carries
+ * its lock at the start. Its name is drawn by the label layer, inside the bar or beside it; a set whose name is
+ * cut or not drawn keeps its whole name as the bar's title.
  */
 function SetBar({
   set,
@@ -634,7 +762,7 @@ function SetBar({
       title={slot === "d" || slot === "e" ? set.name : undefined}
       className={cn(
         "pointer-events-auto absolute overflow-hidden rounded-xs",
-        set.unscored ? "bg-muted text-muted-foreground" : "border border-border-strong bg-card",
+        set.unscored ? "border border-dotted border-border-strong bg-muted text-muted-foreground" : "border border-border-strong bg-card",
         className,
       )}
       style={{ left: pct(trackPct(track, span.start)), width: spanPct(track, span), ...style }}
@@ -679,6 +807,8 @@ function SpotLabel({
     width: spot.width,
     textAlign: spot.align === "end" ? "right" : spot.align === "center" ? "center" : "left",
     transform: spot.align === "end" ? "translateX(-100%)" : spot.align === "center" ? "translateX(-50%)" : undefined,
+    // A name set on two lines at the plan's tighter leading, so its plate is as tall as the plan placed it.
+    lineHeight: spot.leading ? `${spot.leading}px` : undefined,
   };
   return (
     <span
@@ -717,7 +847,9 @@ function LeaderMark({ leader, track, shift = 0, swap }: { leader: Leader; track:
 
 /**
  * A line between the two sets of a clash: its paper casing and its stroke. Drawn over the bars it crosses, or,
- * when a name inside one of them is in its way, beneath them, so the bars hide it there.
+ * when a name inside one of them is in its way, beneath them, so the bars hide it there; then its paper casing
+ * stops it 2px short of each such bar (`gaps`, px down the line), so it reads as passing behind the bar rather
+ * than as a chain of short lines joined to it.
  */
 function LineStroke({
   line,
@@ -725,12 +857,14 @@ function LineStroke({
   transform,
   animKey,
   opacity,
+  gaps = [],
 }: {
   line: PlanLine;
   synthetic: boolean;
   transform: string;
   animKey?: string;
   opacity?: number;
+  gaps?: readonly [number, number][];
 }) {
   const height = line.bottom - line.top;
   const color = lineColor(line.thread.lit, synthetic, line.thread.ranked);
@@ -744,11 +878,14 @@ function LineStroke({
       className="pointer-events-none absolute inset-x-0"
       style={{ top: line.top, height, transform, opacity }}
     >
-      <svg aria-hidden="true" focusable="false" width={24} height={height} className="absolute top-0 -left-3 overflow-visible">
+      <svg aria-hidden="true" focusable="false" width={24} height={Math.max(0, height)} className="absolute top-0 -left-3 overflow-visible">
         {line.thread.lit ? null : (
           <line data-casing="" x1={12} x2={12} y1={0} y2={height} stroke="var(--background)" strokeWidth={line.width + 2 * CASING} />
         )}
         <line data-stroke="" x1={12} x2={12} y1={0} y2={height} stroke={color} strokeWidth={line.width} />
+        {gaps.map(([from, to]) => (
+          <rect key={from} data-gap="" x={12 - line.width / 2 - CASING} y={from} width={line.width + 2 * CASING} height={Math.max(0, to - from)} rx={CASING} fill="var(--background)" />
+        ))}
       </svg>
     </div>
   );
@@ -768,13 +905,17 @@ function LineDots({ line, synthetic, transform, animKey, opacity }: { line: Plan
   );
 }
 
-/** The flight's form of a window: a stationary fill revealed between a left and a right edge that only translate. */
+/**
+ * The flight's form of a window: a stationary fill revealed between a left and a right edge that only translate,
+ * with its 1.5px raspberry edge dashed (a new overlap) or solid (the chosen clash's shared minutes).
+ */
 function MovingWindow({
   id,
   edges,
   window,
   fills,
   dashed,
+  solid = false,
   initial,
   groupKey,
   opacity,
@@ -784,6 +925,7 @@ function MovingWindow({
   window: PlanWindow;
   fills: string[];
   dashed: boolean;
+  solid?: boolean;
   initial: { left: string; right: string };
   groupKey?: string;
   opacity?: number;
@@ -791,9 +933,10 @@ function MovingWindow({
   const { top, bottom } = window;
   const r = Math.min(MARK_RADIUS, (bottom - top) / 2);
   const s = 0.75;
+  const edged = dashed || solid;
   const leftMask = `M ${r} ${top} H 100000 V ${bottom} H ${r} A ${r} ${r} 0 0 1 0 ${bottom - r} V ${top + r} A ${r} ${r} 0 0 1 ${r} ${top} Z`;
   const rightMask = `M -100000 ${top} H ${-r} A ${r} ${r} 0 0 1 0 ${top + r} V ${bottom - r} A ${r} ${r} 0 0 1 ${-r} ${bottom} H -100000 Z`;
-  const stroke = { fill: "none", stroke: "var(--primary)", strokeWidth: 1.5, strokeDasharray: "4 3" };
+  const stroke = { fill: "none", stroke: "var(--primary)", strokeWidth: 1.5, ...(dashed ? { strokeDasharray: "4 3" } : {}) };
   return (
     <g data-anim={groupKey} style={{ opacity }}>
       <clipPath id={`${id}-l`}>
@@ -802,7 +945,7 @@ function MovingWindow({
       <clipPath id={`${id}-r`}>
         <path data-anim={`${edges}:R`} d={rightMask} style={{ transform: initial.right }} />
       </clipPath>
-      {dashed ? (
+      {edged ? (
         <>
           <clipPath id={`${id}-li`}>
             <path data-anim={`${edges}:L`} d={`M ${r} ${top - 2} H 100000 V ${bottom + 2} H ${r} Z`} style={{ transform: initial.left }} />
@@ -817,7 +960,7 @@ function MovingWindow({
           {fills.map((fill) => (
             <rect key={fill} x={0} y={top} width="100%" height={bottom - top} rx={MARK_RADIUS} fill={fill} />
           ))}
-          {dashed ? (
+          {edged ? (
             <>
               <g clipPath={`url(#${id}-li)`}>
                 <g clipPath={`url(#${id}-ri)`}>
@@ -912,6 +1055,7 @@ function Marks({ plan, leaders, ctx }: { plan: LayoutPlan; leaders: Record<Graph
             window={copy.window}
             fills={["var(--shared-wash)", `url(#${hatchId})`]}
             dashed={false}
+            solid
             initial={edgesAtP(partnerSpan)}
             groupKey={copy.groupKey}
             opacity={copy.opacity}
@@ -942,7 +1086,7 @@ function Marks({ plan, leaders, ctx }: { plan: LayoutPlan; leaders: Record<Graph
         {rest.hatch ? (
           <>
             <rect data-shared-window="" {...windowRect(rest.hatch)} rx={MARK_RADIUS} fill="var(--shared-wash)" />
-            <rect {...windowRect(rest.hatch)} rx={MARK_RADIUS} fill={`url(#${hatchId})`} />
+            <rect {...windowRect(rest.hatch)} rx={MARK_RADIUS} fill={`url(#${hatchId})`} stroke="var(--primary)" strokeWidth={1.5} />
           </>
         ) : null}
         {rest.created.map((window) => (
@@ -1012,8 +1156,18 @@ function Marks({ plan, leaders, ctx }: { plan: LayoutPlan; leaders: Record<Graph
       }
     }
   }
+  // A line drawn beneath the bars it crosses: where each of those bars (the mover's excepted in flight) hides it,
+  // px down the line, widened by the casing.
+  const gapsOf = (line: PlanLine): [number, number][] => {
+    if (!line.under) return [];
+    const at = (line.mid - track.start) * plan.scale + line.off;
+    return plan.views[restView].bars
+      .filter((item) => item.row > line.upper && item.row < line.lower && !(flying && item.mover))
+      .filter((item) => (item.span.start - track.start) * plan.scale <= at + line.width / 2 && at - line.width / 2 <= (item.span.end - track.start) * plan.scale)
+      .map((item): [number, number] => [item.top - CASING - line.top, item.top + bar + CASING - line.top]);
+  };
   const strokeOf = (item: Drawn) => (
-    <LineStroke key={item.key} line={item.line} synthetic={model.synthetic} transform={item.transform} animKey={item.key} opacity={item.opacity} />
+    <LineStroke key={item.key} line={item.line} synthetic={model.synthetic} transform={item.transform} animKey={item.key} opacity={item.opacity} gaps={gapsOf(item.line)} />
   );
 
   // --- names and tags: the resting view's while in flight (they swap when it settles).
@@ -1242,17 +1396,24 @@ function Hits({ plan, ctx }: { plan: LayoutPlan; ctx: Ctx }) {
   );
 }
 
+/** A set's mark in the phone's overview strip (px tall). */
+const STRIP_MARK = 2;
+
 /**
- * The phone's overview: every stage and every line of the day at 1px, and a bracket on the detail window.
- * A tap selects the nearest drawn line and slides the detail to it; nothing in it takes focus.
+ * The phone's overview: each stage a 1px track, each set a 2px mark on it (1px clear of its neighbours), every line
+ * of the day at 1px, solid, in the quiet taste ink, the chosen clash's shared minutes in raspberry on its two
+ * marks, and a bracket on the detail window. A tap selects the nearest drawn line and slides the detail to it;
+ * nothing in it takes focus.
  */
 function Strip({ plan, ctx }: { plan: LayoutPlan; ctx: Ctx }) {
   const { model, flight, drawn } = ctx;
   const { track } = plan;
   const move = model.move;
   const stages = Math.max(1, model.stages.length);
-  const pitch = LAYOUT.phone.overview / stages;
-  const height = Math.max(2, pitch - 1);
+  // Each stage's row, from the strip's top to its foot, its 2px mark on whole pixels where the strip allows.
+  const step = stages > 1 ? (LAYOUT.phone.overview - STRIP_MARK) / (stages - 1) : 0;
+  const rowTop = (stage: number) => Math.round(stage * step);
+  const height = STRIP_MARK;
   const p = flight ? flight.toP : viewP(model, drawn);
   const flying = flight !== null;
   const crossfade = Boolean(move && move.from.stageIndex !== move.to.stageIndex);
@@ -1298,11 +1459,23 @@ function Strip({ plan, ctx }: { plan: LayoutPlan; ctx: Ctx }) {
         key: key + copy,
         thread,
         mid,
-        top: upper * pitch + height,
-        bottom: lower * pitch,
+        top: rowTop(upper) + height,
+        bottom: rowTop(lower),
         animKey: flying && moving ? `sline:${key}${copy}` : undefined,
         opacity,
       });
+    }
+  }
+
+  // The chosen clash's shared minutes, in raspberry on both its marks, where the drawing rests (a move's flight
+  // draws them again where it settles).
+  const lit = model.threads.find((thread) => thread.lit);
+  const shared: { key: string; window: Span; stage: number }[] = [];
+  if (lit && !flying) {
+    const window = move && drawn === "moved" && lit.moved ? lit.moved.window : lit.window;
+    for (const id of window ? [lit.aId, lit.bId] : []) {
+      const set = setById.get(id);
+      if (set && window) shared.push({ key: id, window, stage: stageOf(set, drawn) });
     }
   }
 
@@ -1315,13 +1488,17 @@ function Strip({ plan, ctx }: { plan: LayoutPlan; ctx: Ctx }) {
       moverRows.push({ key: "mover@1", stage: move.to.stageIndex, opacity: p });
     } else moverRows.push({ key: drawn === "moved" ? "mover@1" : "mover@0", stage: drawn === "moved" ? move.to.stageIndex : move.from.stageIndex });
   }
+  // A mark keeps half a pixel off each end of its set, so two sets back to back on a track stay 1px apart.
+  const along = (span: Span) => ({ left: `calc(${pct(trackPct(track, span.start))} + 0.5px)`, width: `max(1px, calc(${spanPct(track, span)} - 1px))` });
   const mark = (set: DayGraphSet, span: Span, top: number) => (
     <span
       key={set.actId}
-      className={cn("absolute rounded-xs", set.unscored ? "bg-muted" : "border border-border-strong bg-card")}
-      style={{ left: pct(trackPct(track, span.start)), width: spanPct(track, span), top, height }}
+      data-strip-mark={set.actId}
+      className={cn("absolute rounded-xs", set.unscored ? "bg-border" : "bg-border-strong")}
+      style={{ ...along(span), top, height }}
     />
   );
+  const quiet = (thread: DayGraphThread) => lineColor(false, model.synthetic, thread.ranked);
 
   const onClick = (event: MouseEvent<HTMLDivElement>) => {
     const box = event.currentTarget.getBoundingClientRect();
@@ -1337,7 +1514,10 @@ function Strip({ plan, ctx }: { plan: LayoutPlan; ctx: Ctx }) {
       style={{ left: GUTTER.phone, height: LAYOUT.phone.overview }}
       onClick={onClick}
     >
-      {model.sets.filter((set) => set.actId !== move?.actId).map((set) => mark(set, { start: set.start, end: set.end }, set.stageIndex * pitch))}
+      {model.stages.map((stage, row) => (
+        <span key={stage.id} data-strip-track="" className="absolute inset-x-0 h-px bg-border" style={{ top: rowTop(row) + (height - 1) / 2 }} />
+      ))}
+      {model.sets.filter((set) => set.actId !== move?.actId).map((set) => mark(set, { start: set.start, end: set.end }, rowTop(set.stageIndex)))}
       {moverSet && move
         ? moverRows.map((row) => (
             <div
@@ -1346,10 +1526,13 @@ function Strip({ plan, ctx }: { plan: LayoutPlan; ctx: Ctx }) {
               className="absolute inset-x-0 top-0"
               style={{ transform: moverTransform(track, move, p), opacity: row.opacity }}
             >
-              {mark(moverSet, { start: move.from.start, end: move.from.end }, row.stage * pitch)}
+              {mark(moverSet, { start: move.from.start, end: move.from.end }, rowTop(row.stage))}
             </div>
           ))
         : null}
+      {shared.map((item) => (
+        <span key={item.key} data-strip-shared={item.key} className="absolute rounded-xs bg-primary" style={{ ...along(item.window), top: rowTop(item.stage), height }} />
+      ))}
       {strokes.map((stroke) => (
         <div
           key={stroke.key}
@@ -1357,7 +1540,7 @@ function Strip({ plan, ctx }: { plan: LayoutPlan; ctx: Ctx }) {
           className="absolute inset-x-0"
           style={{ top: stroke.top, height: Math.max(0, stroke.bottom - stroke.top), transform: lineTransform(track, stroke.mid, 0), opacity: stroke.opacity }}
         >
-          <span className="absolute inset-y-0 left-0 w-px" style={{ marginLeft: -0.5, background: lineColor(stroke.thread.lit, model.synthetic, stroke.thread.ranked) }} />
+          <span data-strip-line={stroke.thread.rank} className="absolute inset-y-0 left-0 w-px" style={{ marginLeft: -0.5, background: quiet(stroke.thread) }} />
         </div>
       ))}
       <span
@@ -1371,24 +1554,31 @@ function Strip({ plan, ctx }: { plan: LayoutPlan; ctx: Ctx }) {
   );
 }
 
-/** The note's width on a desktop and on a phone (px; a phone's is capped by the drawing's own width). */
-const NOTE_WIDTH: Record<DrawingLayout, number> = { desktop: 320, phone: 352, short: 352 };
+/**
+ * The note's width on a desktop and on a phone (px; a phone's is capped by the drawing's own width). A desktop's is
+ * wide enough that a line's note takes three lines, short enough to sit past the drawing's foot over the key.
+ */
+const NOTE_WIDTH: Record<DrawingLayout, number> = { desktop: 500, phone: 352, short: 352 };
 /** A note's text size, line box and padding (px): 13/18 with 8px above and below and a 1px edge. */
 const NOTE_LINE = 18;
 const NOTE_PAD = 18;
 
-/** How tall a note of `text` wraps to at `width` px (an estimate a little over the real height). */
+/**
+ * How tall a note of `text` wraps to at `width` px: an estimate a little over the real height, with a fifth of a
+ * line kept for the room word wrapping leaves at each line's end.
+ */
 function noteHeight(text: string, width: number): number {
-  const lines = Math.max(1, Math.ceil(textWidth(text, 13, 500) / Math.max(1, width - 24)));
+  const lines = Math.max(1, Math.ceil(textWidth(text, 13, 500) / Math.max(1, width - 24) + 0.2));
   return lines * NOTE_LINE + NOTE_PAD;
 }
 
 /**
  * The note for the line or set under the pointer, pinned by a tap, Enter or Space, or reached from the
  * keyboard: an overlay that moves nothing on the page. A line's note never covers its line or either of the
- * line's two sets and their names: on a desktop it goes beside them when the track leaves room, else above or
- * below them on the side with more room; where the drawing has no room on either side, it reaches past the
- * drawing's edge rather than over those names. A set's note goes above or below the set, inside the drawing.
+ * line's two sets and their names, nor what the page shows above the drawing: it goes beside, above or below them
+ * where it covers the fewest other names and bars, inside the drawing when a place there covers at most one other
+ * name, else past the drawing's top (beside the view toggle) or foot (over the key line; on a phone, over the
+ * decision under the drawing). A set's note goes above or below the set, inside the drawing.
  */
 function NoteLayer({ plan, ctx, top, height }: { plan: LayoutPlan; ctx: Ctx; top: number; height: number }) {
   const { model, note, shown } = ctx;
@@ -1445,14 +1635,73 @@ function NoteLayer({ plan, ctx, top, height }: { plan: LayoutPlan; ctx: Ctx; top
     y1: top + Math.max(...parts.map((part) => part.y1)),
   };
   const tall = noteHeight(text, width);
-  const place =
-    note.kind === "line" && desktop
-      ? notePlace(marks, { width: column, height }, { width, height: tall })
-      : notePlace({ ...marks, x0: 0, x1: column }, { width: column, height }, { width, height: tall });
   const key = `${note.kind}-${note.kind === "line" ? note.key : note.id}-${shown}`;
   const noteClass =
     "pointer-events-none absolute z-10 rounded-md border border-border bg-popover px-3 py-2 text-[13px] leading-[18px] text-foreground transition-[opacity,translate] duration-(--dur-feedback) ease-(--ease-out) starting:translate-y-[3px] starting:opacity-0 motion-reduce:transition-none";
   const style: CSSProperties = { width };
+
+  if (note.kind === "line") {
+    // A line's note: of the places beside, above and below the line's own marks, the one that covers the fewest other
+    // names, then the fewest other bars (`placeNote`), never over what the page shows above the drawing. A desktop's
+    // is placed across the band's track and held in proportion at any wider one inside the band; a phone's across
+    // the whole drawing, stage names included, over the detail window it shows.
+    const line = view.lines.find((item) => item.key === note.key);
+    if (!line) return null;
+    const ownIds = [line.thread.aId, line.thread.bId];
+    const scaled = { track, scale: plan.scale };
+    // From px along the track to px across the note's column: none on a desktop; on a phone, past the stage names
+    // and the panned-off minutes.
+    const shift = desktop ? 0 : gutter + (track.start - ctx.pan) * plan.scale;
+    const left = desktop ? 0 : gutter;
+    const seenBox = (box: NoteBox): NoteBox | null => {
+      const x0 = Math.max(left, box.x0 + shift);
+      const x1 = Math.min(column, box.x1 + shift);
+      return x1 > x0 ? { x0, x1, y0: box.y0 + top, y1: box.y1 + top } : null;
+    };
+    const boxes = (list: NoteBox[]) => list.flatMap((box) => seenBox(box) ?? []);
+    const barOf = (item: PlanBar): NoteBox => ({ x0: (item.span.start - track.start) * plan.scale, x1: (item.span.end - track.start) * plan.scale, y0: item.top, y1: item.top + bar });
+    const lineX = (line.mid - track.start) * plan.scale + line.off + shift;
+    const ownMarks = [
+      { x0: lineX - 4, x1: lineX + 4, y0: line.top + top, y1: line.bottom + top },
+      ...boxes(view.bars.filter((item) => ownIds.includes(item.set.actId)).map(barOf)),
+      ...boxes(ownIds.flatMap((id) => (view.labels[id] ? [spotBox(scaled, view.labels[id])] : []))),
+    ];
+    const names = boxes([
+      ...Object.entries(view.labels)
+        .filter(([id]) => !ownIds.includes(id))
+        .map(([, spot]) => spotBox(scaled, spot)),
+      ...view.tags.map((tag) => spotBox(scaled, tag.spot)),
+    ]);
+    const bars = boxes(view.bars.filter((item) => !ownIds.includes(item.set.actId)).map(barOf));
+    // Its usual shape first; on a desktop, where that finds no place, a wider one of two lines, which fits the room
+    // the page leaves above the drawing on a laptop's first screen.
+    const twoLines = Math.ceil(textWidth(text, 13, 500) / 1.8) + 25;
+    const shapes = [{ width, height: tall }, ...(desktop && twoLines > width && twoLines <= column ? [{ width: twoLines, height: noteHeight(text, twoLines) }] : [])];
+    // What the page shows above the drawing, from px across the drawing to px across the note's column.
+    const toColumn = ctx.reach.width > gutter - left ? column / (ctx.reach.width - (gutter - left)) : 1;
+    const keep = ctx.reach.keep.map((item) => ({ x0: (item.x0 - (gutter - left)) * toColumn, x1: (item.x1 - (gutter - left)) * toColumn, y0: item.y0, y1: item.y1 }));
+    const reach = {
+      top: Math.min(desktop ? NOTE_REACH.top : PHONE_NOTE_ABOVE, ctx.reach.top),
+      bottom: Math.min(desktop ? NOTE_REACH.bottom : PHONE_NOTE_BELOW, ctx.reach.bottom),
+    };
+    const spot = placeNote(ownMarks, names, bars, { width: column, height }, shapes, lineX, reach, keep);
+    const union = { x0: Math.min(...ownMarks.map((item) => item.x0)), x1: Math.max(...ownMarks.map((item) => item.x1)), y0: Math.min(...ownMarks.map((item) => item.y0)) };
+    const side = spot.x >= union.x1 ? "right" : spot.x + spot.width <= union.x0 ? "left" : spot.y + spot.height <= union.y0 ? "above" : "below";
+    style.width = spot.width;
+    style.left = pct((spot.x / Math.max(1, column)) * 100);
+    // Held by its edge nearest the marks, so a note a little shorter than the estimate keeps its gap from them.
+    if (side === "above") style.bottom = height - (spot.y + spot.height);
+    else style.top = spot.y;
+    return (
+      <div className="pointer-events-none absolute inset-y-0 right-0" style={{ left: desktop ? gutter : 0 }}>
+        <div key={key} data-thread-note="line" data-note-side={side} className={noteClass} style={style}>
+          {text}
+        </div>
+      </div>
+    );
+  }
+
+  const place = notePlace({ ...marks, x0: 0, x1: column }, { width: column, height }, { width, height: tall });
   if (place.side === "left" || place.side === "right") {
     // Beside: its near edge 6px off the marks' far edge, its top level with theirs (or its bottom, near the drawing's foot).
     const edges = parts.map((part) => `calc(${across(...(place.side === "right" ? part.right : part.left))})`).join(", ");

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useId, useLayoutEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -79,10 +79,11 @@ function setBoardCueTiles(count: number): void {
 
 /**
  * Called by the board with its count of tiles that print the short weak cue; the key draws its cue
- * item while that is over 0.
+ * item while that is over 0. Published before the browser paints, so a key drawn in the same commit as
+ * the board shows the cue in its first frame instead of gaining it a frame later.
  */
 export function usePublishCueTiles(count: number): void {
-  useEffect(() => {
+  useLayoutEffect(() => {
     setBoardCueTiles(count);
     return () => setBoardCueTiles(0);
   }, [count]);
@@ -145,7 +146,7 @@ function legendItems({
       label: legendNoSignal(synthetic),
     },
     // The board's narrow-tile cue ("weak"), drawn as a specimen: the word the tiles print, in their
-    // 12px medium, on a 36 x 18 mini tile. Only while some tile prints it; a cue key, not counted.
+    // 12.5px medium, on a 36 x 18 mini tile. Only while some tile prints it; a cue key, not counted.
     ...(weak
       ? [
           {
@@ -158,7 +159,7 @@ function legendItems({
                   y="9"
                   textAnchor="middle"
                   dominantBaseline="central"
-                  fontSize="12"
+                  fontSize="12.5"
                   fill="var(--muted-foreground)"
                   className="font-medium"
                 >
@@ -183,8 +184,8 @@ function legendItems({
           },
           {
             key: "hidden",
-            // The board's outlined disc: a raspberry ring on the card, at 10px.
-            swatch: <span data-mark="hidden" className="block size-2.5 rounded-full border-[1.5px] border-primary bg-card" />,
+            // The board's outlined disc: an ink ring on the card, at 10px (Hidden is a label, not shared time).
+            swatch: <span data-mark="hidden" className="block size-2.5 rounded-full border-[1.5px] border-foreground bg-card" />,
             name: "Hidden clash",
             label: "Hidden clash: genres differ, taste overlap is high",
           },

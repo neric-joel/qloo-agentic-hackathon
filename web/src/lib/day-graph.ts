@@ -124,12 +124,14 @@ export type DrawingLayout = "desktop" | "phone" | "short";
 /**
  * Each layout's heights (px). A phone and a short phone keep a `foot` under their last row, a label lane where a
  * featured name sits whole under the bottom bar; the phone pays for it with a thinner overview strip and gap, the
- * short phone with thinner bars, so both drawings stay as tall as before.
+ * short phone with thinner bars, so both drawings stay as tall as before. A phone's 18px bars leave a 24px gap
+ * between rows, room for a name 3px off its own bar and twice as far from the bar across the gap; a short phone's
+ * 15px bars leave 22px, room for a name in its 13px line box (`NAME_LINE`) with the same 3px and 6px.
  */
 export const LAYOUT = {
   desktop: { axis: 22, row: 64, bar: 26 },
-  phone: { overview: 14, gap: 3, axis: 14, row: 42, bar: 24, foot: 15 },
-  short: { axis: 14, row: 37, bar: 19, foot: 15 },
+  phone: { overview: 14, gap: 3, axis: 14, row: 42, bar: 18, foot: 15 },
+  short: { axis: 14, row: 37, bar: 15, foot: 15 },
 } as const;
 
 export const MOVE_MS = 450;
@@ -155,10 +157,14 @@ export function drawingHeight(model: DayGraphModel, layout: DrawingLayout): numb
   return LAYOUT.short.axis + LAYOUT.short.row * rows + LAYOUT.short.foot;
 }
 
-/** A line's stroke in px: 1.25 at taste rank 0 to 4.75 at 100, linear. */
+/**
+ * A line's stroke in px: 1 at taste rank 0 to 3 at 100, linear, for every line the chosen clash's included, so a
+ * thicker line always means a higher taste overlap rank. The chosen clash reads by its colour, its 8px end dots and
+ * its window's raspberry edge, not by a heavier stroke.
+ */
 export function threadWidth(taste: number): number {
   const rank = Math.min(100, Math.max(0, Number.isFinite(taste) ? taste : 0));
-  return 1.25 + (3.5 * rank) / 100;
+  return 1 + (2 * rank) / 100;
 }
 
 function minutesOf(window: Span | null): number {
@@ -591,15 +597,15 @@ function leaderCrosses(ends: LeaderEnds, blocks: readonly LeaderBlock[]): boolea
  * (kept 1px off its dot). A name with a place for its leader in both views takes the same one in both, so a leader
  * only travels with its name. Nothing moves: the names, bars and lines stay where `planDrawing` put them. A name
  * inside its bar gets none; a name whose every place crosses a mark, or whose bar is farther than `LEADER_MAX`, is
- * dropped. A phone offers only places inside its detail window.
+ * dropped. A phone offers only places inside the detail window its plan was placed for (`plan.detail`).
  */
 export function planLeaders(model: Pick<DayGraphModel, "focus">, plan: LayoutPlan): Record<GraphView, ViewLeaders> {
   const { track, scale, layout } = plan;
   const x = (minute: number) => (minute - track.start) * scale;
   const barHeight = LAYOUT[layout].bar;
   const desktop = layout === "desktop";
-  const left = x(desktop ? track.start : Math.max(track.start, model.focus.start));
-  const right = x(desktop ? track.end : Math.min(track.end, model.focus.end));
+  const left = x(desktop ? track.start : Math.max(track.start, plan.detail.start));
+  const right = x(desktop ? track.end : Math.min(track.end, plan.detail.end));
   const boxOf = (spot: Spot): LeaderBox => {
     const at = x(spot.anchor) + spot.dx;
     const x0 = spot.align === "start" ? at : spot.align === "end" ? at - spot.width : at - spot.width / 2;
@@ -793,8 +799,21 @@ export function settledAnnouncement(model: DayGraphModel, view: GraphView): stri
 }
 
 /**
+ * What the lock and the dotted bars mean, for the marks the day draws: on a published day the locks are this app's
+ * (the server keeps each main stage's closing set in place; the festivals marked none) and a dotted bar is a set
+ * with no Qloo signal; the invented day says its own.
+ */
+function markWords(model: Pick<DayGraphModel, "sets" | "synthetic">): string {
+  const words: string[] = [];
+  if (model.sets.some((set) => set.locked)) words.push(model.synthetic ? "Lock: invented fixed slot." : "Lock: fixed by this app.");
+  if (model.sets.some((set) => set.unscored)) words.push(model.synthetic ? "Dotted: no taste signal." : "Dotted: no Qloo signal.");
+  return words.length > 0 ? ` ${words.join(" ")}` : "";
+}
+
+/**
  * The key under the drawing: what the lines are (the ranked list, plus the chosen clash and the move's named
- * overlaps when the list does not hold them), what their width means and, with a move, what dashed means.
+ * overlaps when the list does not hold them), what their width means, with a move what dashed means, and what the
+ * lock and the dotted bars mean when the day draws them.
  */
 export function keyLine(model: DayGraphModel): string {
   const chosen = model.threads.some((thread) => thread.lit && thread.rank > RANKED_LINES) ? ", plus the chosen clash" : "";
@@ -809,8 +828,8 @@ export function keyLine(model: DayGraphModel): string {
   const lines =
     `Lines: the ${rankedLines(model)} costliest of ${pluralize(scored, "scored clash", "scored clashes")} (${total} in all)${plus}; ` +
     `thicker means a higher ${model.synthetic ? "invented taste overlap rank" : "taste overlap rank"}.`;
-  if (!model.move) return lines;
-  return `${lines} ${model.synthetic ? "Dashed: slot before the move or new overlap." : "Dashed: published slot or new overlap."}`;
+  if (!model.move) return `${lines}${markWords(model)}`;
+  return `${lines} ${model.synthetic ? "Dashed: slot before the move or new overlap." : "Dashed: published slot or new overlap."}${markWords(model)}`;
 }
 
 /** The drawing's accessible name: the day, the view it shows and its size. */

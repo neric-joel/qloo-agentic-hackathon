@@ -259,10 +259,10 @@ describe("the one request", () => {
     const request = priceRequest(sample()) as PriceRequest;
     vi.stubGlobal("fetch", respond(422, { detail: { code: "not_a_saved_day", message: "These acts are not on a saved festival day." } }));
     expect(await requestPrice(request, "saved")).toEqual({ status: "not_saved" });
-    const limit = "Live pricing has reached today's limit. Your rule results are unchanged, and a saved day prices without a limit.";
+    const limit = "The live comparison has reached today's limit. Your rule results are unchanged, and a saved day compares without a limit.";
     vi.stubGlobal("fetch", respond(429, { detail: { code: "limit", message: limit } }));
     expect(await requestPrice(request, "live")).toEqual({ status: "refused", code: "limit", message: limit });
-    vi.stubGlobal("fetch", respond(503, { detail: { code: "no_answer", message: "Qloo did not answer in time; nothing was priced." } }));
+    vi.stubGlobal("fetch", respond(503, { detail: { code: "no_answer", message: "Qloo did not answer in time; nothing was compared." } }));
     expect(await requestPrice(request, "live")).toMatchObject({ status: "refused", code: "no_answer" });
     // not_a_saved_day on a live request is not a reason to offer live again.
     vi.stubGlobal("fetch", respond(422, { detail: { code: "not_a_saved_day", message: "x" } }));
@@ -275,7 +275,7 @@ describe("the one request", () => {
       mode: "saved",
       status: "no_saved_day",
       requests_used: 0,
-      message: "These acts are not on a saved festival day, and live pricing is off on this server, so nothing was compared. No Qloo request was sent.",
+      message: "These acts are not on a saved festival day, and the live comparison is off on this server, so nothing was compared. No Qloo request was sent.",
     };
     expect(noSavedDay(answer)).toBe(true);
     vi.stubGlobal("fetch", respond(200, answer));
@@ -642,7 +642,7 @@ describe("round 31: pairs a programmer could move (C5) and reasons in words (C9)
   it("words a passed-over pair with its reason, and never as wanted", () => {
     const line = lockedLine({ a: "Pine Lantern", b: "Quill Harbor", minutes: 110 });
     expect(line).toBe(
-      "Pine Lantern × Quill Harbor: 110 min shared. Not compared: both sets are locked, so neither can move; the next-longest overlap is compared instead.",
+      "Pine Lantern × Quill Harbor: 110 min shared. Not compared: both sets are marked locked in this grid, so neither can move; the next-longest overlap is compared instead.",
     );
     expect(line).not.toMatch(/on purpose|deliberate|intended/i);
   });
@@ -836,7 +836,7 @@ describe("round 32: a published day compares its saved day's own costliest clash
     expect(notComparedLine(items, answer)).toBe("3 overlaps not compared: both sets locked (1), no usable Qloo signal (2).");
     expect(PRICE_COPY.notComparedSummary(3)).toBe("Why these were not compared (3)");
     const words = items.map((item) => notComparedText(item, answer, request.basis));
-    expect(words[0]).toMatch(/Not compared: both sets are locked/);
+    expect(words[0]).toMatch(/Not compared: both sets are marked locked in this grid, so neither can move/);
     expect(words[1]).toMatch(/Not compared: the saved day marks an act of this pair as having no usable Qloo signal/);
     expect(words[2]).toMatch(/Not compared: .+ has no usable Qloo signal\. Shown by minutes only\./);
     // Before an answer, only the passed-over pairs are counted.

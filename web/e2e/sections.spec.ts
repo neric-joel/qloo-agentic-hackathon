@@ -169,6 +169,35 @@ test.describe("who has complained, and what nobody has tested", () => {
     expect(lead?.y ?? Infinity, "the stake comes before the finding").toBeLessThan(finding?.y ?? 0);
   });
 
+  for (const day of Object.values(DAYS)) {
+    test(`on ${day.title}, right after the stake, one paragraph says how to keep a clash on purpose, what not to decide with this, what an act's team would see if a festival used it, and that no artist content is written (round 37, L35, L36, L37)`, async ({ page }) => {
+      const home = new HomePage(page);
+      await home.goto(day.id);
+
+      const use = home.whyThisMatters.locator("[data-why-use]");
+      await expect(use).toHaveCount(1);
+      await expect(use).toHaveText(
+        "A clash can stay: in Check a draft grid, choose “Kept on purpose”. Do not use this to set fees, billing order or an artist’s worth, or for crowd capacity, safety or attendance. If a festival used it, an act’s team would see the brief: the proposed time and the minutes shared before and after. This app writes no artist bios, images or messages.",
+      );
+      await expect(use).toBeVisible();
+      expect(await use.evaluate((element) => element.closest("details:not([open])") === null), "open, with no click").toBe(true);
+      // Directly after the stake, and before the columns.
+      const order = await use.evaluate((element) => ({
+        previous: element.previousElementSibling?.textContent ?? "",
+        nextIsColumns: Boolean(element.nextElementSibling?.querySelector("h3")),
+      }));
+      expect(order.previous, "the paragraph before it is the stake").toBe(
+        "When two sets clash, anyone who wants to see both has to choose. Clash Control is for the time after acts are booked and before set times go out.",
+      );
+      expect(order.nextIsColumns, "the columns with their findings follow it").toBe(true);
+      // The do-not-use sentence is the same words as /method's.
+      await page.goto("/method", { waitUntil: "domcontentloaded" });
+      await expect(page.locator("#limits li").filter({ hasText: /^Do not use this to set fees/ })).toHaveText(
+        "Do not use this to set fees, billing order or an artist’s worth, or for crowd capacity, safety or attendance.",
+      );
+    });
+  }
+
   test("states the problem with its public figures beside what limits them, and quotes no paraphrased voices", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);

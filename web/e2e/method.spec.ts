@@ -41,10 +41,10 @@ test.describe("how we know (/method)", () => {
     await expect(failed).toContainText("It missed the bar. Popularity did better: another Qloo field, it reached 57.8%.");
     await expect(failed).toContainText(/The check on suggested moves missed its bar too \(\d+(\.\d+)? index points against 10\)\./);
     await expect(failed.getByRole("link", { name: "See the full comparison below" })).toHaveAttribute("href", "#tested");
-    // The exploratory follow-ups' finding for the full price is stated where they are reported, in the test's section.
+    // The exploratory follow-ups' finding for the pair score is stated where they are reported, in the test's section (round 37, R3: "full price" became "pair score").
     const tested = article.getByRole("region", { name: "What we tested it against" });
     await expect(tested).toContainText("The exploratory follow-up did not establish an advantage over popularity.");
-    await expect(tested).toContainText("so the full price did not establish an advantage over popularity.");
+    await expect(tested).toContainText("so the pair score did not establish an advantage over popularity.");
 
     // The figure draws the same four numbers, with the bar that was set.
     const chart = short.getByRole("figure", { name: "Complained-about clashes in the day’s highest 25%, by method" });
@@ -91,21 +91,21 @@ test.describe("how we know (/method)", () => {
     await expect(limits).toContainText("Real programming weighs much more than taste overlap.");
   });
 
-  test("the follow-up on taste inside the full price is open, says it is exploratory, and says what it did not establish", async ({ page }) => {
-    const followUp = page.getByRole("region", { name: "What we tested it against" }).getByRole("group", { name: "Taste inside the full price (exploratory)" });
-    const heading = followUp.getByRole("heading", { level: 3, name: "Taste inside the full price (exploratory)" });
+  test("the follow-up on taste inside the pair score is open, says it is exploratory, and says what it did not establish", async ({ page }) => {
+    const followUp = page.getByRole("region", { name: "What we tested it against" }).getByRole("group", { name: "Taste inside the pair score (exploratory)" });
+    const heading = followUp.getByRole("heading", { level: 3, name: "Taste inside the pair score (exploratory)" });
     await expect(heading).toBeVisible();
     await expect(followUp).toContainText("Run after the failed test above, on the same 68 complained-about pairs, so it is exploratory.");
     await expect(followUp).not.toContainText("scored pairs");
-    await expect(followUp).toContainText("so the full price did not establish an advantage over popularity.");
+    await expect(followUp).toContainText("so the pair score did not establish an advantage over popularity.");
     await expect(followUp).toContainText("This check did not establish that taste adds to time and draw.");
-    await expect(followUp).toContainText("So the full price depends on the real taste values, which is not the same as taste adding to time and draw.");
+    await expect(followUp).toContainText("So the pair score depends on the real taste values, which is not the same as taste adding to time and draw.");
     await expect(followUp).not.toContainText(/beats|better than popularity/);
     // One row per festival group, with the small one left uninterpreted.
     const table = followUp.getByRole("table");
     await expect(table).toHaveCount(1);
     await expect(table).toBeVisible();
-    await expect(table.getByRole("columnheader")).toHaveText(["Festivals", "Popularity", "Time and draw", "Full price"]);
+    await expect(table.getByRole("columnheader")).toHaveText(["Festivals", "Popularity", "Time and draw", "Pair score"]);
     await expect(table.getByRole("row").filter({ hasText: "Glastonbury 2025" })).toHaveCount(1);
     await expect(table.getByRole("row").filter({ hasText: "Four US festivals" })).toHaveCount(1);
     await expect(table.getByRole("row").filter({ hasText: "Riot Fest 2026, one of the four" })).toContainText("Not interpreted: too few complaints to read alone");
@@ -142,8 +142,94 @@ test.describe("how we know (/method)", () => {
     await expect(rest).toContainText("Each was saved when the day was built; each card says where it is also sent live.");
     // Live use is a short, named list, each limited per visitor.
     await expect(rest).toContainText("Live calls come only from the re-check route, the pasted-grid route in live mode and the agent route, each limited per visitor");
-    // The path from a timetable to the index.
-    await expect(rest.getByRole("list", { name: "From your timetable to the index" }).getByRole("listitem")).toHaveCount(4);
+    // The path from a timetable to the index (round 37, L59): seven steps, and inside the engine's step one branch.
+    const chain = rest.getByRole("list", { name: "From your timetable to the index" });
+    await expect(chain.locator(":scope > li")).toHaveCount(7);
+    await expect(chain.getByRole("listitem")).toHaveCount(8);
+  });
+
+  test("draws the chain from request to decision in order, with the agent as a branch off the engine, never a step of its own (round 37, L59)", async ({ page }) => {
+    const rest = page.getByRole("region", { name: "How the rest works" });
+    const chain = rest.getByRole("list", { name: "From your timetable to the index" });
+    const steps = chain.locator(":scope > li");
+    await expect(steps.locator(":scope > [data-flow-token]")).toHaveText([
+      "act names",
+      "entity IDs",
+      "each act’s ranked row of the bill",
+      "percentile ranks and taste overlap",
+      "pair score and Clash Budget Index",
+      "legal moves under the day’s rules",
+      "Keep this move",
+    ]);
+    // Who makes each step, with Qloo's endpoint where it has one.
+    await expect(steps.nth(0)).toContainText("Your timetable");
+    await expect(steps.nth(1)).toContainText("Qloo /search");
+    await expect(steps.nth(2)).toContainText("Qloo /v2/insights");
+    await expect(steps.nth(3)).toContainText("This app");
+    await expect(steps.nth(4)).toContainText("This app");
+    await expect(steps.nth(5)).toContainText("The engine");
+    await expect(steps.nth(6)).toContainText("You");
+    await expect(steps.nth(6)).toContainText("Nothing moves until the acts’ teams agree.");
+    // The agent: one nested item inside the engine's step, on request, with its one compare; no top-level step names it.
+    const branch = steps.nth(5).locator("[data-flow-branch] > li");
+    await expect(branch).toHaveCount(1);
+    await expect(branch).toHaveText("On request: the agent explains a clash with one /v2/analysis/compare and tests moves through the same engine.");
+    await expect(chain.locator("[data-flow-branch]")).toHaveCount(1);
+    for (const i of [0, 1, 2, 3, 4, 6]) await expect(steps.nth(i)).not.toContainText("agent");
+    // Drawn above the Keep: the branch ends before the Keep's step starts.
+    const [branchBox, keepBox] = [await branch.boundingBox(), await steps.nth(6).boundingBox()];
+    expect((branchBox?.y ?? 0) + (branchBox?.height ?? 0), "the branch ends above the Keep").toBeLessThanOrEqual(keepBox?.y ?? 0);
+  });
+
+  test("states the tag cap and how many saved pairs fill it, and names the six acts with no Qloo signal, with no click (round 37, L60 and L38)", async ({ page }) => {
+    const calls = page.locator("#qloo-calls");
+    const cap = calls.getByText(
+      "This app keeps at most 8 shared genre, subgenre or theme tags per compared pair, and 17 of the 22 saved pairs fill all 8, so the number of tags is not a measure of overlap; read them as examples.",
+      { exact: true },
+    );
+    await expect(cap).toBeVisible();
+    expect(await cap.evaluate((element) => element.closest("details:not([open])") === null), "open, with no click").toBe(true);
+
+    const limits = page.locator("#limits");
+    const noSignal = limits.locator("li").filter({ hasText: /^Qloo has no usable signal for six acts/ });
+    await expect(noSignal).toHaveCount(1);
+    await expect(noSignal).toHaveText(
+      "Qloo has no usable signal for six acts on the two published days: Thandii, Abel Selaocoe & the Bantu Ensemble and Westside Cowboy at Glastonbury, and Largemouth, William Shatner and Rose of Demise at Riot Fest. Their overlaps, such as Abel Selaocoe & the Bantu Ensemble × Gurriers (60 min) and The Format × William Shatner (35 min), are left out, not scored as zero, and drawn with no line.",
+    );
+    await expect(noSignal).toBeVisible();
+    // No claim that these acts open their stages: two of them do not.
+    await expect(limits).not.toContainText(/\bopen(er|ers|ing)?\b/i);
+  });
+
+  test("at the top of the page 46.8% is said once: in the failed test's sentence, with the chart's bar and no value label (round 37, L58, fix pass 2)", async ({ page, isPhone }) => {
+    const fold = isPhone ? 844 : 900;
+    const leaves = await page.evaluate((foot) => {
+      const found: { tag: string; top: number }[] = [];
+      for (const element of document.querySelectorAll("body *")) {
+        if (element.children.length > 0 || element.textContent?.trim() !== "46.8%") continue;
+        const box = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        if (box.width <= 1 || box.height <= 1 || style.display === "none" || style.visibility === "hidden") continue;
+        if (box.top + window.scrollY < foot)
+          found.push({
+            tag: `${element.tagName.toLowerCase()}${element.hasAttribute("data-bar-value") ? "[data-bar-value]" : ""}${element.hasAttribute("data-failed-figure") ? "[data-failed-figure]" : ""}`,
+            top: box.top + window.scrollY,
+          });
+      }
+      return found;
+    }, fold);
+    test.info().annotations.push({ type: `46.8% above ${fold} px`, description: JSON.stringify(leaves) });
+    // One figure on the first screen, on both sizes: the sentence's (the chart's own label beside the taste bar is hidden).
+    expect(leaves.map((leaf) => leaf.tag), `46.8% as a leaf above ${fold} px`).toEqual(["span[data-failed-figure]"]);
+    // The chart keeps the taste bar and its accessible name; only the value label right after it is hidden.
+    await expect(page.getByRole("img", { name: "Taste overlap reached 46.8%; the bar was 60%" })).toBeVisible();
+    await expect(page.locator('[role="img"][aria-label^="Taste"] + [data-bar-value]')).toBeHidden();
+    // The other three bars keep their value labels.
+    const shownValues = page.locator('figure [data-bar-value]:not([role="img"][aria-label^="Taste"] + [data-bar-value])');
+    await expect(shownValues).toHaveText(["57.8%", "39.0%", "26.3%"]);
+    for (const value of await shownValues.all()) await expect(value).toBeVisible();
+    // The failed test's sentence still carries the figure beside its bar (CHARTER 2.1).
+    await expect(page.getByRole("region", { name: "The short version" })).toContainText("Taste overlap put 46.8% of complained-about clashes");
   });
 
   test("says what each live path really sends: no card names the agent's general tools, /search has no \"only\", and the page says the explore tools are refused", async ({ page }) => {
@@ -184,9 +270,9 @@ test.describe("how we know (/method)", () => {
     const finding = tested.getByText("The exploratory follow-up did not establish an advantage over popularity.");
     await expect(finding).toBeVisible();
     expect(await finding.evaluate((element) => element.closest("details:not([open])") === null), "open, with no click").toBe(true);
-    const withPrice = tested.getByText(/so the full price did not establish an advantage over popularity\./);
-    await expect(withPrice).toBeVisible();
-    expect(await withPrice.evaluate((element) => element.closest("details:not([open])") === null), "open, with no click").toBe(true);
+    const withScore = tested.getByText(/so the pair score did not establish an advantage over popularity\./);
+    await expect(withScore).toBeVisible();
+    expect(await withScore.evaluate((element) => element.closest("details:not([open])") === null), "open, with no click").toBe(true);
 
     // The addresses the home page, the brief and the docs link to, and every in-page link, resolve to an element.
     const ids = ["price", "tested", "limits", "labels", "brief", "moving-sets", "live-check", "controls", "why-qloo", "qloo-calls", "taste-in-price"];

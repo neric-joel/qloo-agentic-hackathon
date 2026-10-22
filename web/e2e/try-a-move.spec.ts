@@ -8,8 +8,16 @@ import { minutes, parsePlace, TryAMove } from "./pages/try-a-move";
  * another, undo, start over. Every score comes from the engine through /api, with no language model.
  */
 
-/** Said after "Adds no rule break." for every legal place: the rules the place was checked against. */
-const RULES_CHECKED = "Checked against the stage’s hours, the curfew, the changeover gap, locked sets and pairs that must never overlap.";
+/**
+ * Said after "Adds no rule break." for every legal place: the rules the place was checked against. Round 37 (L8): the
+ * sentence gives the shown day's own values, read from its published timetable by the rules this app builds its
+ * constraints with; on Glastonbury the day's latest published end is 23:15 and the changeover 15 min.
+ */
+const RULES_CHECKED =
+  "Checked against this app’s rules for the day, read from the published timetable: each stage’s published hours, nothing after 23:15 (the day’s latest published end), at least 15 min between sets on a stage, sets this app locks, a start within two hours of the set’s published start, on its own stage or a neighbouring one, and pairs that must never overlap.";
+
+/** The same sentence on Riot Fest, whose latest published end is 21:55. */
+const RULES_CHECKED_RIOT = RULES_CHECKED.replace("nothing after 23:15", "nothing after 21:55");
 
 /** Sprints at Woodsies 14:15 (the hero's move) starts an overlap with a set in none of its lists: the hero's own clause. */
 const OUTSIDE_LINE = "Outside the listed clashes: new 15 min overlap with Joy Crookes.";
@@ -127,6 +135,188 @@ test.describe("try a move", () => {
     expect(await move.section.innerText()).not.toMatch(/\bpric(e|ed|es|ing)\b/i);
   });
 
+  test("on Riot Fest the rules sentence gives that day's own latest published end (round 37, L8)", async ({ page }) => {
+    const home = new HomePage(page);
+    const move = new TryAMove(page);
+    await home.goto(DAYS.riot.id);
+
+    const tested = move.section.locator("[data-tested-card]");
+    await expect(tested).toContainText("Tested place");
+    await expect(tested).toContainText(`Adds no rule break. ${RULES_CHECKED_RIOT}`);
+    // The round-35 sentence, with no values, is gone.
+    await expect(move.section).not.toContainText("Checked against the stage’s hours");
+  });
+
+  /**
+   * Round 37, verify-2 N3 (F1): when a pick's answer landed after the browser's 500 ms input window, the answer was
+   * taller than its pending frame and pushed the rest of the page down (Glastonbury: 0.0143 at 1440, 0.1541 at 768,
+   * 0.1165 at 390). The pending frames now hold the answer's room. Every shift counts, the board fold's included: the
+   * fold above the section used to open when the late answer landed, and the slice of the opened board that entered
+   * the top of the screen read 0.0011 to 0.0013 at 1440 (round 37 closeout). It now opens in the press itself, with the
+   * key's tested-slot row, so the answer adds nothing above the section.
+   */
+  test("a late answer to a pick moves nothing on screen: no layout shift at all, the board's fold included, at 1440, 1280, 768 and 390, on both days (round 37, verify-2 N3)", async ({ page, isPhone }) => {
+    test.skip(isPhone, "The desktop project sets each width.");
+    test.setTimeout(180_000);
+    // The places answer for a picked set is held 1.5 s, past the browser's input window.
+    await page.route(
+      (url) => /\/api\/presets\/[^/]+\/moves$/.test(url.pathname),
+      async (route) => {
+        if (route.request().method() === "GET") await new Promise((resolve) => setTimeout(resolve, 1_500));
+        await route.fallback();
+      },
+    );
+    await page.addInitScript(() => {
+      const store = window as unknown as { __shift: number; __shifts: string[] };
+      store.__shift = 0;
+      store.__shifts = [];
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries() as unknown as { value: number; hadRecentInput: boolean; sources?: { node?: Node | null }[] }[]) {
+          if (entry.hadRecentInput) continue;
+          const elements = (entry.sources ?? []).map((source) => (source.node instanceof Element ? source.node : (source.node?.parentElement ?? null)));
+          store.__shift += entry.value;
+          store.__shifts.push(
+            `${entry.value.toFixed(4)}: ${elements.map((element) => (element ? `${element.tagName}${element.id ? `#${element.id}` : ""}` : "?")).join(", ")}`,
+          );
+        }
+      }).observe({ type: "layout-shift", buffered: true });
+    });
+    const home = new HomePage(page);
+    const move = new TryAMove(page);
+    const rooms = page.locator("[data-place-room], [data-places-room]");
+    for (const size of [
+      { width: 1440, height: 900 },
+      { width: 1280, height: 800 },
+      { width: 768, height: 1024 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(size);
+      for (const day of [DAYS.glastonbury, DAYS.riot]) {
+        const where = `${day.title} at ${size.width} x ${size.height}`;
+        await home.goto(day.id);
+        await move.section.scrollIntoViewIfNeeded();
+        await expect(move.select).toBeVisible();
+        // The hero's move, checked when the section mounts, has settled before the pick.
+        await expect(move.section.getByText("Checking rules…")).toHaveCount(0, { timeout: 15_000 });
+        await move.select.focus();
+        await page.evaluate(() => {
+          const store = window as unknown as { __shift: number; __shifts: string[] };
+          store.__shift = 0;
+          store.__shifts = [];
+        });
+        // A pick from the keyboard, which the browser counts as input: the next set in the list, or the one before it
+        // when no set after the hero's (selected on load) can be picked (Riot Fest: only a locked set follows Bowling for Soup).
+        const last = await move.select.evaluate((select: HTMLSelectElement) => ![...select.options].slice(select.selectedIndex + 1).some((option) => !option.disabled));
+        const before = await move.select.inputValue();
+        await page.keyboard.press(last ? "ArrowUp" : "ArrowDown");
+        await expect(move.select, `${where}: the pick changed the set`).not.toHaveValue(before);
+        await expect(rooms.first(), `${where}: the pending frame while the answer is out`).toBeAttached();
+        await expect(rooms, `${where}: the answer replaced the pending frame`).toHaveCount(0, { timeout: 15_000 });
+        // Room for the answer's own layout and the fold's opening to be observed.
+        await page.waitForTimeout(1_000);
+        const found = await page.evaluate(() => {
+          const store = window as unknown as { __shift: number; __shifts: string[] };
+          return { shift: store.__shift, shifts: store.__shifts };
+        });
+        test.info().annotations.push({ type: `late answer, ${where}`, description: JSON.stringify(found) });
+        expect(found.shift, `${where}: layout shift after a late answer, the board's fold included (${found.shifts.join("; ")})`).toBeLessThan(0.0005);
+      }
+    }
+  });
+
+  /**
+   * Round 37 closeout: a plan answer that landed after Keep this move replaced the 128 px "Scoring your tested moves"
+   * box with the plan and pushed everything under it down (0.58 to 0.65 at 390). While the answer is out, the plan's
+   * place now holds room past the screen's foot, and the "Start with" rows keep their places when the plan changes
+   * which sets start the list. The plan answer is held 1.5 s, past the browser's input window, with the CPU slowed 4x.
+   */
+  test("a late plan answer after Keep this move moves nothing on screen at 1440, 1024, 390 and 375 x 667, on both days (round 37 closeout)", async ({ page, isPhone }) => {
+    test.skip(isPhone, "The desktop project sets each width.");
+    test.setTimeout(240_000);
+    let holdPlan = false;
+    await page.route(
+      (url) => /\/api\/presets\/[^/]+\/whatif$/.test(url.pathname),
+      async (route) => {
+        if (holdPlan) await new Promise((resolve) => setTimeout(resolve, 1_500));
+        await route.fallback();
+      },
+    );
+    await page.addInitScript(() => {
+      const store = window as unknown as { __shift: number; __shifts: string[] };
+      store.__shift = 0;
+      store.__shifts = [];
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries() as unknown as { value: number; hadRecentInput: boolean; sources?: { node?: Node | null }[] }[]) {
+          if (entry.hadRecentInput) continue;
+          const elements = (entry.sources ?? []).map((source) => (source.node instanceof Element ? source.node : (source.node?.parentElement ?? null)));
+          store.__shift += entry.value;
+          store.__shifts.push(`${entry.value.toFixed(4)}: ${elements.map((element) => (element ? `${element.tagName}${element.id ? `#${element.id}` : ""}` : "?")).join(", ")}`);
+        }
+      }).observe({ type: "layout-shift", buffered: true });
+    });
+    const home = new HomePage(page);
+    const move = new TryAMove(page);
+    const cdp = await page.context().newCDPSession(page);
+    for (const size of [
+      { width: 1440, height: 900 },
+      { width: 1024, height: 768 },
+      { width: 390, height: 844 },
+      { width: 375, height: 667 },
+    ]) {
+      await page.setViewportSize(size);
+      for (const day of [DAYS.glastonbury, DAYS.riot]) {
+        const where = `${day.title} at ${size.width} x ${size.height}`;
+        holdPlan = false;
+        await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+        // The kept plan survives a reload in the same tab: start each load with none.
+        await page.evaluate(() => {
+          try {
+            sessionStorage.clear();
+            localStorage.clear();
+          } catch {
+            // No page of this site is open yet.
+          }
+        });
+        await home.goto(day.id);
+        await move.section.scrollIntoViewIfNeeded();
+        await expect(move.section.getByText("Checking rules…")).toHaveCount(0, { timeout: 15_000 });
+        const keep = move.section.getByRole("button", { name: "Keep this move" }).filter({ visible: true }).first();
+        await keep.scrollIntoViewIfNeeded();
+        await page.evaluate(() => {
+          const store = window as unknown as { __shift: number; __shifts: string[] };
+          store.__shift = 0;
+          store.__shifts = [];
+        });
+        holdPlan = true;
+        await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+        await keep.click();
+        await expect(move.kept, `${where}: the plan landed`).toHaveCount(1, { timeout: 20_000 });
+        await page.waitForTimeout(1_000);
+        const found = await page.evaluate(() => {
+          const store = window as unknown as { __shift: number; __shifts: string[] };
+          return { shift: store.__shift, shifts: store.__shifts };
+        });
+        await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+        test.info().annotations.push({ type: `late plan, ${where}`, description: JSON.stringify(found) });
+        expect(found.shift, `${where}: layout shift after a late plan answer (${found.shifts.join("; ")})`).toBeLessThan(0.0005);
+      }
+    }
+  });
+
+  test("testing a place opens the board's disclosure in the same step, with the place's ghost on the board (round 37, AO1)", async ({ page }) => {
+    const home = new HomePage(page);
+    const move = new TryAMove(page);
+    await home.goto(DAYS.glastonbury.id);
+
+    expect(await home.boardOpen(), "closed before the pick").toBe(false);
+    await move.starter("Sprints").click();
+    await expect(home.boardFold).toHaveAttribute("open", "");
+    await expect(home.board).toBeVisible();
+    const ghosts = home.boardFold.locator("[data-ghost]");
+    await expect.poll(() => ghosts.count(), { message: "the tested place's ghost on the opened board" }).toBeGreaterThanOrEqual(1);
+    await expect(ghosts.first()).toBeVisible();
+  });
+
   test("from 1024 px a picked set fills the right column with its best tested place, and keeps it", async ({ page, isPhone }) => {
     test.skip(isPhone, "Below 1024 px the full list shows at once and this column is not drawn.");
     const home = new HomePage(page);
@@ -157,6 +347,7 @@ test.describe("try a move", () => {
     const move = new TryAMove(page);
     await home.goto(DAYS.glastonbury.id);
 
+    await home.openBoard();
     const tileBefore = await home.tile("Gurriers").getAttribute("aria-label");
     await move.choose("Gurriers");
     const buttons = move.places.getByRole("button");
@@ -261,7 +452,8 @@ test.describe("try a move", () => {
     const move = new TryAMove(page);
     await home.goto(DAYS.glastonbury.id);
 
-    await expect(move.select.locator("option").filter({ hasText: /Olivia Rodrigo \(locked\)/ })).toBeDisabled();
+    // Round 37 (L33): the option says whose lock it is.
+    await expect(move.select.locator("option").filter({ hasText: /Olivia Rodrigo \(locked by this app\)/ })).toBeDisabled();
     await expect(move.starters).not.toContainText("Olivia Rodrigo");
 
     await move.choose("Thandii");

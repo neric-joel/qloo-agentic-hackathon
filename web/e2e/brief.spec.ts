@@ -266,6 +266,94 @@ test.describe("one-page brief", () => {
     await open(page, `preset=${DAYS.glastonbury.id}&day=0&${PLAN}`);
     await expectNoHorizontalScroll(page);
   });
+
+  test("with the card's move kept, the minutes line comes before the index line, on the screen and on paper (round 37, R5, L74)", async ({ page }) => {
+    const article = await open(page, `preset=${DAYS.glastonbury.id}&day=0&${CARD_PLAN}`);
+    const plan = article.getByRole("region", { name: "Your plan" });
+    const minutes = plan.locator("[data-shared-minutes]");
+    const index = plan.getByText(/^1 kept move: Clash Budget Index /);
+    for (const media of ["screen", "print"] as const) {
+      await page.emulateMedia({ media });
+      await expect(minutes, `${media}: the minutes line`).toBeVisible();
+      await expect(index, `${media}: the index line`).toBeVisible();
+      await expect(minutes).toContainText("Outside them, the plan adds");
+      const before = await minutes.evaluate((element, other) => Boolean(element.compareDocumentPosition(other as Node) & Node.DOCUMENT_POSITION_FOLLOWING), await index.elementHandle());
+      expect(before, `${media}: the minutes line comes first in the sheet`).toBe(true);
+      const [a, b] = [await minutes.boundingBox(), await index.boundingBox()];
+      expect(a?.y ?? Infinity, `${media}: the minutes line is drawn above the index line`).toBeLessThan(b?.y ?? 0);
+    }
+    // The whole line prints, so its paper-only stand-in is gone.
+    await expect(article.locator("[data-new-overlap]")).toHaveCount(0);
+  });
+
+  for (const [name, query] of [
+    ["the kept card's brief", `preset=${DAYS.glastonbury.id}&day=0&${CARD_PLAN}`],
+    ["Glastonbury's bare brief", `preset=${DAYS.glastonbury.id}&day=0`],
+    ["Riot Fest's bare brief", `preset=${DAYS.riot.id}&day=0`],
+  ] as const) {
+    test(`on paper, ${name} sets no text under 9.5 pt and its running text at 10 pt or more, on one Letter and one A4 page (round 37, L75; the drawing's own labels are read in the next test)`, async ({ page }) => {
+      await open(page, query);
+      await page.emulateMedia({ media: "print" });
+      const sizes = await page.getByRole("article").evaluate((article) => {
+        const small: string[] = [];
+        const running: string[] = [];
+        let read = 0;
+        const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const parent = node.parentElement;
+          if (!parent || !node.textContent?.trim() || parent.closest("svg")) continue;
+          const box = parent.getBoundingClientRect();
+          const style = getComputedStyle(parent);
+          if (box.width <= 1 || box.height <= 1 || style.display === "none" || style.visibility === "hidden") continue;
+          read += 1;
+          const px = parseFloat(style.fontSize);
+          const text = node.textContent.trim().slice(0, 40);
+          // 9.5 pt is 12.667 px; 10 pt is 13.333 px.
+          if (px < 12.66) small.push(`"${text}" ${px}px`);
+          const block = parent.closest("p, li, dt");
+          if (block && !parent.closest("table, figure") && px < 13.33) running.push(`"${text}" ${px}px`);
+        }
+        return { read, small, running };
+      });
+      expect(sizes.read, "text read on the sheet").toBeGreaterThan(20);
+      expect(sizes.small, "printed text under 9.5 pt").toEqual([]);
+      expect(sizes.running, "printed running text under 10 pt").toEqual([]);
+      for (const format of ["Letter", "A4"] as const) expect(pdfPages(await page.pdf({ format, printBackground: true })), `${format} pages`).toBe(1);
+    });
+
+    /**
+     * Round 37, L75 (fix pass 2): the drawing's own labels printed at 7.5 pt. The sheet now prints the wide frame's labels
+     * at 12.7 units, so on the narrower paper column (A4's 190 mm, 718 px) each renders at 9.5 pt (12.667 px) or more.
+     */
+    test(`on paper at A4's printed column, ${name} prints the drawing's labels at 9.5 pt or more, on one page (round 37, L75, fix pass 2)`, async ({ page, isPhone }) => {
+      test.skip(isPhone, "The desktop project sets the paper column's width.");
+      // 210 mm less two 10 mm margins, at 96 px to the inch.
+      await page.setViewportSize({ width: Math.floor((190 * 96) / 25.4), height: 1000 });
+      await open(page, query);
+      await page.emulateMedia({ media: "print" });
+      const labels = await page.locator('[data-brief-figure] svg[data-frame="wide"]').evaluate((svg) => {
+        const small: string[] = [];
+        let read = 0;
+        const walker = document.createTreeWalker(svg, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const parent = node.parentElement as unknown as SVGGraphicsElement | null;
+          if (!parent || !node.textContent?.trim()) continue;
+          const box = parent.getBoundingClientRect();
+          const style = getComputedStyle(parent);
+          if (box.width <= 0 || box.height <= 0 || style.display === "none" || style.visibility === "hidden") continue;
+          read += 1;
+          // The size on the page: the computed size times the drawing's scale on screen.
+          const ctm = parent.getScreenCTM();
+          const px = parseFloat(style.fontSize) * (ctm ? Math.hypot(ctm.a, ctm.b) : 1);
+          if (px < 12.66) small.push(`"${node.textContent.trim().slice(0, 30)}" ${px.toFixed(2)}px`);
+        }
+        return { read, small };
+      });
+      expect(labels.read, "labels read in the printed drawing").toBeGreaterThan(10);
+      expect(labels.small, "the drawing's labels under 9.5 pt on A4's column").toEqual([]);
+      expect(pdfPages(await page.pdf({ format: "A4", printBackground: true })), "A4 pages").toBe(1);
+    });
+  }
 });
 
 test.describe("one-page brief, unknown day", () => {

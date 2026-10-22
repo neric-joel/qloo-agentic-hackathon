@@ -4,8 +4,8 @@ import { HomePage } from "./pages/home-page";
 
 /** The home page loads on each saved festival day, switches between them, and keeps its two honesty lines. */
 
-/** The lede on a published day: who it is for, the frame, then what the ranking reads (round 35, R1). */
-const LEDE = "For heads of programming: Qloo taste data used to schedule, not to recommend. Clashes ranked by minutes shared, popularity and taste overlap.";
+/** The lede on a published day: who it is for, the frame, the stake, then what to compare (owner-ordered closeout, round 37, 22 Oct 2026). */
+const LEDE = "For heads of programming: Qloo taste data used to schedule, not to recommend. Clashes make people choose. Compare time, popularity, taste.";
 
 for (const day of Object.values(DAYS)) {
   test.describe(`home on ${day.title}`, () => {
@@ -30,9 +30,11 @@ for (const day of Object.values(DAYS)) {
       await expect(home.graph).toBeVisible();
       await expect(home.graph).toHaveAccessibleName(new RegExp(`^${day.title}, drawn with .+: \\d+ sets on \\d+ stages$`));
       // The key says what the drawing's lines, their width and its dashes mean, and names any overlap the move
-      // changes that the ranked list does not hold (Riot Fest: the one the move ends), with "not ranked".
+      // changes that the ranked list does not hold (Riot Fest: the one the move ends), with "not ranked". Round 37
+      // (L5): it also says what the lock and the dotted bars mean, each sentence only on a day that draws the mark, and
+      // both published days draw both.
       await expect(home.graphKey).toHaveText(
-        /^Lines: the \d+ costliest of \d+ scored clashes \(\d+ in all\)(, plus the chosen clash)?(, plus (the overlap the move (ends|shortens|lengthens)|\d+ overlaps the move changes)( \((\d+ )?not ranked\))?)?; thicker means a higher taste overlap rank\. Dashed: published slot or new overlap\.$/,
+        /^Lines: the \d+ costliest of \d+ scored clashes \(\d+ in all\)(, plus the chosen clash)?(, plus (the overlap the move (ends|shortens|lengthens)|\d+ overlaps the move changes)( \((\d+ )?not ranked\))?)?; thicker means a higher taste overlap rank\. Dashed: published slot or new overlap\. Lock: fixed by this app\. Dotted: no Qloo signal\.$/,
       );
       await expect(home.moveLead).toHaveText(/ \d+ minutes? (earlier|later)$/);
       await expect(home.readout).toHaveText(/^\d+ →\s+to \d+ min shared with .+$/);
@@ -42,10 +44,14 @@ for (const day of Object.values(DAYS)) {
       await expect(home.details.getByText("Clash Budget Index", { exact: true })).toBeVisible();
       await expect(home.showWorking).toHaveAttribute("aria-expanded", "false");
 
-      // The board names the day it shows, and draws as many sets as its heading counts.
+      // The board names the day it shows, and draws as many sets as its heading counts. Round 37 (AO1): the grid is
+      // behind one closed disclosure whose summary counts what it shows; a press opens it.
       await expect(home.page.getByText(`Published timetable · ${day.title}`)).toBeVisible();
       const [, stages, sets] = /(\d+) stages, (\d+) sets/.exec(await home.boardTitle()) ?? [];
       expect(Number(stages), "stages in the heading").toBeGreaterThanOrEqual(2);
+      expect(await home.boardOpen(), "the board's disclosure is closed on arrival").toBe(false);
+      await expect(home.boardFoldSummary).toHaveText(`Show ${sets} sets on ${stages} stages`);
+      await home.openBoard();
       await expect(home.board.getByRole("button")).toHaveCount(Number(sets));
       // The drawing draws the same day: as many sets and stages as the board.
       await expect(home.graph).toHaveAccessibleName(new RegExp(`: ${sets} sets on ${stages} stages$`));
@@ -90,13 +96,17 @@ for (const day of Object.values(DAYS)) {
 test.describe("home page length", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
 
-  /** The home length budget (round 33, R2): 6,800 px at 1440 px in the light theme, 11,800 px at 390 px in the dark. */
+  /**
+   * The home length budget (round 33, R2: 6,800 px at 1440 px in the light theme, 11,800 px at 390 px in the dark).
+   * Round 37 (AO1, L30): with the board's grid behind its closed disclosure the ceilings fall to 6,400 and 10,900 px
+   * (NEXT.md 5.4), measured with every disclosure closed, as the page arrives.
+   */
   const BUDGET = {
-    desktop: { width: 1440, theme: "light", ceiling: 6_800 },
-    phone: { width: 390, theme: "dark", ceiling: 11_800 },
+    desktop: { width: 1440, theme: "light", ceiling: 6_400 },
+    phone: { width: 390, theme: "dark", ceiling: 10_900 },
   } as const;
 
-  test("the home page is at most 6,800 px tall at 1440 px light, and at most 11,800 px at 390 px dark", async ({ page, isPhone }) => {
+  test("the home page is at most 6,400 px tall at 1440 px light, and at most 10,900 px at 390 px dark", async ({ page, isPhone }) => {
     const budget = isPhone ? BUDGET.phone : BUDGET.desktop;
     expect(page.viewportSize()?.width, "measured at the budget's width").toBe(budget.width);
     await page.addInitScript((theme) => localStorage.setItem("theme", theme), budget.theme);
@@ -105,6 +115,7 @@ test.describe("home page length", () => {
     await home.goto(DAYS.glastonbury.id);
     expect(await home.chrome.appliedTheme(), "measured in the budget's theme").toBe(budget.theme);
     await scrollThrough(page);
+    expect(await page.evaluate(() => [...document.querySelectorAll("details")].filter((details) => details.open).length), "every disclosure closed").toBe(0);
 
     const height = await page.evaluate(() => document.documentElement.scrollHeight);
     const label = `home height at ${budget.width} ${budget.theme}`;
@@ -126,13 +137,15 @@ test.describe("switching festival day", () => {
     await expect(home.page.getByText(`Published timetable · ${DAYS.riot.title}`)).toBeVisible();
     await expect(home.dayPicker.getByRole("radio", { name: DAYS.riot.festival })).toBeChecked();
     await expect(home.moveLead).not.toHaveText(first);
-    // The drawing and the board both show the new day.
+    // The drawing and the board both show the new day (the board read with its disclosure open).
     await expect(home.graph).toHaveAccessibleName(new RegExp(`^${DAYS.riot.title}, `));
+    await home.openBoard();
     await expect(home.tile("Bowling for Soup")).toBeVisible();
     await expect(home.tile("Sprints")).toHaveCount(0);
 
     await home.chooseDay(DAYS.glastonbury.festival);
     await expect(page).toHaveURL(new RegExp(`preset=${DAYS.glastonbury.id}`));
+    await home.openBoard();
     await expect(home.tile("Sprints")).toBeVisible();
   });
 

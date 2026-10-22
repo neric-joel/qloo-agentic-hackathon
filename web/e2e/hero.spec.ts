@@ -1,4 +1,4 @@
-import type { Locator } from "@playwright/test";
+import type { Locator, Request } from "@playwright/test";
 
 import { DAYS, HONESTY, literal, requireSavedDays } from "./helpers";
 import { expect, test } from "./fixtures";
@@ -50,6 +50,8 @@ async function heroBoxes(page: import("@playwright/test").Page): Promise<Record<
       paste: box(group ? [...group.querySelectorAll("a")].find((link) => /Paste your own draft grid/.test(link.textContent ?? "")) : null),
       key: box(document.querySelector("[data-day-graph-key]")),
       nav: box(document.querySelector('nav[aria-label="On this page"]')),
+      // Round 37: the decision group itself, which keeps its height in every state (L1, L20).
+      group: box(group),
     };
   });
 }
@@ -131,6 +133,8 @@ test.describe("hero decision", () => {
   test("Keep this move keeps the hero's move in place: \"Kept in your plan.\", focus on See your plan, no scroll", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
+    // Focus follows a press only when the plan answers within 2 s (see answerKeepAtOnce).
+    const answered = await home.answerKeepAtOnce(DAYS.glastonbury.id);
 
     const { before, after } = await home.indexFigures();
     const mover = (await home.moveLead.innerText()).split(/ \d+ minutes? (earlier|later)/)[0];
@@ -148,6 +152,7 @@ test.describe("hero decision", () => {
     await expect(home.keptNotice).toHaveText(/^Kept in your plan\.\s*Nothing moves until the acts’ teams agree\.\s*See your plan$/);
     await expect(home.seeYourPlan).toHaveAttribute("href", "#your-plan");
     await expect(home.seeYourPlan).toBeFocused();
+    expect(answered(), "the press was answered with the server's own what-if").toBe(1);
     await expect(home.groupAnnouncement).toHaveText(new RegExp(`^Testing ${literal(mover)} at \\d{2}:\\d{2}\\.`));
     // The button says the plan holds the move, in the same width.
     await expect(home.keepMove).toHaveAccessibleName("Kept in your plan");
@@ -196,6 +201,8 @@ test.describe("hero decision", () => {
   test("kept while the drawing shows the day as published, the confirmation says the drawing does not show the move", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
+    // Focus follows a press only when the plan answers within 2 s (see answerKeepAtOnce).
+    const answered = await home.answerKeepAtOnce(DAYS.glastonbury.id);
 
     await home.chooseView("As published");
     await expect(home.graph).toHaveAttribute("data-view", "published");
@@ -207,6 +214,7 @@ test.describe("hero decision", () => {
     await home.keepMove.click();
     await expect(home.keptNotice).toHaveText(/^Kept in your plan\.\s*Drawn here as published\.\s*Nothing moves until the acts’ teams agree\.\s*See your plan$/);
     await expect(home.seeYourPlan).toBeFocused();
+    expect(answered(), "the press was answered with the server's own what-if").toBe(1);
     await expect(home.keptNotice).toBeInViewport({ ratio: 1 });
     await expect(home.sideEffects).toHaveText(SIDE_EFFECTS[DAYS.glastonbury.id]);
     await expect(home.plan.getByRole("list", { name: "Kept moves" }).getByRole("listitem")).toHaveCount(1);
@@ -286,13 +294,26 @@ test.describe("hero decision", () => {
         await expect(offer.getByRole("button", { name: "Add to your plan" })).toBeFocused();
         const asked = await heroBoxes(page);
 
+        // Round 37 (L20): below 380 px Replace sits directly under Add, so the confirmation's room, which holds the offer's
+        // words, is the row under Replace, and the paste (not shown while the offer is open, as before) gives up its row;
+        // the group keeps its box, so every other box holds.
+        const narrow = size.width < 380;
+        const moved: string[] = [];
         for (const [name, before] of Object.entries(kept)) {
           const after = asked[name];
           expect(before, `${at}: ${name} is drawn in the kept state`).not.toBeNull();
           expect(after, `${at}: ${name} is drawn with the offer open`).not.toBeNull();
           for (const edge of ["left", "top", "width", "bottom"] as const) {
-            expect(Math.abs((after?.[edge] ?? 0) - (before?.[edge] ?? 0)), `${at}: ${name} ${edge} ${before?.[edge]} kept, ${after?.[edge]} with the offer`).toBeLessThanOrEqual(1);
+            if (Math.abs((after?.[edge] ?? 0) - (before?.[edge] ?? 0)) > 1) moved.push(`${name} ${edge} ${before?.[edge]} kept, ${after?.[edge]} with the offer`);
           }
+        }
+        test.info().annotations.push({ type: `boxes moved by the offer at ${at}`, description: moved.join("; ") || "none" });
+        expect(moved.filter((item) => !(narrow && (item.startsWith("slot ") || item.startsWith("paste ")))), `${at}: hero boxes the offer moves`).toEqual([]);
+        if (narrow) {
+          const replace = await offer.getByRole("button", { name: "Replace your plan" }).boundingBox();
+          const words = await home.group.locator("[data-keep-offer-status]").boundingBox();
+          expect((words?.y ?? 0) + 1, `${at}: the offer's words sit under Replace`).toBeGreaterThanOrEqual((replace?.y ?? 0) + (replace?.height ?? 0));
+          await expect(home.pasteLink, `${at}: the paste is not shown while the offer is open`).toBeHidden();
         }
         // The whole offer is on the screen: Add, Replace and the words in the confirmation's room.
         await expect(offer.getByRole("button", { name: "Add to your plan" })).toBeInViewport({ ratio: 1 });
@@ -417,8 +438,10 @@ test.describe("hero decision", () => {
     // The day's saved reading is dated in the hero's dateline (a date, not a figure), and called global: both saved
     // days were read with no location sent.
     await expect(home.dateline).toHaveText(`Sunday. Published timetable; saved global Qloo reading built 3 Oct 2026. ${HONESTY.neither}`);
+    // Round 37 (L19): the date's three parts are joined by no-break spaces, so a regular expression (matched against
+    // the raw text) names them.
     await expect(home.dateline).toHaveText(
-      new RegExp(`^${DAYS.glastonbury.dayName}\\. Published timetable; saved global Qloo reading built \\d{1,2} [A-Z][a-z]{2} \\d{4}\\. ${literal(HONESTY.neither)}$`),
+      new RegExp(`^${DAYS.glastonbury.dayName}\\. Published timetable; saved global Qloo reading built \\d{1,2}\\u00a0[A-Z][a-z]{2}\\u00a0\\d{4}\\. ${literal(HONESTY.neither)}$`),
     );
   });
 
@@ -457,5 +480,386 @@ test.describe("hero decision", () => {
     await expect
       .poll(() => move.select.evaluate((select: HTMLSelectElement) => select.selectedOptions[0]?.textContent ?? ""))
       .toMatch(new RegExp(`^\\d{2}:\\d{2} (${literal(a)}|${literal(b)})`));
+  });
+});
+
+/** Each published day's move lead, as the hero says it once the day's decision is in. */
+const MOVE_LEADS = {
+  [DAYS.glastonbury.id]: "Sprints 15 minutes later",
+  [DAYS.riot.id]: "Bowling for Soup 20 minutes later",
+} as const;
+
+/**
+ * The hero's desktop note under the dateline (round 37, AO2; L22 and L9), word for word: why this move ("ties" where
+ * another set's first place gives the same index, as on Glastonbury), that two sets end the overlap (the rule answer's
+ * first change moves two sets and leaves 0 min shared on both days), and what near 100 means. Desktop only.
+ */
+const HERO_NOTE = {
+  [DAYS.glastonbury.id]:
+    "Of the legal moves checked, this ties for the lowest index. Moving two sets ends the overlap instead. Near 100 means closer tastes among the acts compared.",
+  [DAYS.riot.id]:
+    "Of the legal moves checked, this gives the lowest index. Moving two sets ends the overlap instead. Near 100 means closer tastes among the acts compared.",
+} as const;
+
+/** A browser request for a day's decision, and for a day's preset (round 37, L1). */
+const DECISION_PATH = /^\/api\/presets\/[^/]+\/decision$/;
+const PRESET_PATH = /^\/api\/presets\/[^/]+$/;
+
+/** Where the hero group's height is held: 1440 x 900 and 1024 x 768 on a desktop, 390 x 844 on a phone. */
+function groupSizes(isPhone: boolean): { width: number; height: number }[] {
+  return isPhone
+    ? [{ width: 390, height: 844 }]
+    : [
+        { width: 1440, height: 900 },
+        { width: 1024, height: 768 },
+      ];
+}
+
+/**
+ * Round 37, L1 (the owner's top row): the preset response carries the day's decision, so the server paints the hero
+ * group whole (readout and Keep included) and the browser never asks for the decision on a published load; and when a
+ * picker switch has to ask for it (an API without the seed), the group keeps one height while it waits. The CLS test in
+ * day-graph.spec.ts holds the boxes; these hold the group and the requests.
+ */
+test.describe("the hero group while a day's decision loads (round 37, L1)", () => {
+  test.beforeEach(async ({ page }) => requireSavedDays(page));
+  // The other day's read-ahead can still be in flight through a test's routes when it ends; they let go then.
+  test.afterEach(async ({ page }) => page.unrouteAll({ behavior: "ignoreErrors" }));
+
+  for (const day of Object.values(DAYS)) {
+    test(`on ${day.title}, a published load asks no decision in the browser, draws the readout and Keep, and the group's height at DOMContentLoaded + 50 ms equals its height at 4 s`, async ({ page, isPhone }) => {
+      test.setTimeout(120_000);
+      // The group the visitor sees (the server's frame, then the interactive page), read 50 ms after DOMContentLoaded
+      // and at 4 s, with what it holds.
+      await page.addInitScript(() => {
+        const store = window as unknown as { __group: Record<string, unknown> };
+        store.__group = {};
+        const read = () => {
+          const group = [...document.querySelectorAll("[data-hero] [data-hero-group]")].find((element) => element.getBoundingClientRect().width > 0);
+          if (!group) return null;
+          return {
+            height: group.getBoundingClientRect().height,
+            state: group.getAttribute("data-hero-state") ?? "",
+            readout: group.querySelectorAll("[data-readout]").length,
+            buttons: group.querySelectorAll("button").length,
+          };
+        };
+        document.addEventListener("DOMContentLoaded", () => {
+          window.setTimeout(() => (store.__group.early = read()), 50);
+          window.setTimeout(() => (store.__group.late = read()), 4_000);
+        });
+      });
+      const home = new HomePage(page);
+      const path = day.id === DAYS.glastonbury.id ? "/" : `/?preset=${day.id}`;
+      for (const size of groupSizes(isPhone)) {
+        await page.setViewportSize(size);
+        const at = `${size.width} x ${size.height}`;
+        // One load first, so the measured load is the page's own and not the dev server's first compile.
+        await page.goto(path, { waitUntil: "domcontentloaded" });
+        await home.waitUntilReady();
+
+        const asked: string[] = [];
+        const onRequest = (request: Request) => {
+          if (request.method() === "GET" && DECISION_PATH.test(new URL(request.url()).pathname)) asked.push(request.url());
+        };
+        page.on("request", onRequest);
+        await page.goto(path, { waitUntil: "domcontentloaded" });
+        await expect
+          .poll(() => page.evaluate(() => "late" in (window as unknown as { __group: object }).__group), { timeout: 20_000, message: `${at}: 4 s on the page` })
+          .toBe(true);
+        await home.waitUntilReady();
+        // The group holds its readout and Keep, so the count below cannot pass on an empty page.
+        await expect(home.readout, `${at}: the readout`).toHaveCount(1);
+        await expect(home.keepMove, `${at}: Keep this move`).toHaveCount(1);
+        await expect(home.moveLead).toHaveText(MOVE_LEADS[day.id]);
+        // The other day's read-ahead runs after the page is ready; give it its moment before counting.
+        await page.waitForTimeout(1_500);
+        page.off("request", onRequest);
+
+        type Read = { height: number; state: string; readout: number; buttons: number } | null;
+        const { early, late } = await page.evaluate(() => (window as unknown as { __group: { early: Read; late: Read } }).__group);
+        test.info().annotations.push({
+          type: `hero group at ${at}`,
+          description: `${early?.state} ${early?.height.toFixed(1)} px at DOMContentLoaded + 50 ms, ${late?.state} ${late?.height.toFixed(1)} px at 4 s; browser decision requests ${asked.length}`,
+        });
+        expect(asked, `${at}: browser GET /api/presets/*/decision on a published load`).toEqual([]);
+        expect(early, `${at}: the group is in the server's frame`).not.toBeNull();
+        expect(late, `${at}: the group is there at 4 s`).not.toBeNull();
+        expect(early?.readout, `${at}: the server's frame draws the readout`).toBeGreaterThanOrEqual(1);
+        expect(early?.buttons, `${at}: the server's frame draws Keep`).toBeGreaterThanOrEqual(1);
+        expect(
+          Math.abs((early?.height ?? 0) - (late?.height ?? Number.NaN)),
+          `${at}: group height ${early?.height} at DOMContentLoaded + 50 ms, ${late?.height} at 4 s`,
+        ).toBeLessThanOrEqual(0.5);
+        // And once the interactive page has settled (on a busy dev server that can be after 4 s): the same height.
+        await expect(home.group).toHaveAttribute("data-hero-state", "settled");
+        const settled = (await home.group.boundingBox())?.height ?? Number.NaN;
+        expect(Math.abs((early?.height ?? 0) - settled), `${at}: group height ${early?.height} at DOMContentLoaded + 50 ms, ${settled} settled`).toBeLessThanOrEqual(0.5);
+      }
+    });
+  }
+
+  for (const [day, other] of [
+    [DAYS.glastonbury, DAYS.riot],
+    [DAYS.riot, DAYS.glastonbury],
+  ] as const) {
+    test(`from ${day.title}, choosing ${other.festival} with the browser's decision request held 3 s keeps the group's height within 0.5 px in every frame until it settles`, async ({ page, isPhone }) => {
+      test.setTimeout(120_000);
+      // The browser's preset answers lose their decision (the shape of an API without the seed), so the page has to ask
+      // for the decision itself; that request is held 3 s. The server's own frame is untouched.
+      await page.route(
+        (url) => PRESET_PATH.test(url.pathname),
+        async (route) => {
+          if (route.request().method() !== "GET") return route.fallback();
+          const response = await route.fetch();
+          const body = (await response.json()) as Record<string, unknown>;
+          delete body.decision;
+          await route.fulfill({ response, json: body });
+        },
+      );
+      let held = 0;
+      await page.route(
+        (url) => DECISION_PATH.test(url.pathname),
+        async (route) => {
+          held += 1;
+          await new Promise((resolve) => setTimeout(resolve, 3_000));
+          await route.fallback();
+        },
+      );
+      const home = new HomePage(page);
+      for (const size of groupSizes(isPhone)) {
+        await page.setViewportSize(size);
+        const at = `${size.width} x ${size.height}`;
+        held = 0;
+        await home.goto(day.id);
+        await expect(home.moveLead).toHaveText(MOVE_LEADS[day.id]);
+        // Every animation frame from the press until the other day's decision has settled.
+        await page.evaluate(() => {
+          const store = window as unknown as { __heights: number[]; __sampling: boolean };
+          store.__heights = [];
+          store.__sampling = true;
+          const tick = () => {
+            const group = [...document.querySelectorAll("[data-hero] [data-hero-group]")].find((element) => element.getBoundingClientRect().width > 0);
+            store.__heights.push(group ? group.getBoundingClientRect().height : Number.NaN);
+            if (store.__sampling) requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        });
+        await home.chooseDay(other.festival);
+        await expect(home.moveLead, `${at}: the other day's move`).toHaveText(MOVE_LEADS[other.id], { timeout: 20_000 });
+        await expect(home.group).toHaveAttribute("data-hero-state", "settled");
+        await page.waitForTimeout(300);
+        const heights = await page.evaluate(() => {
+          const store = window as unknown as { __heights: number[]; __sampling: boolean };
+          store.__sampling = false;
+          return store.__heights;
+        });
+        const drawn = heights.filter((height) => !Number.isNaN(height));
+        const range = Math.max(...drawn) - Math.min(...drawn);
+        test.info().annotations.push({
+          type: `group on the switch at ${at}`,
+          description: `${heights.length} frames, range ${range.toFixed(2)} px, decision requests held ${held}`,
+        });
+        expect(held, `${at}: the browser asked for a decision, and it was held`).toBeGreaterThanOrEqual(1);
+        expect(heights.length, `${at}: frames sampled`).toBeGreaterThan(10);
+        expect(heights.length - drawn.length, `${at}: frames with no group`).toBe(0);
+        expect(range, `${at}: the group's height range from the press to settle`).toBeLessThanOrEqual(0.5);
+      }
+    });
+  }
+});
+
+/**
+ * Round 37, verify-2 N2: a visitor who scrolled down the server's frame before the page mounted saw the page reorder
+ * under them (CLS 0.23 at 1440 and 0.60 to 0.93 at 390): the footer, the one node that outlived the swap, was pushed
+ * off the screen, then the sections before the board filled in above the unchanged scroll position. The frame now holds
+ * the footer back while scripts run, and the page puts the board's summary back on the line it was on.
+ */
+test.describe("the page keeps the visitor's place when it replaces the server's frame (round 37, verify-2 N2)", () => {
+  test.beforeEach(async ({ page }) => requireSavedDays(page));
+  test.afterEach(async ({ page }) => page.unrouteAll({ behavior: "ignoreErrors" }));
+
+  for (const day of Object.values(DAYS)) {
+    test(`on ${day.title}, scrolled to the board's summary on the server's frame, the mount shifts nothing and leaves the summary on its line; the frame holds the footer back while scripts run`, async ({ page }) => {
+      test.setTimeout(120_000);
+      await page.addInitScript(() => {
+        const store = window as unknown as { __shift: number; __shifts: string[] };
+        store.__shift = 0;
+        store.__shifts = [];
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries() as unknown as { value: number; hadRecentInput: boolean; sources?: { node?: Node | null }[] }[]) {
+            if (entry.hadRecentInput) continue;
+            store.__shift += entry.value;
+            store.__shifts.push(`${entry.value.toFixed(4)}: ${(entry.sources ?? []).map((source) => (source.node instanceof Element ? source.node.tagName : "?")).join(", ")}`);
+          }
+        }).observe({ type: "layout-shift", buffered: true });
+      });
+      const home = new HomePage(page);
+      const path = day.id === DAYS.glastonbury.id ? "/" : `/?preset=${day.id}`;
+      // One load first, so the measured load is the page's own and not the dev server's first compile.
+      await page.goto(path, { waitUntil: "domcontentloaded" });
+      await home.waitUntilReady();
+      // The browser's preset request is held 3 s, so the server's frame stays on screen while the visitor scrolls.
+      let held = 0;
+      await page.route(
+        (url) => PRESET_PATH.test(url.pathname),
+        async (route) => {
+          if (route.request().method() !== "GET") return route.fallback();
+          held += 1;
+          await new Promise((resolve) => setTimeout(resolve, 3_000));
+          await route.fallback();
+        },
+      );
+      await page.goto(path, { waitUntil: "domcontentloaded" });
+      const mounted = page.locator("#what-qloo-changes");
+      const summary = page.locator("details[data-board-fold] > summary").filter({ visible: true });
+      await expect(summary).toHaveCount(1);
+      // Still the server's frame: no section of the page yet, and the footer held back.
+      expect(await mounted.count(), "the page has not mounted yet").toBe(0);
+      expect(await page.locator("body > footer, footer").first().evaluate((footer) => getComputedStyle(footer).display), "the frame's footer while scripts run").toBe("none");
+      const before = await summary.evaluate((element) => {
+        element.scrollIntoView({ block: "center" });
+        const store = window as unknown as { __shift: number; __shifts: string[] };
+        store.__shift = 0;
+        store.__shifts = [];
+        return element.getBoundingClientRect().top;
+      });
+      await expect(mounted, "the page mounted").toBeAttached({ timeout: 30_000 });
+      // The sections the page puts before the board fill in after the mount; let them.
+      await page.waitForTimeout(2_000);
+      const found = await page.evaluate(() => {
+        const store = window as unknown as { __shift: number; __shifts: string[] };
+        return { shift: store.__shift, shifts: store.__shifts };
+      });
+      const after = await summary.evaluate((element) => element.getBoundingClientRect().top);
+      test.info().annotations.push({ type: `mount, ${day.title}`, description: `summary ${before.toFixed(1)} -> ${after.toFixed(1)} px; ${JSON.stringify(found)}; held ${held}` });
+      expect(held, "the browser's preset request was held").toBeGreaterThanOrEqual(1);
+      expect(found.shift, `layout shift at the mount (${found.shifts.join("; ")})`).toBeLessThan(0.0005);
+      expect(Math.abs(after - before), `the summary's top: ${before} on the frame, ${after} on the page`).toBeLessThanOrEqual(1);
+      await expect(page.getByRole("contentinfo"), "the page's footer").toBeVisible();
+    });
+  }
+
+  test("with scripts off, the server's frame shows the footer", async ({ browser, baseURL }) => {
+    const context = await browser.newContext({ javaScriptEnabled: false, baseURL });
+    try {
+      const page = await context.newPage();
+      await page.goto("/", { waitUntil: "domcontentloaded" });
+      await expect(page.locator("details[data-board-fold] > summary").filter({ visible: true })).toHaveCount(1);
+      await expect(page.getByRole("contentinfo")).toBeVisible();
+      await expect(page.getByRole("contentinfo")).toContainText("The festivals shown do not use Clash Control");
+    } finally {
+      await context.close();
+    }
+  });
+});
+
+test.describe("the hero's desktop note, the date and the keep offer (round 37: L22, L9, L19, L20)", () => {
+  test.beforeEach(async ({ page }) => requireSavedDays(page));
+
+  for (const day of Object.values(DAYS)) {
+    test(`on ${day.title}, the note says why this move and what near 100 means at 1440 x 900 and 1280 x 800, clear of the toggle, and is not drawn at 1366 x 768 or on a phone`, async ({ page, isPhone }) => {
+      const home = new HomePage(page);
+      const note = home.hero.locator("[data-hero-note]");
+      if (isPhone) {
+        // L9 and L22 close on the desktop only: the phone's first screen has no room for the note.
+        for (const size of [
+          { width: 390, height: 844 },
+          { width: 375, height: 667 },
+        ]) {
+          await page.setViewportSize(size);
+          await home.goto(day.id);
+          await expect(note, `${size.width} x ${size.height}: no note`).toBeHidden();
+        }
+        return;
+      }
+      for (const size of [
+        { width: 1440, height: 900 },
+        { width: 1280, height: 800 },
+      ]) {
+        await page.setViewportSize(size);
+        await home.goto(day.id);
+        const at = `${size.width} x ${size.height}`;
+        await expect(note, `${at}: the note`).toBeVisible();
+        await expect(note).toHaveText(HERO_NOTE[day.id]);
+        const [noteBox, toggleBox] = [await note.boundingBox(), await home.viewToggle.boundingBox()];
+        expect(noteBox, `${at}: the note is drawn`).not.toBeNull();
+        // Two lines of 20 px, wholly above the toggle.
+        expect(noteBox?.height ?? 0, `${at}: two lines`).toBeLessThanOrEqual(41);
+        expect((noteBox?.y ?? 0) + (noteBox?.height ?? 0), `${at}: the note ends above the toggle`).toBeLessThanOrEqual(toggleBox?.y ?? 0);
+        await expect(note, `${at}: on the first screen`).toBeInViewport({ ratio: 1 });
+      }
+      // At 790 px tall or less the first screen keeps the drawing whole instead (L12 wins over the note).
+      await page.setViewportSize({ width: 1366, height: 768 });
+      await home.goto(day.id);
+      await expect(note, "1366 x 768: no note").toBeHidden();
+    });
+  }
+
+  test("the dateline's date stays on one line at every width: 1440 and 1024 on a desktop, 390, 360 and 320 on a phone (L19)", async ({ page, isPhone }) => {
+    const home = new HomePage(page);
+    const widths = isPhone ? [390, 360, 320] : [1440, 1024];
+    for (const day of Object.values(DAYS)) {
+      for (const width of widths) {
+        await page.setViewportSize({ width, height: isPhone ? 844 : 900 });
+        await home.goto(day.id);
+        // The tops of the date's line boxes, read through a range over its characters.
+        const tops = await home.dateline.evaluate((element) => {
+          const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+          for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            const text = node.textContent ?? "";
+            const match = /\d{1,2} [A-Z][a-z]{2} \d{4}/.exec(text);
+            if (!match) continue;
+            const range = document.createRange();
+            range.setStart(node, match.index);
+            range.setEnd(node, match.index + match[0].length);
+            return [...range.getClientRects()].map((rect) => Math.round(rect.top));
+          }
+          return null;
+        });
+        expect(tops, `${day.title} at ${width}: the date is in the dateline`).not.toBeNull();
+        expect(new Set(tops).size, `${day.title} at ${width}: lines the date takes`).toBe(1);
+      }
+    }
+  });
+
+  test("Keep this move's offer keeps Add and Replace together: one under the other at 360 on a phone, side by side at 1440 (L20)", async ({ page, isPhone }) => {
+    const home = new HomePage(page);
+    const move = new TryAMove(page);
+    await page.setViewportSize(isPhone ? { width: 360, height: 740 } : { width: 1440, height: 900 });
+    await home.goto(DAYS.glastonbury.id);
+    // The plan already holds another move, so Keep this move asks first.
+    await move.choose("Gurriers");
+    await move.keepButton.click();
+    await expect(move.kept).toHaveCount(1);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await home.keepMove.click();
+    const offer = home.group.getByRole("group", { name: "Keep this move: add it to your plan, or replace your plan" });
+    await expect(offer).toBeVisible();
+    const add = await offer.getByRole("button", { name: "Add to your plan" }).boundingBox();
+    const replace = await offer.getByRole("button", { name: "Replace your plan" }).boundingBox();
+    expect(add, "Add is drawn").not.toBeNull();
+    expect(replace, "Replace is drawn").not.toBeNull();
+    const none = { x: 0, y: 0, width: 0, height: 0 };
+    const [a, r] = [add ?? none, replace ?? none];
+    if (isPhone) {
+      // Replace sits directly under Add, in Add's column, with nothing pressable between them.
+      expect(Math.abs(r.x - a.x), "Replace starts where Add starts").toBeLessThanOrEqual(1);
+      const gap = r.y - (a.y + a.height);
+      expect(gap, "Replace's top under Add's foot").toBeGreaterThanOrEqual(0);
+      expect(gap, "the gap between Add and Replace").toBeLessThanOrEqual(12);
+      const between = await home.group.locator("button, a").evaluateAll(
+        (all, [top, bottom]) =>
+          all.filter((element) => {
+            const box = element.getBoundingClientRect();
+            return box.height > 0 && box.top >= top - 0.5 && box.bottom <= bottom + 0.5;
+          }).length,
+        [a.y + a.height, r.y] as const,
+      );
+      expect(between, "controls between Add and Replace").toBe(0);
+    } else {
+      expect(Math.abs(r.y - a.y), "Add and Replace share one row").toBeLessThanOrEqual(1);
+      expect(r.x, "Replace follows Add").toBeGreaterThan(a.x + a.width);
+    }
   });
 });

@@ -3,7 +3,7 @@ import { expect, test } from "./fixtures";
 import { HomePage } from "./pages/home-page";
 import { parsePlace, TryAMove } from "./pages/try-a-move";
 
-/** Said beside a run's zero count when it priced every place it tested with the day's saved reading. */
+/** Said beside a run's zero count when it scored every place it tested with the day's saved reading. */
 const SAVED_READING = "Every place it tested was scored with this day’s saved Qloo reading (taste overlap and popularity); it sent no new request.";
 
 /**
@@ -44,8 +44,15 @@ test.describe("recorded agent runs", () => {
 
     // What the agent can and cannot do, open with no click, with the run's caps.
     await expect(home.agent.getByRole("heading", { level: 3, name: "What the agent can and cannot do" })).toBeVisible();
-    await expect(home.agent).toContainText("It can test a move, but it never changes your timetable unless you press Keep this place.");
-    await expect(home.agent).toContainText("At most 12 Qloo requests and 6 model turns per run.");
+    // Round 37: one act, one name (AO4, L34: "Keep this move", as the hero says), and the run's turns are the agent's (R4, L50).
+    await expect(home.agent).toContainText("It can test a move, but it never changes your timetable unless you press Keep this move.");
+    await expect(home.agent).toContainText("At most 12 Qloo requests and 6 agent turns per run.");
+    await expect(home.agent).not.toContainText("Keep this place");
+    await expect(home.agent).not.toContainText("model turns");
+    // Round 37 (L53): what to ask it, right after what it does, visible with no click.
+    await expect(home.agent).toContainText(
+      "The agent tests a move against every rule and scores it before it answers. Ask it to set rules, find and test a move, then explain the result. Saved runs on this day replay with no live Qloo or model call.",
+    );
     // One recording on this day asked Qloo, and its row says so; the runs line, computed from the listed runs, is gone.
     const runs = home.agent.getByRole("list", { name: "Recorded runs" }).getByRole("listitem");
     await expect(runs).toHaveCount(4);
@@ -84,13 +91,15 @@ test.describe("recorded agent runs", () => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
-    // Runs that end with a place to keep come first (the first is the default replay); the run the rules refuse is last.
+    // Runs that end with a place to keep come first, the one that asked Qloo first among them (round 37, R2: the first
+    // is the default replay); the run the rules refuse is last.
     const runs = home.agent.getByRole("list", { name: "Recorded runs" }).getByRole("listitem");
     await expect(runs).toHaveCount(4);
-    await expect(runs.nth(0)).toContainText("Keep Jorja Smith and Olivia Rodrigo where they are, and keep Parcels and The Maccabees from overlapping. Then tell me where Parcels could go.");
-    await expect(runs.nth(0)).toContainText("Set two rules, then move one set");
-    await expect(runs.nth(1)).toContainText("Why do Nadine Shah and Gurriers clash, and where could Gurriers go instead?");
-    await expect(runs.nth(1)).toContainText("Explain a hidden clash and find a move");
+    await expect(runs.nth(0)).toContainText("Why do Nadine Shah and Gurriers clash, and where could Gurriers go instead?");
+    await expect(runs.nth(0)).toContainText("Explain a hidden clash and find a move");
+    await expect(runs.nth(0)).toContainText("This run made 1 Qloo request.");
+    await expect(runs.nth(1)).toContainText("Keep Jorja Smith and Olivia Rodrigo where they are, and keep Parcels and The Maccabees from overlapping. Then tell me where Parcels could go.");
+    await expect(runs.nth(1)).toContainText("Set two rules, then move one set");
     await expect(runs.nth(2)).toContainText("Why do Thandii and The Selecter clash?");
     await expect(runs.nth(2)).toContainText("Ask about an act Qloo knows nothing about");
     await expect(runs.nth(3)).toContainText("Can Nadine Shah play the Other stage at 15:30? Check it against the rules.");
@@ -171,7 +180,7 @@ test.describe("recorded agent runs", () => {
     const best = /Lowest index: (.+) at (\d{2}:\d{2})/.exec(text);
     const bestIndex = /the index goes from (\d+\.\d) to (\d+\.\d)\./.exec(text);
     expect(best, "the answer names the lowest-index place").not.toBeNull();
-    expect(bestIndex, "the answer prices it").not.toBeNull();
+    expect(bestIndex, "the answer scores it").not.toBeNull();
 
     // The place the agent names is in Try a move's list for the same set, with the same index: one engine
     // behind both. (The run also set a rule between two sets, so Try a move may list a better place.)
@@ -182,7 +191,7 @@ test.describe("recorded agent runs", () => {
     expect(same?.index.toFixed(1)).toBe(bestIndex?.[2]);
   });
 
-  test("Keep this place hands the replayed run's tested place to the plan, and the brief lists it", async ({ page, guard }) => {
+  test("Keep this move hands the replayed run's tested place to the plan, and the brief lists it", async ({ page, guard }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
@@ -195,13 +204,15 @@ test.describe("recorded agent runs", () => {
     await expect(tested).toBeVisible();
     const [, stage = "", start = "", end = ""] = /^Parcels → (.+) (\d{2}:\d{2})–(\d{2}:\d{2})$/.exec((await tested.innerText()).trim()) ?? [];
     await expect(home.plan).toHaveCount(0);
-    // Every place it tested was priced with the day's saved reading, and the run says so beside its zero count.
+    // Every place it tested was scored with the day's saved reading, and the run says so beside its zero count.
     await expect(home.agent).toContainText(SAVED_READING);
     await expect(home.agent.getByRole("button", { name: "Qloo requests in this run: 0" })).toBeVisible();
     // With an empty plan there is nothing to add to or replace: one button keeps the place.
     await expect(home.agent.getByRole("button", { name: /^(Add to|Replace) your plan$/ })).toHaveCount(0);
 
-    await home.agent.getByRole("button", { name: "Keep this place" }).click();
+    // Round 37 (AO4): the agent's Keep has the hero's name; it is found inside #agent, so the hero's own Keep is not it.
+    await expect(home.agent.getByRole("button", { name: "Keep this place" })).toHaveCount(0);
+    await home.agent.getByRole("button", { name: "Keep this move" }).click();
     const kept = home.agent.getByRole("status").filter({ hasText: "Kept in your plan." });
     await expect(kept).toBeVisible();
     await expect(kept.getByRole("link", { name: "See your plan" })).toBeFocused();
@@ -380,7 +391,7 @@ test.describe("recorded agent runs", () => {
   });
 
   for (const choice of ["Add to your plan", "Replace your plan"] as const) {
-    test(`after the hero's move is kept, Keep this place offers Add and Replace, and ${choice} says what it did`, async ({ page, guard }) => {
+    test(`after the hero's move is kept, the agent's Keep this move offers Add and Replace, and ${choice} says what it did`, async ({ page, guard }) => {
       const home = new HomePage(page);
       const move = new TryAMove(page);
       await home.goto(DAYS.glastonbury.id);
@@ -396,6 +407,7 @@ test.describe("recorded agent runs", () => {
       const replace = home.agent.getByRole("button", { name: "Replace your plan" });
       await expect(add).toBeVisible();
       await expect(replace).toBeVisible();
+      await expect(home.agent.getByRole("button", { name: "Keep this move" })).toHaveCount(0);
       await expect(home.agent.getByRole("button", { name: "Keep this place" })).toHaveCount(0);
       await expect(home.agent).toContainText("your plan already holds 1 kept move.");
       expect(await home.agent.getByRole("button", { name: /^(Add to|Replace) your plan$/ }).allInnerTexts()).toEqual(["Add to your plan", "Replace your plan"]);
@@ -430,4 +442,129 @@ test.describe("recorded agent runs", () => {
       expect(guard.requested.filter((url) => url.includes("/api/runs"))).toEqual([]);
     });
   }
+
+  /** The replay row of each day's run that asked Qloo: live when it was recorded, nothing fetched now. */
+  const LIVE_WHEN_RECORDED = {
+    [DAYS.glastonbury.id]: "Live when recorded, 20 Oct 2026; replayed now, nothing fetched.",
+    [DAYS.riot.id]: REPLAY_ROW,
+  } as const;
+
+  for (const day of Object.values(DAYS)) {
+    test(`on ${day.title}, the run listed first asked Qloo, and after its replay one ink line under its question says so and opens its trace; on a phone the run's card lands clear of the bars (round 37, R2, L49, L51, L52)`, async ({ page, isPhone, guard }) => {
+      const home = new HomePage(page);
+      await home.goto(day.id);
+
+      // The first row (and so the default replay) is a run that asked Qloo.
+      const runs = home.agent.getByRole("list", { name: "Recorded runs" }).getByRole("listitem");
+      await expect(runs.first()).toContainText("This run made 1 Qloo request.");
+      await runs.first().getByRole("button", { name: /^Replay the recorded run: / }).click();
+      await expect(home.agent.getByRole("status").filter({ hasText: /\S/ }).last()).toHaveText("The recorded run has finished.", { timeout: 60_000 });
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+
+      // One trace line in the section, under the run's question: 14 px, weight 600, in the body's ink.
+      const line = home.agent.getByRole("button", { name: /Qloo requests in this run/ }).filter({ visible: true });
+      await expect(line).toHaveCount(1);
+      await expect(line).toHaveText("Qloo requests in this run: 1");
+      const card = home.agent.getByRole("list", { name: "Conversation" }).getByRole("listitem").first();
+      await expect(card.locator("[data-run-trace]").getByRole("button")).toHaveText("Qloo requests in this run: 1");
+      const style = await line.evaluate((element) => {
+        const own = getComputedStyle(element);
+        return { size: own.fontSize, weight: own.fontWeight, color: own.color, body: getComputedStyle(document.body).color };
+      });
+      expect(style.size, "the line's size").toBe("14px");
+      expect(style.weight, "the line's weight").toBe("600");
+      expect(style.color, "the line is in the body's ink").toBe(style.body);
+      const [cardBox, lineBox] = [await card.boundingBox(), await line.boundingBox()];
+      expect((lineBox?.y ?? 0) - (cardBox?.y ?? 0), "the line's top within 160 px of the card's top").toBeLessThanOrEqual(160);
+      expect(lineBox?.y ?? 0, "the line sits inside the card").toBeGreaterThanOrEqual(cardBox?.y ?? 0);
+
+      if (isPhone) {
+        // One column: the card's title row lands under the sticky bars with 8 px to spare, its question in view.
+        const foot = await stickyBarsFoot(page);
+        expect(cardBox?.y ?? 0, "the card's top against the bars' foot + 8").toBeGreaterThanOrEqual(foot + 8);
+        await expect(card.locator("p").filter({ hasText: /^The recorded run was asked: / }).first()).toBeInViewport();
+      }
+
+      // It opens the run's trace: live when recorded, nothing fetched now.
+      await line.click();
+      await expect(home.drawer).toBeVisible();
+      await expect(home.drawer.getByRole("heading", { level: 2 })).toHaveText("How Qloo was used");
+      await expect(home.drawer.locator("[data-replay-provenance]")).toHaveText(LIVE_WHEN_RECORDED[day.id]);
+      await page.keyboard.press("Escape");
+      await expect(home.drawer).toHaveCount(0);
+      expect(guard.requested.filter((url) => url.includes("/api/runs"))).toEqual([]);
+    });
+  }
+});
+
+/**
+ * Round 37 closeout, F3: the agent section's pending state was much shorter than the settled panel, so when Riot
+ * Fest's recordings answered late the section grew under a visitor already there (270 -> 611 px at 1440, 403 -> 1,168
+ * at 390; 0.19 and 0.73 at CPU 4x) and pushed the sources and the footer off the screen. The section now holds the
+ * settled panel's room while the runs are out. Here the recordings are held 2.5 s with the CPU slowed 4x, and every
+ * layout shift after the visitor reaches the section, or the page's foot, must stay under 0.0005.
+ */
+test.describe("recorded agent runs that answer late (round 37 closeout, F3)", () => {
+  test.beforeEach(async ({ page }) => requireSavedDays(page));
+
+  test("late recordings move nothing on screen, at the section and at the page's foot, on both days", async ({ page, isPhone }) => {
+    test.setTimeout(300_000);
+    await page.route(
+      (url) => /\/api\/presets\/[^/]+\/recordings$/.test(url.pathname),
+      async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 2_500));
+        await route.fallback();
+      },
+    );
+    await page.addInitScript(() => {
+      const store = window as unknown as { __shift: number; __shifts: string[]; __watch: boolean };
+      store.__shift = 0;
+      store.__shifts = [];
+      store.__watch = false;
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries() as unknown as { value: number; hadRecentInput: boolean; sources?: { node?: Node | null }[] }[]) {
+          if (entry.hadRecentInput || !store.__watch) continue;
+          const elements = (entry.sources ?? []).map((source) => (source.node instanceof Element ? source.node : (source.node?.parentElement ?? null)));
+          store.__shift += entry.value;
+          store.__shifts.push(`${entry.value.toFixed(4)}: ${elements.map((element) => (element ? `${element.tagName}${element.id ? `#${element.id}` : ""}` : "?")).join(", ")}`);
+        }
+      }).observe({ type: "layout-shift", buffered: true });
+    });
+    const cdp = await page.context().newCDPSession(page);
+    const sizes = isPhone
+      ? [
+          { width: 390, height: 844 },
+          { width: 375, height: 667 },
+        ]
+      : [
+          { width: 1440, height: 900 },
+          { width: 1024, height: 768 },
+        ];
+    for (const size of sizes) {
+      await page.setViewportSize(size);
+      for (const day of [DAYS.glastonbury, DAYS.riot]) {
+        for (const where of ["section", "foot"] as const) {
+          const label = `${day.title} at ${size.width} x ${size.height}, visitor at the ${where}`;
+          await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+          // A fresh load each time, so the recordings are asked for (and held) again.
+          await page.goto(`/?preset=${day.id}&late=${where}${size.width}`, { waitUntil: "commit" });
+          await page.waitForFunction(() => document.getElementById("agent") !== null, null, { timeout: 90_000 });
+          await page.evaluate((at) => {
+            (window as unknown as { __watch: boolean }).__watch = true;
+            if (at === "foot") window.scrollTo(0, document.documentElement.scrollHeight);
+            else document.getElementById("agent")?.scrollIntoView({ block: "start" });
+          }, where);
+          await expect(page.locator("#agent [data-agent-picker]"), `${label}: the runs landed`).toBeAttached({ timeout: 30_000 });
+          await page.waitForTimeout(1_000);
+          const found = await page.evaluate(() => {
+            const store = window as unknown as { __shift: number; __shifts: string[] };
+            return { shift: store.__shift, shifts: store.__shifts };
+          });
+          await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+          test.info().annotations.push({ type: `late recordings, ${label}`, description: JSON.stringify(found) });
+          expect(found.shift, `${label}: layout shift after the recordings landed (${found.shifts.join("; ")})`).toBeLessThan(0.0005);
+        }
+      }
+    }
+  });
 });

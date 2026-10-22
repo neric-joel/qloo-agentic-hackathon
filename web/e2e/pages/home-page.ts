@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 import { expect, type Locator, type Page } from "@playwright/test";
 
 import { READY_TIMEOUT, startsWith } from "../helpers";
@@ -63,6 +65,15 @@ export class HomePage {
 
   // The board.
   readonly boardHeading: Locator;
+  /**
+   * Round 37 (AO1): the board's grid sits in one disclosure, closed on arrival, whose summary says what it shows
+   * ("Show 39 sets on 5 stages"). The legend, the coverage line, the caption and the clash list stay outside it.
+   */
+  readonly boardFold: Locator;
+  readonly boardFoldSummary: Locator;
+  /** The caption under the coverage row, read with no click: "Lines join the 10 costliest clashes. Board numbers ...". */
+  readonly boardCaption: Locator;
+  /** The grid itself, inside the fold: shown only once the fold is open (`openBoard`). */
   readonly board: Locator;
   readonly costliest: Locator;
   readonly clashLinks: Locator;
@@ -126,6 +137,9 @@ export class HomePage {
     this.rail = page.getByRole("navigation", { name: "On this page" });
 
     this.boardHeading = page.getByRole("heading", { level: 2, name: /^Where the clashes fall/ });
+    this.boardFold = page.locator("details[data-board-fold]");
+    this.boardFoldSummary = this.boardFold.locator(":scope > summary");
+    this.boardCaption = page.locator("[data-board-caption]");
     this.board = page.getByRole("group", { name: /timetable\. Use the arrow keys to move between sets\.$/ });
     this.costliest = page.getByRole("region", { name: /^The \d+ costliest clashes$/ });
     this.clashLinks = page.getByRole("list", { name: "Clash links" });
@@ -170,12 +184,73 @@ export class HomePage {
   async waitUntilReady(): Promise<void> {
     await expect(this.heading).toBeVisible({ timeout: READY_TIMEOUT });
     await expect(this.boardHeading).toBeVisible({ timeout: READY_TIMEOUT });
-    await expect(this.board).toBeVisible({ timeout: READY_TIMEOUT });
+    // Round 37: the grid is behind the board's closed disclosure, so readiness is the interactive board's caption
+    // (the server's frame draws the fold over a skeleton and no caption) and its one fold, closed.
+    await expect(this.boardCaption).toBeVisible({ timeout: READY_TIMEOUT });
+    await expect(this.boardFold).toHaveCount(1, { timeout: READY_TIMEOUT });
     await expect(this.group).toBeVisible({ timeout: READY_TIMEOUT });
     await expect(this.rail.getByRole("link").first()).toHaveText(/What (Qloo|taste) changes/, { timeout: READY_TIMEOUT });
     await expect(this.whatQloo.getByRole("heading", { level: 2 })).toHaveText(/^Adding taste (moves|leaves) this pair/, {
       timeout: READY_TIMEOUT,
     });
+    // Round 37: and the webfont. On a dev server busy with four workers it can land seconds after the page is drawn,
+    // and its swap from the fallback face changes text widths by up to 4%, so a spec that compares two states' boxes
+    // or a name plate's half-width rule would compare one face with the other.
+    await this.page.evaluate(() => document.fonts.ready.then(() => undefined));
+  }
+
+  /**
+   * The hero's Keep moves focus to "See your plan" only when the plan holds the move within 2 s of the press
+   * (hero-decision.tsx: "A plan that took longer than two seconds to hold the move is no answer to this press"). On a
+   * dev server busy with four workers the what-if answer alone has taken 1.7 s, so a spec that asserts that focus
+   * first has the server answer the hero move's what-if itself (the same body the page sends, the engine's own route,
+   * no Qloo), and the page's press is then answered at once with that same answer. Nothing else about the press
+   * changes. Returns how many presses were answered this way; a spec checks it, so a change in the body the page
+   * sends shows up as a failure here and not as a slow test.
+   */
+  async answerKeepAtOnce(day: string): Promise<() => number> {
+    const preset = (await (await this.page.request.get(`/api/presets/${day}`)).json()) as {
+      decision?: { move?: { act_id: string; stage_id: string; day: number; start: string } | null };
+    };
+    const move = preset.decision?.move;
+    expect(move, `${day}: the day's decision has a move`).toBeTruthy();
+    const body = { moves: [{ act: move?.act_id, stage_id: move?.stage_id, day: move?.day, start: move?.start }], act: null, limit: 8 };
+    const primed = await this.page.request.post(`/api/presets/${day}/whatif`, { data: body });
+    expect(primed.status(), `${day}: the server answers the hero move's what-if`).toBe(200);
+    const answer = await primed.body();
+    let answered = 0;
+    await this.page.route(
+      (url) => url.pathname === `/api/presets/${day}/whatif`,
+      async (route) => {
+        const request = route.request();
+        let same = false;
+        try {
+          same = request.method() === "POST" && isDeepStrictEqual(JSON.parse(request.postData() ?? "null"), body);
+        } catch {
+          same = false;
+        }
+        if (!same) return route.fallback();
+        answered += 1;
+        return route.fulfill({ status: 200, contentType: "application/json", body: answer });
+      },
+    );
+    return () => answered;
+  }
+
+  /** Whether the board's disclosure is open. */
+  async boardOpen(): Promise<boolean> {
+    return this.boardFold.evaluate((element) => (element as HTMLDetailsElement).open);
+  }
+
+  /**
+   * Opens the board's disclosure as a visitor does, by pressing its summary, unless it is open, and waits until the
+   * grid shows. Every spec that reads the board's tiles, badges or grid calls this first (round 37, AO1).
+   */
+  async openBoard(): Promise<void> {
+    await expect(this.boardCaption).toBeVisible({ timeout: READY_TIMEOUT });
+    if (!(await this.boardOpen())) await this.boardFoldSummary.click();
+    await expect(this.boardFold).toHaveAttribute("open", "");
+    await expect(this.board).toBeVisible({ timeout: READY_TIMEOUT });
   }
 
   /** Opens the "Keep two sets apart" disclosure as a visitor does, by pressing its summary, unless it is open. */

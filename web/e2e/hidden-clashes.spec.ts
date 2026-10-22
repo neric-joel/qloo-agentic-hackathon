@@ -117,6 +117,25 @@ test.describe("hidden clashes", () => {
     });
   }
 
+  test("the hero day's own Hidden pair is named before the sourced examples, on both days (round 37, L31)", async ({ page }) => {
+    const home = new HomePage(page);
+    await home.goto(DAYS.glastonbury.id);
+    // Three or more Hidden clashes: the day line names the costliest by its rank.
+    const line = home.hiddenWall.locator("[data-hidden-definition]");
+    await expect(line).toContainText("On this day, 5 of the 15 ranked clashes carry the Hidden label; the costliest is Sprints × Katy J Pearson (#1).");
+    const text = (await home.hiddenWall.innerText()).replace(/\s+/g, " ");
+    const own = text.indexOf("Sprints × Katy J Pearson (#1)");
+    const firstExample = text.indexOf("Pair 1 of 8");
+    expect(own, "the day's own Hidden pair is named").toBeGreaterThanOrEqual(0);
+    expect(firstExample, "the sourced examples follow").toBeGreaterThan(own);
+
+    // One Hidden clash: the line names it (the form for one pair, unchanged).
+    await home.goto(DAYS.riot.id);
+    await expect(home.hiddenWall.locator("[data-hidden-definition]")).toContainText(
+      /On this day, 1 of the 15 ranked clashes carries the Hidden label: Saturdays at Your Place × Arm[’']s Length \(#\d+\)\./,
+    );
+  });
+
   test("a hidden clash on the board is marked, and opens like any other", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);

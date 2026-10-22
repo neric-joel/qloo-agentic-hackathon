@@ -153,12 +153,15 @@ test.describe("reduced motion", () => {
   test("Keep this move shows its end state at once and does not scroll; See your plan jumps without a smooth scroll", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
+    // Focus follows a press only when the plan answers within 2 s (see answerKeepAtOnce).
+    const answered = await home.answerKeepAtOnce(DAYS.glastonbury.id);
 
     await home.keepMove.scrollIntoViewIfNeeded();
     const scrolled = await page.evaluate(() => window.scrollY);
     await home.keepMove.click();
     await expect(home.keptNotice).toBeVisible();
     await expect(home.seeYourPlan).toBeFocused();
+    expect(answered(), "the press was answered with the server's own what-if").toBe(1);
     expect(await page.evaluate(() => window.scrollY)).toBe(scrolled);
     // No press scale on the button, and nothing else plays.
     expect(await home.keepMove.evaluate((button) => button.getAnimations().length), "Keep starts no animation").toBe(0);
@@ -174,4 +177,59 @@ test.describe("reduced motion", () => {
     await twoFrames(page);
     expect(await page.evaluate(() => window.scrollY), "no smooth scroll still under way").toBe(landed);
   });
+});
+
+test.describe("motion only from the visitor's hand (round 37, L39)", () => {
+  test.use({ reducedMotion: "no-preference" });
+  test.beforeEach(async ({ page }) => requireSavedDays(page));
+
+  for (const day of Object.values(DAYS)) {
+    test(`on ${day.title}, with the board shown, a click on "Timetable" in the section nav starts no transition on the board or the nav while the pointer stays still; moving the hand onto a tile does`, async ({ page, isPhone }) => {
+      const home = new HomePage(page);
+      await home.goto(day.id);
+      // The board shown first (its disclosure opened by a press), then the page back at the top.
+      await home.openBoard();
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await twoFrames(page);
+      await page.evaluate(() => {
+        const store = window as unknown as { __l39: { board: number; nav: number } };
+        store.__l39 = { board: 0, nav: 0 };
+        const board = document.querySelector('section[aria-labelledby="board-heading"]');
+        const nav = document.querySelector('nav[aria-label="On this page"]');
+        document.addEventListener(
+          "transitionstart",
+          (event) => {
+            if (board?.contains(event.target as Node)) store.__l39.board += 1;
+            else if (nav?.contains(event.target as Node)) store.__l39.nav += 1;
+          },
+          true,
+        );
+      });
+      const counts = () => page.evaluate(() => ({ ...(window as unknown as { __l39: { board: number; nav: number } }).__l39 }));
+      const link = home.railLink("Timetable");
+      await link.scrollIntoViewIfNeeded();
+      const box = await link.boundingBox();
+      expect(box, "the Timetable link is drawn").not.toBeNull();
+      const at = { x: (box?.x ?? 0) + (box?.width ?? 0) / 2, y: (box?.y ?? 0) + (box?.height ?? 0) / 2 };
+      // A real mouse press, the pointer then left where it was while the board scrolls in under it.
+      await page.mouse.move(at.x, at.y);
+      await page.evaluate(() => Object.assign((window as unknown as { __l39: object }).__l39, { board: 0, nav: 0 }));
+      await page.mouse.down();
+      await page.mouse.up();
+      await expect(page).toHaveURL(/#board-heading$/);
+      await page.waitForTimeout(2_500);
+      const still = await counts();
+      test.info().annotations.push({ type: `transitions after the jump on ${day.title} at ${isPhone ? 390 : 1440}`, description: JSON.stringify(still) });
+      expect(still.board + still.nav, "transitions on the board and the nav with the pointer still").toBe(0);
+
+      // The hand moves onto a tile: the highlight answers it.
+      const tile = home.board.getByRole("button").filter({ visible: true }).nth(3);
+      await tile.scrollIntoViewIfNeeded();
+      const tileBox = await tile.boundingBox();
+      await page.evaluate(() => Object.assign((window as unknown as { __l39: object }).__l39, { board: 0, nav: 0 }));
+      await page.mouse.move((tileBox?.x ?? 0) - 20, (tileBox?.y ?? 0) + (tileBox?.height ?? 0) / 2);
+      await page.mouse.move((tileBox?.x ?? 0) + (tileBox?.width ?? 0) / 2, (tileBox?.y ?? 0) + (tileBox?.height ?? 0) / 2, { steps: 4 });
+      await expect.poll(async () => (await counts()).board, { message: "transitions on the board once the hand moves", timeout: 3_000 }).toBeGreaterThanOrEqual(1);
+    });
+  }
 });

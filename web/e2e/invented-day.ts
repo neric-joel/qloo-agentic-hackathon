@@ -28,6 +28,8 @@ export type InventedDay = {
   title: string;
   /** The card's own move, as "Keep this move" sends it. */
   cardStep: Step;
+  /** The act the invented day's decision moves (the hero's move lead names it). */
+  move: string;
   /** Every request answered, as "METHOD path", in order. */
   served: string[];
 };
@@ -35,7 +37,7 @@ export type InventedDay = {
 export async function serveInventedDay(page: Page): Promise<InventedDay> {
   const list = read<{ id: string; title: string }[]>("presets.json");
   const preset = read<unknown>("preset.json");
-  const decision = read<unknown>("decision.json");
+  const decision = read<{ move: { act: string } }>("decision.json");
   const lenses = read<unknown>("lenses.json");
   const recordings = read<unknown>("recordings.json");
   const moves = read<Record<string, unknown>>("moves.json");
@@ -69,5 +71,5 @@ export async function serveInventedDay(page: Page): Promise<InventedDay> {
     },
   );
 
-  return { id, title, cardStep: whatif.step, served };
+  return { id, title, cardStep: whatif.step, move: decision.move.act, served };
 }

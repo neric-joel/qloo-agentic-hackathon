@@ -810,3 +810,123 @@ async function expectPrintSheet(page: Page): Promise<void> {
   await expect.poll(async () => luminance(await rgbOf(page, "body", "backgroundColor")), "paper is white").toBeGreaterThan(0.95);
   await expect.poll(async () => luminance(await rgbOf(page, "body", "color")), "ink is dark").toBeLessThan(0.2);
 }
+
+test.describe("check a draft grid, round 37: the rejected value, a paste with nothing focused, a late published day, the printed overlaps", () => {
+  /** The selected characters of the CSV editor. */
+  const selection = (check: CheckPage) => check.grid.evaluate((area: HTMLTextAreaElement) => area.value.slice(area.selectionStart, area.selectionEnd));
+
+  test("a skipped line's mark selects its rejected value in the editor, and Show it in the grid does the same from the Table view (L64)", async ({ page, guard }) => {
+    const check = new CheckPage(page);
+    await check.goto();
+    await check.replaceWith(MESSY_GRID);
+    await check.checkButton.click();
+    await expect(check.skippedNotice.locator("p").first()).toHaveText(MESSY_SKIPPED);
+
+    // The mark is a control named for what it does, and still reads "skipped 4".
+    const mark = page.getByRole("button", { name: "Select the rejected value on line 4" });
+    await expect(mark).toHaveText("skipped 4");
+    await mark.click();
+    await expect(check.grid).toBeFocused();
+    expect(await selection(check), "the rejected value, selected").toBe("25:70");
+
+    // From the Table view, "Show it in the grid" turns to the text and selects the same characters.
+    await check.tableView.click();
+    await expect(check.grid).toHaveCount(0);
+    await page.getByRole("button", { name: "Show it in the grid" }).click();
+    await expect(check.grid).toBeFocused();
+    expect(await selection(check), "the rejected value, selected again").toBe("25:70");
+    expect(apiWrites(guard.requested), "nothing sent").toEqual([]);
+  });
+
+  test("a paste with nothing focused goes into the editor as a paste there would, is said once, and checks nothing (L65)", async ({ page, context, guard }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    const check = new CheckPage(page);
+    await check.goto();
+    await expect(check.table).toBeVisible();
+    const read = await check.readLine.innerText();
+
+    const text = ["Aurora,Main,18:00,19:00", "Borealis,Side,18:30,19:30"].join("\n");
+    await page.evaluate((value) => navigator.clipboard.writeText(value), text);
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    expect(await page.evaluate(() => document.activeElement === document.body), "nothing has focus").toBe(true);
+    const before = guard.requested.length;
+    await page.keyboard.press("ControlOrMeta+V");
+
+    await expect(check.grid).toBeVisible();
+    await expect(check.grid).toHaveValue(text);
+    await expect(page.getByRole("status").filter({ hasText: "Pasted 2 lines into the CSV editor. Press Check the grid." })).toHaveCount(1);
+    // Nothing was checked: the sample's results stand until Check the grid, and nothing was sent.
+    await expect(check.readLine).toHaveText(read);
+    expect(guard.requested.slice(before).filter((url) => new URL(url).pathname.startsWith("/api/") && !/\/api\/(presets|health)/.test(new URL(url).pathname))).toEqual([]);
+  });
+
+  test("Check a published day, with a grid pasted while the day loads: the paste is kept, the late day ignored, and that is said once (L70)", async ({ page }) => {
+    await requireSavedDays(page);
+    const check = new CheckPage(page);
+    await check.goto();
+    await expect(check.publishedButton).toBeVisible();
+    // The day's own timetable is held 3 s, as on a slow connection.
+    let held = 0;
+    await page.route(
+      (url) => /^\/api\/presets\/[^/]+$/.test(url.pathname),
+      async (route) => {
+        held += 1;
+        await new Promise((resolve) => setTimeout(resolve, 3_000));
+        await route.fallback();
+      },
+    );
+    await check.publishedButton.click();
+    await expect(page.getByRole("status").filter({ hasText: "Loading the published timetable." })).toHaveCount(1);
+    const text = ["Aurora,Main,18:00,19:00", "Borealis,Side,18:30,19:30"].join("\n");
+    await check.paste(text);
+    const kept = page.getByRole("status").filter({ hasText: "Kept your pasted grid; ignored the published day that arrived later." });
+    await expect(kept).toHaveCount(1, { timeout: 15_000 });
+    await expect(kept).toHaveText("Kept your pasted grid; ignored the published day that arrived later.");
+    await expect(check.grid).toHaveValue(text);
+    expect(held, "the day's request was made, and held").toBeGreaterThanOrEqual(1);
+  });
+
+  test("the sample's pair rule stays when one of its acts is on a skipped line of a fresh grid, and the check says it was not checked (L71)", async ({ page }) => {
+    const check = new CheckPage(page);
+    await check.goto();
+    // A fresh grid in place of the sample, with Saffron Season (in the sample's pair rule) on a line that cannot be read.
+    await check.paste(
+      [
+        "Amber Kite,Main,18:00,19:00",
+        "Basalt Choir,Side,18:30,19:30",
+        "Copper Field,Main,19:15,20:00",
+        "Dune Signal,Side,19:45,20:30",
+        "Ember Coast,Tent,18:00,19:00",
+        "Flint Arcade,Tent,19:30,20:30",
+        "Saffron Season,Barn,25:70,22:00",
+        "Ivory Lights,Hill,21:00,22:00",
+      ].join("\n"),
+    );
+    await check.checkButton.click();
+    await expect(check.skippedNotice).toContainText("Pair line 1 not checked: Saffron Season is on a skipped line.");
+    await expect(page.locator("body")).not.toContainText(/Removed the sample|neither act is in this grid/, { useInnerText: true });
+  });
+
+  test("on paper the draft brief lists the overlaps longest first, twelve at most, then says how many more were not printed, on one page (L66)", async ({ page }) => {
+    const check = new CheckPage(page);
+    await check.goto();
+    await check.checkButton.click();
+    await expect(check.announcement).toHaveText(/^Rule breaks: \d+/);
+    const overlaps = page.locator("[data-brief-overlaps]").filter({ visible: true });
+    // On screen the list is not drawn; it is paper only.
+    await expect(overlaps).toHaveCount(0);
+    await page.emulateMedia({ media: "print" });
+    await expect(overlaps).toHaveCount(1);
+    const lines = overlaps.getByRole("listitem");
+    await expect(lines).toHaveCount(12);
+    const minutes = (await lines.allInnerTexts()).map((line) => {
+      const match = /^.+ × .+: (\d+) min \(\d{2}:\d{2}–\d{2}:\d{2}\)$/.exec(line.trim());
+      expect(match, `a printed overlap line: "${line}"`).not.toBeNull();
+      return Number(match?.[1]);
+    });
+    expect(minutes, "longest first").toEqual([...minutes].sort((a, b) => b - a));
+    // The sample shares time in 35 pairs: 12 printed, 23 not.
+    await expect(overlaps).toContainText("and 23 more overlaps not printed.");
+    for (const format of ["Letter", "A4"] as const) expect(pdfPages(await page.pdf({ format, printBackground: true })), `${format} pages`).toBe(1);
+  });
+});

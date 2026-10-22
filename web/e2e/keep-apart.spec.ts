@@ -83,10 +83,18 @@ test.describe("keep two sets apart", () => {
 
     await keep.find.click();
     await expect(keep.clear).toBeDisabled();
+    // Round 37 (AO1): the board's grid waits behind its closed disclosure until a preview needs it.
+    expect(await home.boardOpen(), "the board's disclosure is closed before the preview").toBe(false);
     await keep.changes.first().getByRole("button", { name: "Preview on the timetable" }).click();
     await expect(keep.area.getByRole("status")).toContainText(/^Previewing .+ 0 minutes shared; the change adds no rule break and ends this overlap\./);
     await expect(keep.clear).toBeEnabled();
     await expect(page.getByRole("list", { name: "Timetable key" }).filter({ visible: true }).filter({ hasText: "Tested place" })).toHaveCount(1);
+    // The preview opens the board in the same step and brings its first tested slot into view.
+    await expect(home.boardFold).toHaveAttribute("open", "");
+    await expect(home.board).toBeVisible();
+    const ghosts = home.boardFold.locator('[data-ghost="rule"]');
+    await expect.poll(() => ghosts.count(), { message: "the preview's tested slots on the opened board" }).toBeGreaterThanOrEqual(1);
+    await expect(ghosts.first()).toBeInViewport();
     // A preview is not a kept change: there is no plan.
     await expect(move.plan).toHaveCount(0);
 

@@ -1,17 +1,17 @@
 import type { Locator } from "@playwright/test";
 
 import { expect, test } from "./fixtures";
-import { DAYS, listDays, MESSY_GRID, MESSY_SKIPPED, requireSavedDays } from "./helpers";
+import { DAYS, expectNoHorizontalScroll, listDays, MESSY_GRID, MESSY_SKIPPED, requireSavedDays } from "./helpers";
 import { CheckPage } from "./pages/check-page";
 
 /**
  * "Compare audience overlap" on /check. Pressed with its default, it sends only act names and pairs to this
  * site's own server, which answers from a saved festival day (or the invented example day) with no Qloo
- * request. The page offers "Ask Qloo" only while `/api/health` says live grid pricing is on; it is off here,
+ * request. The page offers "Ask Qloo" only while `/api/health` says the live comparison is on; it is off here,
  * so no spec presses it, and the suite's guard blocks any request in a mode other than "saved".
  */
 
-/** A real Glastonbury Sunday grid: its act names are on the saved day, so the server can price it from it. */
+/** A real Glastonbury Sunday grid: its act names are on the saved day, so the server can compare it from it. */
 const GLASTONBURY_GRID = [
   "The Brian Jonestown Massacre,West Holts,18:30,19:30",
   "St. Vincent,Woodsies,18:30,19:30",
@@ -75,7 +75,7 @@ test.describe("compare audience overlap, from a saved day", () => {
     await expect(intro).toBeVisible();
     const said = Number(/and their (\d+) act names/.exec(await intro.innerText())?.[1]);
     await expect(check.priceSection).toContainText("With no saved day, nothing is compared: live Qloo comparison is off here.");
-    expect(sent, "nothing is priced until the button is pressed").toEqual([]);
+    expect(sent, "nothing is compared until the button is pressed").toEqual([]);
 
     await check.priceButton.click();
 
@@ -174,12 +174,13 @@ test.describe("compare audience overlap, from a saved day", () => {
 });
 
 test.describe("compare audience overlap, names no saved day has", () => {
-  // With live pricing off, the server answers a saved body no saved day holds with a 200 ("no_saved_day"), not a
-  // 422, so the browser logs no error (the suite's console watch fails the test on any).
+  // With the live comparison off (round 37, L86: the server's own words), the server answers a saved body no saved
+  // day holds with a 200 ("no_saved_day"), not a 422, so the browser logs no error (the suite's console watch fails
+  // the test on any).
 
-  test("with live pricing off on this server, there is no offer to ask Qloo: it says so, and nothing goes live", async ({ page, guard }) => {
+  test("with the live comparison off on this server, there is no offer to ask Qloo: it says so, and nothing goes live", async ({ page, guard }) => {
     const health = await (await page.request.get("/api/health")).json();
-    test.skip(health.price_grid_live !== false, "This server has live pricing on; this spec asserts the switched-off state.");
+    test.skip(health.price_grid_live !== false, "This server has the live comparison on; this spec asserts the switched-off state.");
     const sent = recordPriceBodies(page);
     const check = new CheckPage(page);
     await check.goto();
@@ -266,8 +267,13 @@ test.describe("compare audience overlap on a published day", () => {
       await fold.locator("summary").click();
       const items = fold.getByRole("listitem");
       for (const item of await items.all()) await expect(item).toContainText(/Not compared: \S.+\./);
-      // A pair with both sets locked is passed over before sending; every other one in the fold was sent.
-      sentReasoned = await items.filter({ hasNotText: "both sets are locked" }).count();
+      // A pair with both sets locked is passed over before sending; every other one in the fold was sent. Round 37
+      // (L33): the line says whose lock it is, "both sets are marked locked in this grid, so neither can move".
+      const lockedPairs = items.filter({ hasText: "both sets are marked locked in this grid, so neither can move" });
+      // The published day's grid marks its last sets locked, so some pairs are passed over this way.
+      expect(await lockedPairs.count(), "pairs passed over because both sets are marked locked in this grid").toBeGreaterThanOrEqual(1);
+      sentReasoned = (await items.count()) - (await lockedPairs.count());
+      await expect(items.filter({ hasText: /both sets are locked[,;]/ }), "no lock line without its owner").toHaveCount(0);
     }
     expect(pricedCount + sentReasoned, "every pair sent is compared or says why not").toBe(pairsSent);
     expect(guard.spending).toEqual([]);
@@ -333,5 +339,43 @@ test.describe("compare audience overlap on a published day", () => {
       await top(fold),
     ];
     expect(order, "disclosure, order sentence, values, count line and fold, top to bottom").toEqual([...order].sort((a, b) => a - b));
+  });
+});
+
+test.describe("compare audience overlap on a published day: the day strip (round 37, L68)", () => {
+  test("Check a published day, then Compare: a strip of the grid's stages numbers each compared pair by its taste rank, with its caption, and says the rank's scope once", async ({ page, isPhone }) => {
+    await requireSavedDays(page);
+    const check = new CheckPage(page);
+    await check.goto();
+    await check.publishedButton.click();
+    await expect(check.page.getByText(/^Published timetable: .+\. Curfew and changeover from that day; its billing rules and stage hours are not checked here\./).first()).toBeVisible();
+    await expect(check.priceSection).toContainText(/the saved day’s \d+ costliest movable clashes/);
+    await check.priceButton.click();
+    await expect(check.priceSection).toContainText("Compared using a saved festival day. No Qloo request was sent.");
+
+    const strip = check.priceSection.locator("[data-day-strip]");
+    await expect(strip).toHaveCount(1);
+    await expect(strip).toBeVisible();
+    // One lane per stage of the checked grid: "Read {n} sets on {s} stages".
+    const stages = Number(/on (\d+) stages?/.exec(await check.readLine.innerText())?.[1]);
+    expect(stages, "stages read").toBeGreaterThanOrEqual(2);
+    await expect(strip.locator("[data-strip-lane]")).toHaveCount(stages);
+    // Its numbers are the compared rows' taste ranks, no more and no fewer.
+    const rows = check.priceSection.getByRole("list", { name: "Compared overlaps" }).getByRole("listitem");
+    const rowRanks = (await rows.allInnerTexts()).map((text) => /taste rank (\d+) of \d+/.exec(text)?.[1]).filter(Boolean).map(Number);
+    const stripRanks = (await strip.locator("[data-strip-rank]").allTextContents()).map((text) => Number(text.trim()));
+    expect(rowRanks.length, "compared rows with a taste rank").toBeGreaterThanOrEqual(1);
+    expect([...stripRanks].sort((a, b) => a - b), "the strip's numbers").toEqual([...rowRanks].sort((a, b) => a - b));
+    // The caption, and the rank's scope said once in the section, beside the strip.
+    await expect(strip).toContainText("Numbers: taste rank in this comparison");
+    const scope = "“Taste rank 1 of n” orders only the pairs compared here.";
+    expect((await check.priceSection.innerText()).split(scope).length - 1, "the rank's scope, once").toBe(1);
+    await expect(strip).toContainText(scope);
+    // Small, and above the rows; nothing scrolls sideways.
+    const svg = await strip.locator("svg").first().boundingBox();
+    expect(svg?.height ?? Infinity, "the strip's height").toBeLessThanOrEqual(160);
+    const [stripBox, firstRow] = [await strip.boundingBox(), await rows.first().boundingBox()];
+    expect((stripBox?.y ?? 0) + (stripBox?.height ?? 0), "the strip sits above the rows").toBeLessThanOrEqual((firstRow?.y ?? 0) + 1);
+    if (isPhone) await expectNoHorizontalScroll(page);
   });
 });

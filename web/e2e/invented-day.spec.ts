@@ -1,4 +1,4 @@
-import { HONESTY } from "./helpers";
+import { HONESTY, listDays, literal } from "./helpers";
 import { expect, test } from "./fixtures";
 import { serveInventedDay } from "./invented-day";
 import { HomePage } from "./pages/home-page";
@@ -56,8 +56,19 @@ test.describe("invented example day", () => {
     await expect(home.working).toBeVisible();
     await expect(home.indexCard).not.toContainText(/saved Qloo reading|Qloo requests in this run/i);
     await expect(home.details.getByRole("button", { name: /^Re-check this pair with Qloo/ })).toHaveCount(0);
+    await home.openBoard();
     await expect(home.board.getByRole("button")).toHaveCount(24);
-    expect(day.served.some((line) => line.endsWith("/decision"))).toBe(true);
+    // The hero shows the invented day's own move (round 37, seam S11). Where that decision came from depends on the
+    // server: one that serves saved festival days (as here) drew another day, so the browser asked for the invented
+    // day's decision itself; one that serves the invented day itself (a clean clone, CI's browser workflow) seeds the
+    // decision in its preset answer with the same id, and the browser needs no /decision request. Either holds; neither
+    // can pass without the invented move on the page.
+    await expect(home.moveLead).toHaveText(new RegExp(`^${literal(day.move)} \\d+ minutes? (earlier|later)$`));
+    const askedDecision = day.served.some((line) => line === `GET /api/presets/${day.id}/decision`);
+    const [first] = await listDays(page);
+    const servesInventedFirst = first?.id === day.id && first.synthetic;
+    test.info().annotations.push({ type: "invented day's decision", description: askedDecision ? "asked by the browser" : servesInventedFirst ? "seeded by a server that serves the invented day" : "neither" });
+    expect(askedDecision || servesInventedFirst, "the browser asked for the invented day's decision, or the API serves the invented day first and seeded it").toBe(true);
   });
 
   test("its board says 'No taste signal' on a set with none, never 'No priced signal', and coverage says scored", async ({ page }) => {
@@ -65,6 +76,7 @@ test.describe("invented example day", () => {
     const home = new HomePage(page);
     await home.goto();
 
+    await home.openBoard();
     const unsignalled = home.board.getByRole("button").filter({ hasText: /not scored/ });
     await expect(unsignalled.first()).toBeVisible();
     await expect(home.board).toContainText("No taste signal");
@@ -108,7 +120,7 @@ test.describe("invented example day", () => {
     const home = new HomePage(page);
     await home.goto();
     await expect(home.lede).toHaveText(
-      /^For heads of programming: (Qloo )?taste data used to schedule, not to recommend\. Clashes ranked by minutes shared, popularity and taste overlap\.$/,
+      /^For heads of programming: (Qloo )?taste data used to schedule, not to recommend\. Clashes make people choose\. Compare time, popularity, taste\.$/,
     );
     const below = await page.locator("[data-hero] > *").evaluateAll((all) => all.slice(1).map((part) => (part as HTMLElement).innerText).join("\n"));
     expect(below.replaceAll("no Qloo request was made", ""), "the invented hero under the pitch names no Qloo").not.toMatch(/Qloo/);

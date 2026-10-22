@@ -29,6 +29,7 @@ test.describe("the browser only talks to this site", () => {
     await expect(move.plan).toBeVisible();
     await move.choose("Gurriers");
     await move.keepButton.click();
+    await home.openBoard();
     await home.tile("Sprints").click();
     await expect(home.drawer).toBeVisible();
     await page.keyboard.press("Escape");
@@ -60,7 +61,7 @@ test.describe("the browser only talks to this site", () => {
     expect(guard.external).toEqual([]);
     expect(guard.spending).toEqual([]);
 
-    // The API the page used is a short, known list, and the only non-GET calls are the pricing ones.
+    // The API the page used is a short, known list, and the only non-GET calls are the what-if and saved-compare ones.
     const api = guard.requested.filter((url) => new URL(url).pathname.startsWith("/api/")).map((url) => new URL(url).pathname.replace(/\/presets\/[^/]+/, "/presets/:id"));
     expect(new Set(api)).toEqual(
       new Set(["/api/presets", "/api/presets/:id", "/api/presets/:id/decision", "/api/presets/:id/lenses", "/api/presets/:id/moves", "/api/presets/:id/recordings", "/api/presets/:id/whatif", "/api/health", "/api/price-grid"]),
@@ -122,6 +123,7 @@ test.describe("the browser only talks to this site", () => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
     await scrollThrough(page);
+    await home.openBoard();
     await home.tile("Sprints").click();
     await expect(home.drawer).toBeVisible();
     // The drawer offers no live re-check on this server, so there is nothing to press and nothing sent.
@@ -150,7 +152,7 @@ test.describe("the network guard itself", () => {
     postData: () => (body === undefined ? null : JSON.stringify(body)),
   });
 
-  test("treats grid pricing as spending unless it is in saved mode, and the agent, pair and run routes always", () => {
+  test("treats a grid comparison as spending unless it is in saved mode, and the agent, pair and run routes always", () => {
     expect(spendsQuota(request("/api/price-grid", { acts: ["A", "B"], pairs: [["A", "B"]], mode: "saved" }))).toBe(false);
     expect(spendsQuota(request("/api/price-grid", { acts: ["A", "B"], pairs: [["A", "B"]], mode: "live" }))).toBe(true);
     expect(spendsQuota(request("/api/price-grid", { acts: ["A", "B"], pairs: [["A", "B"]] })), "no mode is not saved mode").toBe(true);
@@ -164,10 +166,10 @@ test.describe("the network guard itself", () => {
     // A request the guard blocks is reported by the browser as a failed load.
     test.use({ ignoreConsole: [/ERR_BLOCKED_BY_CLIENT|Failed to fetch/] });
 
-    test("a live-mode grid price is blocked before it leaves the browser and recorded", async ({ page, guard }) => {
-      // Backstop: this server also refuses live pricing on its own, so even a broken guard spends nothing here.
+    test("a live-mode grid comparison is blocked before it leaves the browser and recorded", async ({ page, guard }) => {
+      // Backstop: this server also refuses the live comparison on its own, so even a broken guard spends nothing here.
       const health = (await (await page.request.get("/api/health")).json()) as { price_grid_live?: boolean };
-      test.skip(health.price_grid_live !== false, "This server has live pricing on; the probe runs only where it is off.");
+      test.skip(health.price_grid_live !== false, "This server has the live comparison on; the probe runs only where it is off.");
       await page.goto("/method", { waitUntil: "domcontentloaded" });
 
       const outcome = await page.evaluate(async () => {

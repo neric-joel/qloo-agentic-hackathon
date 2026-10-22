@@ -33,9 +33,11 @@ test.describe("site navigation", () => {
     await expect(chrome.footer).toContainText("Clash Control");
     await expect(chrome.footer.getByRole("link", { name: "How we know" })).toHaveAttribute("href", "/method");
     await expect(chrome.footer.getByRole("link", { name: "Check a draft grid" })).toHaveAttribute("href", "/check");
+    // Round 37 (R3, L78): what this app calculates is called scores, never prices.
     await expect(chrome.footer).toContainText(
-      "Popularity and audience comparisons are saved Qloo responses; taste overlap and prices are calculated by this app from them.",
+      "Popularity and audience comparisons are saved Qloo responses; taste overlap and clash scores are calculated by this app from them.",
     );
+    await expect(chrome.footer).not.toContainText(/\bpric(e|ed|es|ing)\b/i);
     await chrome.footer.getByRole("link", { name: "Check a draft grid" }).click();
     await expect(page).toHaveURL(/\/check$/);
   });
@@ -90,6 +92,7 @@ test.describe("the section nav under the hero", () => {
       await expect(home.agentJump).toHaveCount(1);
       await expect(home.agentJump).toHaveAttribute("href", "#agent");
       await expect(home.rail.getByRole("link", { name: "Recorded runs" })).toHaveCount(0);
+      // D8 (below, fixed): Riot Fest's key takes two lines at 1440 x 900, and the link still ends on the first screen.
       if (!isPhone) {
         await expect(home.agentJump).toBeInViewport({ ratio: 1 });
         const box = await home.agentJump.boundingBox();
@@ -107,6 +110,32 @@ test.describe("the section nav under the hero", () => {
         .toBeGreaterThanOrEqual(8);
     });
   }
+});
+
+test.describe("the section nav under the hero, D8 (fixed)", () => {
+  test.beforeEach(async ({ page }) => requireSavedDays(page));
+
+  /**
+   * D8 (round 37, found by lane e2e-sync; README "Known defects", closed): on Riot Fest at 1440 x 900 the drawing's key
+   * takes a second line (its round-37 lock and dotted sentences), which moved the section nav 20 px down, so its
+   * "Agent runs" link ended at 914.8 px, under the first screen. The hero frame's foot from 1024 px is now 4 px (was
+   * 24), so the link ends at 894.8 there and at 874.8 on Glastonbury. On a phone the link is not on the first screen by
+   * design, and the test there holds what the phone promises.
+   */
+  test("on Riot Fest at 1440 x 900 the \"Agent runs\" link is wholly on the first screen (D8, fixed)", async ({ page, isPhone }) => {
+    const home = new HomePage(page);
+    await home.goto(DAYS.riot.id);
+    await expect(home.agentJump).toHaveAttribute("href", "#agent");
+    if (isPhone) {
+      // One row that scrolls sideways: the link is there, and a swipe of the row brings it into view.
+      await home.agentJump.scrollIntoViewIfNeeded();
+      await expect(home.agentJump).toBeInViewport();
+      return;
+    }
+    await expect(home.agentJump).toBeInViewport({ ratio: 1 });
+    const box = await home.agentJump.boundingBox();
+    expect((box?.y ?? 0) + (box?.height ?? 0), "the link ends inside the first 900 px").toBeLessThanOrEqual(900);
+  });
 });
 
 test.describe("page not found", () => {

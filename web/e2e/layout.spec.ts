@@ -35,6 +35,13 @@ test.describe("no horizontal scroll", () => {
         if (route.url.startsWith("/?")) await new HomePage(page).waitUntilReady();
         await scrollThrough(page);
         await expectNoHorizontalScroll(page);
+        // Round 37 (AO1): the board's grid is behind its disclosure; with it open, the page still does not scroll
+        // sideways (the board scrolls inside its own frame on a phone).
+        if (route.url.startsWith("/?")) {
+          await new HomePage(page).openBoard();
+          await scrollThrough(page);
+          await expectNoHorizontalScroll(page);
+        }
       });
     }
   }
@@ -43,6 +50,7 @@ test.describe("no horizontal scroll", () => {
     await requireSavedDays(page);
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
+    await home.openBoard();
     await home.tile("Sprints").click();
     await expect(home.drawer).toBeVisible();
     await expectNoHorizontalScroll(page);
@@ -105,6 +113,80 @@ test.describe("no horizontal scroll", () => {
       });
       test.info().annotations.push({ type: `/check layout shift, ${theme}`, description: `${shift.toFixed(4)} (${entries} entries)` });
       expect(Number(shift.toFixed(3)), "cumulative layout shift over 5 s, to three places").toBe(0);
+    });
+  }
+
+  for (const day of Object.values(DAYS)) {
+    test(`on ${day.title}, a 1366 x 768 screen shows the drawing whole on the first screen (round 37, L12); a phone's first screen holds Keep (L20)`, async ({ page, isPhone }) => {
+      await requireSavedDays(page);
+      const home = new HomePage(page);
+      const sizes = isPhone
+        ? [
+            { width: 390, height: 844, keep: 787 },
+            { width: 375, height: 667, keep: 760 },
+          ]
+        : [{ width: 1366, height: 768, keep: null }];
+      for (const size of sizes) {
+        await page.setViewportSize({ width: size.width, height: size.height });
+        await home.goto(day.id);
+        expect(await page.evaluate(() => window.scrollY)).toBe(0);
+        const at = `${size.width} x ${size.height}`;
+        if (size.keep === null) {
+          // The layout on show ends inside the first 768 px (it ended at 794.8 in round 36).
+          const bottom = await home.graph.evaluate((graph) => {
+            const layout = [...graph.querySelectorAll(":scope > [data-layout]")].find((element) => getComputedStyle(element).display !== "none");
+            return layout ? layout.getBoundingClientRect().bottom : Number.POSITIVE_INFINITY;
+          });
+          expect(bottom, `${at}: the drawing's bottom`).toBeLessThanOrEqual(768);
+        } else {
+          const keep = await home.keepMove.boundingBox();
+          expect((keep?.y ?? 0) + (keep?.height ?? 0), `${at}: Keep this move's bottom`).toBeLessThanOrEqual(size.keep);
+        }
+      }
+    });
+  }
+
+  for (const day of Object.values(DAYS)) {
+    test(`on ${day.title}, no text on the home page is under 12.5 px, every disclosure open, except the drawing's clock axis (round 37, L40)`, async ({ page, isPhone }) => {
+      await requireSavedDays(page);
+      const theme = isPhone ? "dark" : "light";
+      await page.addInitScript((value) => localStorage.setItem("theme", value), theme);
+      await page.emulateMedia({ colorScheme: theme });
+      const home = new HomePage(page);
+      await home.goto(day.id);
+      await home.openBoard();
+      await page.evaluate(() => document.querySelectorAll("details").forEach((details) => (details.open = true)));
+      await scrollThrough(page);
+      // Every text node a visitor sees (not screen-reader text clipped to 1 px, not a box that is not drawn), with its
+      // computed size. The one exemption, by design (round-34 DECISION 2.2): the drawing's clock axis, [data-axis].
+      // The type floor's residuals that lane board named are all off the home page (/check's print sheet and results,
+      // the brief's print figure), so none is exempted here.
+      const found = await page.evaluate(() => {
+        const small: string[] = [];
+        let read = 0;
+        const shown = (element: Element) => {
+          for (let node: Element | null = element; node && node !== document.body; node = node.parentElement) {
+            const style = getComputedStyle(node);
+            if (style.display === "none" || style.visibility === "hidden") return false;
+            const box = node.getBoundingClientRect();
+            if (box.width <= 1 && box.height <= 1) return false;
+          }
+          return true;
+        };
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const parent = node.parentElement;
+          if (!parent || !node.textContent?.trim() || !shown(parent)) continue;
+          if (parent.closest("[data-axis]")) continue;
+          read += 1;
+          const size = parseFloat(getComputedStyle(parent).fontSize);
+          if (size < 12.5 - 0.01) small.push(`"${node.textContent.trim().slice(0, 40)}" ${size}px in ${parent.tagName.toLowerCase()}`);
+        }
+        return { read, small };
+      });
+      test.info().annotations.push({ type: `text nodes read on ${day.title}`, description: `${found.read}; under 12.5 px: ${found.small.length}` });
+      expect(found.read, "text nodes read").toBeGreaterThan(300);
+      expect(found.small, "visible text under 12.5 px").toEqual([]);
     });
   }
 

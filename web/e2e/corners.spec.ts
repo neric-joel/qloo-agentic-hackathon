@@ -15,7 +15,7 @@ import { TryAMove } from "./pages/try-a-move";
  * of a sheet are not boxes (2.6.2) and stay straight.
  */
 
-type Sweep = { sharp: string[]; rects: string[]; pills: string[] };
+type Sweep = { sharp: string[]; rects: string[]; pills: string[]; svgPills: string[] };
 
 /**
  * The page-wide sweep, run in the page. A box is an element with a visible border on two or more sides, or a fill
@@ -23,7 +23,9 @@ type Sweep = { sharp: string[]; rects: string[]; pills: string[] };
  * less across (rules, axes, hairlines), a top-and-bottom rule pair on an unfilled element, a fill equal to what it
  * sits on (a knockout plate), a fill clipped by a rounded ancestor whose edge it touches, table cells, and sheets
  * (measured on their own). SVG: every painted rect has an rx unless a clip contains it. Pills: a box taller than
- * 12 px whose corner is half its height or more and that is not a disc.
+ * 12 px whose corner is half its height or more and that is not a disc. Round 37 (L100): the same pill rule for SVG
+ * marks, so a capsule bar drawn in an SVG fails too: a painted rect taller than 12 px on the screen whose rx (or ry)
+ * is half its own height or more, in its own units, and that is not a disc (no wider than 1.15 times its height).
  */
 function sweepCorners(): Sweep {
   const px = (value: string) => parseFloat(value) || 0;
@@ -97,7 +99,8 @@ function sweepCorners(): Sweep {
     sharp.push(describe(element));
   }
   const rects: string[] = [];
-  for (const rect of document.querySelectorAll("svg rect")) {
+  const svgPills: string[] = [];
+  for (const rect of document.querySelectorAll<SVGRectElement>("svg rect")) {
     if (rect.closest("clipPath, mask, pattern, defs, symbol")) continue;
     const box = rect.getBoundingClientRect();
     if (box.width <= 3 || box.height <= 3) continue;
@@ -106,6 +109,10 @@ function sweepCorners(): Sweep {
     const painted = (style.fill !== "none" && !(style.fill.startsWith("rgb") && rgba(style.fill)[3] === 0)) || style.stroke !== "none";
     if (!painted) continue;
     const rx = px(style.rx) || px(style.ry) || px(rect.getAttribute("rx") ?? "") || px(rect.getAttribute("ry") ?? "");
+    // The pill rule, in the rect's own units (rx and ry are user units; an unset one takes the other's value).
+    const own = rect.getBBox();
+    const corner = Math.max(px(style.rx) || px(rect.getAttribute("rx") ?? ""), px(style.ry) || px(rect.getAttribute("ry") ?? ""));
+    if (box.height > 12 && own.height > 0 && corner >= own.height / 2 - 0.01 && own.width > own.height * 1.15) svgPills.push(describe(rect));
     if (rx > 0) continue;
     let clipped = false;
     for (let node: Element | null = rect; node && node.tagName.toLowerCase() !== "svg"; node = node.parentElement) {
@@ -113,7 +120,7 @@ function sweepCorners(): Sweep {
     }
     if (!clipped) rects.push(describe(rect));
   }
-  return { sharp, rects, pills };
+  return { sharp, rects, pills, svgPills };
 }
 
 /** Each corner of an element, as computed: [top-left, top-right, bottom-right, bottom-left]. */
@@ -199,6 +206,19 @@ test.describe("corners: one radius system", () => {
       expect(found.sharp, "boxes with four square corners").toEqual([]);
       expect(found.rects, "painted SVG rects with no rx").toEqual([]);
       expect(found.pills, "pill-shaped boxes").toEqual([]);
+      expect(found.svgPills, "pill-shaped SVG marks").toEqual([]);
+
+      // Round 37 (AO1): the board's grid is behind its disclosure, so the home is swept again with the board shown.
+      if (route.home) {
+        const home = new HomePage(page);
+        await home.openBoard();
+        await scrollThrough(page);
+        const shown = await page.evaluate(sweepCorners);
+        expect(shown.sharp, "with the board shown: boxes with four square corners").toEqual([]);
+        expect(shown.rects, "with the board shown: painted SVG rects with no rx").toEqual([]);
+        expect(shown.pills, "with the board shown: pill-shaped boxes").toEqual([]);
+        expect(shown.svgPills, "with the board shown: pill-shaped SVG marks").toEqual([]);
+      }
 
       // Print keeps the screen's corners on the two pages that print.
       if (route.url.startsWith("/brief") || route.url === "/check") {
@@ -207,9 +227,58 @@ test.describe("corners: one radius system", () => {
         expect(printed.sharp, "in print: boxes with four square corners").toEqual([]);
         expect(printed.rects, "in print: painted SVG rects with no rx").toEqual([]);
         expect(printed.pills, "in print: pill-shaped boxes").toEqual([]);
+        expect(printed.svgPills, "in print: pill-shaped SVG marks").toEqual([]);
       }
     });
   }
+
+  test("the SVG pill rule fails a capsule mark and passes the drawing's 6 px marks (round 37, L100)", async ({ page, isPhone }) => {
+    await useSeatTheme(page, isPhone);
+    const home = new HomePage(page);
+    await home.goto(DAYS.glastonbury.id);
+    // The drawing's own marks pass: no SVG pill on the first screen.
+    const before = await page.evaluate(sweepCorners);
+    expect(before.svgPills, "pill-shaped SVG marks on the home page").toEqual([]);
+    // Three probe rects put on the page for this check alone (removed after): a capsule bar 20 px tall with rx 10 fails,
+    // the same bar with ry 10 alone fails, and a 20 px disc with rx 10 and a 6 px-cornered bar pass.
+    const probes = await page.evaluate(() => {
+      const ns = "http://www.w3.org/2000/svg";
+      const svg = document.createElementNS(ns, "svg");
+      svg.setAttribute("width", "400");
+      svg.setAttribute("height", "40");
+      svg.setAttribute("data-probe", "");
+      svg.style.cssText = "position:absolute;left:0;top:0";
+      const shapes = [
+        { name: "capsule", width: 120, rx: "10", ry: null },
+        { name: "capsule-ry", width: 120, rx: null, ry: "10" },
+        { name: "disc", width: 20, rx: "10", ry: null },
+        { name: "bar", width: 120, rx: "6", ry: null },
+      ];
+      let x = 0;
+      for (const shape of shapes) {
+        const rect = document.createElementNS(ns, "rect");
+        rect.setAttribute("x", String(x));
+        rect.setAttribute("y", "0");
+        rect.setAttribute("width", String(shape.width));
+        rect.setAttribute("height", "20");
+        if (shape.rx) rect.setAttribute("rx", shape.rx);
+        if (shape.ry) rect.setAttribute("ry", shape.ry);
+        rect.setAttribute("fill", "currentColor");
+        rect.setAttribute("data-probe-shape", shape.name);
+        svg.appendChild(rect);
+        x += shape.width + 8;
+      }
+      document.body.appendChild(svg);
+      return shapes.length;
+    });
+    expect(probes).toBe(4);
+    const found = await page.evaluate(sweepCorners);
+    await page.evaluate(() => document.querySelector("svg[data-probe]")?.remove());
+    const flagged = found.svgPills.filter((item) => item.includes("data-probe-shape"));
+    expect(flagged.length, `the probe marks flagged: ${flagged.join("; ")}`).toBe(2);
+    expect(flagged.some((item) => item.startsWith("rect[data-probe-shape]") && item.includes("120x20")), "the capsule bar is flagged").toBe(true);
+    expect(found.svgPills.filter((item) => !item.includes("data-probe-shape")), "nothing else on the page is flagged").toEqual([]);
+  });
 
   test("the day drawing's marks: 6px bars, ghost and windows, 2px clear of both bars; round end dots; 10px hit areas", async ({ page, isPhone }) => {
     await useSeatTheme(page, isPhone);
@@ -371,11 +440,15 @@ test.describe("corners: one radius system", () => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
+    // The board's disclosure: its summary is a 10px control, then the board it opens.
+    await expectRadius(home.boardFoldSummary, "10px", "the board's summary");
+    await home.openBoard();
     await expectRadius(home.board.locator("[data-set]"), "10px", "board tile");
     // A name too long for its slot also shows in full on focus, as a 6px label beside the tile. On the saved days
     // only Riot Fest at 390 px has such a slot, so the label is measured there.
     if (isPhone) {
       await home.goto(DAYS.riot.id);
+      await home.openBoard();
       const tip = page.locator("[data-name-tooltip]").first();
       await keyboardFocus(page, tip.locator("xpath=preceding-sibling::button[1]"));
       await expect(tip).toBeVisible();
@@ -433,6 +506,7 @@ test.describe("corners: one radius system", () => {
     for (const size of sizes) {
       await page.setViewportSize({ width: size.width, height: size.height });
       await home.goto(DAYS.glastonbury.id);
+      await home.openBoard();
       await home.tile("Sprints").click();
       const sheet = page.locator('[data-slot="sheet-content"]');
       await expect(sheet).toBeVisible();

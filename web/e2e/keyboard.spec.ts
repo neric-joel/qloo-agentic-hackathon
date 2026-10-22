@@ -77,12 +77,15 @@ test.describe("keyboard", () => {
   test("Enter on Keep this move keeps the move with focus on See your plan, and Enter there lands on the plan", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
+    // Focus follows a press only when the plan answers within 2 s (see answerKeepAtOnce).
+    const answered = await home.answerKeepAtOnce(DAYS.glastonbury.id);
 
     await home.keepMove.focus();
     const scrolled = await page.evaluate(() => window.scrollY);
     await page.keyboard.press("Enter");
     // Focus never drops to the page: it moves to the way to the plan, and the page does not scroll.
     await expect(home.seeYourPlan).toBeFocused();
+    expect(answered(), "the press was answered with the server's own what-if").toBe(1);
     expect((await stop(page)).ring, "See your plan shows a focus ring").toBeGreaterThanOrEqual(2);
     expect(await page.evaluate(() => window.scrollY)).toBe(scrolled);
     await expect(home.plan.getByRole("list", { name: "Kept moves" }).getByRole("listitem")).toHaveCount(1);
@@ -105,6 +108,7 @@ test.describe("keyboard", () => {
   test("the clash drawer takes focus, keeps it inside while open, and gives it back on Escape", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
+    await home.openBoard();
 
     const tile = home.tile("Sprints");
     await tile.focus();

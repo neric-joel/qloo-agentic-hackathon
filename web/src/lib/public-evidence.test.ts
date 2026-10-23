@@ -70,8 +70,8 @@ const ALL_COPY = [
 describe("the verified claims (round 38, evidence lane)", () => {
   it("prints each of the three claims exactly as verified", () => {
     expect(EVIDENCE_CLAIMS.map((claim) => claim.sentence)).toEqual([
-      "In 70 public press articles, fan-post summaries and one artist statement from 17 festivals (2015-2026) that we read, 325 set-time clashes are named, covering 538 distinct pairs of acts at 43 festival-years; they come from 10 of the 12 years (none from 2020-21), and one reader coded 22 of the 70 pages as presenting the acts in at least one named clash as different in genre, style or audience.",
-      "In 21 statements by programmers, bookers and festival organisers (2015-2026; 13 festivals plus one booking-side interview) that we read, 10 say they try to avoid or limit clashes and 5 say (or, in Riot Fest's case, joke) that clashes cannot be fully avoided at their scale; 7 name limits other than taste (curfew, production, capacity, radius, sunset), 3 describe using app-favourite or ticketing figures to forecast crowds (one known only second-hand, through a LinkedIn post), and none describes ranking pairs of acts by audience closeness before the times are published.",
+      "In 70 public press articles, fan-post summaries and one artist statement from 17 festivals (2015-2026) that we read, 325 set-time clashes are named, covering 538 pairs of acts when counted separately for each festival and year, at 43 festival-years; they come from 10 of the 12 years (none from 2020-21), and one reader coded 22 of the 70 pages as presenting the acts in at least one named clash as different in genre, style or audience.",
+      "In 21 public accounts of programming practice that we read, including one second-hand account, 10 describe attempts to avoid or limit clashes or give attendees time to move between stages. None describes ranking pairs of acts by audience closeness before times are published.",
       "Of 13 tool pages we read, 9 help attendees spot clashes after times are public and 4 are aimed at organisers (post-publication audience analytics, favourites dashboards, crowd forecasts, a block-schedule overlap flag); none of these pages says it ranks the clashes of a draft grid by audience closeness; pair-level overlap scoring is spelled out only in a vendor blog (Ticket Fairy), while Setline Pro and Flux sell clash or schedule-conflict analytics from attendee data without saying how pairs are scored.",
     ]);
   });
@@ -94,12 +94,17 @@ describe("the verified claims (round 38, evidence lane)", () => {
     expect(sourceName(evidenceSource("G01"))).toBe("The Standard (London), Glastonbury 2025");
     expect(sourceName(evidenceSource("K01"))).toBe("Clashfinder");
   });
+
+  it("dates N02 by the page's own date line, 10 September 2026 (the Lost Lands set-times article)", () => {
+    expect(evidenceSource("N02").date).toBe("2026-09-10");
+    expect(evidenceSource("N02").outlet).toBe("Extra Chill News Wire");
+  });
 });
 
 describe("the home sentence (round 38)", () => {
   it("states the first claim as an analysis of public pages, with what it counts, and links its sources on /method", () => {
     expect(HOME_EVIDENCE).toBe(
-      "Our analysis of 70 public press articles, fan-post summaries and one artist statement from 17 festivals (2015 to 2026) found 325 named set-time clashes, covering 538 distinct pairs of acts. It counts pages, not people, so it shows the complaint keeps coming back, not how many people mind.",
+      "Our analysis of 70 public press articles, fan-post summaries and one artist statement from 17 festivals (2015 to 2026) found 325 named set-time clashes, covering 538 pairs of acts when counted separately for each festival and year. It counts pages, not people, so it shows the complaint keeps coming back, not how many people mind.",
     );
     const html = renderToStaticMarkup(createElement(WhyThisMatters));
     const visible = text(withoutDisclosures(html));
@@ -111,11 +116,18 @@ describe("the home sentence (round 38)", () => {
     expect(at).toBeLessThan(html.indexOf('data-why-col="unknown"'));
   });
 
-  it("names Setline beside the schedulers, so the absence line is not read as nobody having the idea", () => {
+  it("scopes the absence line to the tool pages reviewed, once, in the heading, and names Setline beside the schedulers", () => {
     const plain = text(renderToStaticMarkup(createElement(WhyThisMatters)));
     expect(plain).toContain(
-      "We found none that reads audience overlap (our search, October 2026). Setline sells organisers clash analysis from attendee interest once set times are live.",
+      "None of the 13 tool pages we reviewed describes ranking a draft grid’s clashes by audience closeness Our search, October 2026: absence of evidence only. Who would pay is not known.",
     );
+    expect(plain).toContain(
+      "Both check double bookings and changeovers. Setline sells organisers clash analysis from attendee interest once set times are live.",
+    );
+    // The broader sentence is gone: the scoped one is said once, and the heading's 13 is the claim's own count.
+    expect(plain).not.toMatch(/found none that reads/);
+    expect(plain).not.toMatch(/No scheduler/);
+    expect(EVIDENCE_FIGURES.toolPages).toBe(13);
   });
 });
 
@@ -200,7 +212,7 @@ describe("What people ask about clashes on /method (round 38)", () => {
         "Mostly it does not. It does not forecast how many people want an act and does not read stage capacity, and a taste-overlap rank cannot say an act needs a bigger stage.",
       ],
       planted: [
-        "6 pages say or guess so, two features and two blogs among them. None of the 21 organiser and booker statements we read says it of a clash. Osheaga's programmer says he staggers slots so people can catch part of two acts.",
+        "6 pages say or guess so, two features and two blogs among them. None of the 21 accounts of programming practice we read says it of a clash. Osheaga's programmer says he staggers slots so people can catch part of two acts.",
         "A clash can stay: Check a draft grid has a Kept on purpose decision, and the sets this app locks stay put.",
         "It has no model of crowd flow or safety, so it cannot show that a deliberate overlap is safe.",
       ],
@@ -210,7 +222,7 @@ describe("What people ask about clashes on /method (round 38)", () => {
         "It does not change when times go out, and nothing shows that a check before publication would cut complaints.",
       ],
       data: [
-        "3 of the 21 statements describe using app favourites or ticket figures, to forecast crowds rather than to place clashes; one of them is second-hand. Scoring each pair of acts from streaming or ticket data is proposed in a Ticket Fairy blog, but no organiser in these pages says they do it.",
+        "3 of the 21 accounts describe using app favourites or ticket figures, to forecast crowds rather than to place clashes; one of them is second-hand. Scoring each pair of acts from streaming or ticket data is proposed in a Ticket Fairy blog, but no organiser in these pages says they do it.",
         "It gives each clashing pair a taste-overlap rank among the acts on one bill, calculated by this app from Qloo data. It needs the act list and the times, and no ticket or app data.",
         "It is a second opinion. The follow-up checks did not establish that taste adds to time and popularity, and acts Qloo has no signal for are left out.",
       ],
@@ -220,7 +232,7 @@ describe("What people ask about clashes on /method (round 38)", () => {
         "It cannot estimate lost attendance or money, and this app makes no such claim.",
       ],
       limits: [
-        "7 of the 21 statements name a limit besides taste: curfew, production, capacity, radius clauses or sunset.",
+        "7 of the 21 accounts name a limit besides taste: curfew, production, capacity, radius clauses or sunset.",
         "Its rule checks cover each stage's hours, the curfew, the gap between sets on a stage, locked sets and pairs that must never overlap; a change of stage asks for production sign-off.",
         "It does not see contracts, riders or artists' requests unless they are typed in as rules. On the two published days the locks are this app's choice, not the festivals'.",
       ],
@@ -260,7 +272,7 @@ describe("What people ask about clashes on /method (round 38)", () => {
     expect(fold).not.toMatch(/<details[^>]*\sopen/);
     expect(EVIDENCE_SOURCE_GROUPS.map((g) => [g.title, g.ids.length])).toEqual([
       ["Pages that name clashes (70)", 70],
-      ["Statements by programmers, bookers and organisers (21)", 21],
+      ["Accounts of programming practice (21)", 21],
       ["Tool pages (13)", 13],
       ["Vendor blogs read beside them (9)", 9],
     ]);
@@ -338,7 +350,7 @@ describe("How long this takes on /method (round 38)", () => {
       "Open the costliest clash",
       "Show the tested move",
       "Keep this move",
-      "Print the brief",
+      "Open the printable brief",
     ]);
     for (const { id, step } of MACHINE_STEPS) {
       expect(machineTimeLine(id)).toBe(`${MACHINE_LABEL}: ${PRODUCTION_TIMING!.steps[id]}`);
@@ -371,7 +383,7 @@ describe("How long this takes on /method (round 38)", () => {
     };
     const plain = text(renderToStaticMarkup(createElement(TimingBody, { timing })));
     expect(plain).toContain("Load the day. Machine time on production: 1.2 s.");
-    expect(plain).toContain("Print the brief. Machine time on production: 0.9 s.");
+    expect(plain).toContain("Open the printable brief. Machine time on production: 0.9 s.");
     expect(plain).toContain(timing.measured);
     expect(plain).not.toContain(TIMING_PENDING);
   });

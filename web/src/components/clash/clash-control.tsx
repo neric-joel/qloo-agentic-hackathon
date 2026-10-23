@@ -430,13 +430,24 @@ function keepPagePlace(place: PagePlace): void {
 }
 
 /**
- * The board behind one disclosure: closed on arrival, its summary a 44 px control in the 10 px
- * button shape with the chevron, so the home reaches Try a move and the agent sooner. Opening is instant. With
- * `open` the page holds its state (it opens itself for a preview); without it the fold is the server's frame,
- * closed until pressed, and `onToggle` only reports. With `carryRef` (the page's one carrier) the fold hands its
- * state to the fold that replaces it (`carryBoardFold`). `inert` is for the copy of the server's frame that the
- * streamed page replaces before any script runs (the page's loading fallback, on screen for about two frames):
- * nothing could carry a press on it over, so it takes none.
+ * Whether a board's fold starts open (round 39, W2): as the fold before it on the page was left (`report`: a press,
+ * or the open state that board was drawn in), else open on a screen of 1280 px or more (`wide`), where the board's
+ * column would otherwise stand empty beside the rail, and closed below, where the home reaches Try a move sooner.
+ */
+export function boardStartsOpen(report: boolean | null, wide: boolean): boolean {
+  return report ?? wide;
+}
+
+/**
+ * The board behind one disclosure, its summary a 44 px control in the 10 px button shape with the chevron. The
+ * interactive board arrives open from 1280 px (`boardStartsOpen`) and closed below, so a phone reaches Try a move and
+ * the agent sooner. Opening is instant, and an arrival open is drawn open from the fold's first style, so the chevron's
+ * turn (kept for a press) never plays then. With `open` the page holds its state (it opens itself for a preview);
+ * without it the fold is the server's frame, closed until pressed (the server's HTML knows no width), and `onToggle`
+ * only reports. With `carryRef` (the page's one carrier) the fold hands its state to the fold that replaces it
+ * (`carryBoardFold`). `inert` is for the copy of the server's frame that the streamed page replaces before any script
+ * runs (the page's loading fallback, on screen for about two frames): nothing could carry a press on it over, so it
+ * takes none.
  */
 function BoardFold({
   summary,
@@ -763,7 +774,8 @@ function LoadingView({
           {summary ? <SummaryBoard summary={summary} /> : null}
         </div>
         {model ? (
-          // The board's disclosure, closed, as the interactive board draws it.
+          // The board's disclosure, closed: the server's HTML knows no width. The interactive board that replaces it
+          // opens from 1280 px, or as the visitor left this one.
           <BoardFold
             summary={boardFoldSummary(model.sets.length, model.stages.length)}
             onToggle={onFoldToggle}
@@ -812,6 +824,32 @@ function useInBrowser(): boolean {
   return useSyncExternalStore(
     () => () => {},
     () => true,
+    () => false,
+  );
+}
+
+/** Tailwind's `xl` (1280 px): from there the board's column stands beside the rail, and its fold arrives open. */
+export const WIDE_BOARD_QUERY = "(min-width: 80rem)";
+
+/** Whether the screen is 1280 px wide or more now. In the browser only. */
+export function readWideBoard(): boolean {
+  return window.matchMedia(WIDE_BOARD_QUERY).matches;
+}
+
+/** Listens to nothing: a board reads the width once, as it is drawn, and a later change must open or close nothing. */
+export function subscribeNothing(): () => void {
+  return () => {};
+}
+
+/**
+ * Whether the screen is 1280 px wide or more, read as the interactive board is drawn. False in the server's render,
+ * and in a hydration render, which must match it, so no width reaches the server's HTML. The board view mounts only in
+ * the browser, after the festival days load, so its first render reads the real width.
+ */
+export function useWideBoard(): boolean {
+  return useSyncExternalStore(
+    subscribeNothing,
+    readWideBoard,
     () => false,
   );
 }
@@ -886,9 +924,11 @@ export function ClashControl({
   // whether the live agent is on when the festival day first renders.
   const agentStatus = useAgentStatus();
   // The board fold's state, handed from each fold to the one that replaces it (`carryBoardFold`): the server's
-  // frame to the interactive board, and one festival day's board to the next. `foldOpen` is what the fold on the
-  // page last reported, so the next board is drawn in it; the carrier holds what the page showed at the swap.
-  const [foldOpen, setFoldOpen] = useState(false);
+  // frame to the interactive board, and one festival day's board to the next. `foldReport` is what the fold on the
+  // page last reported (a press, or the open state a board was drawn in), so the next board is drawn in it; null until
+  // a fold reports, and the board then starts from the width (`boardStartsOpen`). The carrier holds what the page
+  // showed at the swap. The setter goes to every fold as it is: React keeps it the same, so a fold's ref runs once.
+  const [foldReport, setFoldReport] = useState<boolean | null>(null);
   const foldCarryRef = useRef<BoardFoldCarry | null>(null);
   // Where a visitor who scrolled on the server's frame was when it left (`pagePlace`), kept on the page that
   // replaced it in the same commit, before the browser paints. This effect runs after every child's, once the page
@@ -1048,7 +1088,7 @@ export function ClashControl({
       <LoadingView
         intro={intro}
         summary={summary && summary.id === loadingId ? summary : null}
-        onFoldToggle={setFoldOpen}
+        onFoldToggle={setFoldReport}
         foldCarryRef={foldCarryRef}
         placeRef={pagePlaceRef}
         status={
@@ -1079,8 +1119,8 @@ export function ClashControl({
       serverDecision={shown.decision}
       presets={list.value}
       loading={holding}
-      boardOpenAtStart={foldOpen}
-      onBoardToggle={setFoldOpen}
+      foldReport={foldReport}
+      onBoardToggle={setFoldReport}
       foldCarryRef={foldCarryRef}
       // The picker names the day drawn: while another is on its way it stays on this one.
       picker={<PresetPicker presets={list.value} selectedId={shown.preset.id} onChange={choosePreset} />}
@@ -1192,7 +1232,7 @@ function PresetView({
   presets,
   picker,
   loading = false,
-  boardOpenAtStart = false,
+  foldReport = null,
   onBoardToggle,
   foldCarryRef,
 }: {
@@ -1206,8 +1246,11 @@ function PresetView({
   picker: ReactNode;
   /** Another festival day is chosen and on its way to replace this one. */
   loading?: boolean;
-  /** Whether the board's fold starts open: the state the fold this view's board replaces last reported. */
-  boardOpenAtStart?: boolean;
+  /**
+   * What the board fold on the page last reported (open or closed: a press, or the state a board was drawn in), so
+   * this view's board starts the same way; null before any fold has reported, when the width decides.
+   */
+  foldReport?: boolean | null;
   /** Told each time the board's fold opens or closes, so the next festival day's board starts the same way. */
   onBoardToggle?: (open: boolean) => void;
   /** The page's board-fold carrier: the fold this view's board replaces left its state there (`carryBoardFold`). */
@@ -1221,12 +1264,16 @@ function PresetView({
   const [planPreview, setPlanPreview] = useState<PlanPreview | null>(null);
   // A change from "Keep two sets apart", previewed as two ghosts. Separate from the plan above.
   const [rulePreview, setRulePreview] = useState<RulePreview | null>(null);
-  // The board's disclosure: closed on arrival, opened by a press on its summary (also one made on the server's frame,
-  // or on the board of the festival day this view replaces: its fold hands the state over, `carryBoardFold`), or by
-  // the visitor's own preview (a tested place in Try a move, a change from Keep two sets apart) the moment one first
-  // shows. That is latched here, while rendering, so the disclosure is open in the same commit in which the grid
-  // scrolls the preview into view (its effect runs after that commit). It never closes on its own.
-  const [boardOpen, setBoardOpen] = useState(boardOpenAtStart);
+  // The board's disclosure (round 39, W2). On arrival it is as the fold this board replaces was left (its report: a
+  // press, also one made on the server's frame, or the open state the last festival day's board was drawn in), else
+  // open on a screen of 1280 px or more and closed below (`boardStartsOpen`). That is read once, in this board's first
+  // render, never in an effect: crossing 1280 px later opens or closes nothing. After that it opens on a press on its
+  // summary (the fold it replaces also hands over a press made in the swap's own frame, `carryBoardFold`), or with the
+  // visitor's own preview (a tested place in Try a move, a change from Keep two sets apart) the moment one first shows.
+  // That is latched here, while rendering, so the disclosure is open in the same commit in which the grid scrolls the
+  // preview into view (its effect runs after that commit). It closes only on a press.
+  const wide = useWideBoard();
+  const [boardOpen, setBoardOpen] = useState(() => boardStartsOpen(foldReport, wide));
   const toggleBoard = useCallback(
     (open: boolean) => {
       setBoardOpen(open);

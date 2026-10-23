@@ -168,8 +168,9 @@ describe("threeReadings", () => {
     expect(readings.taste).toEqual({ rank: 2, of: 40 });
     expect(readings.draw).toEqual({ rank: 2, of: 40 });
     // A finding, not a shrug, said of taste alone: minutes alone may rank the pair elsewhere (#2 of 4 here, and on a
-    // published day #5 against #1), so nothing says time alone agrees.
-    expect(tasteVerdict(readings)).toBe("Adding taste leaves this pair at #2.");
+    // published day #5 against #1), so nothing says time alone agrees. Round 39 (W4): the rank is this app's index's,
+    // and the sentence says so in full.
+    expect(tasteVerdict(readings)).toBe("Adding taste leaves this pair at #2 in this app’s index.");
     expect(tasteVerdict(readings)).not.toMatch(/agrees|either way/);
   });
 
@@ -185,8 +186,8 @@ describe("threeReadings", () => {
       "Time alone ranks this pair #3, time and draw (invented popularity) #7, with taste #1.",
     );
     // The equal branch names no reading but taste, so it carries no gloss and no source on either day.
-    expect(tasteVerdict(same, drawGloss(false))).toBe("Adding taste leaves this pair at #2.");
-    expect(tasteVerdict(same, drawGloss(true))).toBe("Adding taste leaves this pair at #2.");
+    expect(tasteVerdict(same, drawGloss(false))).toBe("Adding taste leaves this pair at #2 in this app’s index.");
+    expect(tasteVerdict(same, drawGloss(true))).toBe("Adding taste leaves this pair at #2 in this app’s index.");
     expect(tasteVerdict(same, drawGloss(true))).not.toMatch(/Qloo/);
   });
 
@@ -232,13 +233,18 @@ describe("tasteHeading", () => {
   const MOVED = { time: { rank: 23, of: 68, tied: 18 }, draw: { rank: 18, of: 68 }, taste: { rank: 1, of: 68 } };
   const STILL = { time: { rank: 5, of: 47, tied: 3 }, draw: { rank: 1, of: 47 }, taste: { rank: 1, of: 47 } };
 
-  it("says what adding taste did, from the popularity rung to the taste rung, never from minutes alone", () => {
-    expect(tasteHeading(MOVED)).toBe("Adding taste moves this pair from #18 to #1");
+  it("says what adding taste did in this app’s index, from the popularity rung to the taste rung, never from minutes alone", () => {
+    // Round 39 (W4): both sentences name whose rank it is, "in this app’s index", in full.
+    expect(tasteHeading(MOVED)).toBe("Adding taste moves this pair from #18 to #1 in this app’s index");
     // Draw made the first step (time alone puts the pair 23rd, popularity 18th), so the heading never credits taste with it.
     expect(tasteHeading(MOVED)).not.toContain("#23");
-    expect(tasteHeading(STILL)).toBe("Adding taste leaves this pair at #1");
-    expect(tasteHeading(threeReadings(lenses(), PAIRS, "one", "two"))).toBe("Adding taste moves this pair from #7 to #1");
-    expect(tasteHeading(threeReadings(lenses(), PAIRS, "three", "four"))).toBe("Adding taste leaves this pair at #2");
+    expect(tasteHeading(MOVED)).not.toContain("#23 to");
+    expect(tasteHeading(STILL)).toBe("Adding taste leaves this pair at #1 in this app’s index");
+    expect(tasteHeading(threeReadings(lenses(), PAIRS, "one", "two"))).toBe("Adding taste moves this pair from #7 to #1 in this app’s index");
+    expect(tasteHeading(threeReadings(lenses(), PAIRS, "three", "four"))).toBe("Adding taste leaves this pair at #2 in this app’s index");
+    // The invented day's index is this app's too: the same words, and no Qloo.
+    expect(tasteHeading(MOVED, true)).toBe("Adding taste moves this pair from #18 to #1 in this app’s index");
+    expect(tasteHeading(STILL, true)).toBe("Adding taste leaves this pair at #1 in this app’s index");
     // A heading, so no full stop; the same words as the verdict's equal branch.
     for (const heading of [tasteHeading(MOVED), tasteHeading(STILL)]) expect(heading).not.toMatch(/\.$/);
     expect(`${tasteHeading(STILL)}.`).toBe(tasteVerdict(STILL));
@@ -346,7 +352,7 @@ describe("WhatQlooChanges", () => {
     expect(html).toContain(`id="${WHAT_QLOO_ID}"`);
     const plain = text(html);
     const order = [
-      "Adding taste moves this pair from #7 to #1",
+      "Adding taste moves this pair from #7 to #1 in this app’s index",
       "Act One × Act Two, 45 min shared, ranked three ways.",
       "Time alone Minutes shared #3 of 4 tied with 1 other",
       "Time + Qloo popularity Draw is Qloo popularity, 0 to 100 #7 of 40",
@@ -519,15 +525,16 @@ describe("WhatQlooChanges", () => {
     const plain = text(render({ aId: "three", bId: "four" }));
     expect(plain).toContain("Act One × Act Two, 60 min shared, ranked three ways.");
     expect(plain.split("Adding taste leaves this pair at #2").length - 1).toBe(1);
+    expect(plain).toContain("Adding taste leaves this pair at #2 in this app’s index");
     expect(plain).not.toMatch(/agrees|either way/);
     expect(plain).not.toContain(QLOO_CHANGES_LINE);
     expect(plain).toContain(READINGS_CAPTION);
-    expect(changesLine(threeReadings(lenses(), PAIRS, "three", "four"))).toBe("Adding taste leaves this pair at #2.");
+    expect(changesLine(threeReadings(lenses(), PAIRS, "three", "four"))).toBe("Adding taste leaves this pair at #2 in this app’s index.");
   });
 
   it("labels the invented day everywhere and never credits Qloo for it", () => {
     const plain = text(render({ aId: "one", bId: "two", synthetic: true }));
-    expect(plain).toContain("Adding taste moves this pair from #7 to #1");
+    expect(plain).toContain("Adding taste moves this pair from #7 to #1 in this app’s index");
     expect(plain).toContain("Time alone Minutes shared #3 of 4");
     expect(plain).toContain("Time + draw Draw is invented popularity #7 of 40");
     expect(plain).toContain("+ invented taste overlap Taste overlap added: the index used here #1 of 40");
@@ -565,7 +572,7 @@ describe("WhatQlooPointer", () => {
     const same = renderToStaticMarkup(
       createElement(WhatQlooPointer, { lenses: lenses(), pairs: PAIRS, aId: "three", bId: "four" }),
     );
-    expect(text(same)).toBe("Adding taste leaves this pair at #2. See what Qloo changes");
+    expect(text(same)).toBe("Adding taste leaves this pair at #2 in this app’s index. See what Qloo changes");
   });
 });
 
@@ -638,7 +645,7 @@ describe("TasteSection", () => {
     expect(html.match(/<h2\b/g)?.length).toBe(1);
     const plain = text(html);
     const order = [
-      "Adding taste moves this pair from #7 to #1",
+      "Adding taste moves this pair from #7 to #1 in this app’s index",
       "Act One × Act Two, 45 min shared, ranked three ways.",
       "Time alone Minutes shared #3 of 4 tied with 1 other",
       "Time + Qloo popularity Draw is Qloo popularity, 0 to 100 #7 of 40",
@@ -710,14 +717,15 @@ describe("TasteSection", () => {
 
   it("keeps the caption visible when taste does not move the pair", () => {
     const visible = text(withoutDisclosures(render({ clash: { ...CLASH, aId: "three", bId: "four" } })));
-    expect(visible).toContain("Adding taste leaves this pair at #2");
+    expect(visible).toContain("Adding taste leaves this pair at #2 in this app’s index");
     expect(visible).toContain(READINGS_CAPTION);
   });
 
   it("opens on the claim itself as a 40px headline, with no kicker over it, and the pair line under it", () => {
     for (const props of [{}, { clash: { ...CLASH, aId: "three", bId: "four" } }, { synthetic: true }]) {
       const html = render(props);
-      expect(html).toMatch(/<h2 id="what-qloo-heading" class="type-headline">Adding taste (moves|leaves) this pair /);
+      expect(html).toMatch(/<h2 id="what-qloo-heading" class="type-headline">Adding taste (moves|leaves) this pair [^<]* in this app’s index<\/h2>/);
+      expect(html).not.toMatch(/#23 to/);
       const before = html.slice(0, html.indexOf("<h2"));
       expect(text(before)).toBe("");
       expect(before).not.toContain("type-kicker");
@@ -807,7 +815,9 @@ describe("TasteSection", () => {
     expect(card).toMatch(/<button[^>]*class="[^"]*\blg:hidden\b[^"]*"[^>]*>Keep the two-set change/);
     expect(card).toMatch(/<button[^>]*class="[^"]*\blg:hidden\b[^"]*"[^>]*>Open a hidden clash/);
     expect(card).toMatch(/<div data-decision-actions="" class="mt-1 lg:hidden">/);
-    expect(text(card)).toContain("A score, not money: 100 = the average random valid timetable of this lineup. Lower is better. Selected and scored by this app’s index. A reading, not a verdict.");
+    // Round 39 (W5, the index card's own lane): "Lower is better." left the card for the dial; the paragraph says what
+    // a reading above 100 means instead, with the guarded first sentence byte for byte.
+    expect(text(card)).toContain("A score, not money: 100 = the average random valid timetable of this lineup. Above 100: costlier. Selected and scored by this app’s index. A reading, not a verdict.");
     expect(card).toMatch(/<p data-index-scale="" class="(?![^"]*hidden)[^"]*">/);
     expect(text(card)).toContain("Show the working");
     // "Try this rule yourself" stays in the card at every width: on the working toggle's row from 1024px.
@@ -839,7 +849,7 @@ describe("TasteSection", () => {
     // was (Riot Fest's case, invented here), so the readings follow it and the clash taste lowers comes after them.
     const line = OTHER_HALF;
     const still = text(withoutDisclosures(render({ clash: { ...CLASH, aId: "three", bId: "four" } })));
-    expect(still).toContain("Adding taste leaves this pair at #2");
+    expect(still).toContain("Adding taste leaves this pair at #2 in this app’s index");
     expect(still.indexOf(line)).toBeGreaterThan(still.indexOf("Time alone Minutes shared"));
     expect(still.indexOf(line)).toBeGreaterThan(still.indexOf(READINGS_CAPTION));
     expect(still.indexOf(line)).toBeGreaterThan(still.indexOf("What the failed test taught us."));
@@ -944,7 +954,7 @@ describe("TasteSection", () => {
     }
     const plain = text(render({ synthetic: true }));
     // The invented day is named by the readings' own caption and rungs (the kicker that also said it is gone).
-    expect(plain).toContain("Adding taste moves this pair from #7 to #1");
+    expect(plain).toContain("Adding taste moves this pair from #7 to #1 in this app’s index");
     expect(plain).toContain("Time + draw Draw is invented popularity #7 of 40");
     expect(plain).toContain("+ invented taste overlap");
     expect(text(withoutDisclosures(render({ synthetic: true })))).toContain(READINGS_CAPTION_SYNTHETIC);

@@ -15,6 +15,7 @@ import {
   DECISION_CHOICES,
   DECISION_INITIALS,
   HIDDEN_NOTE,
+  INDEX_MEANING,
   NO_MOVES,
   READING_NOTE,
   TO_DECIDE,
@@ -662,12 +663,18 @@ export function BriefContent({
   // Under the table, once: whose locks the "both locked" rows are, only when a shown row has the mark.
   const lockLine = briefLockLine(preset, day, rows);
 
+  // What a reading above 100 means runs on after the band sentence, in the same paragraph, and prints on every sheet but
+  // one: the card's single move with the comparison and the drawing, the fullest, which has about 12 px of room on a
+  // Letter page without it, less than its one 10 pt line (15.3 px). Every other sheet measured has 79 px or more. It
+  // stays on the screen there, and the sheet's own "How to read this" still gives the 100 and "lower is better".
+  const meaningOnPaper = tradeoff === null;
   // On paper the coverage sentence runs on after the band sentence, in the room its last line leaves.
   const dayBlock = (
     <Block title="The day">
       <p className="print:inline">
         <strong className="font-semibold">{indexSentence(figures.index)}</strong>
         {band ? ` ${band}` : ""}
+        {figures.index === null ? null : <span className={meaningOnPaper ? undefined : "print:hidden"}>{` ${INDEX_MEANING}`}</span>}
       </p>{" "}
       <p className="mt-1 print:mt-0 print:inline">{coverageSentence(figures, synthetic)}</p>
     </Block>

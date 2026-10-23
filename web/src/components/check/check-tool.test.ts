@@ -2240,6 +2240,11 @@ describe("round 37: the rejected value in the editor, a paste with nothing focus
     const long = "Amber Kite,Main,18:00,19:00\nBasalt Choir,Main,half past six in the evening maybe,20:00";
     expect(parseGrid(long).skipped?.[0]?.message).toContain("…");
     expect(selected(long)).toEqual([[2, "half past six in the evening maybe"]]);
+    // Under a title line the grid's own separator is tried first (round 39): the tab grid below a title with no tab
+    // in it selects the start cell, not the tail of the end cell that repeats the value after a comma.
+    const titled = "Glastonbury Sunday\nAnn Arbor\tMain\t18:00\t19:00\nBasalt Choir\tMain\t25:99\t20:00,25:99";
+    expect(selected(titled)).toEqual([[3, "25:99"]]);
+    expect(rejectedRange(titled, (parseGrid(titled).skipped ?? [])[0])?.start).toBe(titled.indexOf("25:99"));
     // A message that quotes no value selects nothing.
     expect(selected("Amber Kite,Main,18:00,19:00\nBasalt Choir,Main,20:00,19:00")).toEqual([[2, null]]);
     // A line that no longer holds the value selects nothing.
@@ -2390,5 +2395,32 @@ describe("round 37: the rejected value in the editor, a paste with nothing focus
     failed.release();
     expect(await none).toEqual({ kind: "failed" });
     expect(source).toMatch(/if \(answer\.kind === "later"\) return;/);
+  });
+});
+
+describe("round 39 W1: a title line above the pasted grid", () => {
+  const tool = (grid: string) =>
+    renderToStaticMarkup(createElement(CheckTool, { initial: { grid, changeover: "", curfew: "", pairs: "" }, checkOnLoad: true }));
+  const text = (html: string) => html.replace(/&quot;/g, '"');
+  const TITLED = "Glastonbury Sunday\nSprints\tWoodsies\t14:00\t14:45\nKaty J Pearson\tThe Park\t14:00\t15:00\nJoy Crookes\tWoodsies\t15:00\t16:00";
+
+  it("shows no refusal and no skipped-line notice, says it read the title once, and counts the sets in the no-breaks line", () => {
+    const html = text(tool(TITLED));
+    expect(html).not.toContain("The grid was not checked");
+    expect(html).not.toContain("data-skipped");
+    expect(html).not.toContain("line skipped and not checked");
+    expect(html).toContain("Read 3 sets on 2 stages.");
+    expect(html.split('Skipped line 1 ("Glastonbury Sunday"): no times found, so it was read as a title.').length - 1).toBe(1);
+    // The note comes before the read line, and the no-breaks line is the counted one, never the bare sentence.
+    expect(html.indexOf("no times found, so it was read as a title.")).toBeLessThan(html.indexOf("Read 3 sets on 2 stages."));
+    expect(html).toContain("No rule breaks found among the 3 sets checked, against the settings above.");
+    expect(html).not.toContain("No rule breaks found against the settings above.");
+  });
+
+  it("reads a title over a comma grid, and leaves a grid with no title without the note", () => {
+    expect(text(tool("Saturday, 4 July\nA,Main,18:00,19:00\nB,Side,18:30,19:30"))).toContain("Read 2 sets on 2 stages.");
+    const plain = text(tool("A,Main,18:00,19:00\nB,Side,19:30,20:30"));
+    expect(plain).not.toContain("read as a title");
+    expect(plain).toContain("No rule breaks found against the settings above.");
   });
 });

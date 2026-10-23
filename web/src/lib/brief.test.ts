@@ -12,6 +12,7 @@ import {
   DECISION_INITIALS,
   HOW_TO_READ,
   HIDDEN_NOTE,
+  INDEX_MEANING,
   NO_MOVES,
   READING_NOTE,
   TO_DECIDE,
@@ -330,6 +331,21 @@ describe("the day's figures", () => {
     expect(bandSentence(100, null)).toBeNull();
   });
 
+  it("says what a reading above 100 means in one constant, from /method's reading of the index, and never as a verdict (round 39, W5)", () => {
+    expect(INDEX_MEANING).toBe(
+      "Above 100, the day’s shared minutes cost more, by this reading, than in the average random valid timetable of this lineup: one kind of cost, not a verdict on how the festival was programmed.",
+    );
+    // One kind of cost, in minutes of the timetable: no audience, money or attendance word, and no source credited.
+    expect(INDEX_MEANING).not.toMatch(/attend|people|fans|crowd|audience|revenue|money|\$|£|qloo/i);
+    // The words the sheet already prints stay byte for byte: the reading note and the "How to read this" block.
+    expect(READING_NOTE).toBe("A reading, not a verdict on the festival.");
+    expect(HOW_TO_READ).toEqual([
+      "Taste overlap is calculated by this app from Qloo data: how highly Qloo ranks each act for the other’s audience, as a rank among the acts compared for this bill, 0 to 100. It measures taste, not attendance.",
+      "Combined draw is the two acts’ Qloo popularity, 0 to 100.",
+      "The Clash Budget Index is 100 for the average random valid timetable of this lineup; lower is better. It counts only what clashes cost: taste overlap, time shared, draw and a rarity factor. It is a reading, not a verdict on the festival: real programming weighs much more than taste overlap.",
+    ]);
+  });
+
   it("titles the brief with the festival and the day in words", () => {
     expect(briefTitle(makePreset(), 0)).toEqual({ festival: "Test Fest 2026", day: "Sunday" });
     expect(briefTitle(makePreset(), 1)).toEqual({ festival: "Test Fest 2026", day: "Monday" });
@@ -519,6 +535,34 @@ describe("the brief sheet", () => {
       "Figures are calculated by this app from Qloo audience data saved 2026-09-30. This is an independent hackathon entry, not endorsed by Qloo or Test Fest 2026. Prepared for visitors and judges of this demo; not for redistribution.",
     );
     expect(text).toContain("Timetable sources: example.com, times.example.org.");
+  });
+
+  it("prints what a reading above 100 means in the day's own paragraph, right after the band sentence, and before the coverage sentence (round 39, W5)", () => {
+    const band =
+      "The middle 80% of random valid timetables of this lineup score 92 to 109; the published timetable reads above that range.";
+    for (const plan of [null, PLAN]) {
+      const text = sheetText(makePreset(), plan);
+      expect(text).toContain(
+        `The day Clash Budget Index 116.7. ${band} ${INDEX_MEANING} Taste overlap is scored for 7 of 8 sets`,
+      );
+      // Said once, never apart from the day's figures.
+      expect(text.split(INDEX_MEANING)).toHaveLength(2);
+    }
+    // The same words on the invented day, which credits no Qloo.
+    const invented = sheetText(makePreset({ synthetic: true }), null);
+    expect(invented).toContain(`${band} ${INDEX_MEANING}`);
+    expect(qlooCredits(invented)).toEqual([]);
+  });
+
+  it("prints it only when the day has an index, and straight after the index sentence when the day has no range (round 39, W5)", () => {
+    const preset = makePreset();
+    const noIndex = makePreset({
+      report: { ...preset.report, baseline: null, metrics: { ...preset.report.metrics, clash_budget_index: null } },
+    });
+    expect(sheetText(noIndex, null)).not.toContain(INDEX_MEANING);
+    expect(sheetText(noIndex, null)).not.toContain("Above 100");
+    const noRange = makePreset({ report: { ...preset.report, baseline: null } });
+    expect(sheetText(noRange, null)).toContain(`The day Clash Budget Index 116.7. ${INDEX_MEANING} Taste overlap is scored`);
   });
 
   it("prints the kept moves and the caveat word for word", () => {
@@ -1272,6 +1316,27 @@ describe("the shared minutes of a plan (round 33)", () => {
     expect(text).toContain(`${line} 3 kept moves: Clash Budget Index`);
     expect(sheetText(makePreset(), null)).not.toContain("Shared minutes");
     expect(sheetText(makePreset(), { ...PLAN, steps: [{ ...PLAN.steps[0], end: "later" }] })).not.toContain("Shared minutes");
+  });
+
+  it("leaves what a reading above 100 means off paper only on the fullest sheet, the card's single move with the comparison, and keeps it on the screen (round 39, W5)", () => {
+    // Measured with headless Chrome on Letter (print media, round 39): that sheet has 12 to 13 px of room without the
+    // sentence, less than its one 10 pt line (15.3 px), so it printed two pages. Every other sheet measured (no plan,
+    // two to eight kept moves, the hero's move with the two-set change, the invented day) has 79 px or more.
+    const meaning = (html: string) => new RegExp(`<span( class="([^"]*)")?> ${INDEX_MEANING}</span>`).exec(html);
+    for (const html of [sheetHtml(makePreset(), null), sheetHtml(makePreset(), PLAN), sheetHtml(makePreset({ synthetic: true }), null)]) {
+      const found = meaning(html);
+      expect(found, "the sentence is in the day's paragraph").not.toBeNull();
+      expect(found?.[2] ?? "").toBe("");
+    }
+    const tradeoff = briefTradeoff(makePreset(), parseDecision(decisionRaw()), [CARD_MOVE], 0);
+    const single: Plan = {
+      ...PLAN,
+      steps: [{ ...PLAN.steps[0], act: "Act Two", actId: "act-two", stage: "The Barn", stageId: "barn", start: "14:30", end: "15:30" }],
+    };
+    const fullest = sheetHtml(makePreset(), single, { tradeoff });
+    expect(meaning(fullest)?.[2]).toBe("print:hidden");
+    // Still in the page for the screen, so the reading is never a print-only line.
+    expect(plainOf(fullest)).toContain(INDEX_MEANING);
   });
 
   it("stays on paper and on the screen even when the sheet is full, since it leads the plan (round 37, R5)", () => {

@@ -7,7 +7,7 @@ import { CHECK_LIVE } from "@/lib/check-flag";
 
 import { DEMAND, DO_NOT_USE, PILOT_CONTACT, PILOT_TERMS, type Demand } from "@/lib/demand";
 import { METHOD_FIGURES, formatPct, methodRow, numberWord, type MethodId } from "@/lib/method-figures";
-import { EVIDENCE_ID, HOME_EVIDENCE, HOME_EVIDENCE_LINK } from "@/lib/public-evidence";
+import { EVIDENCE_FIGURES, EVIDENCE_ID, HOME_EVIDENCE, HOME_EVIDENCE_LINK } from "@/lib/public-evidence";
 import { PUBLIC_SOURCES } from "@/lib/public-sources";
 import { cn } from "@/lib/utils";
 
@@ -191,6 +191,13 @@ export const WHY_STAKE =
  * content. It claims no benefit to an artist.
  */
 export const WHY_USE = `A clash can stay: in Check a draft grid, choose “Kept on purpose”. ${DO_NOT_USE} If a festival used it, an act’s team would see the brief: the proposed time and the minutes shared before and after. This app writes no artist bios, images or messages.`;
+
+/**
+ * The competitor search's one conclusion, as the heading over "absence of evidence only": scoped to the tool pages
+ * the analysis reviewed (`EVIDENCE_FIGURES.toolPages`, claim 3 on /method#asked) and to ranking a draft grid's clashes
+ * by audience closeness, never to every scheduler there is. No full stop, like the other conclusion headings.
+ */
+export const TOOLS_ABSENCE = `None of the ${EVIDENCE_FIGURES.toolPages} tool pages we reviewed describes ranking a draft grid’s clashes by audience closeness`;
 
 /** The published day the zero-request pilot walks through: its brief exists and costs no Qloo request. */
 export const PILOT_DAY = "Glastonbury 2025 Sunday";
@@ -535,13 +542,12 @@ export function WhyThisMatters({
           </div>
 
           <div data-why-col="unknown" className="min-w-0 lg:col-span-7 lg:col-start-6 lg:row-start-1">
-            <h3 className={CONCLUSION}>No scheduler we found reads audience overlap</h3>
+            <h3 className={CONCLUSION}>{TOOLS_ABSENCE}</h3>
             <p className="mt-2">Our search, October 2026: absence of evidence only. Who would pay is not known.</p>
             <Fold className="mt-2" summary="Festival Pro and Lineup Ninja">
               <p className="pb-3">
-                Both check double bookings and changeovers. We found none that reads audience overlap (our search,
-                October 2026). Setline sells organisers clash analysis from attendee interest once set times are
-                live.
+                Both check double bookings and changeovers. Setline sells organisers clash analysis from attendee
+                interest once set times are live.
               </p>
             </Fold>
             <DemandLine demand={demand} />

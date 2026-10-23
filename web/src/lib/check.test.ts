@@ -8,6 +8,7 @@ import {
   checkTimeLine,
   clip,
   formatClock,
+  gridDelimiter,
   isCloseName,
   noBreaksLine,
   pairNotChecked,
@@ -868,11 +869,20 @@ describe("round 35: a bad line is skipped and listed, and the rest is checked", 
     );
     expect(outcome.errors).toHaveLength(6);
     expect(outcome.errors[0]).toBe("Line 2: the header has 4 columns, but this line has 1 field.");
-    // Without a header the same: a comma first line, then lines that use semicolons.
+    // Without a header, a comma first line over eleven lines that use semicolons: the lines that split into four
+    // fields decide (round 39), so the eleven are read by semicolons and line 1, which holds times, is skipped as a
+    // line. The hint stays for a grid read by commas (below), where the semicolon lines cannot be read.
     const mixed = report([MESSY_LINES[0], ...MESSY_LINES.slice(1).map(semi)].join("\n"));
-    expect(mixed.sets.map((s) => s.act)).toEqual(["Tidal Fields"]);
-    expect(skippedOf(mixed)[0]).toBe("Line 2: expected act, stage, start, end (and locked), but found 1 field.");
-    expect(separatorHint(mixed.skipped)).toBe(CHECK_COPY.separatorHint);
+    expect(mixed.sets.map((s) => s.act)).not.toContain("Tidal Fields");
+    expect(mixed.sets).toHaveLength(10);
+    expect(mixed.skipped?.map((item) => item.line)).toEqual([1, 4]);
+    expect(skippedOf(mixed)[0]).toBe("Line 1: expected act, stage, start, end (and locked), but found 1 field.");
+    expect(separatorHint(mixed.skipped)).toBeNull();
+    // A tie between the two readings falls back to the first line's: two comma lines over two semicolon lines are
+    // read by commas, and the semicolon lines cannot be read, with the hint.
+    const tied = report("A,Main,18:00,19:00\nB,Side,18:30,19:30\nC;Tent;19:00;20:00\nD;Tent;20:00;21:00");
+    expect(tied.sets.map((s) => s.act)).toEqual(["A", "B"]);
+    expect(separatorHint(tied.skipped)).toBe(CHECK_COPY.separatorHint);
     // A grid read by semicolons from its first line never gets the hint.
     expect(separatorHint(report(MESSY_LINES.map(semi).join("\n")).skipped)).toBeNull();
     // One such line among readable ones is not enough; a semicolon inside a readable name is not one.
@@ -990,10 +1000,13 @@ describe("round 36: real headers and times, and what was not read", () => {
   });
 
   it("treats a first line as a header only when two or more of its cells name a column", () => {
-    // One column word in a title line: that line is skipped as a line, and the grid under it is read.
+    // One column word in a title line: the line is no header. Round 39: it holds no time, so it is read as a title
+    // (not skipped, and said so in one note), and the grid under it is read.
     const r = report("Running order,Stage\nA,Main,18:00,19:00\nB,Side,18:30,19:30");
     expect(r.sets).toHaveLength(2);
-    expect(skippedOf(r)).toEqual(["Line 1 (Running order): expected act, stage, start, end (and locked), but found 2 fields."]);
+    expect(skippedOf(r)).toEqual([]);
+    expect(r.title).toEqual({ line: 1, text: "Running order,Stage" });
+    expect(r.notes).toEqual(['Skipped line 1 ("Running order,Stage"): no times found, so it was read as a title.']);
   });
 
   it("reads dotted, compact and h times, and a single a or p after a 12-hour time", () => {
@@ -1132,5 +1145,204 @@ describe("round 37 N7: punctuation at the end of a header cell", () => {
     expect(errors("act,stage,start,?\nA,Main,18:00,19:00")).toEqual([
       'Line 1: no column reads as end. Not read: "?". For end this check reads: end, end time, ends, finish, finish time, finishes, until, to, set end.',
     ]);
+  });
+});
+
+// Round 39 W1: a title above the grid ("Glastonbury Sunday") no longer refuses the whole paste. The separator is
+// decided by the lines that split into four fields (a header or title line first), and a first line with no time
+// in it that cannot be a row is read as a title: not checked, not a skipped line, said so in one note.
+describe("round 39 W1: a title line above the grid", () => {
+  const note = (line: number, text: string) => `Skipped line ${line} ("${text}"): no times found, so it was read as a title.`;
+  const TAB_ROWS = "Sprints\tWoodsies\t14:00\t14:45\nKaty J Pearson\tThe Park\t14:00\t15:00\nJoy Crookes\tWoodsies\t15:00\t16:00";
+
+  it("reads a tab grid under a title: its sets, no skipped line, the title and one note", () => {
+    const titles: [string, string][] = [
+      ["Glastonbury Sunday", "Glastonbury Sunday"],
+      ["Saturday 4 July", "Saturday 4 July"],
+      ["DRAFT v3 - do not share", "DRAFT v3 - do not share"],
+      ["Saturday\t\t\t", "Saturday"],
+    ];
+    for (const [first, text] of titles) {
+      const r = report(`${first}\n${TAB_ROWS}`);
+      expect(r.sets.map((s) => [s.row, s.act, s.stage, s.start, s.end])).toEqual([
+        [2, "Sprints", "Woodsies", 840, 885],
+        [3, "Katy J Pearson", "The Park", 840, 900],
+        [4, "Joy Crookes", "Woodsies", 900, 960],
+      ]);
+      expect(r.stages).toEqual(["Woodsies", "The Park"]);
+      expect(r.skipped ?? []).toEqual([]);
+      expect(r.title).toEqual({ line: 1, text });
+      expect(r.notes).toEqual([note(1, text)]);
+      // The partial notice does not show for a title.
+      expect(skippedSentence(r.skipped ?? [], r.sets.length)).toBeNull();
+      expect(r.shared).toHaveLength(1);
+      expect(announcement({ ok: true, report: r })).toBe("Rule breaks: 0. Sets that share time: 1 pair.");
+    }
+  });
+
+  it("reads a comma grid under a two-field title such as “Saturday, 4 July”", () => {
+    const r = report("Saturday, 4 July\nA,Main,18:00,19:00\nB,Side,18:30,19:30");
+    expect(r.sets.map((s) => [s.row, s.act])).toEqual([
+      [2, "A"],
+      [3, "B"],
+    ]);
+    expect(r.skipped ?? []).toEqual([]);
+    expect(r.title).toEqual({ line: 1, text: "Saturday, 4 July" });
+    expect(r.notes).toEqual([note(1, "Saturday, 4 July")]);
+  });
+
+  it("counts blank lines before a title, and quotes at most 30 characters of it", () => {
+    const r = report("\n\nGlastonbury Sunday\nA,Main,18:00,19:00\nB,Side,18:30,19:30");
+    expect(r.title).toEqual({ line: 3, text: "Glastonbury Sunday" });
+    expect(r.notes).toEqual([note(3, "Glastonbury Sunday")]);
+    expect(r.sets.map((s) => s.row)).toEqual([4, 5]);
+    const long = "The Very Long Title Of A Festival Day Programme";
+    expect(long.length).toBeGreaterThan(30);
+    const cut = report(`${long}\nA,Main,18:00,19:00\nB,Side,18:30,19:30`);
+    expect(cut.notes).toEqual([`Skipped line 1 ("${long.slice(0, 30)}…"): no times found, so it was read as a title.`]);
+    expect(cut.title?.text).toBe(long);
+    // Whatever is pasted, the title kept is clipped like every echo, and a CRLF paste reads the same.
+    const huge = report(`${"x".repeat(300)}\r\nA,Main,18:00,19:00\r\nB,Side,18:30,19:30`);
+    expect(Array.from(huge.title?.text ?? "").length).toBeLessThanOrEqual(81);
+    expect(huge.notes[0]).toMatch(/^Skipped line 1 \("x{30}…"\): no times found/);
+  });
+
+  it("leaves a grid with no title as it was: no title, no note, the same sets and skips", () => {
+    const grids = [
+      "A,Main,18:00,19:00\nB,Side,18:30,19:30",
+      "A\tMain\t18:00\t19:00\nB\tSide\t18:30\t19:30",
+      "A;Main;18:00;19:00\nB;Side;18:30;19:30",
+      "act,stage,start,end\nA,Main,18:00,19:00",
+      "act\tstage\ttime\nA\tMain\t18:00-19:00",
+      MESSY_LINES.join("\n"),
+      MESSY_LINES.map((line) => line.split(",").join("\t")).join("\n"),
+      MESSY_LINES.map((line) => line.split(",").join(";")).join("\n"),
+      SAMPLE_GRID,
+    ];
+    for (const grid of grids) {
+      const r = report(grid);
+      expect(r.title).toBeUndefined();
+      expect(r.notes.filter((n) => n.startsWith("Skipped line"))).toEqual([]);
+    }
+    expect(report(MESSY_LINES.join("\n")).sets).toHaveLength(11);
+    expect(skippedOf(report(MESSY_LINES.join("\n")))).toEqual([
+      'Line 4 (Glass Harbour): the start time "25:70" is not a time such as 18:00, 18.00, 1800, 24:30, 6:00 PM or 6pm.',
+    ]);
+  });
+
+  it("reads the majority separator: one comma data line among tab lines is a line fault, never a title", () => {
+    const r = report("A,Main,18:00,19:00\nB\tSide\t18:30\t19:30\nC\tTent\t19:00\t20:00");
+    expect(r.sets.map((s) => s.act)).toEqual(["B", "C"]);
+    expect(skippedOf(r)).toEqual(["Line 1: expected act, stage, start, end (and locked), but found 1 field."]);
+    expect(r.title).toBeUndefined();
+    expect(r.notes).toEqual([]);
+  });
+
+  it("prints the counted no-breaks line after a title, never the bare sentence (R6)", () => {
+    // Two fields and no time, over two clean comma rows: a title, and a clean result on part of a paste.
+    const r = report("Sprints,Woodsies\nA,Main,18:00,19:00\nB,Side,18:30,19:30");
+    expect(r.title).toEqual({ line: 1, text: "Sprints,Woodsies" });
+    expect(r.notes).toEqual([note(1, "Sprints,Woodsies")]);
+    expect(r.sets).toHaveLength(2);
+    expect(r.breaks).toEqual([]);
+    expect(noBreaksLine(r)).toBe("No rule breaks found among the 2 sets checked, against the settings above.");
+    // The report with no title and nothing skipped keeps the bare sentence; a title or a skip alone counts.
+    const plain = report("A,Main,18:00,19:00\nB,Side,19:30,20:30");
+    expect(noBreaksLine(plain)).toBe(CHECK_COPY.noBreaks);
+    expect(noBreaksLine({ sets: r.sets, skipped: [] })).toBe(CHECK_COPY.noBreaks);
+    expect(noBreaksLine({ sets: r.sets, skipped: [], title: { line: 1, text: "Sprints,Woodsies" } })).toBe(
+      "No rule breaks found among the 2 sets checked, against the settings above.",
+    );
+    expect(noBreaksLine({ sets: r.sets.slice(0, 1), title: { line: 1, text: "x" } })).toBe(
+      "No rule breaks found among the 1 set checked, against the settings above.",
+    );
+  });
+
+  it("keeps a line of four or more fields with two or more filled as a line fault, not a title", () => {
+    const r = report("A,Main,,bad\nB,Side,18:30,19:30\nC,Tent,19:00,20:00");
+    expect(r.title).toBeUndefined();
+    expect(r.sets.map((s) => s.act)).toEqual(["B", "C"]);
+    expect(r.skipped?.map((item) => item.line)).toEqual([1]);
+    expect(skippedOf(r)[0]).toMatch(/^Line 1 \(A\): the start time "" is not a time/);
+    expect(noBreaksLine(r)).toBe("No rule breaks found among the 2 sets checked, against the settings above.");
+    // Times in it keep it a row, however it is spelled.
+    for (const first of ["A,Main,xx,yy", "A,Main,18:00,", "Sunday,18:00", "Doors,6pm to 7pm", "Sunday\t1830"]) {
+      const row = runCheck(input(`${first}\nB,Side,18:30,19:30\nC,Tent,19:00,20:00`));
+      if (!row.ok) throw new Error(row.errors.join(" | "));
+      expect(row.report.title).toBeUndefined();
+      expect(row.report.skipped?.map((item) => item.line)).toEqual([1]);
+    }
+    expect(skippedOf(report("A,Main,xx,yy\nB,Side,18:30,19:30"))[0]).toMatch(/^Line 1 \(A\): the start time "xx" is not a time/);
+  });
+
+  it("runs the header test on the line after a title, and reads the rows with that header's layout", () => {
+    const tab = report("Glastonbury Sunday\nstage\tact\tend\tstart\nMain\tA\t19:00\t18:00\nSide\tB\t19:30\t18:30");
+    expect(tab.sets.map((s) => [s.row, s.act, s.stage, s.start, s.end])).toEqual([
+      [3, "A", "Main", 1080, 1140],
+      [4, "B", "Side", 1110, 1170],
+    ]);
+    expect(tab.title).toEqual({ line: 1, text: "Glastonbury Sunday" });
+    expect(tab.skipped ?? []).toEqual([]);
+    expect(tab.notes).toEqual([note(1, "Glastonbury Sunday")]);
+    // A title over a header of three columns: the header's own separator, and its one column of ranges.
+    const range = report("Glastonbury Sunday\nact;stage;time\nA;Main;18:00-19:00\nB;Side;18:30-19:30");
+    expect(range.sets.map((s) => [s.row, s.act, s.start, s.end])).toEqual([
+      [3, "A", 1080, 1140],
+      [4, "B", 1110, 1170],
+    ]);
+    expect(range.skipped ?? []).toEqual([]);
+    expect(range.notes).toEqual([note(1, "Glastonbury Sunday")]);
+    // A comma title over a tab header reads by the header's tab.
+    expect(report("Saturday, 4 July\nact\tstage\tstart\tend\nA\tMain\t18:00\t19:00").sets).toHaveLength(1);
+    // The header's own refusal still holds under a title.
+    expect(errors("Glastonbury Sunday\nact,stage,start\nA,Main,18:00,19:00")).toEqual([
+      expect.stringMatching(/^Line 2: no column reads as end\./),
+    ]);
+  });
+
+  it("is conservative: an unclosed quote, a second title line, the header's comma over semicolon rows, a title alone", () => {
+    // An unclosed quote on line 1 stays a line fault, never a title.
+    const open = report('"Glastonbury Sunday\nA,Main,18:00,19:00\nB,Side,18:30,19:30');
+    expect(open.title).toBeUndefined();
+    expect(skippedOf(open)).toEqual(["Line 1 (Glastonbury Sunday): a quote is not closed or has text after it."]);
+    expect(open.sets).toHaveLength(2);
+    // Only the first non-blank line can be a title.
+    const two = report("Glastonbury\nSunday\nA,Main,18:00,19:00\nB,Side,18:30,19:30");
+    expect(two.title).toEqual({ line: 1, text: "Glastonbury" });
+    expect(skippedOf(two)).toEqual(["Line 2: expected act, stage, start, end (and locked), but found 1 field."]);
+    // A title over a comma header and semicolon rows reads by the header's comma: the rows are line faults, with the hint.
+    const outcome = runCheck(input("Sunday\nact,stage,start,end\nA;Main;18:00;19:00\nB;Side;18:30;19:30"));
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.errors).toEqual([
+      "Line 3: the header has 4 columns, but this line has 1 field.",
+      "Line 4: the header has 4 columns, but this line has 1 field.",
+    ]);
+    expect(separatorHint(outcome.skipped)).toBe(CHECK_COPY.separatorHint);
+    // A title alone, or a title and a header, finds no set.
+    expect(errors("Glastonbury Sunday")).toEqual(["No sets found. Put one set on each line: act, stage, start, end."]);
+    expect(errors("Glastonbury Sunday\nact,stage,start,end")).toEqual(["No sets found. Put one set on each line: act, stage, start, end."]);
+  });
+
+  describe("gridDelimiter", () => {
+    it("takes a header's own separator first, then a title's header's, then the lines with four fields", () => {
+      expect(gridDelimiter(["act,stage,start,end", "A\tMain\t18:00\t19:00", "B\tSide\t18:30\t19:30"])).toBe(",");
+      expect(gridDelimiter(["Glastonbury Sunday", "act;stage;time", "A;Main;18:00-19:00"])).toBe(";");
+      expect(gridDelimiter(["Saturday, 4 July", "act\tstage\tstart\tend", "A\tMain\t18:00\t19:00"])).toBe("\t");
+      expect(gridDelimiter(["Glastonbury Sunday", "A\tMain\t18:00\t19:00", "B\tSide\t18:30\t19:30"])).toBe("\t");
+      expect(gridDelimiter(["", "", "Saturday, 4 July", "A,Main,18:00,19:00", "B,Side,18:30,19:30"])).toBe(",");
+      expect(gridDelimiter(["A,Main,18:00,19:00", "B\tSide\t18:30\t19:30", "C\tTent\t19:00\t20:00"])).toBe("\t");
+    });
+
+    it("counts a line only when its quotes close, and falls back to the first line on a tie or no four-field line", () => {
+      expect(gridDelimiter(['"A;B;C",Main,18:00,19:00'])).toBe(",");
+      expect(gridDelimiter(["A,Main,18:00,19:00", "B;Side;18:30;19:30"])).toBe(",");
+      expect(gridDelimiter(["A;Main;18:00;19:00", "B,Side,18:30,19:30"])).toBe(";");
+      expect(gridDelimiter(["A;x\tMain\t18:00\t19:00"])).toBe("\t");
+      expect(gridDelimiter(["A", "B", "C"])).toBe(",");
+      expect(gridDelimiter(["a;b;c", "d;e"])).toBe(";");
+      expect(gridDelimiter([])).toBe(",");
+      expect(gridDelimiter(["", "  "])).toBe(",");
+    });
   });
 });

@@ -1944,7 +1944,8 @@ export function AgentPanel({
         </form>
         <p className="mt-2 text-xs text-muted-foreground lg:text-[0.8125rem]">
           Answers are written live by a language model from the tools&rsquo; results. Questions are limited per visitor
-          to keep the demo free.
+          and in total per day. The recorded runs in this section make no live call, so they still play when the
+          day&rsquo;s questions are used up.
         </p>
         <div className="mt-8">
           <Capabilities synthetic={synthetic} />

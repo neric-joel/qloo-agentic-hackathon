@@ -5,7 +5,16 @@
  *
  * Guards that keep the page honest about what it read:
  * - one day, 60 sets, 10 stages and 8 KB; anything else is refused with a plain message;
- * - quoted fields with commas are read as one field; comma, semicolon or tab, decided by the first line;
+ * - quoted fields with commas are read as one field; comma, semicolon or tab, decided by `gridDelimiter`: the
+ *   first line's own separator when that line is a header; a title's, when the next line is a header, that
+ *   header's; otherwise the separator that splits the most lines into four or more fields; and on a tie, or with
+ *   no such line, the first line's, as it always was. A grid that reads with no skipped line reads exactly as it
+ *   did under the first-line rule alone: a header keeps its own separator, and a grid without one has four or
+ *   more fields on every line by that separator, which no other separator can beat;
+ * - a title: the first non-blank line, when it is no header, holds no time (split on tab, comma and semicolon),
+ *   has some text and does not have four or more fields with two or more filled, is not a row. It is read as a
+ *   title, not checked and not a skipped line, and one note says so. Any other line that cannot be read as a
+ *   row is a line fault, as before, so a title never hides a row;
  * - two kinds of failure. A fault of the whole input (empty, too big, an unreadable character, a header
  *   that does not read, more than one day, no readable set, over a limit, any settings problem) stops the
  *   check. A fault of one line (a quote left open, the wrong number of fields, a blank or overlong name,
@@ -143,6 +152,14 @@ export type SkippedLine = {
   semicolons: boolean;
 };
 
+/** The first line of a paste, read as a title because it holds no time and cannot be a row. */
+export type GridTitle = {
+  /** Line number in the paste, counting from 1 (blank lines before it count). */
+  line: number;
+  /** The line as written, tidied and clipped to 80 characters. */
+  text: string;
+};
+
 export type CheckReport = {
   sets: CheckSet[];
   stages: string[];
@@ -150,8 +167,10 @@ export type CheckReport = {
   settings: CheckSettings;
   breaks: RuleBreak[];
   shared: SharedPair[];
-  /** What the page read but did not use, such as columns it ignores. Never a rule break. */
+  /** What the page read but did not use, such as columns it ignores or a title line. Never a rule break. */
   notes: string[];
+  /** The first line, when it was read as a title (it is in `notes`, never in `skipped`). Absent for none. */
+  title?: GridTitle;
   /** Lines left out because they could not be read; the rules ran on the other lines. Empty or absent for none. */
   skipped?: SkippedLine[];
   /** "Pair line 2 not checked: Aurora is on a skipped line.", one per pair rule that names a skipped act. */
@@ -206,11 +225,11 @@ function setsLabel(count: number): string {
 }
 
 /**
- * The no-breaks sentence. While any line is skipped it never stands alone: it says how many sets were
- * checked, so a clean result on part of a grid is never read as a clean grid.
+ * The no-breaks sentence. While any line is skipped, or a title line was read and left out, it never stands
+ * alone: it says how many sets were checked, so a clean result on part of a paste is never read as a clean grid.
  */
-export function noBreaksLine(report: Pick<CheckReport, "sets" | "skipped">): string {
-  if ((report.skipped ?? []).length === 0) return CHECK_COPY.noBreaks;
+export function noBreaksLine(report: Pick<CheckReport, "sets" | "skipped" | "title">): string {
+  if ((report.skipped ?? []).length === 0 && !report.title) return CHECK_COPY.noBreaks;
   return `No rule breaks found among the ${setsLabel(report.sets.length)} checked, against the settings above.`;
 }
 
@@ -371,16 +390,55 @@ function named(act: string | null): string {
 }
 
 /**
- * The delimiter of the paste, decided by its first non-blank line: a tab means tab; otherwise a semicolon when
- * that line holds more semicolons than commas outside its quoted fields (the CSV a spreadsheet writes where the
- * comma is the decimal mark), else a comma.
+ * The delimiter one line sets by itself: a tab means tab; otherwise a semicolon when the line holds more
+ * semicolons than commas outside its quoted fields (the CSV a spreadsheet writes where the comma is the decimal
+ * mark), else a comma.
  */
-function delimiterOf(lines: readonly string[]): string {
-  const first = lines.find((line) => line.trim() !== "") ?? "";
-  if (first.includes("\t")) return "\t";
-  const bare = first.replace(/"(?:[^"]|"")*"/g, "");
+function firstLineDelimiter(line: string): string {
+  if (line.includes("\t")) return "\t";
+  const bare = line.replace(/"(?:[^"]|"")*"/g, "");
   const count = (char: string) => bare.split(char).length - 1;
   return count(";") > count(",") ? ";" : ",";
+}
+
+/** The separators a paste may use, tab first. */
+const DELIMITERS = ["\t", ";", ","] as const;
+
+/** Four fields are the least a row without a header has: act, stage, start and end. */
+const ROW_FIELDS = 4;
+
+/**
+ * The delimiter of the paste, decided in this order:
+ * (a) the first non-blank line's own, when that line reads as a header under it;
+ * (b) when the first non-blank line is a title (no header, no time, not a row) and the next non-blank line
+ *     reads as a header under its own, that header's: a title over `act;stage;time` reads by semicolons;
+ * (c) the separator by which the most non-blank lines split (quotes respected) into four or more fields, when one
+ *     separator has strictly more than each other; a tie, or no such line, falls to
+ * (d) the first non-blank line's own (`firstLineDelimiter`), the rule before titles were read.
+ * A grid that reads with no skipped line has the same delimiter under all four: a header keeps (a), and a grid
+ * without one has four or more fields on every line by its first line's separator, which no other can exceed.
+ */
+export function gridDelimiter(lines: readonly string[]): string {
+  const filled = lines.filter((line) => line.trim() !== "");
+  const first = filled[0] ?? "";
+  const own = firstLineDelimiter(first);
+  const firstSplit = splitLine(first, own);
+  if (firstSplit.ok && readsAsHeader(firstSplit.fields)) return own;
+  if (firstSplit.ok && readsAsTitle(first, firstSplit.fields) && filled.length > 1) {
+    const next = filled[1];
+    const nextOwn = firstLineDelimiter(next);
+    const nextSplit = splitLine(next, nextOwn);
+    if (nextSplit.ok && readsAsHeader(nextSplit.fields)) return nextOwn;
+  }
+  const rows = DELIMITERS.map((delimiter) =>
+    filled.filter((line) => {
+      const split = splitLine(line, delimiter);
+      return split.ok && split.fields.length >= ROW_FIELDS;
+    }).length,
+  );
+  const most = Math.max(...rows);
+  const leaders = DELIMITERS.filter((_, at) => rows[at] === most);
+  return most > 0 && leaders.length === 1 ? leaders[0] : own;
 }
 
 type SplitResult = { ok: true; fields: string[] } | { ok: false };
@@ -490,6 +548,31 @@ function columnOf(value: string): Column | null {
   return COLUMNS.find((column) => HEADER_NAMES[column].has(name)) ?? null;
 }
 
+/** What each cell of a line names: a column, "range" for a column of time ranges, or nothing. */
+function headerNaming(fields: readonly string[]): (Column | "range" | null)[] {
+  return fields.map((field) => columnOf(field) ?? (RANGE_NAMES.has(headerName(field)) ? "range" : null));
+}
+
+/** A line with no time in it, two or more of whose cells name a column, is a header. */
+function readsAsHeader(fields: readonly string[]): boolean {
+  return headerNaming(fields).filter((name) => name !== null).length >= 2 && !fields.some(readsAsTime);
+}
+
+/**
+ * Whether a first line (already split into `fields`) is a title rather than a row: it is no header, it holds some
+ * text, and it does not have four or more fields in all with two or more of them filled (a row with a bad or blank
+ * cell, "A,Main,,bad", stays a line fault); and no part of it, however the line is cut by tab, comma or semicolon
+ * and with or without its quotes, reads as a time. "Saturday\t\t\t" (one filled field) and "Saturday, 4 July" (two
+ * fields) are titles; "Sunday,18:00" and "A,Main,xx,yy" are not.
+ */
+function readsAsTitle(line: string, fields: readonly string[]): boolean {
+  if (readsAsHeader(fields)) return false;
+  const filled = fields.filter((field) => field.trim() !== "").length;
+  if (filled === 0 || (fields.length >= ROW_FIELDS && filled >= 2)) return false;
+  const parts = [...fields, ...line.split(/[\t,;]/)].map((part) => part.trim().replace(/^"+|"+$/g, "").trim());
+  return !parts.some(readsAsTime);
+}
+
 /**
  * Where each column sits in a row; without a header, act, stage, start, end and locked in that order. With
  * `range`, start and end are the same column, each cell a range such as 18:00-19:00.
@@ -562,11 +645,12 @@ function textProblem(text: string, linePrefix: string): string | null {
 }
 
 /**
- * What `parseGrid` read: the readable sets, the skipped lines and the day column's one value (null when the
- * grid has no day column or no day written), or the problems that stop the whole check.
+ * What `parseGrid` read: the readable sets, the skipped lines, the day column's one value (null when the
+ * grid has no day column or no day written) and the first line when it was read as a title, or the problems
+ * that stop the whole check.
  */
 export type GridResult =
-  | { ok: true; sets: CheckSet[]; notes: string[]; skipped: SkippedLine[]; day: string | null }
+  | { ok: true; sets: CheckSet[]; notes: string[]; skipped: SkippedLine[]; day: string | null; title?: GridTitle }
   | { ok: false; errors: string[]; skipped?: SkippedLine[] };
 
 /** An act name fit to compare with a pair rule: tidied, not blank and within the length limit; else null. */
@@ -584,9 +668,10 @@ function looseAct(line: string, delimiter: string, at: number): string | null {
 }
 
 /**
- * The grid text into rows. Header row optional. A fault of one line skips that line, listed by its line
- * number in the paste (counting the header and blank lines); the other lines are read. A fault of the whole
- * input, or no readable line at all, stops the check with every problem listed.
+ * The grid text into rows. A title line and a header row are optional (a title is only ever the first
+ * non-blank line, and the header test then runs on the next). A fault of one line skips that line, listed by
+ * its line number in the paste (counting the title, the header and blank lines); the other lines are read. A
+ * fault of the whole input, or no readable line at all, stops the check with every problem listed.
  */
 export function parseGrid(raw: string): GridResult {
   const problems = new Problems();
@@ -609,9 +694,12 @@ export function parseGrid(raw: string): GridResult {
   if (unreadable) return { ok: false, errors: [unreadable] };
 
   const lines = text.split(/\r\n|\r|\n/);
-  const delimiter = delimiterOf(lines);
+  const delimiter = gridDelimiter(lines);
   const drafts: (Draft & { day: string })[] = [];
   let headerChecked = false;
+  // Whether the first non-blank line has been met; only that line can be read as a title.
+  let firstMet = false;
+  let title: GridTitle | undefined;
   let layout: Layout = POSITIONAL;
   let headed = false;
   // A header read as a header that leaves a needed column out: its one message is the whole answer, and no
@@ -627,6 +715,8 @@ export function parseGrid(raw: string): GridResult {
   lines.forEach((line, index) => {
     if (refusal !== null || line.trim() === "") return;
     const row = index + 1;
+    const first = !firstMet;
+    firstMet = true;
     const split = splitLine(line, delimiter);
     if (!split.ok) {
       const loose = looseAct(line, delimiter, layout.act);
@@ -634,12 +724,19 @@ export function parseGrid(raw: string): GridResult {
       return;
     }
     const fields = split.fields;
+    if (first && readsAsTitle(line, fields)) {
+      // No header, no time and not a row: a title. It is left out of every rule and every list of skipped lines,
+      // and said once, so the grid under it is never read as the whole paste.
+      const shown = clip(tidy(line));
+      title = { line: row, text: shown };
+      notes.push(`Skipped line ${row} (${quoted(shown)}): no times found, so it was read as a title.`);
+      return;
+    }
     if (!headerChecked) {
       headerChecked = true;
       // A first line with no time in it, two or more of whose cells name a column, is a header.
-      const naming = fields.map((field) => columnOf(field) ?? (RANGE_NAMES.has(headerName(field)) ? "range" : null));
-      const looksLikeHeader = naming.filter((name) => name !== null).length >= 2 && !fields.some(readsAsTime);
-      if (looksLikeHeader) {
+      const naming = headerNaming(fields);
+      if (readsAsHeader(fields)) {
         const found = new Map<Column, number>();
         let repeated = false;
         naming.forEach((name, at) => {
@@ -841,11 +938,14 @@ export function parseGrid(raw: string): GridResult {
   skipped.sort((a, b) => a.line - b.line);
 
   if (whole || readable.length === 0) return { ok: false, errors: problems.shown(), skipped };
+  // Assigned inside the loop above, so read it back here as either kind.
+  const titled = title as GridTitle | undefined;
   return {
     ok: true,
     notes,
     skipped,
     day: days.size === 1 ? [...days.values()][0] : null,
+    ...(titled ? { title: titled } : {}),
     sets: readable.map((d) => ({
       row: d.row,
       act: d.act,
@@ -1224,6 +1324,7 @@ export function runCheck(input: CheckInput): CheckOutcome {
       breaks: findBreaks(sets, settings.settings),
       shared: findShared(sets),
       notes: grid.notes,
+      ...(grid.title ? { title: grid.title } : {}),
       skipped,
       uncheckedPairs: settings.unchecked,
       day: grid.day,

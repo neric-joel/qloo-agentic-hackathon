@@ -115,8 +115,9 @@ export function drawGloss(synthetic: boolean): string {
 /**
  * What taste overlap does to this pair's place, on the rank axis: minutes alone (when the readings
  * hold it), time and draw, then with taste. When taste leaves the place as it is, that is the finding,
- * said of taste alone, since minutes alone may rank the pair elsewhere: "Adding taste leaves this pair
- * at #N." With `gloss`, "draw" is glossed where it first appears: "draw (Qloo popularity)".
+ * said of taste alone, since minutes alone may rank the pair elsewhere, and of this app's index, whose
+ * rank it is: "Adding taste leaves this pair at #N in this app’s index." With `gloss`, "draw" is glossed
+ * where it first appears: "draw (Qloo popularity)".
  */
 export function tasteVerdict(
   readings: Pick<ThreeReadings, "draw" | "taste"> & Partial<Pick<ThreeReadings, "time">>,
@@ -125,7 +126,7 @@ export function tasteVerdict(
   const { draw, taste, time } = readings;
   if (!draw || !taste) return `What taste changes for this pair: ${NOT_AVAILABLE}.`;
   const drawWord = gloss ? `draw (${gloss})` : "draw";
-  if (draw.rank === taste.rank) return `Adding taste leaves this pair at #${taste.rank}.`;
+  if (draw.rank === taste.rank) return `Adding taste leaves this pair at #${taste.rank} in this app’s index.`;
   if (time) return `Time alone ranks this pair #${time.rank}, time and ${drawWord} #${draw.rank}, with taste #${taste.rank}.`;
   return `Time and ${drawWord} rank this pair #${draw.rank}, with taste #${taste.rank}.`;
 }
@@ -144,14 +145,16 @@ export function whatChangesTitle(synthetic: boolean): string {
 }
 
 /**
- * The block's heading: what adding taste did to this pair's place, from the draw rung to the taste rung,
- * never from minutes alone (draw made that step). Without both rungs it is the block's name.
+ * The block's heading: what adding taste did to this pair's place in this app's index, from the draw rung
+ * to the taste rung, never from minutes alone (draw made that step): "Adding taste moves this pair from #18
+ * to #1 in this app’s index", or the verdict's words without their period. Without both rungs it is the
+ * block's name.
  */
 export function tasteHeading(readings: Pick<ThreeReadings, "draw" | "taste">, synthetic = false): string {
   const { draw, taste } = readings;
   if (!draw || !taste) return whatChangesTitle(synthetic);
   if (draw.rank === taste.rank) return tasteVerdict(readings).replace(/\.$/, "");
-  return `Adding taste moves this pair from #${draw.rank} to #${taste.rank}`;
+  return `Adding taste moves this pair from #${draw.rank} to #${taste.rank} in this app’s index`;
 }
 
 /** The block's line under the figure: the limit when taste moves the pair, else what the ranks say. */
@@ -492,9 +495,9 @@ export function asideParts(aside: ReactNode, besideClassName?: string): { card: 
 /**
  * The taste section, right after the hero: what adding Qloo taste overlap changes, with its limit and the
  * failed test in the same place. With the decision's clash and the lens data the heading says what taste
- * did to that clash's place ("Adding taste moves this pair from #18 to #1", or "Adding taste leaves this
- * pair at #1"), and the figure ranks it three ways (minutes alone, adding popularity, adding taste overlap:
- * the index used here) with the limit directly under it. The failed test is never inside a disclosure.
+ * did to that clash's place in this app's index ("Adding taste moves this pair from #18 to #1 in this app’s
+ * index", or "Adding taste leaves this pair at #1 in this app’s index"), and the figure ranks it three ways
+ * (minutes alone, adding popularity, adding taste overlap: the index used here) with the limit directly under it. The failed test is never inside a disclosure.
  * Reading order, which is also the phone's: heading, pair line, figure, limit, failed test, the aside (the
  * hero's index card), the clash taste lowers, then the folds. From 1024px two columns run on their own: on the
  * left (five of twelve) the heading, the pair line, the failed test and the index card; on the right (seven) the

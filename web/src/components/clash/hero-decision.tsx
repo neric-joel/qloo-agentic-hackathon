@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Check } from "lucide-react";
 
@@ -34,7 +34,7 @@ import {
 } from "./decision-card";
 import { useAnnouncement } from "./use-announcement";
 import { checkPlan } from "./use-moves";
-import { readingText, rungLabels, sharedCount, tasteHeading, type ThreeReadings } from "./why-qloo";
+import { readingText, rungLabels, sharedCount, type ThreeReadings } from "./why-qloo";
 
 /** No kept steps: shared so its identity never changes. */
 const NO_STEPS: readonly StackStep[] = [];
@@ -51,14 +51,16 @@ export const KEPT_LABEL = "Kept in your plan";
  * lead is screen-reader only below 1024 px; the readout's figures 34 px on 1.1, then 48 px; one 20 px line of
  * words, then 28 px; the side effects and the taste line two 20 px lines below 640 px, one from 640 px, two 22
  * px lines from 1024 px and, for the taste line, one from 1280 px, where it holds the 13 px Derived stamp; the
- * attribution two 18 px lines below 640 px, then one; Keep's 48 px; the confirmation's room three 18 px lines,
- * two from 640 px, two 20 px lines from 1024 px; the ladder's rungs, an 18 px name over a 24 px rank, and its
- * one-line sentence, 66 px on a phone (84 px below 360 px, where a rung's name takes two lines) and, from 1024 px, where it sits above Keep, 68 px and 12 px under it;
- * none from 1280 px, where the ladder is one line in the left column, `HeroLadderRoom`). On a screen 790 px tall or less,
- * from 1024 px, the spaces above the readout, the side effects, the taste line and the attribution are 4 px, the space
- * above Keep 8 px and the readout's words a 24 px line (28 px less in all), so a 1366 x 768 screen holds the whole
- * drawing; no text gets smaller. If a settled row is taller than its room at some width, its room for that width is
- * raised; the text is never shortened.
+ * attribution two 18 px lines below 640 px, then one; Keep's 48 px). The notice row is one cell that Keep's
+ * confirmation and, below 1280 px, the ladder share (`HeroLadder`, shown only while neither the confirmation nor
+ * the Add / Replace offer does), so its room is the larger of the two: the confirmation's three 18 px lines (54
+ * px) below 640 px, where the ladder takes two 24 px lines; two (36 px) from 640 px, where the ladder is one line;
+ * from 1024 px the ladder's two 24 px lines in the 26rem group (48 px, more than the confirmation's two 20 px
+ * lines); from 1280 px, where the ladder is one line in the left column (`HeroLadderRoom`), the confirmation's 40
+ * px again. On a screen 790 px tall or less, from 1024 px, the spaces above the readout, the side effects, the
+ * taste line and the attribution are 4 px, the space above Keep 8 px and the readout's words a 24 px line (28 px
+ * less in all), so a 1366 x 768 screen holds the whole drawing; no text gets smaller. If a settled row is taller
+ * than its room at some width, its room for that width is raised; the text is never shortened.
  */
 export const HERO_ROWS = [
   { name: "lead", space: "", min: "lg:min-h-[1.625rem]" },
@@ -67,20 +69,20 @@ export const HERO_ROWS = [
   { name: "taste", space: "mt-1 lg:mt-2 lg:[@media(max-height:790px)]:mt-1", min: "min-h-10 sm:min-h-5 lg:min-h-11 xl:min-h-[1.375rem]" },
   { name: "attribution", space: "mt-1 lg:mt-2 lg:[@media(max-height:790px)]:mt-1", min: "min-h-9 sm:min-h-[1.125rem] lg:min-h-5" },
   { name: "actions", space: "mt-2 lg:mt-4 lg:[@media(max-height:790px)]:mt-2", min: "min-h-12" },
-  { name: "notice", space: "mt-1", min: "min-h-[3.375rem] sm:min-h-9 lg:min-h-10" },
-  { name: "ladder", space: "mt-3 lg:mt-0", min: "min-h-[4.125rem] max-[359px]:min-h-[5.25rem] lg:min-h-[5rem] xl:min-h-0" },
+  { name: "notice", space: "mt-1", min: "min-h-[3.375rem] sm:min-h-9 lg:min-h-12 xl:min-h-10" },
 ] as const;
 
 export type HeroRowName = (typeof HERO_ROWS)[number]["name"];
 
 /**
  * The room the hero layout's group cell holds from 1024 px, from first paint: the sum of `HERO_ROWS` at that
- * width (434.8 px from 1024 px; 332.8 px from 1280 px, where the taste line takes one line and the ladder leaves the
- * group; 28 px less on a screen 790 px tall or less: 406.8 and 304.8 px), so a group that
- * comes later, or one with an empty row, never moves the toggle and the drawing beside it.
+ * width (362.8 px from 1024 px, where the notice row holds the ladder's two lines; 332.8 px from 1280 px, where
+ * the taste line takes one line and the ladder leaves the group for the left column; 28 px less on a screen 790 px
+ * tall or less: 334.8 and 304.8 px), so a group that comes later, or one with an empty row, never moves the toggle
+ * and the drawing beside it.
  */
 export const HERO_CELL_MIN =
-  "lg:min-h-[27.175rem] xl:min-h-[20.8rem] lg:[@media(max-height:790px)]:min-h-[25.425rem] xl:[@media(max-height:790px)]:min-h-[19.05rem]";
+  "lg:min-h-[22.675rem] xl:min-h-[20.8rem] lg:[@media(max-height:790px)]:min-h-[20.925rem] xl:[@media(max-height:790px)]:min-h-[19.05rem]";
 
 /** A row's space and room (`HERO_ROWS`), then the classes of what it holds. */
 function rowClass(name: HeroRowName, ...rest: Parameters<typeof cn>): string {
@@ -89,16 +91,24 @@ function rowClass(name: HeroRowName, ...rest: Parameters<typeof cn>): string {
 }
 
 /**
- * The actions grid: Keep, then the room its confirmation fills, the ladder, then the paste, in that order on a
- * phone, where the ladder comes right under Keep's confirmation so Keep keeps its place on the first screen. From
- * 1024 px the ladder runs above Keep (to 1279 px; from 1280 px it is hidden here and shown as one line in the left
- * column), the paste sits beside Keep and the confirmation runs under both.
+ * The actions grid: Keep, then the cell its confirmation fills (which holds the ladder below 1280 px while no
+ * confirmation shows), then the paste, in that order on a phone. From 1024 px the paste sits beside Keep and the
+ * notice cell runs under both.
  */
 const ACTIONS_GRID =
-  "grid grid-cols-[minmax(0,1fr)] justify-items-start [grid-template-areas:'keep'_'notice'_'ladder'_'paste'] lg:grid-cols-[auto_minmax(0,1fr)] lg:gap-x-3 lg:[grid-template-areas:'ladder_ladder'_'keep_paste'_'notice_notice']";
+  "grid grid-cols-[minmax(0,1fr)] justify-items-start [grid-template-areas:'keep'_'notice'_'paste'] lg:grid-cols-[auto_minmax(0,1fr)] lg:gap-x-3 lg:[grid-template-areas:'keep_paste'_'notice_notice']";
 
-/** The ladder's cell in the actions grid: the full width, with 12 px under it above Keep from 1024 px. */
-const LADDER_CELL = "w-full [grid-area:ladder] lg:pb-3 xl:hidden";
+/** The notice row's one cell, which the confirmation and the ladder share: they overlap, never stack. */
+const NOTICE_CELL = "col-start-1 row-start-1 min-w-0";
+
+/**
+ * Whether Keep's confirmation or the Add / Replace offer's words take the notice cell: then the ladder, which shares
+ * the cell below 1280 px, steps aside there, unseen and hidden from assistive tech but in place, so the cell keeps
+ * its height. A press on Keep is the only cause.
+ */
+export function noticeTaken(showKeep: boolean, keptShown: boolean, offerShown: KeepOffer | null): boolean {
+  return showKeep && (keptShown || offerShown !== null);
+}
 
 /** A rung's rank as the hero prints it: "#23", or the section's words when the page has no place for it. */
 function rungRank(reading: ThreeReadings[keyof ThreeReadings]): string {
@@ -117,79 +127,70 @@ function ladderRungs(readings: ThreeReadings, synthetic: boolean) {
   });
 }
 
+/** The index the ladder's ranks are ranks in, said after the last rung's count. */
+export const LADDER_SCOPE = "in this app’s index";
+
 /**
- * The hero's short ladder: the decision's clash ranked on time alone, then with Qloo popularity added, then with
- * taste overlap added (the index used here), read by `threeReadings` from the same lens data as "What Qloo
- * changes" and named by its `rungLabels`, so the two never disagree; then that section's own sentence for what
- * taste did (`tasteHeading`): "Adding taste moves this pair from #18 to #1." or "Adding taste leaves this pair at
- * #1.", which credits taste with its own step only, never with the step popularity made. The count the three
- * rungs share ("of 68") closes the last rung; when they rank different counts each rung carries its own. Ink only:
- * a rank is neither shared time nor a Qloo figure. Nothing without both readings that carry draw.
+ * The hero's ladder, its picture of what Qloo changes: the decision's clash ranked on time alone, then with Qloo
+ * popularity added, then with taste overlap added (the index used here), read by `threeReadings` from the same lens
+ * data as "What Qloo changes" and named by its `rungLabels`, so the two never disagree: "Time alone #23 → + Qloo
+ * popularity #18 → + taste overlap #1 of 68 in this app’s index". Each rung is its 13 px name (muted, the last one
+ * semibold ink) and its rank in the numeral type (20 px on a 24 px line, 24 px on a 28 px line from 1280 px); the
+ * count the three rungs share ("of 68") closes the last rung, and when they rank different counts each rung carries
+ * its own; then whose ranks these are, muted. The rungs run as one line of text: a line breaks only between rungs
+ * (a rung's name, rank and count never part) and before "in this app’s index". The arrows are drawn only; a screen
+ * reader hears the three rungs as a list. Ink only: a rank is neither shared time nor a Qloo figure. On the invented
+ * day no rung names Qloo. Nothing without both readings that carry draw.
  */
 export function HeroLadder({ readings, synthetic }: { readings: ThreeReadings; synthetic: boolean }) {
   if (!readings.draw || !readings.taste) return null;
   const rungs = ladderRungs(readings, synthetic);
   return (
-    <div data-hero-ladder="">
-      <ol className="grid grid-cols-[repeat(3,minmax(0,auto))] justify-start gap-x-6 lg:gap-x-8">
-        {rungs.map(({ key, label, reading, last, of }) => {
-          return (
-            <li key={key} data-rung={key} className="flex min-w-0 flex-col justify-between">
-              <span className={cn("text-[0.8125rem] leading-[1.125rem]", last ? "font-semibold" : "text-muted-foreground")}>{label}</span>
-              <span className="mt-0.5 flex items-baseline gap-x-1 leading-6 whitespace-nowrap">
-                <span className="type-numeral text-xl leading-6">{rungRank(reading)}</span>
-                {of !== null ? <span className="font-mono text-[0.8125rem] leading-none text-muted-foreground tabular-nums">of {of}</span> : null}
-              </span>
-            </li>
-          );
-        })}
-      </ol>
-      <p data-ladder-line="" className="mt-1 text-[0.8125rem] leading-[1.125rem] lg:text-sm lg:leading-5">
-        {tasteHeading(readings, synthetic)}.
-      </p>
-    </div>
-  );
-}
-
-/**
- * The ladder as one line, for the hero's left column from 1280 px (`HeroLadderRoom`): "Time alone #23 → + Qloo
- * popularity #18 → + taste overlap #1 of 68", the same rungs, ranks and counts as `HeroLadder` (which the group
- * shows below 1280 px), so the right-hand group keeps its height and the drawing its place on the first screen. The
- * arrows are drawn only; a screen reader hears the three rungs as a list. The sentence for what taste did stays in
- * "What Qloo changes" below, which says it in full. Ink only, no motion. Nothing without both readings that carry draw.
- */
-export function HeroLadderLine({ readings, synthetic }: { readings: ThreeReadings; synthetic: boolean }) {
-  if (!readings.draw || !readings.taste) return null;
-  const rungs = ladderRungs(readings, synthetic);
-  return (
-    <ol data-hero-ladder-line="" className="flex flex-wrap items-baseline gap-x-2 text-[0.8125rem] leading-[1.125rem]">
+    <ol data-hero-ladder="" className="text-[0.8125rem] leading-4">
       {rungs.map(({ key, label, reading, last, of }, i) => (
-        <li key={key} data-rung={key} className="flex items-baseline gap-x-2 whitespace-nowrap">
-          {i > 0 ? (
-            <span aria-hidden="true" className="text-muted-foreground">
-              →
+        <Fragment key={key}>
+          {i > 0 ? " " : null}
+          <li data-rung={key} className={cn("inline whitespace-nowrap", !last && "mr-0.5")}>
+            {i > 0 ? (
+              <>
+                <span aria-hidden="true" className="mr-0.5 text-muted-foreground">
+                  →
+                </span>{" "}
+              </>
+            ) : null}
+            <span className={last ? "font-semibold" : "text-muted-foreground"}>{label}</span>{" "}
+            <span data-rank="" className="type-numeral text-xl leading-6 xl:text-2xl xl:leading-7">
+              {rungRank(reading)}
             </span>
-          ) : null}
-          <span className={last ? "font-semibold" : "text-muted-foreground"}>
-            {label} <span className="font-semibold text-foreground tabular-nums">{rungRank(reading)}</span>
             {of !== null ? <span className="text-muted-foreground tabular-nums"> of {of}</span> : null}
-          </span>
-        </li>
+            {last ? (
+              // The one place a line may break inside a rung: before whose ranks these are.
+              <span className="whitespace-normal">
+                {" "}
+                <span data-ladder-scope="" className="whitespace-nowrap text-muted-foreground">
+                  {LADDER_SCOPE}
+                </span>
+              </span>
+            ) : null}
+          </li>
+        </Fragment>
       ))}
     </ol>
   );
 }
 
 /**
- * The one-line ladder's room in the hero's left column, under the dateline (and the desktop note), held from 1280
- * px in every state, 18 px, empty and hidden from assistive tech until the lens data comes, so the toggle and the
- * drawing under it never move when it fills. Hidden below 1280 px, where the group shows the ladder.
+ * The ladder's room in the hero's left column from 1280 px, under the dateline and the note: one line, 29 px, no less
+ * than the filled ladder (28 px at 1280 x 800, 1366 x 768 and 1440 x 900 on both published days: the 24 px ranks on
+ * their 28 px line, the 13 px names on a 16 px line inside it), held in every state, empty and hidden from assistive
+ * tech until the lens data comes, so the toggle and the drawing under it never move when it fills. Hidden below 1280
+ * px, where the ladder sits in the group's notice cell.
  */
 export function HeroLadderRoom({ readings = null, synthetic }: { readings?: ThreeReadings | null; synthetic: boolean }) {
   const shown = readings !== null && Boolean(readings.draw && readings.taste);
   return (
-    <div data-hero-ladder-room="" aria-hidden={shown ? undefined : true} className="mt-1.5 hidden min-h-[1.125rem] xl:block">
-      {shown && readings ? <HeroLadderLine readings={readings} synthetic={synthetic} /> : null}
+    <div data-hero-ladder-room="" aria-hidden={shown ? undefined : true} className="mt-2 hidden min-h-[1.8125rem] xl:block">
+      {shown && readings ? <HeroLadder readings={readings} synthetic={synthetic} /> : null}
     </div>
   );
 }
@@ -212,39 +213,28 @@ export function tasteLineText(taste: number, synthetic: boolean): string {
     : `Taste overlap: ${taste} of 100 on this bill (a rank, not attendance)`;
 }
 
-/** The desktop note's sentences, word for word. */
-export const NOTE_LOWEST = "Of the legal moves checked, this gives the lowest index.";
-export const NOTE_TIED = "Of the legal moves checked, this ties for the lowest index.";
-export const NOTE_TWO_SETS = "Moving two sets ends the overlap instead.";
-export const NOTE_NEAR_100 = "Near 100 means closer tastes among the acts compared.";
-export const NOTE_NEAR_100_INVENTED = "Near 100 means closer invented tastes among the acts compared.";
+/**
+ * The desktop note on a published day, word for word: what every move the engine proposes keeps, and that a clash
+ * can stay on purpose. "The latest published end" is the engine's curfew on a published day (the end of the day's
+ * last published set, as Try a move says), and the locks are this app's, not the festival's.
+ */
+export const HERO_NOTE = "Moves keep stage hours, the latest published end, changeovers and this app’s locks; a clash can be kept on purpose.";
+/** The same on the invented day, whose hours, curfew and locks are all invented. */
+export const HERO_NOTE_INVENTED = "Moves keep the invented day’s stage hours, curfew, changeovers and locks; a clash can be kept on purpose.";
 
 /**
- * The note under the dateline for a day's decision: every sentence whose condition holds, none dropped to fit.
- * First, why this move: the engine checks every legal single-set place of the clash's two sets (each start on a
- * 5-minute grid in the free time it may use, minus any place that breaks a rule) and takes the place with the lowest
- * index (`backend/app/decision.py`, `_candidates`, from `compute_move_options`), so it "gives" the lowest index, or
- * "ties for" it when the other set's first place gives the same (`move.alternative`). Then, only when the rule
- * answer's first change moves two sets and leaves the pair 0 minutes shared, that two sets end the overlap (no figure:
- * the index block keeps its own). Last, what the taste line's scale means. Null without a move; nothing credits Qloo.
+ * The note under the dateline for a day's decision (`HERO_NOTE`, or `HERO_NOTE_INVENTED` on the invented day):
+ * one line on what a move keeps. Null without a move; nothing credits Qloo.
  */
 export function heroNote(decision: Decision | null, synthetic: boolean): string | null {
   if (!decision?.move) return null;
-  const first = decision.rule && !decision.rule.holds ? decision.rule.fixes[0] : undefined;
-  const twoSets = first?.setsMoved === 2 && decision.ruleChange?.minutesSharedAfter === 0;
-  return [
-    decision.move.alternative ? NOTE_TIED : NOTE_LOWEST,
-    twoSets ? NOTE_TWO_SETS : null,
-    synthetic ? NOTE_NEAR_100_INVENTED : NOTE_NEAR_100,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  return synthetic ? HERO_NOTE_INVENTED : HERO_NOTE;
 }
 
 /**
- * The note in the hero's left column, under the dateline: 13 px on 20 px, muted ink, at most two lines in the
- * column's 704 px. Shown only from 1280 px wide and 791 px tall, where the column, with the ladder's one line under
- * the note (`HeroLadderRoom`), ends no lower than the group beside it, so it moves nothing; hidden on a phone and on
+ * The note in the hero's left column, under the dateline: 13 px on 20 px, muted ink, one line in the column's 704
+ * px. Shown only from 1280 px wide and 791 px tall, where the column, with the ladder's line under the note
+ * (`HeroLadderRoom`), ends no lower than the group beside it, so it moves nothing; hidden on a phone and on
  * shorter screens. Nothing without a note.
  */
 export function HeroNote({ text }: { text: string | null }) {
@@ -320,7 +310,8 @@ type HeroDecisionProps = {
  * own line under them), what else the move changes (every overlap it starts, lengthens, shortens or ends,
  * from the published times), the pair's taste overlap with its qualifier and Derived stamp, and who selected and
  * scored it; then the one filled button, "Keep this move", the slot its confirmation fills (always holding its
- * room, so nothing moves when it fills), and "Paste your own draft grid". Keep writes the real plan through
+ * room, so nothing moves when it fills; below 1280 px the ladder shows there until a press), and "Paste your own
+ * draft grid". Keep writes the real plan through
  * `onOpenMove` (Add or Replace when the plan holds other steps); a press confirms in place and moves focus to
  * the confirmation's link, scrolling the whole confirmation into view when it is not. With no move the heading
  * names the pair and says no legal place lowers the index; with no decision the taste line goes too. Every row
@@ -520,6 +511,9 @@ export function HeroDecision({
       : model.title;
   // The ladder needs the readings that carry draw; until they come its room is held empty.
   const ladderShown = ladder !== null && Boolean(ladder.draw && ladder.taste);
+  // Below 1280 px the ladder shares the notice cell with Keep's confirmation and the offer's words, and steps aside
+  // while either shows.
+  const noticeShown = noticeTaken(showKeep, keptShown, offerShown);
   // The taste line needs a pair the decision chose: none without a decision.
   const taste = copy !== null ? model.tasteOfLit : null;
   // While the drawing shows the day without the move, a kept move says the drawing does not show it.
@@ -601,15 +595,16 @@ export function HeroDecision({
         </p>
       </div>
 
-      {/* The actions: Keep, then the room its confirmation fills, then the paste, in that order at every width.
-          From 1024 px the paste sits beside Keep and the confirmation runs under both. The Add / Replace offer
+      {/* The actions: Keep, then the cell its confirmation fills (the ladder's place below 1280 px while no
+          confirmation shows), then the paste, in that order at every width. From 1024 px the paste sits beside
+          Keep and the notice cell runs under both. The Add / Replace offer
           is drawn in these places while Keep and the paste hold theirs unseen, so nothing moves; below 380 px,
           while it shows, the paste's row comes up under Keep's, so Replace sits directly under Add and the
           confirmation's room, which holds the offer's words, follows them (the same three rows, so the group
           keeps its height). Without Keep, its place and its room are held empty. */}
       <div
         data-hero-row="actions"
-        className={rowClass("actions", ACTIONS_GRID, showKeep && offerShown && "max-[379px]:[grid-template-areas:'keep'_'paste'_'notice'_'ladder']")}
+        className={rowClass("actions", ACTIONS_GRID, showKeep && offerShown && "max-[379px]:[grid-template-areas:'keep'_'paste'_'notice']")}
       >
         {showKeep ? (
           <Button
@@ -651,22 +646,26 @@ export function HeroDecision({
             replaceRef={replaceRef}
           />
         ) : null}
-        <div data-hero-row="notice" className={rowClass("notice", "w-full [grid-area:notice]")}>
+        {/* One cell, held at every width (`HERO_ROWS`): Keep's confirmation, and below 1280 px the ladder in the
+            same place, overlapping, never stacked. The ladder sits beside the confirmation's live region, never in
+            it; empty, and hidden from assistive tech, until the lens data comes. */}
+        <div data-hero-row="notice" className={rowClass("notice", "grid w-full grid-cols-[minmax(0,1fr)] [grid-area:notice]")}>
           {showKeep ? (
-            // The room is held at every width: three 18 px lines on a phone (the longest confirmation as it wraps
-            // at 320 px), two from 640 px, where it cannot take more, and two 20 px lines from 1024 px.
             <KeptNotice
               shown={keptShown}
               linkRef={linkRef}
               boxRef={noticeRef}
               drawn={drawn}
-              className="min-h-[3.375rem] w-full text-[0.8125rem] leading-[1.125rem] sm:min-h-9 lg:min-h-10 lg:text-sm lg:leading-5"
+              className={cn(NOTICE_CELL, "w-full text-[0.8125rem] leading-[1.125rem] lg:text-sm lg:leading-5")}
             />
           ) : null}
-        </div>
-        {/* The ladder's room, held in every state; empty, and hidden from assistive tech, until the lens data comes. */}
-        <div data-hero-row="ladder" aria-hidden={ladderShown ? undefined : true} className={rowClass("ladder", LADDER_CELL)}>
-          {ladderShown && ladder ? <HeroLadder readings={ladder} synthetic={synthetic} /> : null}
+          <div
+            data-hero-ladder-cell=""
+            aria-hidden={ladderShown && !noticeShown ? undefined : true}
+            className={cn(NOTICE_CELL, "xl:hidden", noticeShown && "invisible")}
+          >
+            {ladderShown && ladder ? <HeroLadder readings={ladder} synthetic={synthetic} /> : null}
+          </div>
         </div>
         {CHECK_LIVE ? (
           <Button asChild variant="outline" size="default" className={cn(PASTE_CELL, showKeep && offerShown && "invisible")}>
@@ -688,7 +687,8 @@ export function HeroDecision({
 /**
  * Holds the hero group's footprint while a day's decision loads, built from the same rows as the answer
  * (`HERO_ROWS`), so the answer takes exactly its place when it comes: the move lead (from 1024 px), the readout,
- * the side-effect and taste rows, the attribution, then Keep's place, its confirmation's room and the paste's.
+ * the side-effect and taste rows, the attribution, then Keep's place, its notice cell (the ladder's place below
+ * 1280 px) and the paste's.
  * It shows no move and no pair, so it prints nothing: no text, no figure, no attribution, and nothing to press
  * or focus. Each row holds a quiet bar inside its room.
  */
@@ -715,8 +715,8 @@ export function HeroDecisionSkeleton({ className }: { className?: string }) {
       </div>
       <div data-hero-row="actions" className={rowClass("actions", ACTIONS_GRID)}>
         <div className="h-12 w-40 rounded-md bg-muted [grid-area:keep]" />
-        <div data-hero-row="notice" className={rowClass("notice", "w-full [grid-area:notice]")} />
-        <div data-hero-row="ladder" className={rowClass("ladder", LADDER_CELL, lines)}>
+        {/* The notice cell, where the ladder comes below 1280 px: its two quiet bars there. */}
+        <div data-hero-row="notice" className={rowClass("notice", "w-full [grid-area:notice]", lines, "xl:invisible")}>
           <div className={cn(bar, "h-3 w-4/5")} />
           <div className={cn(bar, "h-3 w-3/5")} />
         </div>

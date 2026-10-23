@@ -26,6 +26,7 @@ import {
   checkTimeLine,
   clockWindow,
   formatClock,
+  gridDelimiter,
   isCloseName,
   normalizeName,
   parseGrid,
@@ -307,10 +308,9 @@ export function rejectedRange(
     }
     return spans;
   };
-  // The separator the first non-blank line sets, as the check reads it, then the other two.
-  const first = lines.find((candidate) => candidate.trim() !== "") ?? "";
-  const counted = (char: string) => first.split(char).length - 1;
-  const own = first.includes("\t") ? "\t" : counted(";") > counted(",") ? ";" : ",";
+  // The separator the check reads the grid by (`gridDelimiter`: a header's, a title's header's, else the one most
+  // lines split into four fields by, else the first line's), then the other two.
+  const own = gridDelimiter(lines);
   for (const separator of [own, ...["\t", ";", ","].filter((char) => char !== own)]) {
     const span = fields(separator).find((field) => same(line.slice(field.start, field.end).replace(/""/g, '"')));
     if (span) return { start: base + span.start, end: base + span.end };

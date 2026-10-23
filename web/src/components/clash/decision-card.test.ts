@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { LABEL_META } from "@/lib/clashes";
-import { buildDecisionCopy, NO_PRICED_CLASH, parseDecision, sharedTimeline } from "@/lib/decision";
+import { ATTRIBUTION, buildDecisionCopy, NO_PRICED_CLASH, parseDecision, sharedTimeline } from "@/lib/decision";
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
 import { parsePreset } from "@/lib/preset";
 import { parseRuleFixes, plannedNote, STAGE_FIT_GLOSS } from "@/lib/rule-fix";
@@ -382,11 +382,12 @@ describe("DecisionDetails, the index card under the hero", () => {
     expect(text(withRule)).not.toMatch(/lines 1 to/);
   });
 
-  it("says beside the index figure what its change is, from the same two readings, and 'Lower is better' once, in the paragraph", () => {
+  it("says beside the index figure what its change is, from the same two readings, and what a reading above 100 means, once, in the paragraph", () => {
     const plain = text(renderToStaticMarkup(createElement(DecisionDetails, { copy: copy() })));
-    // 104.2 → 98.4: a fall of 5.8, with a real minus sign, then one paragraph: the scale, the attribution, the limit.
+    // 104.2 → 98.4: a fall of 5.8, with a real minus sign, then one paragraph: the scale and what a reading above
+    // 100 means, the attribution, the limit.
     expect(plain).toContain(
-      "104.2 to 98.4. −5.8 index points A score, not money: 100 = the average random valid timetable of this lineup. Lower is better. Selected and scored by this app’s index. A reading, not a verdict.",
+      "104.2 to 98.4. −5.8 index points A score, not money: 100 = the average random valid timetable of this lineup. Above 100: costlier. Selected and scored by this app’s index. A reading, not a verdict.",
     );
     // Tabular figures for the change; "index points" in the same face, muted (monospace is retired).
     const html = renderToStaticMarkup(createElement(DecisionDetails, { copy: copy() }));
@@ -514,12 +515,14 @@ describe("a Clash Budget Index change as one line (the hero's treatment)", () =>
 
 describe("the index scale in the card", () => {
   it("prints the scale, the attribution and the limit as one paragraph ending the index block, on a published and an invented day", () => {
-    expect(INDEX_SCALE).toBe("A score, not money: 100 = the average random valid timetable of this lineup. Lower is better.");
+    expect(INDEX_SCALE).toBe(
+      "A score, not money: 100 = the average random valid timetable of this lineup. Above 100: costlier.",
+    );
     for (const preset of [tinyPreset(), tinyPreset({ synthetic: true })]) {
       const html = renderToStaticMarkup(createElement(DecisionDetails, { copy: copy({}, preset) }));
       const block = /<div data-index-block=""[\s\S]*?A reading, not a verdict\.<\/p><\/div>/.exec(html)?.[0] ?? "";
       expect(text(block)).toMatch(
-        /index points A score, not money: 100 = the average random valid timetable of this lineup\. Lower is better\. Selected and scored by this app’s index\. A reading, not a verdict\.$/,
+        /index points A score, not money: 100 = the average random valid timetable of this lineup\. Above 100: costlier\. Selected and scored by this app’s index\. A reading, not a verdict\.$/,
       );
       // The label, the figure with its change, then the one paragraph.
       expect(block.match(/<p[ >]/g)).toHaveLength(4);
@@ -535,7 +538,7 @@ describe("the index scale in the card", () => {
     expect(invented).not.toContain("Calculated by this app from Qloo data.");
   });
 
-  it("says 'Lower is better' exactly once, and the attribution with its limit, in every state of the card", () => {
+  it("says what a reading above 100 means exactly once, 'Lower is better' nowhere (the dial says it), and the attribution with its limit, in every state of the card", () => {
     const states = [
       renderToStaticMarkup(createElement(DecisionDetails, { copy: copy() })),
       renderToStaticMarkup(createElement(DecisionDetails, { copy: copy(), onTryRule: () => null, kept: { move: false, change: false } })),
@@ -545,14 +548,34 @@ describe("the index scale in the card", () => {
     ];
     for (const html of states) {
       const outside = text(working(html).outside);
-      expect(outside.match(/lower is better/gi)).toHaveLength(1);
-      expect(outside).toContain("100 = the average random valid timetable");
+      expect(outside.match(/above 100: costlier/gi)).toHaveLength(1);
+      // "Lower is better." left the card in round 39; the dial's scorecard says it, outside every fold.
+      expect(outside).not.toMatch(/lower is better/i);
+      // The guarded first sentence, byte for byte, with "of this lineup" beside the 100 it qualifies.
+      expect(outside).toContain("A score, not money: 100 = the average random valid timetable of this lineup.");
       expect(outside).toContain("Selected and scored by this app’s index. A reading, not a verdict.");
       // One paragraph, shown at every width (no width-hidden class on it).
       const paragraph = /<p data-index-scale="" class="([^"]*)">/.exec(html)?.[1] ?? "";
       expect(paragraph).not.toBe("");
       expect(paragraph).not.toMatch(/hidden/);
       expect(html.match(/data-index-scale=""/g)).toHaveLength(1);
+    }
+  });
+
+  it("keeps the paragraph inside its own budget: 29 words and 164 characters, so it adds no line (round 39, W5)", () => {
+    const paragraph = `${INDEX_SCALE} ${ATTRIBUTION}. A reading, not a verdict.`;
+    expect(paragraph).toBe(
+      "A score, not money: 100 = the average random valid timetable of this lineup. Above 100: costlier. Selected and scored by this app’s index. A reading, not a verdict.",
+    );
+    expect(paragraph.split(/\s+/)).toHaveLength(29);
+    expect(paragraph).toHaveLength(164);
+    // The card prints exactly that paragraph, with no new element beside it.
+    for (const preset of [tinyPreset(), tinyPreset({ synthetic: true })]) {
+      for (const details of [copy({}, preset), copy({ move: null }, preset)]) {
+        const html = renderToStaticMarkup(createElement(DecisionDetails, { copy: details }));
+        const printed = /<p data-index-scale="" class="[^"]*">([^<]*)<\/p>/.exec(html)?.[1] ?? "";
+        expect(printed.replace(/&#x27;/g, "’")).toBe(paragraph);
+      }
     }
   });
 });

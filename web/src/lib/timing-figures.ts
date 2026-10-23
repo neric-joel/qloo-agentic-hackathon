@@ -102,7 +102,7 @@ export const MACHINE_STEPS: readonly {
   { id: "open", step: "Open the costliest clash" },
   { id: "move", step: "Show the tested move" },
   { id: "keep", step: "Keep this move" },
-  { id: "print", step: "Print the brief" },
+  { id: "print", step: "Open the printable brief" },
 ];
 
 export type ProductionTiming = {

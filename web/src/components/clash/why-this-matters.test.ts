@@ -8,6 +8,7 @@ import { qlooCredits } from "@/lib/credit";
 import * as demandModule from "@/lib/demand";
 import { DO_NOT_USE, PILOT, PILOT_CONTACT, PILOT_TERMS, type Demand } from "@/lib/demand";
 import { METHOD_FIGURES } from "@/lib/method-figures";
+import { EVIDENCE_CLAIMS, EVIDENCE_FIGURES } from "@/lib/public-evidence";
 import { PUBLIC_SOURCES } from "@/lib/public-sources";
 
 import { TasteSection } from "./why-qloo";
@@ -20,6 +21,7 @@ import {
   FailedTestNote,
   WHY_THIS_MATTERS_ID,
   PRESS_OUTLETS,
+  TOOLS_ABSENCE,
   WHY_STAKE,
   WHY_USE,
   WhyThisMatters,
@@ -149,7 +151,7 @@ describe("WhyThisMatters", () => {
     const visible = text(withoutDisclosures(renderToStaticMarkup(createElement(WhyThisMatters))));
     expect(visible).toContain("45 clashes that fans or the press complained about at 5 festivals had a verified overlap in time.");
     expect(visible).toContain(
-      "No scheduler we found reads audience overlap Our search, October 2026: absence of evidence only. Who would pay is not known.",
+      "None of the 13 tool pages we reviewed describes ranking a draft grid’s clashes by audience closeness Our search, October 2026: absence of evidence only. Who would pay is not known.",
     );
     expect(visible).toContain("Who would pay is not known.");
     expect(visible).toContain("Pilot offer");
@@ -164,8 +166,33 @@ describe("WhyThisMatters", () => {
       "How the lists lean (86 verified pairs) Press lists lean toward headliners, which flatters any taste-based method.",
     );
     expect(plain).toContain(
-      "Festival Pro and Lineup Ninja Both check double bookings and changeovers. We found none that reads audience overlap (our search, October 2026).",
+      "Festival Pro and Lineup Ninja Both check double bookings and changeovers. Setline sells organisers clash analysis from attendee interest once set times are live.",
     );
+    // The scoped sentence is said once, in the heading: the fold no longer repeats a broader one.
+    expect(plain).not.toMatch(/found none that reads/);
+  });
+
+  it("says the competitor search once, in the heading, scoped to the tool pages reviewed and to ranking a draft grid (round 39)", () => {
+    expect(TOOLS_ABSENCE).toBe(
+      "None of the 13 tool pages we reviewed describes ranking a draft grid’s clashes by audience closeness",
+    );
+    expect(TOOLS_ABSENCE.endsWith(".")).toBe(false);
+    // The 13 is claim 3's own count of tool pages, not a figure typed here.
+    expect(EVIDENCE_FIGURES.toolPages).toBe(13);
+    expect(EVIDENCE_CLAIMS[2].sourceIds.filter((id) => id.startsWith("K"))).toHaveLength(EVIDENCE_FIGURES.toolPages);
+    const html = renderToStaticMarkup(createElement(WhyThisMatters));
+    const unknown = html.slice(html.indexOf('data-why-col="unknown"'), html.indexOf('data-why-col="pilot"'));
+    // The scoped sentence is said once; the heading sits directly over "absence of evidence only" and the fold does
+    // not say it again in broader words.
+    expect(unknown.match(/audience closeness/g)).toHaveLength(1);
+    expect(unknown).not.toMatch(/audience overlap|No scheduler|We found none/);
+    expect(unknown.indexOf(TOOLS_ABSENCE)).toBeLessThan(unknown.indexOf("absence of evidence only"));
+    const fold = unknown.slice(unknown.indexOf("<details"), unknown.indexOf("</details>"));
+    expect(text(fold)).toContain(
+      "Both check double bookings and changeovers. Setline sells organisers clash analysis from attendee interest once set times are live.",
+    );
+    // In the open, before any click: the heading and the absence line are outside every closed disclosure.
+    expect(text(withoutDisclosures(html))).toContain(`${TOOLS_ABSENCE} Our search, October 2026: absence of evidence only.`);
   });
 
   it("prints no public statements, paraphrases or their fold (round 34, audit Y7), and no quotation marks", () => {
@@ -245,7 +272,10 @@ describe("WhyThisMatters", () => {
       '<h3 data-why-finding="true" class="text-xl leading-snug font-medium text-foreground">45 clashes that fans or the press complained about at 5 festivals had a verified overlap in time.</h3>',
     );
     expect(text(html)).not.toContain("The problem is public");
-    expect(html).toContain(`<h3 class="text-lg leading-snug font-semibold">No scheduler we found reads audience overlap</h3>`);
+    expect(html).toContain(
+      `<h3 class="text-lg leading-snug font-semibold">None of the 13 tool pages we reviewed describes ranking a draft grid’s clashes by audience closeness</h3>`,
+    );
+    expect(html).not.toMatch(/No scheduler/);
     expect(html).not.toContain("What programmers have said in public");
     // Every disclosure is named for what it holds, as a text action, not an accordion row: no rule above it and no
     // leading mark, the summary's words in 15px medium ink (the site's 15px, never a 13px override) with the page's
@@ -471,7 +501,7 @@ describe("WhyThisMatters", () => {
     // The scheduler limitation stays the first paragraph under its heading, at body size, in ink (no size or tone
     // class of its own), and ends on "Who would pay is not known." (round 34, audit Y8: no guess after it).
     expect(html).toContain(
-      "<h3 class=\"text-lg leading-snug font-semibold\">No scheduler we found reads audience overlap</h3><p class=\"mt-2\">Our search, October 2026: absence of evidence only. Who would pay is not known.</p>",
+      "<h3 class=\"text-lg leading-snug font-semibold\">None of the 13 tool pages we reviewed describes ranking a draft grid’s clashes by audience closeness</h3><p class=\"mt-2\">Our search, October 2026: absence of evidence only. Who would pay is not known.</p>",
     );
     // No filled band and no hairline above: the section sits open on the page's one background, 64px above and below,
     // 80px above from 1024px.
@@ -551,7 +581,7 @@ describe("WhyThisMatters", () => {
   it("orders the blocks problem, then what is not known, with the pilot last (the one-column order below 1024px)", () => {
     const plain = text(renderToStaticMarkup(createElement(WhyThisMatters)));
     const problem = plain.indexOf("45 clashes that fans or the press complained about");
-    const unknown = plain.indexOf("No scheduler we found reads audience overlap");
+    const unknown = plain.indexOf("None of the 13 tool pages we reviewed describes ranking a draft grid’s clashes by audience closeness");
     expect(problem).toBeGreaterThan(-1);
     expect(unknown).toBeGreaterThan(problem);
     expect(plain.indexOf("Who would pay is not known.")).toBeGreaterThan(unknown);

@@ -114,8 +114,8 @@ export type DecisionDetailsProps = {
 /**
  * What the index change is, beside the figure: "−2.4 index points". Read from the same two readings the
  * figure shows (one decimal each), so it can never disagree with them; a real minus sign (U+2212), and a
- * plus when the index would rise. Null when either reading is not a number. "Lower is better" is said
- * once, in the scale line under it.
+ * plus when the index would rise. Null when either reading is not a number. What the scale means (100, and a
+ * reading above it) is said once, in the scale line under it.
  */
 export function indexDelta(before: string | null, after: string | null): string | null {
   if (before === null || after === null) return null;
@@ -161,10 +161,13 @@ export const DRAWN_AS_PUBLISHED = "Drawn here as published.";
 export const DRAWN_WITHOUT_MOVE = "Drawn here without the move.";
 
 /**
- * The index's scale, in the index block on every day: the same definition the dial uses, and the
- * pinned "Lower is better". The scale is this app's, not a Qloo figure, so the invented day says the same.
+ * The index's scale, in the index block on every day: the same definition the dial uses, then what a reading
+ * above 100 means, in the legend's own word for cost ("Clash link: stronger = costlier"). The first sentence is
+ * pinned byte for byte, with "of this lineup" beside the 100 it qualifies. "Lower is better." is said once on the
+ * page, by the dial's scorecard, so it is not repeated here. The scale is this app's, not a Qloo figure, so the
+ * invented day says the same.
  */
-export const INDEX_SCALE = "A score, not money: 100 = the average random valid timetable of this lineup. Lower is better.";
+export const INDEX_SCALE = "A score, not money: 100 = the average random valid timetable of this lineup. Above 100: costlier.";
 
 /**
  * A Clash Budget Index change as one line, the hero's own treatment: the two readings in the index type
@@ -635,7 +638,7 @@ export function DecisionDetails({
   const hasIndex = copy.indexBefore !== null && copy.indexAfter !== null;
   const figure = hasIndex ? (
       // The score as one block: the label with its Derived stamp, the figure with its change on the same
-      // baseline, then one paragraph: the scale ("Lower is better", said once), who selected and scored it,
+      // baseline, then one paragraph: the scale (100, and what a reading above it means), who selected and scored it,
       // and what kind of claim it is. It is outside the working, so the paragraph is read with no click.
       <div data-index-block="">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">

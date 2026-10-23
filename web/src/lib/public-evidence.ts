@@ -38,9 +38,7 @@ export const EVIDENCE_FIGURES = {
   crossGenrePages: 22,
   /** Claim 2. */
   statements: 21,
-  statementFestivals: 13,
   tryToAvoid: 10,
-  cannotAvoid: 5,
   otherLimits: 7,
   useData: 3,
   /** Claim 3. */
@@ -62,7 +60,7 @@ const F = EVIDENCE_FIGURES;
 export const EVIDENCE_CLAIMS = [
   {
     id: "complaints",
-    sentence: `In ${F.clashPages} public press articles, fan-post summaries and one artist statement from ${F.festivals} festivals (${F.firstYear}-${F.lastYear}) that we read, ${F.namedClashes} set-time clashes are named, covering ${F.pairs} distinct pairs of acts at ${F.festivalYears} festival-years; they come from ${F.yearsWithPages} of the ${F.yearsInWindow} years (none from 2020-21), and one reader coded ${F.crossGenrePages} of the ${F.clashPages} pages as presenting the acts in at least one named clash as different in genre, style or audience.`,
+    sentence: `In ${F.clashPages} public press articles, fan-post summaries and one artist statement from ${F.festivals} festivals (${F.firstYear}-${F.lastYear}) that we read, ${F.namedClashes} set-time clashes are named, covering ${F.pairs} pairs of acts when counted separately for each festival and year, at ${F.festivalYears} festival-years; they come from ${F.yearsWithPages} of the ${F.yearsInWindow} years (none from 2020-21), and one reader coded ${F.crossGenrePages} of the ${F.clashPages} pages as presenting the acts in at least one named clash as different in genre, style or audience.`,
     sourceIds: [
       "A07",
       "A06",
@@ -138,7 +136,7 @@ export const EVIDENCE_CLAIMS = [
   },
   {
     id: "programmers",
-    sentence: `In ${F.statements} statements by programmers, bookers and festival organisers (${F.firstYear}-${F.lastYear}; ${F.statementFestivals} festivals plus one booking-side interview) that we read, ${F.tryToAvoid} say they try to avoid or limit clashes and ${F.cannotAvoid} say (or, in Riot Fest's case, joke) that clashes cannot be fully avoided at their scale; ${F.otherLimits} name limits other than taste (curfew, production, capacity, radius, sunset), ${F.useData} describe using app-favourite or ticketing figures to forecast crowds (one known only second-hand, through a LinkedIn post), and none describes ranking pairs of acts by audience closeness before the times are published.`,
+    sentence: `In ${F.statements} public accounts of programming practice that we read, including one second-hand account, ${F.tryToAvoid} describe attempts to avoid or limit clashes or give attendees time to move between stages. None describes ranking pairs of acts by audience closeness before times are published.`,
     sourceIds: [
       "G21",
       "G22",
@@ -198,7 +196,7 @@ export const COUNTS_PAGES =
   "It counts pages, not people, so it shows the complaint keeps coming back, not how many people mind.";
 
 /** The first claim as the home page says it: one sentence with the counts, then what they count. */
-export const HOME_EVIDENCE = `Our analysis of ${F.clashPages} public press articles, fan-post summaries and one artist statement from ${F.festivals} festivals (${F.firstYear} to ${F.lastYear}) found ${F.namedClashes} named set-time clashes, covering ${F.pairs} distinct pairs of acts. ${COUNTS_PAGES}`;
+export const HOME_EVIDENCE = `Our analysis of ${F.clashPages} public press articles, fan-post summaries and one artist statement from ${F.festivals} festivals (${F.firstYear} to ${F.lastYear}) found ${F.namedClashes} named set-time clashes, covering ${F.pairs} pairs of acts when counted separately for each festival and year. ${COUNTS_PAGES}`;
 /** The home link to the sources, method and limits. */
 export const HOME_EVIDENCE_LINK = "Sources and limits";
 
@@ -295,7 +293,7 @@ export const EVIDENCE_QUESTIONS: readonly EvidenceQuestion[] = [
     id: "planted",
     question: "Are clashes put there on purpose to split the crowd?",
     pages: 16,
-    shows: `${F.plantedPages} pages say or guess so, two features and two blogs among them. None of the ${F.statements} organiser and booker statements we read says it of a clash. Osheaga's programmer says he staggers slots so people can catch part of two acts.`,
+    shows: `${F.plantedPages} pages say or guess so, two features and two blogs among them. None of the ${F.statements} accounts of programming practice we read says it of a clash. Osheaga's programmer says he staggers slots so people can catch part of two acts.`,
     helps: "A clash can stay: Check a draft grid has a Kept on purpose decision, and the sets this app locks stay put.",
     notHelp: "It has no model of crowd flow or safety, so it cannot show that a deliberate overlap is safe.",
     keySources: ["G06", "G07", "T05"],
@@ -315,7 +313,7 @@ export const EVIDENCE_QUESTIONS: readonly EvidenceQuestion[] = [
     id: "data",
     question: "Can data show whose audiences are close before times are out?",
     pages: 12,
-    shows: `${F.useData} of the ${F.statements} statements describe using app favourites or ticket figures, to forecast crowds rather than to place clashes; one of them is second-hand. Scoring each pair of acts from streaming or ticket data is proposed in a Ticket Fairy blog, but no organiser in these pages says they do it.`,
+    shows: `${F.useData} of the ${F.statements} accounts describe using app favourites or ticket figures, to forecast crowds rather than to place clashes; one of them is second-hand. Scoring each pair of acts from streaming or ticket data is proposed in a Ticket Fairy blog, but no organiser in these pages says they do it.`,
     helps:
       "It gives each clashing pair a taste-overlap rank among the acts on one bill, calculated by this app from Qloo data. It needs the act list and the times, and no ticket or app data.",
     notHelp:
@@ -337,7 +335,7 @@ export const EVIDENCE_QUESTIONS: readonly EvidenceQuestion[] = [
     id: "limits",
     question: "What limits override fan-friendly timing?",
     pages: 10,
-    shows: `${F.otherLimits} of the ${F.statements} statements name a limit besides taste: curfew, production, capacity, radius clauses or sunset.`,
+    shows: `${F.otherLimits} of the ${F.statements} accounts name a limit besides taste: curfew, production, capacity, radius clauses or sunset.`,
     helps:
       "Its rule checks cover each stage's hours, the curfew, the gap between sets on a stage, locked sets and pairs that must never overlap; a change of stage asks for production sign-off.",
     notHelp:
@@ -412,7 +410,7 @@ export const EVIDENCE_SOURCE_GROUPS: readonly {
     ids: EVIDENCE_CLAIMS[0].sourceIds,
   },
   {
-    title: `Statements by programmers, bookers and organisers (${F.statements})`,
+    title: `Accounts of programming practice (${F.statements})`,
     ids: EVIDENCE_CLAIMS[1].sourceIds,
   },
   {

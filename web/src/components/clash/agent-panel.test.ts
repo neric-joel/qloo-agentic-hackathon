@@ -420,6 +420,25 @@ describe("the agent section while the live agent is off", () => {
     expect(words).toContain("Or describe the change in plain words");
     expect(words).toContain("What the agent can and cannot do");
   });
+
+  it("says under the question box that questions are limited per visitor and in total per day, and that the recorded runs still play when the day's questions are used up (W7)", () => {
+    const html = panel(tiny, "on");
+    // The note, in full and in its own paragraph: the disclosure of who writes the answers, then both limits,
+    // then what the recorded runs in this section do. It names no number: the caps can change.
+    const note =
+      "Answers are written live by a language model from the tools’ results. Questions are limited per visitor and in total per day. The recorded runs in this section make no live call, so they still play when the day’s questions are used up.";
+    const paragraphs = [...html.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/g)].map((match) => text(match[1] ?? ""));
+    expect(paragraphs).toContain(note);
+    // The disclosure of who writes the answers stays, first.
+    expect(note.startsWith("Answers are written live by a language model")).toBe(true);
+    expect(note).not.toMatch(/\d/);
+    // "In this section", never "below": the run picker sits under the form on a phone and beside it from 1024 px.
+    expect(note).not.toMatch(/\bbelow\b/i);
+    // The old half-sentence is gone, not kept beside the new one.
+    expect(html).not.toContain("to keep the demo free");
+    // It is the live agent's note: with the agent off there is no form, so no such note.
+    expect(text(panel())).not.toContain("Questions are limited per visitor");
+  });
 });
 
 describe("the agent section's two columns (A1)", () => {

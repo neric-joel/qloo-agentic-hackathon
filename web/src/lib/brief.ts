@@ -166,6 +166,15 @@ export function bandSentence(index: number, range: ScaleRange): string | null {
   return publishedVerdict(index, range);
 }
 
+/**
+ * What a reading above 100 means, in "The day", right after the band sentence and in the same paragraph (inline on
+ * paper): the /method page's own reading of the index, said once on the sheet. One kind of cost in minutes of the
+ * timetable, and never a verdict on how the festival was programmed. It names no source and no audience, so the
+ * invented day says the same words. Printed only when the day has an index.
+ */
+export const INDEX_MEANING =
+  "Above 100, the day’s shared minutes cost more, by this reading, than in the average random valid timetable of this lineup: one kind of cost, not a verdict on how the festival was programmed.";
+
 /** "Clash Budget Index 116.7.", or a plain statement that the day has none. */
 export function indexSentence(index: number | null): string {
   return index === null

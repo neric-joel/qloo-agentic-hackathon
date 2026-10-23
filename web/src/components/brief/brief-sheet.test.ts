@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { NO_MOVES, TO_DECIDE, sharedMinutes, sharedMinutesSentence } from "@/lib/brief";
+import { INDEX_MEANING, NO_MOVES, TO_DECIDE, sharedMinutes, sharedMinutesSentence } from "@/lib/brief";
 import { qlooCredits } from "@/lib/credit";
 import { DO_NOT_USE } from "@/lib/demand";
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
@@ -95,6 +95,57 @@ describe("a bare /brief", () => {
     const plain = text(screen({ status: "ready", preset: published(), plan: null, decision: null }, "tiny-fest-sat"));
     expect(plain).toContain(NO_MOVES);
     expect(plain).not.toContain(BARE_NO_MOVES);
+  });
+});
+
+describe("what a reading above 100 means, in the day's own paragraph (round 39, W5)", () => {
+  /** The day block's first paragraph, as the sheet draws it: the index sentence, the band, then the meaning. */
+  const dayParagraph = (html: string) =>
+    html.match(/<p class="print:inline"><strong class="font-semibold">Clash Budget Index[\s\S]*?<\/p>/)?.[0] ?? "";
+
+  it("draws it inside the same paragraph as the index and its band, inline on paper, then the coverage sentence in its own", () => {
+    const html = renderToStaticMarkup(createElement(BriefContent, { preset: published(), day: 0, plan: null }));
+    const paragraph = dayParagraph(html);
+    expect(paragraph).not.toBe("");
+    const words = text(paragraph);
+    expect(words).toContain(INDEX_MEANING);
+    // After the band sentence and nothing between them, and last in the paragraph.
+    expect(words.indexOf(INDEX_MEANING)).toBeGreaterThan(words.indexOf("reads"));
+    expect(words.endsWith(INDEX_MEANING)).toBe(true);
+    expect(words.indexOf(INDEX_MEANING)).toBeGreaterThan(words.indexOf("that range."));
+    // Text in the paragraph, in an inline span that only says whether the sheet prints it: never a block or a mark of
+    // its own.
+    expect(paragraph.match(/<[a-z]+/g)).toEqual(["<p", "<strong", "<span"]);
+    expect(paragraph).toContain(`<span> ${INDEX_MEANING}</span>`);
+    // The coverage sentence follows in its own paragraph, as before.
+    expect(html.indexOf(paragraph) + paragraph.length).toBeLessThan(html.indexOf("Taste overlap is"));
+  });
+
+  it("draws the same words on the invented day, crediting no Qloo, and on a day with no range right after the index", () => {
+    const plain = text(dayParagraph(renderToStaticMarkup(createElement(BriefContent, { preset: invented(), day: 0, plan: null }))));
+    expect(plain.endsWith(INDEX_MEANING)).toBe(true);
+    expect(qlooCredits(plain)).toEqual([]);
+    const base = published();
+    const noRange = { ...base, report: { ...base.report, baseline: null } };
+    expect(text(dayParagraph(renderToStaticMarkup(createElement(BriefContent, { preset: noRange, day: 0, plan: null }))))).toMatch(
+      /^Clash Budget Index [\d.]+\. Above 100,/,
+    );
+  });
+
+  it("draws nothing for a day that has no index", () => {
+    const base = published();
+    const noIndex = { ...base, report: { ...base.report, baseline: null, metrics: { ...base.report.metrics, clash_budget_index: null } } };
+    const html = renderToStaticMarkup(createElement(BriefContent, { preset: noIndex, day: 0, plan: null }));
+    expect(text(html)).not.toContain(INDEX_MEANING);
+    expect(text(html)).toContain("This day has no Clash Budget Index");
+  });
+
+  it("keeps the sheet's text at its print floors: no size of its own, so the paragraph prints at the block's size", () => {
+    const html = renderToStaticMarkup(createElement(BriefContent, { preset: published(), day: 0, plan: null }));
+    const paragraph = dayParagraph(html);
+    // The sentence is text inside the paragraph the band already sat in, so it takes that paragraph's classes.
+    expect(paragraph.startsWith('<p class="print:inline">')).toBe(true);
+    expect(paragraph).not.toMatch(/text-\[|print:text-/);
   });
 });
 

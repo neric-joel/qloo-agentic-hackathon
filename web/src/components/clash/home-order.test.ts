@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { topClashes } from "@/lib/clashes";
 import { rawTinyPreset } from "@/lib/fixtures/tiny-preset";
@@ -13,6 +13,7 @@ import { summarize } from "@/lib/server-summary";
 
 import {
   boardFoldSummary,
+  boardStartsOpen,
   carryBoardFold,
   ClashControlFallback,
   type BoardFoldCarry,
@@ -29,7 +30,11 @@ import {
   dayToDraw,
   jumpLinks,
   publishedDays,
+  readWideBoard,
+  subscribeNothing,
+  useWideBoard,
   wallLenders,
+  WIDE_BOARD_QUERY,
 } from "./clash-control";
 import { KEEP_APART_ID, KEEP_APART_SUMMARY } from "./keep-apart";
 import { TRY_A_MOVE_ID, TryAMove } from "./try-a-move";
@@ -349,16 +354,21 @@ describe("the board behind one disclosure", () => {
     );
   });
 
-  it("opens on a press, and in the same render as the visitor's own preview, never in an effect, and never closes itself", () => {
+  it("starts open from 1280 px or as the last fold was left, opens on a press and in the same render as the visitor's own preview, never in an effect, and never closes itself (round 39, W2)", () => {
     expect(boardSection).toContain("open={boardOpen}");
     expect(boardSection).toContain("onToggle={toggleBoard}");
-    const latch = source.slice(source.indexOf("const [boardOpen, setBoardOpen] = useState(boardOpenAtStart);"));
+    // The arrival state is read in the board's first render, by useState's initializer: the last fold's report, else
+    // the width. Then only the visitor changes it.
+    const latch = source.slice(source.indexOf("const wide = useWideBoard();"));
     expect(latch).toMatch(
-      /^const \[boardOpen, setBoardOpen\] = useState\(boardOpenAtStart\);\s*const toggleBoard = useCallback\(\s*\(open: boolean\) => \{\s*setBoardOpen\(open\);\s*onBoardToggle\?\.\(open\);\s*\},\s*\[onBoardToggle\],\s*\);\s*const preview = planPreview \?\? rulePreview;\s*const \[previewSeen, setPreviewSeen\] = useState<PlanPreview \| RulePreview \| null>\(null\);\s*if \(preview !== previewSeen\) \{\s*setPreviewSeen\(preview\);\s*if \(preview !== null\) setBoardOpen\(true\);\s*\}/,
+      /^const wide = useWideBoard\(\);\s*const \[boardOpen, setBoardOpen\] = useState\(\(\) => boardStartsOpen\(foldReport, wide\)\);\s*const toggleBoard = useCallback\(\s*\(open: boolean\) => \{\s*setBoardOpen\(open\);\s*onBoardToggle\?\.\(open\);\s*\},\s*\[onBoardToggle\],\s*\);\s*const preview = planPreview \?\? rulePreview;\s*const \[previewSeen, setPreviewSeen\] = useState<PlanPreview \| RulePreview \| null>\(null\);\s*if \(preview !== previewSeen\) \{\s*setPreviewSeen\(preview\);\s*if \(preview !== null\) setBoardOpen\(true\);\s*\}/,
     );
+    // The old start (a plain boolean that was always false on arrival) is gone.
+    expect(source).not.toContain("useState(boardOpenAtStart)");
     // Nothing else sets it, so it never closes on its own: the latch only opens, the press for a set's places in Try a
-    // move only opens (round 37 closeout), and the one other setter passes on the disclosure's own toggle (a press),
-    // wired nowhere but its `onToggle`.
+    // move only opens (round 37 closeout), and the one other setter passes on the disclosure's own toggle (a press, or
+    // the browser's report of the open state the board was drawn in, which sets what it already holds), wired nowhere
+    // but its `onToggle`.
     expect(source.match(/setBoardOpen\(/g)).toHaveLength(3);
     expect(source.match(/setBoardOpen\((?!true\)|open\))/g)).toBeNull();
     expect(source.match(/setBoardOpen\(open\)/g)).toHaveLength(1);
@@ -406,6 +416,117 @@ describe("the board behind one disclosure", () => {
     expect(boardSection).toContain("planShown={planShown || placeComing}");
     expect(source).toMatch(/if \(fresh && plan !== null\) setPlaceComing\(false\);/);
     expect(source.match(/setPlaceComing\(/g)).toHaveLength(2);
+  });
+});
+
+/** A stand-in for `window.matchMedia` on a screen `width` px wide: answers `(min-width: Nrem)` at 16 px a rem. */
+function screenOf(width: number) {
+  const asked: string[] = [];
+  const listened: string[] = [];
+  const matchMedia = (query: string) => {
+    asked.push(query);
+    const rem = /^\(min-width: ([\d.]+)rem\)$/.exec(query);
+    return {
+      matches: rem !== null && width >= Number(rem[1]) * 16,
+      media: query,
+      addEventListener: (type: string) => listened.push(`${query} ${type}`),
+      removeEventListener: () => {},
+      addListener: () => listened.push(`${query} change`),
+      removeListener: () => {},
+    };
+  };
+  return { window: { matchMedia, addEventListener: (type: string) => listened.push(`window ${type}`), removeEventListener: () => {} }, asked, listened };
+}
+
+describe("the board's fold on arrival: open from 1280 px, closed below (round 39, W2)", () => {
+  const source = readFileSync(join(__dirname, "clash-control.tsx"), "utf8");
+  const view = source.slice(source.indexOf("function PresetView("), source.indexOf("<ClashDrawer"));
+
+  it("reads the width from Tailwind's xl media query, (min-width: 80rem), in the browser only", () => {
+    expect(WIDE_BOARD_QUERY).toBe("(min-width: 80rem)");
+    for (const [width, wide] of [
+      [1440, true],
+      [1280, true],
+      [1279, false],
+      [1024, false],
+      [390, false],
+    ] as const) {
+      const screen = screenOf(width);
+      vi.stubGlobal("window", screen.window);
+      try {
+        expect(readWideBoard(), `${width} px`).toBe(wide);
+        expect(screen.asked).toEqual(["(min-width: 80rem)"]);
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    }
+  });
+
+  it("is never wide in the server's render, whatever the screen: its snapshot is false", () => {
+    const screen = screenOf(1440);
+    vi.stubGlobal("window", screen.window);
+    try {
+      const Probe = () => createElement("i", null, String(useWideBoard()));
+      expect(renderToStaticMarkup(createElement(Probe))).toBe("<i>false</i>");
+      // The server's render asks the screen nothing.
+      expect(screen.asked).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    const hook = source.slice(source.indexOf("export function useWideBoard("), source.indexOf("}", source.indexOf("export function useWideBoard(")) + 1);
+    expect(hook).toMatch(/return useSyncExternalStore\(\s*subscribeNothing,\s*readWideBoard,\s*\(\) => false,\s*\);/);
+  });
+
+  it("starts from what the last fold reported, which wins over the width, else open from 1280 px and closed below", () => {
+    // A report wins: a board the visitor closed stays closed on a wide screen, and one left open stays open on a narrow one.
+    expect(boardStartsOpen(false, true)).toBe(false);
+    expect(boardStartsOpen(true, false)).toBe(true);
+    expect(boardStartsOpen(true, true)).toBe(true);
+    expect(boardStartsOpen(false, false)).toBe(false);
+    // No report yet: the width decides.
+    expect(boardStartsOpen(null, true)).toBe(true);
+    expect(boardStartsOpen(null, false)).toBe(false);
+    // The page hands each board the last report, null before any fold has made one.
+    expect(view).toMatch(/foldReport = null,/);
+    expect(view).toMatch(/foldReport\?: boolean \| null;/);
+  });
+
+  it("latches the arrival state per board mount: a later width change, or a later report, opens or closes nothing", () => {
+    // Nothing listens for a width change: the subscription adds no listener anywhere.
+    const screen = screenOf(1440);
+    vi.stubGlobal("window", screen.window);
+    try {
+      // React hands the subscription a callback; this one takes none, so no width change can ever reach the board.
+      expect(subscribeNothing.length).toBe(0);
+      const unsubscribe = subscribeNothing();
+      expect(screen.listened).toEqual([]);
+      expect(screen.asked).toEqual([]);
+      unsubscribe();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    // The width and the report are read in the board's first render only, by useState's initializer, and nowhere else
+    // in the view: no render, effect or handler after it reads either again.
+    expect(view.match(/\bwide\b/g)).toHaveLength(2);
+    expect(view.match(/\bfoldReport\b/g)).toHaveLength(3);
+    expect(view).toContain("const [boardOpen, setBoardOpen] = useState(() => boardStartsOpen(foldReport, wide));");
+    expect(view).not.toMatch(/useEffect\([^;]*\b(wide|foldReport|setBoardOpen)\b/);
+    // The media query is read in one place only.
+    expect(source.match(/matchMedia\(/g)).toHaveLength(1);
+    expect(source).toContain("window.matchMedia(WIDE_BOARD_QUERY).matches");
+  });
+
+  it("draws the arrival open in the fold's first style, so the chevron's 160 ms turn never plays on arrival", () => {
+    // The interactive board's <details> is created with `open` from its first render (a new element when the view
+    // mounts), so the chevron is turned in its first style and its transition, kept for a press, has nothing to run.
+    const fold = source.slice(source.indexOf("function BoardFold("), source.indexOf("type JumpLink"));
+    expect(fold).toContain("open={takeOver ? open : openOnPage || undefined}");
+    expect(fold).toMatch(/group-open\/board:rotate-180 motion-safe:transition-transform motion-safe:duration-\[160ms\]/);
+    // The browser reports the open state it was drawn in through the same onToggle a press uses, so the next festival
+    // day starts as this one was left.
+    expect(fold).toContain("onToggle={onToggle ? (event) => onToggle(event.currentTarget.open) : undefined}");
+    // The comments say the new rule, not the old one.
+    expect(source).not.toMatch(/closed on arrival/i);
   });
 });
 
@@ -512,14 +633,17 @@ describe("a press on the board's fold is never undone when the page swaps folds 
 
   it("wires one carrier and one reported state through the server's frame, the interactive board and every festival day", () => {
     const control = source.slice(source.indexOf("export function ClashControl("), source.indexOf("/** The festival-day tabs' group name"));
-    expect(control).toContain("const [foldOpen, setFoldOpen] = useState(false);");
+    // No report before a fold has made one (round 39, W2): the first board then starts from the width.
+    expect(control).toContain("const [foldReport, setFoldReport] = useState<boolean | null>(null);");
+    expect(control).not.toMatch(/useState\(false\)/);
     expect(control).toContain("const foldCarryRef = useRef<BoardFoldCarry | null>(null);");
     // The server's frame reports its fold; each festival day's board starts in the reported state and reports back.
+    // Both pass React's own state setter, which never changes, so the fold's ref callback runs once per fold.
     const loading = control.slice(control.indexOf("<LoadingView"), control.indexOf("/>", control.indexOf("<LoadingView")));
-    expect(loading).toContain("onFoldToggle={setFoldOpen}");
+    expect(loading).toContain("onFoldToggle={setFoldReport}");
     expect(loading).toContain("foldCarryRef={foldCarryRef}");
     const view = control.slice(control.indexOf("<PresetView"));
-    for (const prop of ["boardOpenAtStart={foldOpen}", "onBoardToggle={setFoldOpen}", "foldCarryRef={foldCarryRef}"]) expect(view).toContain(prop);
+    for (const prop of ["foldReport={foldReport}", "onBoardToggle={setFoldReport}", "foldCarryRef={foldCarryRef}"]) expect(view).toContain(prop);
     // The server's fold is never controlled (a press before the page is interactive stays), and only reports.
     const frame = source.slice(source.indexOf("function LoadingView("), source.indexOf("export function ClashControlFallback("));
     expect(frame).toMatch(

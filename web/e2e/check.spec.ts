@@ -930,3 +930,85 @@ test.describe("check a draft grid, round 37: the rejected value, a paste with no
     for (const format of ["Letter", "A4"] as const) expect(pdfPages(await page.pdf({ format, printBackground: true })), `${format} pages`).toBe(1);
   });
 });
+
+/**
+ * Round 39 (W1, D12): a title line above a grid ("Glastonbury Sunday", "Saturday, 4 July") no longer refuses the whole
+ * grid. The first line is read as a title only when no time stands in it, and the check says so in one note above "Read
+ * n sets on m stages"; the title is never a skipped line, so no partial notice shows, but the no-breaks line still says
+ * how many sets were checked (a clean result on part of a paste is never read as a clean grid). A first line with a clock
+ * time among its words is a line fault, listed as before. The semicolon hint is held by its own test above.
+ */
+test.describe("check a draft grid, round 39: a title line above the grid (W1, D12)", () => {
+  /** The note for a title on line 1, as the check prints it. */
+  const titleNote = (title: string) => `Skipped line 1 ("${title}"): no times found, so it was read as a title.`;
+
+  for (const paste of [
+    {
+      name: "a tab grid under \"Glastonbury Sunday\"",
+      title: "Glastonbury Sunday",
+      grid: ["Glastonbury Sunday", "Sprints\tWoodsies\t14:00\t14:45", "Katy J Pearson\tThe Park\t14:00\t15:00", "Joy Crookes\tWoodsies\t15:00\t16:00"],
+      sets: 3,
+      stages: 2,
+    },
+    {
+      name: "a comma grid under \"Saturday, 4 July\"",
+      title: "Saturday, 4 July",
+      grid: ["Saturday, 4 July", "A,Main,18:00,19:00", "B,Side,18:30,19:30"],
+      sets: 2,
+      stages: 2,
+    },
+  ]) {
+    test(`${paste.name} is read under its title: no refusal, the title note once, no skipped-line notice, and the no-breaks line counts the sets checked`, async ({ page, guard }) => {
+      const check = new CheckPage(page);
+      await check.goto();
+      const before = guard.writes.length;
+      await check.replaceWith(paste.grid.join("\n"));
+      await check.checkButton.click();
+
+      // Every grid line read; the title is no skipped line, so neither the refusal nor the partial notice shows.
+      await check.expectEveryLineRead(paste.sets, paste.stages);
+      await expect(page.getByText(titleNote(paste.title), { exact: true }).filter({ visible: true }), "the title note, once on screen").toHaveCount(1);
+      // The note sits above "Read n sets on m stages".
+      const [note, read] = await Promise.all([page.getByText(titleNote(paste.title), { exact: true }).filter({ visible: true }).boundingBox(), check.readLine.boundingBox()]);
+      expect(note?.y ?? Infinity, "the note comes before the read line").toBeLessThan(read?.y ?? 0);
+      // No rule break here, and the no-breaks line says how many sets were checked: never the bare sentence.
+      await expect(check.rulesSection).toContainText(`No rule breaks found among the ${paste.sets} sets checked, against the settings above.`);
+      await expect(page.getByText("No rule breaks found against the settings above.", { exact: true }).filter({ visible: true })).toHaveCount(0);
+      expect(guard.writes.slice(before), "requests other than GET while pasting and checking").toEqual([]);
+    });
+  }
+
+  test("a first line with a clock time among its words is a skipped line, never a title: \"Doors 18:00\" over two comma rows", async ({ page }) => {
+    const check = new CheckPage(page);
+    await check.goto();
+    await check.replaceWith(["Doors 18:00", "A,Main,18:00,19:00", "B,Side,18:30,19:30"].join("\n"));
+    await check.checkButton.click();
+
+    await expect(check.refusal).toHaveCount(0);
+    await expect(check.skippedNotice.locator("p").first()).toHaveText("1 line skipped and not checked: line 1. The other 2 sets were checked.");
+    await expect(page.getByText(/so it was read as a title\.$/).filter({ visible: true })).toHaveCount(0);
+    await expect(check.readLine).toHaveText("Read 2 sets on 2 stages.");
+    await expect(check.rulesSection).toContainText("No rule breaks found among the 2 sets checked, against the settings above.");
+  });
+
+  test("print media: after a titled paste the draft brief says the title line was left out, before what it read, on one page", async ({ page }) => {
+    const check = new CheckPage(page);
+    await check.goto();
+    await check.replaceWith(["Glastonbury Sunday", "Sprints\tWoodsies\t14:00\t14:45", "Katy J Pearson\tThe Park\t14:00\t15:00", "Joy Crookes\tWoodsies\t15:00\t16:00"].join("\n"));
+    await check.checkButton.click();
+    await check.expectEveryLineRead(3, 2);
+    // On screen the sheet's own copy of the note is not drawn (the results say it).
+    await expect(page.locator("[data-brief-title-note]").filter({ visible: true })).toHaveCount(0);
+
+    await page.emulateMedia({ media: "print" });
+    const printed = page.locator("[data-brief-title-note]").filter({ visible: true });
+    await expect(printed).toHaveCount(1);
+    await expect(printed).toHaveText(titleNote("Glastonbury Sunday"));
+    const sheetRead = page.getByText(/^Read 3 sets on 2 stages\. Rule breaks: 0\./).filter({ visible: true });
+    await expect(sheetRead).toHaveCount(1);
+    const [note, read] = await Promise.all([printed.boundingBox(), sheetRead.boundingBox()]);
+    expect(note?.y ?? Infinity, "on paper the note comes before the read line").toBeLessThan(read?.y ?? 0);
+    await expect(page.getByText("No rule breaks found among the 3 sets checked, against the settings above.", { exact: true }).filter({ visible: true }).first()).toBeVisible();
+    for (const format of ["Letter", "A4"] as const) expect(pdfPages(await page.pdf({ format, printBackground: true })), `${format} pages`).toBe(1);
+  });
+});

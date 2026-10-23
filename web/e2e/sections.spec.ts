@@ -35,10 +35,11 @@ test.describe("what Qloo changes", () => {
     // Time alone shows its tie, on the full axis.
     await expect(ranks.nth(0)).toContainText(/tied with \d+ others?/);
 
-    // The heading credits taste with its own step only: from the time-and-popularity rank to the taste rank.
+    // The heading credits taste with its own step only: from the time-and-popularity rank to the taste rank. Round 39
+    // (W4, D18): it says whose ranks these are, "in this app’s index".
     const heading = home.whatQloo.getByRole("heading", { level: 2 });
-    await expect(heading).toHaveText("Adding taste moves this pair from #18 to #1");
-    const [, from, to] = /from #(\d+) to #(\d+)$/.exec(await heading.innerText()) ?? [];
+    await expect(heading).toHaveText("Adding taste moves this pair from #18 to #1 in this app’s index");
+    const [, from, to] = /from #(\d+) to #(\d+) in this app’s index$/.exec(await heading.innerText()) ?? [];
     expect(Number(from), "the heading's first rank is the time + popularity rung").toBe(drawn[0]);
     expect(Number(to), "the heading's second rank is the taste rung").toBe(tasted[0]);
     // The pair line names the hero's own clash, with the count the three rungs agree on.
@@ -98,7 +99,7 @@ test.describe("what Qloo changes", () => {
     const ranks = home.whatQloo.getByRole("list").first().getByRole("listitem");
     const [timeOnly, drawn, tasted] = await ranks.evaluateAll((all) => all.map((item) => Number(/#(\d+) of/.exec(item.textContent ?? "")?.[1])));
     expect(tasted, "taste leaves the pair where popularity put it").toBe(drawn);
-    await expect(home.whatQloo.getByRole("heading", { level: 2 })).toHaveText(`Adding taste leaves this pair at #${tasted}`);
+    await expect(home.whatQloo.getByRole("heading", { level: 2 })).toHaveText(`Adding taste leaves this pair at #${tasted} in this app’s index`);
     // Time alone still shows its own place and its tie; nothing says it agrees.
     expect(timeOnly).toBeGreaterThanOrEqual(tasted);
     await expect(ranks.nth(0)).toContainText(/tied with \d+ others?/);
@@ -117,8 +118,17 @@ test.describe("what Qloo changes", () => {
 test.describe("what Qloo changes: its height and the index card's lines beside it", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
 
+  /**
+   * The section's ceilings: 760 px at 1440 light and 1,500 px at 390 dark until round 39. Round 39 (condition 13, the
+   * integrator's 4.3 rule): W4's " in this app’s index" adds one heading line on Glastonbury, measured 749.7 -> 791.4 px
+   * at 1440 light (+41.7) and 1,492.2 -> 1,520.8 px at 390 dark (+28.6), and Riot Fest +0; W5's index paragraph adds no
+   * line. Each ceiling rises by the measured growth rounded up to the next pixel (caps +45 and +30), never by trimming a
+   * guarded line.
+   */
+  const CEILING = { desktop: 802, phone: 1_529 } as const;
+
   for (const day of Object.values(DAYS)) {
-    test(`on ${day.title}, the section is at most 760 px tall at 1440 light and 1,500 px at 390 dark; from 1024 px the two-set line's top is at or above the index card's foot`, async ({ page, isPhone }) => {
+    test(`on ${day.title}, the section is at most 802 px tall at 1440 light and 1,529 px at 390 dark; from 1024 px the two-set line's top is at or above the index card's foot`, async ({ page, isPhone }) => {
       const theme = isPhone ? "dark" : "light";
       await page.addInitScript((value) => localStorage.setItem("theme", value), theme);
       await page.emulateMedia({ colorScheme: theme });
@@ -129,7 +139,7 @@ test.describe("what Qloo changes: its height and the index card's lines beside i
       // Every disclosure closed, as the page opens.
       await expect(home.whatQloo.locator("details[open]")).toHaveCount(0);
       const height = await home.whatQloo.evaluate((section) => section.getBoundingClientRect().height);
-      const ceiling = isPhone ? 1_500 : 760;
+      const ceiling = isPhone ? CEILING.phone : CEILING.desktop;
       test.info().annotations.push({ type: `What Qloo changes on ${day.title} at ${isPhone ? "390 dark" : "1440 light"}`, description: `${height.toFixed(1)} px` });
       expect(height, `"What Qloo changes" height at ${isPhone ? "390 dark" : "1440 light"}`).toBeLessThanOrEqual(ceiling);
 
@@ -158,8 +168,10 @@ test.describe("who has complained, and what nobody has tested", () => {
     await expect(claim).toBeVisible();
     expect(await claim.evaluate((element) => element.closest("details:not([open])") === null), "open, with no click").toBe(true);
     await expect(claim).toContainText(
-      "Our analysis of 70 public press articles, fan-post summaries and one artist statement from 17 festivals (2015 to 2026) found 325 named set-time clashes, covering 538 distinct pairs of acts.",
+      "Our analysis of 70 public press articles, fan-post summaries and one artist statement from 17 festivals (2015 to 2026) found 325 named set-time clashes, covering 538 pairs of acts when counted separately for each festival and year.",
     );
+    // Round 39 (W8): the pairs are counted once per festival and year, never called distinct.
+    await expect(claim).not.toContainText("distinct pairs");
     await expect(claim).toContainText("It counts pages, not people, so it shows the complaint keeps coming back, not how many people mind.");
     await expect(claim).not.toContainText(/survey|poll|people we asked|respondents/i);
     const link = claim.getByRole("link", { name: "Sources and limits" });
@@ -235,19 +247,28 @@ test.describe("who has complained, and what nobody has tested", () => {
     await expect(section).toContainText("Who would pay is not known.");
   });
 
-  test("is plain about what is not known: no tested demand, no scheduler found, one answer is not a market", async ({ page }) => {
+  test("is plain about what is not known: no tested demand, no tool page found that ranks a draft grid's clashes, one answer is not a market", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
     const section = home.whyThisMatters;
-    await expect(section.getByRole("heading", { level: 3, name: "No scheduler we found reads audience overlap" })).toBeVisible();
+    // Round 39 (W8): the conclusion is scoped to the tool pages reviewed, and said once, as the heading, with the
+    // search's date and "absence of evidence only" directly under it.
+    const heading = section.getByRole("heading", { level: 3, name: "None of the 13 tool pages we reviewed describes ranking a draft grid’s clashes by audience closeness" });
+    await expect(heading).toBeVisible();
+    await expect(section.getByRole("heading", { level: 3, name: "No scheduler we found reads audience overlap" })).toHaveCount(0);
     await expect(section).toContainText("Our search, October 2026: absence of evidence only. Who would pay is not known.");
+    expect(
+      await heading.evaluate((element) => element.nextElementSibling?.textContent?.trim() ?? ""),
+      "the search's date and its limit sit directly under the heading",
+    ).toBe("Our search, October 2026: absence of evidence only. Who would pay is not known.");
 
     // The guess at who would pay is cut: only what is known is said.
     await expect(section).not.toContainText("Our guess, not yet tested");
     const schedulers = disclosure(section, /^Festival Pro and Lineup Ninja/);
     await schedulers.locator("summary").click();
-    await expect(schedulers).toContainText("We found none that reads audience overlap (our search, October 2026).");
+    await expect(schedulers).toContainText("Both check double bookings and changeovers. Setline sells organisers clash analysis from attendee interest once set times are live.");
+    await expect(schedulers).not.toContainText("We found none that reads audience overlap");
     // The pilot's success line says one answer is not a market, in the open. The pilot offers nothing that costs a
     // Qloo request, so the request arithmetic is not on the page (round 33 R1.9: it is on the Devpost page).
     await expect(section).toContainText("Success: you say which suggestion you would take or turn down, and why. One answer is not a market.");

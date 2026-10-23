@@ -568,3 +568,42 @@ test.describe("recorded agent runs that answer late (round 37 closeout, F3)", ()
     }
   });
 });
+
+/**
+ * Round 39 (W7, D04): with the live agent on, the note under the question box names the per-visitor limit and the daily
+ * total, and says the recorded runs in the section make no live call, so they still play when the day's questions are
+ * used up. No numbers: the caps can change, and /api/health and the README give them. This server runs with the agent
+ * off, so only this browser's /api/health answer is changed (`llm_configured: true`, every other field the server's
+ * own). Nothing is typed and nothing is pressed in the agent: no question is asked, and the fixture fails the test if
+ * any request could reach the agent route.
+ */
+test.describe("the agent's note on its limits (round 39, W7, D04)", () => {
+  test.beforeEach(async ({ page }) => requireSavedDays(page));
+
+  const ASK_NOTE =
+    "Answers are written live by a language model from the tools’ results. Questions are limited per visitor and in total per day. The recorded runs in this section make no live call, so they still play when the day’s questions are used up.";
+
+  test("names the per-visitor and daily limits and says the recorded runs still play; Ask is never pressed", async ({ page, guard }) => {
+    await page.route(
+      (url) => url.pathname === "/api/health",
+      async (route) => {
+        const response = await route.fetch();
+        const body = (await response.json()) as Record<string, unknown>;
+        await route.fulfill({ response, json: { ...body, llm_configured: true } });
+      },
+    );
+    const home = new HomePage(page);
+    await home.goto(DAYS.glastonbury.id);
+    await page.locator("#agent").scrollIntoViewIfNeeded();
+
+    // The question box is drawn (the agent reads as on), and the note under it says the limits in words.
+    await expect(home.agent.getByRole("button", { name: "Ask", exact: true })).toBeVisible();
+    const note = home.agent.getByText(/^Answers are written live by /);
+    await expect(note).toHaveText(ASK_NOTE);
+    await expect(note).toBeVisible();
+    await expect(note).not.toContainText(/\d/);
+    // Nothing reached the agent or a live run: no question was asked.
+    expect(guard.requested.filter((url) => /\/api\/(agent|runs)(\/|\?|$)/.test(new URL(url).pathname))).toEqual([]);
+    expect(guard.spending, "a request that could spend quota").toEqual([]);
+  });
+});

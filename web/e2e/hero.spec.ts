@@ -1,7 +1,8 @@
 import type { Locator, Request } from "@playwright/test";
 
-import { DAYS, HONESTY, literal, requireSavedDays } from "./helpers";
+import { DAYS, expectNoHorizontalScroll, HONESTY, literal, requireSavedDays } from "./helpers";
 import { expect, test } from "./fixtures";
+import { serveInventedDay } from "./invented-day";
 import { HomePage } from "./pages/home-page";
 import { TryAMove } from "./pages/try-a-move";
 
@@ -123,7 +124,8 @@ test.describe("hero decision", () => {
     await home.railLink("What Qloo changes").click();
     await expect(page).toHaveURL(/#what-qloo-changes$/);
     await expect(home.whatQloo).toBeInViewport();
-    await expect(home.whatQloo.getByRole("heading", { level: 2 })).toHaveText("Adding taste moves this pair from #18 to #1");
+    // Round 39 (W4, D18): the heading says whose ranks these are.
+    await expect(home.whatQloo.getByRole("heading", { level: 2 })).toHaveText("Adding taste moves this pair from #18 to #1 in this app’s index");
     await expect(home.whatQloo).toContainText("Sprints × Katy J Pearson, 45 min shared, ranked three ways");
     await expect(home.whatQloo).toContainText("Time alone");
     await expect(home.whatQloo).toContainText("+ taste overlap from Qloo data");
@@ -375,7 +377,7 @@ test.describe("hero decision", () => {
     await expect(home.sideEffects).toHaveText(SIDE_EFFECTS[DAYS.riot.id]);
     await expect(home.tasteLine).toContainText(/^Taste overlap: \d+ of 100 on this bill \(a rank, not attendance\)/);
     // Taste does not move this pair: the section under the hero says so, and no line says time alone agrees.
-    await expect(home.whatQloo.getByRole("heading", { level: 2 })).toHaveText(/^Adding taste leaves this pair at #\d+$/);
+    await expect(home.whatQloo.getByRole("heading", { level: 2 })).toHaveText(/^Adding taste leaves this pair at #\d+ in this app’s index$/);
     await expect(page.locator("body")).not.toContainText("Taste agrees with time");
     await home.keepMove.click();
     await expect(home.keptNotice).toBeVisible();
@@ -394,7 +396,7 @@ test.describe("hero decision", () => {
     };
     const top = async (locator: Locator) => (await box(locator)).y;
     const index = home.indexCard.getByText("Clash Budget Index", { exact: true });
-    const scale = home.indexCard.getByText(/^A score, not money: 100 = the average random valid timetable of this lineup\. Lower is better\./);
+    const scale = home.indexCard.getByText(/^A score, not money: 100 = the average random valid timetable of this lineup\. Above 100: costlier\./);
     // The hidden line states its scope: one of the day's hidden clashes, among the day's ranked clashes. Below 1024 px
     // it is in the card; from 1024 px it sits beside the card, closed by its action.
     const hidden = home.details.getByText(/^A hidden clash, 1 of \d+ among the day’s \d+ ranked clashes: main genres differ/).filter({ visible: true });
@@ -429,8 +431,16 @@ test.describe("hero decision", () => {
     // The index carries its Derived stamp, and who scored it, in the index's own paragraph.
     await expect(home.indexBlock.getByText("Derived")).toBeVisible();
     await expect(home.indexBlock).toContainText("Selected and scored by this app’s index. A reading, not a verdict.");
-    // "Lower is better" is said once in the card, in the index's own paragraph.
-    expect((await home.indexCard.innerText()).split("Lower is better").length - 1, "\"Lower is better\" once in the card").toBe(1);
+    // Round 39 (W5, D08): the index's own paragraph, word for word, says what a reading above 100 means beside the
+    // guarded scale ("of this lineup" beside the 100 it qualifies), and "Lower is better" leaves the card: the dial
+    // beside the board still says it, with no click (honesty.spec.ts pins its words).
+    await expect(home.indexCard.locator("[data-index-scale]")).toHaveText(INDEX_PARAGRAPH);
+    expect(INDEX_PARAGRAPH.split(" ").length, "the paragraph's own word count, its cap").toBe(29);
+    expect((await home.indexCard.innerText()).split("Above 100: costlier.").length - 1, "\"Above 100: costlier.\" once in the card").toBe(1);
+    expect((await home.indexCard.innerText()).split("Lower is better").length - 1, "\"Lower is better\" not in the card").toBe(0);
+    const dial = page.getByRole("figure").filter({ hasText: "Clash Budget Index" });
+    await expect(dial.locator("[data-index-explain]")).toContainText("Lower is better.");
+    await expect(dial.locator("[data-index-explain]")).toBeVisible();
     // The card holds no second Keep this move (the hero's is the one filled action) and no three-rank line.
     await expect(home.details.getByRole("button", { name: "Keep this move" })).toHaveCount(0);
     await expect(home.indexCard).not.toContainText(/Time alone ranks this pair/);
@@ -490,16 +500,17 @@ const MOVE_LEADS = {
 } as const;
 
 /**
- * The hero's desktop note under the dateline (round 37, AO2; L22 and L9), word for word: why this move ("ties" where
- * another set's first place gives the same index, as on Glastonbury), that two sets end the overlap (the rule answer's
- * first change moves two sets and leaves 0 min shared on both days), and what near 100 means. Desktop only.
+ * The hero's desktop note under the dateline, word for word. Round 37 (AO2; L22 and L9) said why this move, that two
+ * sets end the overlap and what near 100 means; round 39 (W6, D09) replaces it with one line on what every move keeps
+ * and that a clash can be kept on purpose ("the latest published end" is the engine's curfew on a published day; the
+ * locks are this app's). Why this move and the two-set change stay one click away, in the index card's "How this was
+ * chosen". The same line on both published days. Desktop only.
  */
-const HERO_NOTE = {
-  [DAYS.glastonbury.id]:
-    "Of the legal moves checked, this ties for the lowest index. Moving two sets ends the overlap instead. Near 100 means closer tastes among the acts compared.",
-  [DAYS.riot.id]:
-    "Of the legal moves checked, this gives the lowest index. Moving two sets ends the overlap instead. Near 100 means closer tastes among the acts compared.",
-} as const;
+const HERO_NOTE = "Moves keep stage hours, the latest published end, changeovers and this app’s locks; a clash can be kept on purpose.";
+
+/** The index card's paragraph (round 39, W5): the guarded scale, what above 100 means, who scored it, the caveat. */
+const INDEX_PARAGRAPH =
+  "A score, not money: 100 = the average random valid timetable of this lineup. Above 100: costlier. Selected and scored by this app’s index. A reading, not a verdict.";
 
 /** A browser request for a day's decision, and for a day's preset (round 37, L1). */
 const DECISION_PATH = /^\/api\/presets\/[^/]+\/decision$/;
@@ -758,7 +769,7 @@ test.describe("the hero's desktop note, the date and the keep offer (round 37: L
   test.beforeEach(async ({ page }) => requireSavedDays(page));
 
   for (const day of Object.values(DAYS)) {
-    test(`on ${day.title}, the note says why this move and what near 100 means at 1440 x 900 and 1280 x 800, clear of the toggle, and is not drawn at 1366 x 768 or on a phone`, async ({ page, isPhone }) => {
+    test(`on ${day.title}, the note says what a move keeps and that a clash can be kept on purpose, on one line at 1440 x 900 and 1280 x 800, above the ladder and the toggle, and is not drawn at 1366 x 768 or on a phone`, async ({ page, isPhone }) => {
       const home = new HomePage(page);
       const note = home.hero.locator("[data-hero-note]");
       if (isPhone) {
@@ -781,11 +792,15 @@ test.describe("the hero's desktop note, the date and the keep offer (round 37: L
         await home.goto(day.id);
         const at = `${size.width} x ${size.height}`;
         await expect(note, `${at}: the note`).toBeVisible();
-        await expect(note).toHaveText(HERO_NOTE[day.id]);
-        const [noteBox, toggleBox] = [await note.boundingBox(), await home.viewToggle.boundingBox()];
+        await expect(note).toHaveText(HERO_NOTE);
+        const ladder = home.hero.locator("[data-hero-ladder-room] [data-hero-ladder]");
+        await expect(ladder, `${at}: the ladder under the note`).toBeVisible();
+        const [noteBox, ladderBox, toggleBox] = [await note.boundingBox(), await ladder.boundingBox(), await home.viewToggle.boundingBox()];
         expect(noteBox, `${at}: the note is drawn`).not.toBeNull();
-        // Two lines of 20 px, wholly above the toggle.
-        expect(noteBox?.height ?? 0, `${at}: two lines`).toBeLessThanOrEqual(41);
+        test.info().annotations.push({ type: `note height at ${at}`, description: `${noteBox?.height.toFixed(1)} px` });
+        // One line of 20 px (round 39, W6: at most 21 px), wholly above the ladder and the toggle.
+        expect(noteBox?.height ?? Infinity, `${at}: one line`).toBeLessThanOrEqual(21);
+        expect((noteBox?.y ?? 0) + (noteBox?.height ?? 0), `${at}: the note ends above the ladder`).toBeLessThanOrEqual(ladderBox?.y ?? 0);
         expect((noteBox?.y ?? 0) + (noteBox?.height ?? 0), `${at}: the note ends above the toggle`).toBeLessThanOrEqual(toggleBox?.y ?? 0);
         await expect(note, `${at}: on the first screen`).toBeInViewport({ ratio: 1 });
       }
@@ -865,100 +880,219 @@ test.describe("the hero's desktop note, the date and the keep offer (round 37: L
 });
 
 /**
- * Round 38 (lanes H and reconcile): the decision's clash ranked three ways in the hero, a three-step ladder. From
- * 1280 px it is one line in the left column under the dateline; from 1024 to 1279 px it sits in the decision group
- * above Keep with taste's sentence; on a phone it sits under Keep's confirmation room, before the paste. Exactly one
- * ladder shows at any width, the ranks are the ones "What Qloo changes" prints, and the taste rung is credited with
- * its own step only.
+ * Round 38 (lanes H and reconcile) made the decision's clash ranked three ways a three-step ladder in the hero. Round 39
+ * (W3, D11) makes it the hero's picture of what Qloo changes: one `[data-hero-ladder]` list with its ranks in the
+ * numeral type (at least 20 px), the last rung's count, then whose ranks these are, "in this app’s index". From 1280 px
+ * it is one row in the left column's room under the note; below 1280 px it shares the decision group's notice cell
+ * under Keep with Keep's confirmation, overlapping, never stacked, and is hidden (keeping its box) once Keep is pressed.
+ * Exactly one ladder shows at any width, its ranks are the ones "What Qloo changes" prints, taste is credited with its
+ * own step only, and taste's sentence ("Adding taste ...") is no longer in the hero.
  */
 test.describe("the hero's ladder", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
 
-  /** The ladders drawn on the page: the left column's one line and the group's, by whether each has a box. */
-  async function shownLadders(page: import("@playwright/test").Page) {
-    return page.evaluate(() => {
-      const drawn = (element: Element | null) => Boolean(element && element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden");
-      const box = (element: Element | null) => {
-        if (!element) return null;
-        const rect = element.getBoundingClientRect();
-        return { left: rect.left, right: rect.right, top: rect.top + window.scrollY, bottom: rect.bottom + window.scrollY, height: rect.height };
-      };
-      const line = document.querySelector("[data-hero-ladder-room] [data-hero-ladder-line]");
-      const group = document.querySelector("[data-hero-group] [data-hero-ladder]");
-      return {
-        line: drawn(line) ? box(line) : null,
-        group: drawn(group) ? box(group) : null,
-        groupBox: box(document.querySelector("[data-hero-group]")),
-      };
-    });
+  /** The two placements: the left column's room (from 1280 px) and the group's notice cell (below 1280 px). */
+  const ROOM = "[data-hero-ladder-room] [data-hero-ladder]";
+  const CELL = '[data-hero-group] [data-hero-row="notice"] [data-hero-ladder-cell] [data-hero-ladder]';
+
+  /**
+   * What the page draws of each placement: the ladder's box (page pixels) where it is drawn and visible, its rank sizes
+   * and tops, the room's min-height, and the notice row's box.
+   */
+  async function ladders(page: import("@playwright/test").Page) {
+    return page.evaluate(
+      ([room, cell]) => {
+        const box = (element: Element | null | undefined) => {
+          if (!element) return null;
+          const rect = element.getBoundingClientRect();
+          return { left: rect.left, right: rect.right, top: rect.top + window.scrollY, bottom: rect.bottom + window.scrollY, height: rect.height };
+        };
+        const drawn = (element: Element | null) => {
+          if (!element || element.getClientRects().length === 0) return false;
+          for (let node: Element | null = element; node; node = node.parentElement) if (getComputedStyle(node).visibility === "hidden") return false;
+          return true;
+        };
+        const read = (selector: string) => {
+          const ladder = document.querySelector(selector);
+          if (!drawn(ladder)) return null;
+          const ranks = [...(ladder as Element).querySelectorAll("[data-rank]")];
+          return {
+            box: box(ladder),
+            sizes: ranks.map((rank) => Number.parseFloat(getComputedStyle(rank).fontSize)),
+            tops: ranks.map((rank) => rank.getBoundingClientRect().top),
+          };
+        };
+        const roomElement = document.querySelector("[data-hero-ladder-room]");
+        return {
+          room: read(room),
+          cell: read(cell),
+          roomMin: roomElement ? Number.parseFloat(getComputedStyle(roomElement).minHeight) : Number.NaN,
+          notice: box(document.querySelector('[data-hero-group] [data-hero-row="notice"]')),
+          group: box(document.querySelector("[data-hero-group]")),
+        };
+      },
+      [ROOM, CELL] as const,
+    );
   }
 
+  /** Each published day's ladder as the hero reads it (PLAN W3), and the hero section's foot at 1440 x 900 (round 39 baseline). */
   const LADDERS = [
-    { day: DAYS.glastonbury, time: "Time alone #23", draw: "+ Qloo popularity #18", taste: "+ taste overlap #1 of 68", sentence: "Adding taste moves this pair from #18 to #1." },
-    { day: DAYS.riot, time: "Time alone #5", draw: "+ Qloo popularity #1", taste: "+ taste overlap #1 of 47", sentence: "Adding taste leaves this pair at #1." },
+    {
+      day: DAYS.glastonbury,
+      text: "Time alone #23 → + Qloo popularity #18 → + taste overlap #1 of 68 in this app’s index",
+      time: "Time alone #23",
+      draw: "+ Qloo popularity #18",
+      taste: "+ taste overlap #1 of 68",
+      // The section's foot before round 39 was 833.0 (833.5 with the plan's 0.5 px), so the ladder adds no net height.
+      heroBottom: 833.5,
+    },
+    {
+      day: DAYS.riot,
+      text: "Time alone #5 → + Qloo popularity #1 → + taste overlap #1 of 47 in this app’s index",
+      time: "Time alone #5",
+      draw: "+ Qloo popularity #1",
+      taste: "+ taste overlap #1 of 47",
+      // Riot Fest's own foot before round 39: 852.8 (its key takes a second line), plus the same 0.5 px.
+      heroBottom: 853.3,
+    },
   ] as const;
 
   for (const ladder of LADDERS) {
-    test(`on ${ladder.day.title}: one line in the left column at 1440, in the group above Keep at 1024, under Keep at 390`, async ({ page, isPhone }) => {
+    test(`on ${ladder.day.title}: one row in the left column at 1440 x 900 and 1280 x 800 with 20 px ranks and "in this app’s index", in the notice cell under Keep at 1024, under Keep at 390 and hidden once Keep is pressed`, async ({ page, isPhone }) => {
       const home = new HomePage(page);
       if (!isPhone) {
-        await home.goto(ladder.day.id);
-        const line = home.hero.locator("[data-hero-ladder-room] [data-hero-ladder-line]");
-        await expect(line.locator('[data-rung="time"]')).toContainText(ladder.time);
-        await expect(line.locator('[data-rung="draw"]')).toContainText(ladder.draw);
-        await expect(line.locator('[data-rung="taste"]')).toContainText(ladder.taste);
-        // The time rung prints its rank alone, and the count closes the last rung only.
-        await expect(line.locator('[data-rung="time"]')).not.toContainText(" of ");
-        await expect(line.locator('[data-rung="draw"]')).not.toContainText(" of ");
-        // Taste is a rank, never attendance; the arrows are drawn only.
-        await expect(line).not.toContainText(/attend|fans|people/i);
-        await expect(line.locator('[aria-hidden="true"]')).toHaveText(["→", "→"]);
-        const at1440 = await shownLadders(page);
-        expect(at1440.group, "1440: the group shows no ladder").toBeNull();
-        expect(at1440.line, "1440: the one-line ladder is drawn").not.toBeNull();
-        expect(at1440.line!.height, "1440: the ladder is one line").toBeLessThanOrEqual(20);
-        expect(at1440.line!.right, "1440: the ladder sits in the left column, clear of the group").toBeLessThanOrEqual(at1440.groupBox!.left);
-        await expect(line, "1440: the ladder is on the first screen").toBeInViewport({ ratio: 1 });
+        for (const size of [
+          { width: 1440, height: 900 },
+          { width: 1280, height: 800 },
+        ]) {
+          const at = `${size.width} x ${size.height}`;
+          await page.setViewportSize(size);
+          await home.goto(ladder.day.id);
+          const shown = home.hero.locator(ROOM);
+          await expect(shown, `${at}: the ladder's words`).toHaveText(ladder.text);
+          await expect(shown.locator('[data-rung="time"]')).toContainText(ladder.time);
+          await expect(shown.locator('[data-rung="draw"]')).toContainText(ladder.draw);
+          await expect(shown.locator('[data-rung="taste"]')).toContainText(ladder.taste);
+          await expect(shown.locator("[data-ladder-scope]"), `${at}: whose ranks these are`).toHaveText("in this app’s index");
+          // The time and draw rungs print their rank alone; the count closes the last rung only.
+          await expect(shown.locator('[data-rung="time"]')).not.toContainText(" of ");
+          await expect(shown.locator('[data-rung="draw"]')).not.toContainText(" of ");
+          // Taste is a rank, never attendance; the arrows are drawn only; taste's sentence is not in the hero.
+          await expect(shown).not.toContainText(/attend|fans|people/i);
+          await expect(shown.locator('[aria-hidden="true"]')).toHaveText(["→", "→"]);
+          await expect(home.hero).not.toContainText("Adding taste");
+
+          const read = await ladders(page);
+          expect(read.cell, `${at}: no ladder in the group's notice cell`).toBeNull();
+          expect(read.room, `${at}: the ladder is drawn in the left column's room`).not.toBeNull();
+          const room = read.room!;
+          expect(room.sizes, `${at}: three ranks`).toHaveLength(3);
+          for (const size of room.sizes) expect(size, `${at}: a rank's size`).toBeGreaterThanOrEqual(20);
+          expect(Math.max(...room.tops) - Math.min(...room.tops), `${at}: one row (every rank on one line)`).toBeLessThanOrEqual(1);
+          expect(room.box!.height, `${at}: the ladder fits its room's min-height (${read.roomMin} px)`).toBeLessThanOrEqual(read.roomMin + 0.5);
+          expect(room.box!.right, `${at}: the ladder sits in the left column, clear of the group`).toBeLessThanOrEqual(read.group!.left);
+          await expect(shown, `${at}: the ladder is on the first screen`).toBeInViewport({ ratio: 1 });
+          // No net hero height: the toggle, the drawing and the hero's foot stay where they were (round 39 baseline).
+          const [toggle, drawing, hero] = await Promise.all([
+            home.viewToggle.boundingBox(),
+            home.graph.locator(":scope > [data-layout]").filter({ visible: true }).first().boundingBox(),
+            home.hero.boundingBox(),
+          ]);
+          expect(toggle?.y ?? Infinity, `${at}: the toggle's top`).toBeLessThanOrEqual(385.3);
+          expect(drawing?.y ?? Infinity, `${at}: the drawing's top`).toBeLessThanOrEqual(437.3);
+          if (size.width === 1440) expect((hero?.y ?? 0) + (hero?.height ?? Infinity), `${at}: the hero section's foot`).toBeLessThanOrEqual(ladder.heroBottom);
+        }
 
         await page.setViewportSize({ width: 1024, height: 768 });
         await home.goto(ladder.day.id);
-        const inGroup = home.group.locator("[data-hero-ladder]");
-        await expect(inGroup.locator('[data-rung="time"]')).toHaveText(new RegExp(`^${literal(ladder.time).replace(/ /g, String.raw`\s*`)}$`));
-        await expect(inGroup.locator('[data-rung="taste"]')).toHaveText(new RegExp(`^${literal(ladder.taste).replace(/ /g, String.raw`\s*`)}$`));
-        await expect(inGroup.locator("[data-ladder-line]")).toHaveText(ladder.sentence);
-        const at1024 = await shownLadders(page);
-        expect(at1024.line, "1024: no one-line ladder in the left column").toBeNull();
-        expect(at1024.group, "1024: the group shows the ladder").not.toBeNull();
+        const inCell = home.hero.locator(CELL);
+        await expect(inCell, "1024: the ladder's words").toHaveText(ladder.text);
+        const read = await ladders(page);
+        expect(read.room, "1024: no ladder in the left column").toBeNull();
+        expect(read.cell, "1024: the ladder is drawn in the notice cell").not.toBeNull();
+        for (const size of read.cell!.sizes) expect(size, "1024: a rank's size").toBeGreaterThanOrEqual(20);
         const keep = await home.keepMove.boundingBox();
-        expect(at1024.group!.bottom, "1024: the ladder sits above Keep").toBeLessThanOrEqual((keep?.y ?? 0) + 0.5);
-        await expect(inGroup, "1024: the ladder is on the first screen").toBeInViewport({ ratio: 1 });
+        const scroll = await page.evaluate(() => window.scrollY);
+        expect(read.cell!.box!.top - scroll, "1024: the ladder sits under Keep").toBeGreaterThanOrEqual((keep?.y ?? 0) + (keep?.height ?? 0) - 0.5);
+        await expect(inCell, "1024: the ladder is on the first screen").toBeInViewport({ ratio: 1 });
       } else {
         await home.goto(ladder.day.id);
-        const inGroup = home.group.locator("[data-hero-ladder]");
-        await expect(inGroup.locator('[data-rung="taste"]')).toHaveText(new RegExp(`^${literal(ladder.taste).replace(/ /g, String.raw`\s*`)}$`));
-        await expect(inGroup.locator("[data-ladder-line]")).toHaveText(ladder.sentence);
-        const at390 = await shownLadders(page);
-        expect(at390.line, "390: no one-line ladder").toBeNull();
-        expect(at390.group, "390: the group shows the ladder").not.toBeNull();
-        const [keep, slot, paste] = await Promise.all([home.keepMove.boundingBox(), home.keptSlot.boundingBox(), home.pasteLink.boundingBox()]);
-        const scroll = await page.evaluate(() => window.scrollY);
-        expect(at390.group!.top - scroll, "390: the ladder sits under Keep").toBeGreaterThanOrEqual((keep?.y ?? 0) + (keep?.height ?? 0) - 0.5);
-        expect(at390.group!.top - scroll, "390: the ladder sits under Keep's confirmation room").toBeGreaterThanOrEqual((slot?.y ?? 0) + (slot?.height ?? 0) - 0.5);
-        expect(at390.group!.bottom - scroll, "390: the ladder sits before the paste").toBeLessThanOrEqual((paste?.y ?? 0) + 0.5);
-        // Keep keeps its place on the first screen (DECISION budget: bottom at most 787 px at 390 x 844).
-        expect((keep?.y ?? 0) + (keep?.height ?? 0) + scroll, "390: Keep's bottom").toBeLessThanOrEqual(787);
+        expect(await page.evaluate(() => window.scrollY)).toBe(0);
+        const inCell = home.hero.locator(CELL);
+        await expect(inCell, "390: the ladder's words").toHaveText(ladder.text);
+        await expect(home.hero).not.toContainText("Adding taste");
+        const read = await ladders(page);
+        expect(read.room, "390: no ladder in the left column").toBeNull();
+        expect(read.cell, "390: the ladder is drawn in the notice cell").not.toBeNull();
+        for (const size of read.cell!.sizes) expect(size, "390: a rank's size").toBeGreaterThanOrEqual(20);
+        const keep = await home.keepMove.boundingBox();
+        expect(read.cell!.box!.top, "390: the ladder sits under Keep").toBeGreaterThanOrEqual((keep?.y ?? 0) + (keep?.height ?? 0) - 0.5);
+        // Keep keeps its place on the first screen: at most 780.3 (779.8 before round 39; the guard's limit is 787).
+        expect((keep?.y ?? 0) + (keep?.height ?? 0), "390: Keep's bottom").toBeLessThanOrEqual(780.3);
+        await expect(inCell, "390: the ladder is wholly on the first screen").toBeInViewport({ ratio: 1 });
+        expect(read.cell!.box!.bottom, "390: the ladder ends by 844").toBeLessThanOrEqual(844);
+
+        // A press on Keep: its confirmation takes the cell, and the ladder goes invisible and hidden from assistive tech
+        // while keeping its box, so the group keeps its height.
+        const before = read.group!.height;
+        await home.keepMove.click();
+        await expect(home.keptNotice).toBeVisible();
+        const cell = home.group.locator("[data-hero-ladder-cell]");
+        await expect(cell, "390: the ladder's cell once Keep is pressed").toHaveAttribute("aria-hidden", "true");
+        await expect(inCell, "390: the ladder is invisible once Keep is pressed").toBeHidden();
+        expect(await inCell.evaluate((element) => element.getBoundingClientRect().height), "390: the hidden ladder keeps its box").toBeGreaterThan(0);
+        const after = await ladders(page);
+        expect(Math.abs(after.group!.height - before), `390: the group's height ${before} before the press, ${after.group!.height} after`).toBeLessThanOrEqual(0.5);
+        const notice = await home.keptNotice.boundingBox();
+        expect((notice?.y ?? 0) + (notice?.height ?? 0), "390: the confirmation ends by 844").toBeLessThanOrEqual(844);
       }
     });
   }
 
-  test("on a short desktop (1366 x 768) the one-line ladder and the whole drawing are on the first screen", async ({ page, isPhone }) => {
+  test("at 320 x 640 and 768 x 1024 the page does not scroll sideways and the ladder lies inside the notice row", async ({ page }) => {
+    const home = new HomePage(page);
+    for (const size of [
+      { width: 320, height: 640 },
+      { width: 768, height: 1024 },
+    ]) {
+      const at = `${size.width} x ${size.height}`;
+      await page.setViewportSize(size);
+      await home.goto(DAYS.glastonbury.id);
+      await expect(home.hero.locator(CELL), `${at}: the ladder's words`).toHaveText(LADDERS[0].text);
+      await expectNoHorizontalScroll(page);
+      const read = await ladders(page);
+      expect(read.cell, `${at}: the ladder is drawn in the notice cell`).not.toBeNull();
+      const [ladder, row] = [read.cell!.box!, read.notice!];
+      for (const [edge, inside] of [
+        ["top", ladder.top >= row.top - 0.5],
+        ["bottom", ladder.bottom <= row.bottom + 0.5],
+        ["left", ladder.left >= row.left - 0.5],
+        ["right", ladder.right <= row.right + 0.5],
+      ] as const) {
+        expect(inside, `${at}: the ladder's ${edge} (${JSON.stringify(ladder)}) inside the notice row (${JSON.stringify(row)})`).toBe(true);
+      }
+    }
+  });
+
+  test("on the invented day the ladder says invented popularity and invented taste, in this app’s index, and names no Qloo", async ({ page, isPhone }) => {
+    await serveInventedDay(page);
+    const home = new HomePage(page);
+    await home.goto();
+    const shown = home.hero.locator(isPhone ? CELL : ROOM);
+    await expect(shown).toHaveText("Time alone #3 → + invented popularity #4 → + invented taste #1 of 31 in this app’s index");
+    await expect(shown).not.toContainText("Qloo");
+  });
+
+  test("on a short desktop (1366 x 768) the one-row ladder and the whole drawing are on the first screen", async ({ page, isPhone }) => {
     test.skip(isPhone, "a desktop band");
     await page.setViewportSize({ width: 1366, height: 768 });
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
-    const line = home.hero.locator("[data-hero-ladder-room] [data-hero-ladder-line]");
-    await expect(line.locator('[data-rung="taste"]')).toContainText("+ taste overlap #1 of 68");
-    await expect(line).toBeInViewport({ ratio: 1 });
+    const shown = home.hero.locator(ROOM);
+    await expect(shown.locator('[data-rung="taste"]')).toContainText("+ taste overlap #1 of 68");
+    await expect(shown).toBeInViewport({ ratio: 1 });
+    const read = await ladders(page);
+    expect(Math.max(...read.room!.tops) - Math.min(...read.room!.tops), "1366 x 768: one row").toBeLessThanOrEqual(1);
     const drawing = await home.graph.locator(":scope > [data-layout]").filter({ visible: true }).first().boundingBox();
     expect((drawing?.y ?? 0) + (drawing?.height ?? 0), "1366 x 768: the drawing's bottom").toBeLessThanOrEqual(768);
   });

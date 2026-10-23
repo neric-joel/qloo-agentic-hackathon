@@ -211,8 +211,8 @@ function ToggleRoom() {
  * and dateline), the drawing's toggle, the drawing, the decision group, the drawing's key. Below 1024 px it
  * reads in that order. From 1024 px a grid puts the pitch, the day and the toggle in the left column, the
  * decision group in a right column 26rem wide (28rem from 1280 px) beside all three, and the drawing and its
- * key across both: the toggle sits at the foot of its row, directly over the drawing, which starts 24 px
- * under the taller column. Every track is minmax(0, ...) and every item min-w-0, so nothing pushes past the
+ * key across both: the toggle sits at the foot of its row, directly over the drawing, which starts 40 px
+ * under the taller column (8 px from 1280 px). Every track is minmax(0, ...) and every item min-w-0, so nothing pushes past the
  * page gutter on a phone. `busy` while another festival day is on its way to replace the one drawn. With
  * `reserve` (a decision group in any state) an empty room in the group's cell holds the settled group's height
  * from 1024 px (`HERO_CELL_MIN`). It comes second in the DOM, before the toggle and the drawing, so it is there
@@ -241,11 +241,14 @@ function HeroLayout({
   return (
     <section aria-labelledby="pitch-heading" aria-busy={busy || undefined}>
       {/* From 1024 px on a screen 790 px tall or less (1366 x 768) the top padding and the drawing's top margin
-          tighten (32 to 16 px, 24 to 8 px), as the group's spaces do (`HERO_ROWS`), so the whole drawing fits above the fold; no text gets smaller. From
+          tighten (32 to 16 px, 40 to 24 px), as the group's spaces do (`HERO_ROWS`), so the whole drawing fits above the fold; no text gets smaller. From
           1024 px the key sits 4 px above the section nav (whose 44 px row centres its links), so a key that takes a
-          second line still leaves the nav on a 900 px first screen. From 1280 px (round 38, integrate) the drawing sits
-          8 px under the toggle and the key right under the drawing (its last row keeps 19 px under its bars), which
-          gives back the 28 px the taller 32/70 rows took, so the section nav still ends inside 900 px. */}
+          second line still leaves the nav on a 900 px first screen. Below 1280 px the ladder's two lines fill the
+          group's notice cell, right above the drawing's right half, and a line's note keeps clear of them
+          (day-graph.tsx, `shownAbove`); that cell stood empty on arrival until round 39, so the drawing there starts 16
+          px lower than it did then, and the note keeps its room above the drawing's first names. From 1280 px (round 38, integrate) the drawing
+          sits 8 px under the toggle at any height and the key right under the drawing (its last row keeps 19 px under
+          its bars), which gives back the 28 px the taller 32/70 rows took, so the section nav still ends inside 900 px. */}
       <div className="container-page pt-4 pb-8 sm:pt-6 lg:pt-8 lg:pb-1 lg:[@media(max-height:790px)]:pt-4">
         <div
           data-hero=""
@@ -255,7 +258,11 @@ function HeroLayout({
           {reserve ? <div aria-hidden="true" data-hero-room="" className={cn("hidden lg:block lg:[grid-area:group]", HERO_CELL_MIN)} /> : null}
           {day ? <div className="mt-2 min-w-0 lg:mt-6 xl:mt-4 lg:[grid-area:day]">{day}</div> : null}
           {toggle ? <div className="mt-2 min-w-0 lg:mt-6 xl:mt-2 lg:self-end lg:[grid-area:toggle]">{toggle}</div> : null}
-          {graph ? <div className="mt-1 min-w-0 lg:mt-6 xl:mt-2 lg:[@media(max-height:790px)]:mt-2 lg:[grid-area:graph]">{graph}</div> : null}
+          {graph ? (
+            <div className="mt-1 min-w-0 lg:mt-10 xl:mt-2 lg:[@media(max-height:790px)]:mt-6 xl:[@media(max-height:790px)]:mt-2 lg:[grid-area:graph]">
+              {graph}
+            </div>
+          ) : null}
           {group ? <div className="mt-2 min-w-0 lg:mt-0 lg:self-start lg:[grid-area:group]">{group}</div> : null}
           {graphKey ? <div className="mt-4 min-w-0 lg:mt-3 xl:mt-0 lg:[grid-area:key]">{graphKey}</div> : null}
         </div>

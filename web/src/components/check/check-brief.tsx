@@ -9,6 +9,7 @@ import {
   noBreaksLine,
   pairCountLabel,
   skippedSentence,
+  titleNote,
   type CheckReport,
   type SharedPair,
   type SkippedLine,
@@ -231,11 +232,12 @@ function Capped({ items }: { items: readonly string[] }) {
 
 /**
  * The draft brief "Print draft brief" prints (one page or more for a long grid): its heading line (the
- * grid's day when it has one, and the print date), the checked snapshot with each skipped line named, counts,
+ * grid's day when it has one, and the print date), the checked snapshot with each skipped line named (and a
+ * title line left out, in the screen's words), counts,
  * the overlaps longest first (twelve at most), settings, applied changes, rule breaks, decisions, the compared
  * overlaps when there are any, and the sign-off block. Print only; with `preview` the same sheet is drawn on
  * screen as a small paper thumbnail, a sheet with the 14px panel corner, without the heading line, the named
- * skipped lines, the overlap list and the sign-off (they are on paper only). In print it is the page itself,
+ * skipped lines, the title note, the overlap list and the sign-off (they are on paper only). In print it is the page itself,
  * with no corner of its own.
  */
 export function CheckBrief({
@@ -311,6 +313,13 @@ export function CheckBrief({
           {line}
         </p>
       ))}
+      {/* A title line left out of the check, said on paper as the screen says it above "Read n sets" (paper only:
+          the screen's own note is beside the preview). */}
+      {report.title ? (
+        <p data-brief-title-note="" className="mt-[2pt] hidden break-words print:block">
+          {titleNote(report.title)}
+        </p>
+      ) : null}
       <p className="mt-[4pt]">
         Read {sets.length} {sets.length === 1 ? "set" : "sets"} on {stages.length} {stages.length === 1 ? "stage" : "stages"}.
         Rule breaks: {breaks.length}. Sets that share time: {pairCountLabel(shared.length)}.

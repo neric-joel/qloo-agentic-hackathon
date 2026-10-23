@@ -16,6 +16,13 @@ const CARD_PLAN = "moves=sprints~woodsies~0~1415";
  */
 const LOCK_RULE = "On the published days, the locked sets are the last set on each stage. This app keeps them in place; the festivals did not mark them.";
 
+/**
+ * What a reading above 100 means (round 39, W5, D08; lib/brief.ts INDEX_MEANING), from /method's own reading of the
+ * index: in "The day", right after the band sentence, in the same paragraph.
+ */
+const INDEX_MEANING =
+  "Above 100, the day’s shared minutes cost more, by this reading, than in the average random valid timetable of this lineup: one kind of cost, not a verdict on how the festival was programmed.";
+
 /** The day's figure (round 36): under the title, its caption saying what is drawn, hatched and dashed. */
 function figureOf(page: import("@playwright/test").Page) {
   return page.getByRole("article").locator("[data-brief-figure]");
@@ -60,6 +67,9 @@ test.describe("one-page brief", () => {
     await expect(article.getByRole("heading", { level: 1 })).toHaveText("Glastonbury Festival 2025 Sunday: where the clashes fall");
     await expect(article).toContainText("Scored by this app from the published timetable. Glastonbury Festival 2025 does not use Clash Control.");
     await expect(article.getByRole("region", { name: "The day" })).toContainText(/Clash Budget Index \d+\.\d\./);
+    // Round 39 (W5): what a reading above 100 means follows the band sentence, in the same paragraph.
+    await expect(article.getByRole("region", { name: "The day" })).toContainText(INDEX_MEANING);
+    await expect(article.getByRole("region", { name: "The day" })).toContainText(/ that range\. Above 100, the day’s shared minutes cost more, by this reading,/);
     // Round 36: "not scored", never "not priced".
     await expect(article.getByRole("region", { name: "The day" })).toContainText("Taste overlap is scored for 36 of 39 sets; 3 have no usable Qloo signal and are not scored.");
 
@@ -157,8 +167,15 @@ test.describe("one-page brief", () => {
 
   for (const [name, plan] of [["a plan", PLAN], ["the hero's move and its alternative", CARD_PLAN], ["no plan", ""]] as const) {
     test(`print media: the brief with ${name} fits one Letter page and one A4 page`, async ({ page }) => {
-      await open(page, `preset=${DAYS.glastonbury.id}&day=0${plan ? `&${plan}` : ""}`);
+      const article = await open(page, `preset=${DAYS.glastonbury.id}&day=0${plan ? `&${plan}` : ""}`);
+      // Round 39 (W5): on screen "The day" says what above 100 means on every sheet.
+      await expect(article.getByRole("region", { name: "The day" })).toContainText(INDEX_MEANING);
       await page.emulateMedia({ media: "print" });
+      // On paper too, except on the fullest sheet (the hero's move beside its alternative), where it has no room on one
+      // page and stays on the screen (PLAN W5: never a caveat instead); "How to read this" prints on every sheet.
+      if (plan !== CARD_PLAN) await expect(article.getByRole("region", { name: "The day" })).toContainText("Above 100, the day’s shared minutes cost more", { useInnerText: true });
+      await expect(article.getByRole("region", { name: "How to read this" })).toBeVisible();
+      await expect(article.getByRole("region", { name: "How to read this" })).toContainText("a reading, not a verdict on the festival");
       for (const format of ["Letter", "A4"] as const) {
         const pdf = await page.pdf({ format, printBackground: true });
         expect(pdf.subarray(0, 5).toString("latin1"), "a PDF").toBe("%PDF-");

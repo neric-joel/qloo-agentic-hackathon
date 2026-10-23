@@ -11,7 +11,7 @@ for (const day of Object.values(DAYS)) {
   test.describe(`home on ${day.title}`, () => {
     test.beforeEach(async ({ page }) => requireSavedDays(page));
 
-    test("loads with the pitch, the drawn day, the decision group, the index card and the board", async ({ page }) => {
+    test("loads with the pitch, the drawn day, the decision group, the index card and the board", async ({ page, isPhone }) => {
       const home = new HomePage(page);
       await home.goto(day.id);
 
@@ -45,11 +45,14 @@ for (const day of Object.values(DAYS)) {
       await expect(home.showWorking).toHaveAttribute("aria-expanded", "false");
 
       // The board names the day it shows, and draws as many sets as its heading counts. Round 37 (AO1): the grid is
-      // behind one closed disclosure whose summary counts what it shows; a press opens it.
+      // behind one disclosure whose summary counts what it shows. Round 39 (W2, D13): it arrives open from 1280 px (the
+      // desktop project's 1440) with the grid shown, and closed on a phone, where a press opens it.
       await expect(home.page.getByText(`Published timetable · ${day.title}`)).toBeVisible();
       const [, stages, sets] = /(\d+) stages, (\d+) sets/.exec(await home.boardTitle()) ?? [];
       expect(Number(stages), "stages in the heading").toBeGreaterThanOrEqual(2);
-      expect(await home.boardOpen(), "the board's disclosure is closed on arrival").toBe(false);
+      expect(await home.boardOpen(), isPhone ? "the board's disclosure is closed on arrival on a phone" : "the board's disclosure is open on arrival at 1440").toBe(!isPhone);
+      if (isPhone) await expect(home.board).toBeHidden();
+      else await expect(home.board).toBeVisible();
       await expect(home.boardFoldSummary).toHaveText(`Show ${sets} sets on ${stages} stages`);
       await home.openBoard();
       await expect(home.board.getByRole("button")).toHaveCount(Number(sets));
@@ -99,14 +102,17 @@ test.describe("home page length", () => {
   /**
    * The home length budget (round 33, R2: 6,800 px at 1440 px in the light theme, 11,800 px at 390 px in the dark).
    * Round 37 (AO1, L30): with the board's grid behind its closed disclosure the ceilings fall to 6,400 and 10,900 px
-   * (NEXT.md 5.4), measured with every disclosure closed, as the page arrives.
+   * (NEXT.md 5.4), measured with every disclosure closed. Round 39 (W2, D13; condition 2): from 1280 px the board
+   * arrives open, so at 1440 the 6,400 px ceiling is the closed state's, measured after a visitor's press closes the
+   * board, and the page as it arrives (only the board open) has its own ceiling below. 390 dark is unchanged: the
+   * board arrives closed there.
    */
   const BUDGET = {
     desktop: { width: 1440, theme: "light", ceiling: 6_400 },
     phone: { width: 390, theme: "dark", ceiling: 10_900 },
   } as const;
 
-  test("the home page is at most 6,400 px tall at 1440 px light, and at most 10,900 px at 390 px dark", async ({ page, isPhone }) => {
+  test("the home page is at most 6,400 px tall at 1440 px light once a visitor closes the board, and at most 10,900 px at 390 px dark", async ({ page, isPhone }) => {
     const budget = isPhone ? BUDGET.phone : BUDGET.desktop;
     expect(page.viewportSize()?.width, "measured at the budget's width").toBe(budget.width);
     await page.addInitScript((theme) => localStorage.setItem("theme", theme), budget.theme);
@@ -114,6 +120,8 @@ test.describe("home page length", () => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
     expect(await home.chrome.appliedTheme(), "measured in the budget's theme").toBe(budget.theme);
+    // At 1440 the board arrives open; a visitor's press closes it (round 39, W2). On a phone it arrives closed.
+    if (!isPhone) await home.closeBoard();
     await scrollThrough(page);
     expect(await page.evaluate(() => [...document.querySelectorAll("details")].filter((details) => details.open).length), "every disclosure closed").toBe(0);
 
@@ -121,6 +129,32 @@ test.describe("home page length", () => {
     const label = `home height at ${budget.width} ${budget.theme}`;
     test.info().annotations.push({ type: label, description: `${height} px` });
     expect(height, `${label}: ${height} px`).toBeLessThanOrEqual(budget.ceiling);
+  });
+
+  /**
+   * Round 39 (W2, D13; condition 2): the home as it arrives at 1440 light, with the board open and every other
+   * disclosure closed. The ceiling is the merged tree's measured height plus 50 px: 7,148 px on Glastonbury, the
+   * published default, at 1440 x 900 light (round 39 verify pass, on the build of the merged tree; Riot Fest 6,592).
+   * Round 37's AO1 is reversed in part at 1280 px and wider for D13 (the empty 589 px block beside the clash list at
+   * 1440); the closed state keeps its 6,400 px ceiling above.
+   */
+  const ARRIVAL_CEILING = 7_198;
+
+  test("on arrival at 1440 px light, with only the board's disclosure open, the home page is at most 7,198 px tall (round 39, D13)", async ({ page, isPhone }) => {
+    test.skip(isPhone, "The board arrives open from 1280 px; on a phone it arrives closed and the 10,900 px ceiling holds.");
+    expect(page.viewportSize()?.width, "measured at 1440").toBe(1440);
+    await page.addInitScript(() => localStorage.setItem("theme", "light"));
+    await page.emulateMedia({ colorScheme: "light" });
+    const home = new HomePage(page);
+    await home.goto(DAYS.glastonbury.id);
+    expect(await home.chrome.appliedTheme(), "measured in the light theme").toBe("light");
+    await scrollThrough(page);
+    const open = await page.evaluate(() => [...document.querySelectorAll("details")].filter((details) => details.open).map((details) => details.hasAttribute("data-board-fold")));
+    expect(open, "only the board's disclosure is open, as the page arrives").toEqual([true]);
+
+    const height = await page.evaluate(() => document.documentElement.scrollHeight);
+    test.info().annotations.push({ type: "home height at 1440 light on arrival", description: `${height} px` });
+    expect(height, `home height at 1440 light on arrival: ${height} px`).toBeLessThanOrEqual(ARRIVAL_CEILING);
   });
 });
 

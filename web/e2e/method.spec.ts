@@ -393,8 +393,16 @@ test.describe("how we know (/method)", () => {
     await expect(intro).toBeVisible();
     await expect(intro).toContainText("Nobody was asked anything.");
     await expect(intro).toContainText("It counts pages, not people");
-    await expect(asked.locator("[data-evidence-claims] > li")).toHaveCount(3);
+    const claims = asked.locator("[data-evidence-claims] > li");
+    await expect(claims).toHaveCount(3);
     await expect(asked.locator("[data-evidence-claims]")).toBeVisible();
+    // Round 39 (W8): claim 1 counts pairs once per festival and year, never as distinct pairs; claim 2 counts accounts
+    // of programming practice, says one is second-hand, and says what none of them describes.
+    await expect(claims.nth(0)).toContainText("pairs of acts when counted separately for each festival and year");
+    await expect(claims.nth(0)).not.toContainText("distinct pairs");
+    await expect(claims.nth(1)).toHaveText(
+      "In 21 public accounts of programming practice that we read, including one second-hand account, 10 describe attempts to avoid or limit clashes or give attendees time to move between stages. None describes ranking pairs of acts by audience closeness before times are published.",
+    );
     // The questions: twelve closed disclosures, each opening to what the pages show, how it helps, where it does not.
     const questions = asked.locator("[data-evidence-questions] details");
     await expect(questions).toHaveCount(12);
@@ -412,6 +420,8 @@ test.describe("how we know (/method)", () => {
     await expect(sources).toHaveJSProperty("open", false);
     await sources.locator("summary").click();
     await expect(sources.getByRole("link")).toHaveCount(113);
+    // The accounts are counted in one unit, the group's title the claim's own (round 39, W8).
+    await expect(sources).toContainText("Accounts of programming practice (21)");
     await expect(sources.getByRole("link").first()).toHaveAttribute("target", "_blank");
     await expect(asked).not.toContainText(/survey|poll|people we asked|respondents/i);
   });
@@ -433,6 +443,12 @@ test.describe("how we know (/method)", () => {
       await expect(machine.nth(i)).toContainText("Machine time on production");
       await expect(machine.nth(i)).toHaveText(/: \d\.\d s\.$/);
     }
+    // The steps the timing script measured, by the names a visitor sees (round 39, W8: the print step opens the
+    // printable brief; nothing is printed).
+    for (const [i, step] of ["Load the day", "Open the costliest clash", "Show the tested move", "Keep this move", "Open the printable brief"].entries()) {
+      await expect(machine.nth(i)).toHaveText(new RegExp(`^${step}\\. Machine time on production: \\d\\.\\d s\\.$`));
+    }
+    await expect(timing).not.toContainText("Print the brief");
     await expect(timing).toContainText("the median of 10 warm runs");
     await expect(timing).not.toContainText("measured on production during the final demo recording");
     await expect(timing.locator("[data-timing-note]")).toContainText("never set against the estimate");

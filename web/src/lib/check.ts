@@ -11,9 +11,11 @@
  *   no such line, the first line's, as it always was. A grid that reads with no skipped line reads exactly as it
  *   did under the first-line rule alone: a header keeps its own separator, and a grid without one has four or
  *   more fields on every line by that separator, which no other separator can beat;
- * - a title: the first non-blank line, when it is no header, holds no time (split on tab, comma and semicolon),
- *   has some text and does not have four or more fields with two or more filled, is not a row. It is read as a
- *   title, not checked and not a skipped line, and one note says so. Any other line that cannot be read as a
+ * - a title: the first non-blank line, when it is no header, holds no time (split on tab, comma and semicolon,
+ *   and no clock time such as 18:00 or 6pm among its words), has some text and does not have four or more fields
+ *   with two or more filled, is not a row. It is read as a
+ *   title, not checked and not a skipped line, and one note says so. The same line with a clock time among its
+ *   words is a line fault, and a header under it is still read. Any other line that cannot be read as a
  *   row is a line fault, as before, so a title never hides a row;
  * - two kinds of failure. A fault of the whole input (empty, too big, an unreadable character, a header
  *   that does not read, more than one day, no readable set, over a limit, any settings problem) stops the
@@ -379,6 +381,34 @@ function readsAsTime(value: string): boolean {
   return sides !== null && sides.every((side) => readClock(side, true) !== null);
 }
 
+/** "pm", "p.m." or "AM": the word a 12-hour time may be written apart from its number with ("6 pm"). */
+const MERIDIEM = /^[ap]\.?m\.?$/i;
+
+/**
+ * Whether a piece of text holds a clock time among its words: "Doors 18:00", "Katy J Pearson 14:00-15:00",
+ * "gates 6 pm". Only a time written with a colon, a point, an "h" or am/pm counts here. A bare number such as
+ * 2026 is a year as often as a time, so inside text it is not read as one (a whole cell of 1830 still is).
+ */
+function holdsClock(text: string): boolean {
+  const words = text
+    .split(/\s+/)
+    .map((word) => word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
+    .filter((word) => word !== "");
+  const clock = (value: string) => {
+    const read = readClock(value);
+    return read !== null && (!read.twelveHour || /m\.?$/i.test(value));
+  };
+  return words.some((word, at) => {
+    const next = words[at + 1];
+    if (next !== undefined && /^\d{1,2}(?:[:.][0-5]\d)?$/.test(word) && MERIDIEM.test(next) && clock(`${word} ${next}`)) {
+      return true;
+    }
+    if (clock(word)) return true;
+    const sides = rangeSides(word);
+    return sides !== null && sides.every(clock);
+  });
+}
+
 /** A pasted value as a skip message quotes it: trimmed, at most 30 characters, in straight quotes. */
 function quoted(value: string): string {
   return `"${clip(tidy(value), 30)}"`;
@@ -410,8 +440,9 @@ const ROW_FIELDS = 4;
 /**
  * The delimiter of the paste, decided in this order:
  * (a) the first non-blank line's own, when that line reads as a header under it;
- * (b) when the first non-blank line is a title (no header, no time, not a row) and the next non-blank line
- *     reads as a header under its own, that header's: a title over `act;stage;time` reads by semicolons;
+ * (b) when the first non-blank line is shaped like a title (no header, no time cell, not a row: `firstLineKind`,
+ *     a title or a line set aside) and the next non-blank line reads as a header under its own, that header's: a
+ *     title over `act;stage;time` reads by semicolons;
  * (c) the separator by which the most non-blank lines split (quotes respected) into four or more fields, when one
  *     separator has strictly more than each other; a tie, or no such line, falls to
  * (d) the first non-blank line's own (`firstLineDelimiter`), the rule before titles were read.
@@ -424,7 +455,7 @@ export function gridDelimiter(lines: readonly string[]): string {
   const own = firstLineDelimiter(first);
   const firstSplit = splitLine(first, own);
   if (firstSplit.ok && readsAsHeader(firstSplit.fields)) return own;
-  if (firstSplit.ok && readsAsTitle(first, firstSplit.fields) && filled.length > 1) {
+  if (firstSplit.ok && firstLineKind(first, firstSplit.fields) !== null && filled.length > 1) {
     const next = filled[1];
     const nextOwn = firstLineDelimiter(next);
     const nextSplit = splitLine(next, nextOwn);
@@ -559,18 +590,33 @@ function readsAsHeader(fields: readonly string[]): boolean {
 }
 
 /**
- * Whether a first line (already split into `fields`) is a title rather than a row: it is no header, it holds some
- * text, and it does not have four or more fields in all with two or more of them filled (a row with a bad or blank
- * cell, "A,Main,,bad", stays a line fault); and no part of it, however the line is cut by tab, comma or semicolon
- * and with or without its quotes, reads as a time. "Saturday\t\t\t" (one filled field) and "Saturday, 4 July" (two
- * fields) are titles; "Sunday,18:00" and "A,Main,xx,yy" are not.
+ * How a first line (already split into `fields`) that cannot be a row reads. It is shaped like a title when it is
+ * no header, it holds some text, it does not have four or more fields in all with two or more of them filled (a row
+ * with a bad or blank cell, "A,Main,,bad", stays a line fault), and no part of it, however the line is cut by tab,
+ * comma or semicolon and with or without its quotes, reads as a time. Then:
+ * - "title" when no clock time stands among its words either (`holdsClock`), so the title note's "no times found"
+ *   is true of every line it names: "Saturday\t\t\t" (one filled field), "Saturday, 4 July" (two fields),
+ *   "Glastonbury 2026";
+ * - "aside" when one does ("Doors 18:00", or a row pasted without its separators, "Katy J Pearson 14:00-15:00"):
+ *   a line fault like any other, listed and not checked, but a header on the next line is still read as the
+ *   header, as it is under a title.
+ * Null for every other line ("Sunday,18:00", "A,Main,xx,yy"): read as a row, or as a header.
  */
-function readsAsTitle(line: string, fields: readonly string[]): boolean {
-  if (readsAsHeader(fields)) return false;
+function firstLineKind(line: string, fields: readonly string[]): "title" | "aside" | null {
+  if (readsAsHeader(fields)) return null;
   const filled = fields.filter((field) => field.trim() !== "").length;
-  if (filled === 0 || (fields.length >= ROW_FIELDS && filled >= 2)) return false;
+  if (filled === 0 || (fields.length >= ROW_FIELDS && filled >= 2)) return null;
   const parts = [...fields, ...line.split(/[\t,;]/)].map((part) => part.trim().replace(/^"+|"+$/g, "").trim());
-  return !parts.some(readsAsTime);
+  if (parts.some(readsAsTime)) return null;
+  return parts.some(holdsClock) ? "aside" : "title";
+}
+
+/**
+ * The one note a title line gets, above "Read n sets on m stages" on screen and on the printed draft:
+ * `Skipped line 1 ("Glastonbury Sunday"): no times found, so it was read as a title.`
+ */
+export function titleNote(title: GridTitle): string {
+  return `Skipped line ${title.line} (${quoted(title.text)}): no times found, so it was read as a title.`;
 }
 
 /**
@@ -724,15 +770,17 @@ export function parseGrid(raw: string): GridResult {
       return;
     }
     const fields = split.fields;
-    if (first && readsAsTitle(line, fields)) {
+    const kind = first ? firstLineKind(line, fields) : null;
+    if (kind === "title") {
       // No header, no time and not a row: a title. It is left out of every rule and every list of skipped lines,
       // and said once, so the grid under it is never read as the whole paste.
-      const shown = clip(tidy(line));
-      title = { line: row, text: shown };
-      notes.push(`Skipped line ${row} (${quoted(shown)}): no times found, so it was read as a title.`);
+      title = { line: row, text: clip(tidy(line)) };
+      notes.push(titleNote(title));
       return;
     }
-    if (!headerChecked) {
+    // A first line set aside for a clock time among its words is read as a row below, where it faults (it has
+    // fewer than four filled fields); the header test waits for the next line, as it does under a title.
+    if (!headerChecked && kind !== "aside") {
       headerChecked = true;
       // A first line with no time in it, two or more of whose cells name a column, is a header.
       const naming = headerNaming(fields);

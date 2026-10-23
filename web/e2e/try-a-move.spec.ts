@@ -308,6 +308,9 @@ test.describe("try a move", () => {
     const move = new TryAMove(page);
     await home.goto(DAYS.glastonbury.id);
 
+    // Round 39 (W2): from 1280 px the board arrives open, so a visitor's press closes it first; on a phone it arrives
+    // closed. A tested place then opens it, whichever way it was left.
+    await home.closeBoard();
     expect(await home.boardOpen(), "closed before the pick").toBe(false);
     await move.starter("Sprints").click();
     await expect(home.boardFold).toHaveAttribute("open", "");

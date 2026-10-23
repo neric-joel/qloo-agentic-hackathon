@@ -2410,7 +2410,11 @@ describe("round 39 W1: a title line above the pasted grid", () => {
     expect(html).not.toContain("data-skipped");
     expect(html).not.toContain("line skipped and not checked");
     expect(html).toContain("Read 3 sets on 2 stages.");
-    expect(html.split('Skipped line 1 ("Glastonbury Sunday"): no times found, so it was read as a title.').length - 1).toBe(1);
+    // Once on screen, and once more in the printed draft's paper-only line (fix pass: paper says it too).
+    const note = 'Skipped line 1 ("Glastonbury Sunday"): no times found, so it was read as a title.';
+    expect(html.split(note).length - 1).toBe(2);
+    expect(html.match(/<p data-brief-title-note="" class="[^"]*\bhidden\b[^"]*\bprint:block\b[^"]*">([^<]*)<\/p>/)?.[1]).toBe(note);
+    expect(html.replace(/<p data-brief-title-note=""[^>]*>[^<]*<\/p>/, "").split(note).length - 1).toBe(1);
     // The note comes before the read line, and the no-breaks line is the counted one, never the bare sentence.
     expect(html.indexOf("no times found, so it was read as a title.")).toBeLessThan(html.indexOf("Read 3 sets on 2 stages."));
     expect(html).toContain("No rule breaks found among the 3 sets checked, against the settings above.");

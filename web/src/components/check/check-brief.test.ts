@@ -381,3 +381,35 @@ describe("round 37: the printed draft lists its overlaps and names its skipped l
     expect(html).not.toContain("data-brief-skipped-lines");
   });
 });
+
+// Round 39 fix pass: a title line the check left out is said on paper too, word for word as the screen's note,
+// beside the counted no-breaks sentence; a grid with no title prints no such line.
+describe("round 39: the printed draft says a title line was left out", () => {
+  const NOTE = 'Skipped line 1 ("Glastonbury Sunday"): no times found, so it was read as a title.';
+  const titled = runCheck({
+    grid: "Glastonbury Sunday\nSprints\tWoodsies\t14:00\t14:45\nKaty J Pearson\tThe Park\t14:00\t15:00\nJoy Crookes\tWoodsies\t15:00\t16:00",
+    changeover: "",
+    curfew: "",
+    pairs: "",
+  });
+  if (!titled.ok) throw new Error("refused");
+
+  it("prints the title note, on paper only, with the counted no-breaks sentence", () => {
+    const html = renderToStaticMarkup(createElement(CheckBrief, { report: titled.report, applied: [], decisions: [], price: null }));
+    const page = text(html).replace(/&quot;/g, '"');
+    expect(page.split(NOTE)).toHaveLength(2);
+    expect(page).toContain("Read 3 sets on 2 stages.");
+    expect(page).toContain("No rule breaks found among the 3 sets checked, against the settings above.");
+    expect(page.indexOf(NOTE)).toBeLessThan(page.indexOf("Read 3 sets on 2 stages."));
+    const opening = html.match(/<p data-brief-title-note="" class="([^"]*)"/)?.[1] ?? "";
+    expect(opening.split(" ")).toEqual(expect.arrayContaining(["hidden", "print:block"]));
+  });
+
+  it("prints no title note when the grid has no title", () => {
+    const plain = runCheck({ grid: "A,Main,18:00,19:00\nB,Side,19:30,20:30", changeover: "", curfew: "", pairs: "" });
+    if (!plain.ok) throw new Error("refused");
+    const html = renderToStaticMarkup(createElement(CheckBrief, { report: plain.report, applied: [], decisions: [], price: null }));
+    expect(html).not.toContain("data-brief-title-note");
+    expect(text(html)).not.toContain("read as a title");
+  });
+});

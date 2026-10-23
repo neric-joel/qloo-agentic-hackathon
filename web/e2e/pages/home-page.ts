@@ -66,14 +66,16 @@ export class HomePage {
   // The board.
   readonly boardHeading: Locator;
   /**
-   * Round 37 (AO1): the board's grid sits in one disclosure, closed on arrival, whose summary says what it shows
-   * ("Show 39 sets on 5 stages"). The legend, the coverage line, the caption and the clash list stay outside it.
+   * Round 37 (AO1): the board's grid sits in one disclosure whose summary says what it shows ("Show 39 sets on 5
+   * stages"). The legend, the coverage line, the caption and the clash list stay outside it. Round 39 (W2, D13): the
+   * interactive board's disclosure arrives open from 1280 px wide and closed below (the server's frame is closed at
+   * every width); after that only a visitor's press, or a preview of their own, changes it.
    */
   readonly boardFold: Locator;
   readonly boardFoldSummary: Locator;
   /** The caption under the coverage row, read with no click: "Lines join the 10 costliest clashes. Board numbers ...". */
   readonly boardCaption: Locator;
-  /** The grid itself, inside the fold: shown only once the fold is open (`openBoard`). */
+  /** The grid itself, inside the fold: shown only while the fold is open (on arrival from 1280 px, or `openBoard`). */
   readonly board: Locator;
   readonly costliest: Locator;
   readonly clashLinks: Locator;
@@ -184,8 +186,9 @@ export class HomePage {
   async waitUntilReady(): Promise<void> {
     await expect(this.heading).toBeVisible({ timeout: READY_TIMEOUT });
     await expect(this.boardHeading).toBeVisible({ timeout: READY_TIMEOUT });
-    // Round 37: the grid is behind the board's closed disclosure, so readiness is the interactive board's caption
-    // (the server's frame draws the fold over a skeleton and no caption) and its one fold, closed.
+    // Round 37: the grid is behind the board's disclosure, so readiness is the interactive board's caption (the
+    // server's frame draws the fold over a skeleton and no caption) and its one fold: open from 1280 px (round 39, W2),
+    // closed below.
     await expect(this.boardCaption).toBeVisible({ timeout: READY_TIMEOUT });
     await expect(this.boardFold).toHaveCount(1, { timeout: READY_TIMEOUT });
     await expect(this.group).toBeVisible({ timeout: READY_TIMEOUT });
@@ -244,13 +247,26 @@ export class HomePage {
 
   /**
    * Opens the board's disclosure as a visitor does, by pressing its summary, unless it is open, and waits until the
-   * grid shows. Every spec that reads the board's tiles, badges or grid calls this first (round 37, AO1).
+   * grid shows. Every spec that reads the board's tiles, badges or grid calls this first (round 37, AO1). From 1280 px
+   * the board arrives open (round 39, W2), so there it presses nothing.
    */
   async openBoard(): Promise<void> {
     await expect(this.boardCaption).toBeVisible({ timeout: READY_TIMEOUT });
     if (!(await this.boardOpen())) await this.boardFoldSummary.click();
     await expect(this.boardFold).toHaveAttribute("open", "");
     await expect(this.board).toBeVisible({ timeout: READY_TIMEOUT });
+  }
+
+  /**
+   * Closes the board's disclosure as a visitor does, by pressing its summary, unless it is closed, and waits until the
+   * grid is hidden. A spec that needs the closed board at 1280 px or wider (where it arrives open, round 39, W2) calls
+   * this first: the press is the visitor's, so nothing reopens the board but another press or a preview.
+   */
+  async closeBoard(): Promise<void> {
+    await expect(this.boardCaption).toBeVisible({ timeout: READY_TIMEOUT });
+    if (await this.boardOpen()) await this.boardFoldSummary.click();
+    await expect(this.boardFold).not.toHaveAttribute("open", "");
+    await expect(this.board).toBeHidden();
   }
 
   /** Opens the "Keep two sets apart" disclosure as a visitor does, by pressing its summary, unless it is open. */

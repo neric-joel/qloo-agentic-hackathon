@@ -12,7 +12,7 @@ import { TryAMove } from "./pages/try-a-move";
  */
 
 test.describe("invented example day", () => {
-  test("loads, and says on the page that it is invented", async ({ page }) => {
+  test("loads, and says on the page that it is invented", async ({ page, isPhone }) => {
     const day = await serveInventedDay(page);
     const home = new HomePage(page);
     await home.goto();
@@ -46,10 +46,16 @@ test.describe("invented example day", () => {
     await expect(home.graphKey).toContainText("thicker means a higher invented taste overlap rank");
     await expect(home.graphKey).toContainText("Dashed: slot before the move or new overlap.");
 
-    // The index scale reads the same on the invented day; "draw" is glossed as invented popularity, and the card (with,
-    // from 1024 px, its lines beside it) names no saved Qloo reading.
+    // The index scale reads the same on the invented day (round 39, W5: what above 100 means follows the scale); "draw"
+    // is glossed as invented popularity, and the card (with, from 1024 px, its lines beside it) names no saved Qloo
+    // reading.
     await expect(home.indexCard).toContainText(HONESTY.reading);
-    await expect(home.indexCard).toContainText("A score, not money: 100 = the average random valid timetable of this lineup. Lower is better.");
+    await expect(home.indexCard).toContainText("A score, not money: 100 = the average random valid timetable of this lineup. Above 100: costlier.");
+    // Round 39 (W6): the desktop note says what a move keeps on the invented day, with its invented hours, curfew and
+    // locks, and credits no Qloo; a phone draws no note.
+    const note = home.hero.locator("[data-hero-note]");
+    if (isPhone) await expect(note).toBeHidden();
+    else await expect(note).toHaveText("Moves keep the invented day’s stage hours, curfew, changeovers and locks; a clash can be kept on purpose.");
     await expect(home.indexCard).not.toContainText("Qloo popularity");
     await expect(home.indexBeside).not.toContainText(/Qloo popularity|saved Qloo reading/i);
     await home.showWorking.click();

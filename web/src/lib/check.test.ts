@@ -21,6 +21,7 @@ import {
   skippedMessages,
   skippedSentence,
   suggestName,
+  titleNote,
   type CheckInput,
   type CheckReport,
 } from "@/lib/check";
@@ -1273,6 +1274,79 @@ describe("round 39 W1: a title line above the grid", () => {
       expect(row.report.skipped?.map((item) => item.line)).toEqual([1]);
     }
     expect(skippedOf(report("A,Main,xx,yy\nB,Side,18:30,19:30"))[0]).toMatch(/^Line 1 \(A\): the start time "xx" is not a time/);
+  });
+
+  // Fix pass: "no times found" must be true of every line the note names. A clock time among a line's words keeps it
+  // a line fault (listed, partial notice), so a row pasted without its separators is never dropped as a title.
+  it("keeps a line with a clock time among its words as a line fault, so the note's “no times found” is true", () => {
+    const firsts = [
+      "Doors 18:00",
+      "Katy J Pearson 14:00-15:00",
+      "Katy J Pearson The Park 14:00 - 15:00",
+      "Gates open 6 pm",
+      "Gates 6.30p.m.",
+      "Doors (18h30)",
+      "Sunday, doors 18:00",
+      "Late set 6pm-7pm",
+    ];
+    for (const first of firsts) {
+      const comma = runCheck(input(`${first}\nA,Main,18:00,19:00\nB,Side,18:30,19:30`));
+      if (!comma.ok) throw new Error(`${first}: ${comma.errors.join(" | ")}`);
+      expect(comma.report.title, first).toBeUndefined();
+      expect(comma.report.notes.filter((n) => n.includes("read as a title")), first).toEqual([]);
+      expect(comma.report.skipped?.map((item) => item.line), first).toEqual([1]);
+      expect(comma.report.sets.map((s) => s.act), first).toEqual(["A", "B"]);
+      expect(skippedSentence(comma.report.skipped ?? [], comma.report.sets.length), first).toBe(
+        "1 line skipped and not checked: line 1. The other 2 sets were checked.",
+      );
+      expect(noBreaksLine(comma.report), first).toBe("No rule breaks found among the 2 sets checked, against the settings above.");
+      // Over tab rows the same: line 1 is listed, the three rows are read.
+      const tab = runCheck(input(`${first}\n${TAB_ROWS}`));
+      if (!tab.ok) throw new Error(`${first}: ${tab.errors.join(" | ")}`);
+      expect(tab.report.title, first).toBeUndefined();
+      expect(tab.report.skipped?.map((item) => item.line), first).toEqual([1]);
+      expect(tab.report.sets, first).toHaveLength(3);
+    }
+    expect(skippedOf(report("Doors 18:00\nA,Main,18:00,19:00\nB,Side,18:30,19:30"))).toEqual([
+      "Line 1: expected act, stage, start, end (and locked), but found 1 field.",
+    ]);
+    // A header under such a line is still read as the header, as it is under a title: its own separator and order.
+    const headed = report("Doors 18:00\nstage\tact\tend\tstart\nMain\tA\t19:00\t18:00\nSide\tB\t19:30\t18:30");
+    expect(headed.title).toBeUndefined();
+    expect(headed.sets.map((s) => [s.row, s.act, s.stage, s.start, s.end])).toEqual([
+      [3, "A", "Main", 1080, 1140],
+      [4, "B", "Side", 1110, 1170],
+    ]);
+    expect(skippedOf(headed)).toEqual(["Line 1: expected act, stage, start, end (and locked), but found 1 field."]);
+    const range = report("Gates 6 pm\nact;stage;time\nA;Main;18:00-19:00\nB;Side;18:30-19:30");
+    expect(range.sets.map((s) => [s.row, s.act, s.start, s.end])).toEqual([
+      [3, "A", 1080, 1140],
+      [4, "B", 1110, 1170],
+    ]);
+    expect(range.skipped?.map((item) => item.line)).toEqual([1]);
+  });
+
+  it("still reads a title with a year, a date or a bare number in it, which are not clock times", () => {
+    for (const first of ["Glastonbury 2026", "Riot Fest 2026 Sunday", "Saturday 4 July", "Stage 2a running order", "Season 2025-2026"]) {
+      const r = report(`${first}\n${TAB_ROWS}`);
+      expect(r.title, first).toEqual({ line: 1, text: first });
+      expect(r.notes, first).toEqual([note(1, first)]);
+      expect(r.skipped ?? [], first).toEqual([]);
+      expect(r.sets, first).toHaveLength(3);
+    }
+    // A title over a header of ranges still reads by the header's separator when the title has a year.
+    const range = report("Glastonbury 2026\nact;stage;time\nA;Main;18:00-19:00\nB;Side;18:30-19:30");
+    expect(range.title).toEqual({ line: 1, text: "Glastonbury 2026" });
+    expect(range.sets).toHaveLength(2);
+  });
+
+  it("builds the title note from the title, as the screen and the printed draft show it", () => {
+    expect(titleNote({ line: 1, text: "Glastonbury Sunday" })).toBe(note(1, "Glastonbury Sunday"));
+    expect(titleNote({ line: 3, text: "The Very Long Title Of A Festival Day Programme" })).toBe(
+      'Skipped line 3 ("The Very Long Title Of A Festi…"): no times found, so it was read as a title.',
+    );
+    const r = report(`Glastonbury Sunday\n${TAB_ROWS}`);
+    expect(r.notes).toEqual([titleNote(r.title!)]);
   });
 
   it("runs the header test on the line after a title, and reads the rows with that header's layout", () => {

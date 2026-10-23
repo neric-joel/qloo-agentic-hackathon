@@ -927,46 +927,61 @@ test.describe("the day graph", () => {
     }
   });
 
-  test("the hero says what it needs in at most 166 visible words at 1440 and 144 at 390", async ({ page, isPhone }) => {
-    const home = new HomePage(page);
-    await home.goto(DAYS.glastonbury.id);
+  /**
+   * The hero's word budget by day. Round 35 (R1): the lede gained the frame, so the budget moved from 120 and 117 to 125
+   * and 122. Round 37 (AO2, NEXT.md 5.4): the desktop note (why this move, two sets, near 100) and the key's lock and
+   * dotted words move it to the count measured after the build, 160 at 1440 and 131 at 390, inside the decided caps of
+   * 170 and 131. Round 38 (22 Oct 2026, owner-approved judge ask, lane H): the hero's three-rung ladder (CHARTER section
+   * 8, caps 175 and 145) moves it to the count measured after the build, 173 at 1440 and 144 at 390. Round 38 reconcile:
+   * from 1280 px the ladder is one line in the left column (CHARTER section 8 now caps 1440 at 168), measured 166 at
+   * 1440. Round 39 (condition 4: never above 166 and 144): the W6 note (20 words for the old note's 26) and the ladder's
+   * "in this app’s index" (+4) at 1440, and taste's sentence leaving the ladder (-7) with the same +4 at 390, measured 164
+   * at 1440 and 141 at 390 on the published default (Glastonbury). Riot Fest is pinned too, at its count measured on the
+   * same build (174 and 149: its key adds the 8-word "plus the overlap the move ends (not ranked)", a caveat), so it
+   * cannot grow unseen; the charter's caps are stated on the published default.
+   */
+  const HERO_WORDS = {
+    [DAYS.glastonbury.id]: { desktop: 164, phone: 141 },
+    [DAYS.riot.id]: { desktop: 174, phone: 149 },
+  } as const;
 
-    // Counted as DECISION.md 4.3 says: visible text in the hero that holds a letter, not screen-reader text; inside
-    // the drawing only its tags count (act names, stage names and clock times are the drawing itself); numerals
-    // are not words; the picker's and the toggle's group names are accessible names, not visible text.
-    const counted = await page.locator("[data-hero]").evaluate((hero) => {
-      const shown = (element: Element | null): boolean => {
-        for (let node = element; node && node !== hero.parentElement; node = node.parentElement) {
-          const style = getComputedStyle(node);
-          if (style.display === "none" || style.visibility === "hidden") return false;
-          const box = node.getBoundingClientRect();
-          if (box.width <= 1 && box.height <= 1) return false;
+  for (const day of Object.values(DAYS)) {
+    test(`on ${day.title}, the hero says what it needs in at most ${HERO_WORDS[day.id].desktop} visible words at 1440 and ${HERO_WORDS[day.id].phone} at 390`, async ({ page, isPhone }) => {
+      const home = new HomePage(page);
+      await home.goto(day.id);
+
+      // Counted as DECISION.md 4.3 says: visible text in the hero that holds a letter, not screen-reader text; inside
+      // the drawing only its tags count (act names, stage names and clock times are the drawing itself); numerals
+      // are not words; the picker's and the toggle's group names are accessible names, not visible text.
+      const counted = await page.locator("[data-hero]").evaluate((hero) => {
+        const shown = (element: Element | null): boolean => {
+          for (let node = element; node && node !== hero.parentElement; node = node.parentElement) {
+            const style = getComputedStyle(node);
+            if (style.display === "none" || style.visibility === "hidden") return false;
+            const box = node.getBoundingClientRect();
+            if (box.width <= 1 && box.height <= 1) return false;
+          }
+          return true;
+        };
+        const walker = document.createTreeWalker(hero, NodeFilter.SHOW_TEXT);
+        const words: string[] = [];
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const parent = node.parentElement;
+          if (!parent || !node.textContent?.trim() || !shown(parent)) continue;
+          if (parent.closest("[data-day-graph]") && !parent.closest("[data-shared-tag]")) continue;
+          words.push(...node.textContent.split(/\s+/).filter((token) => /\p{L}/u.test(token)));
         }
-        return true;
-      };
-      const walker = document.createTreeWalker(hero, NodeFilter.SHOW_TEXT);
-      const words: string[] = [];
-      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-        const parent = node.parentElement;
-        if (!parent || !node.textContent?.trim() || !shown(parent)) continue;
-        if (parent.closest("[data-day-graph]") && !parent.closest("[data-shared-tag]")) continue;
-        words.push(...node.textContent.split(/\s+/).filter((token) => /\p{L}/u.test(token)));
-      }
-      return words;
+        return words;
+      });
+      // The budget and its history: HERO_WORDS above.
+      const budget = isPhone ? HERO_WORDS[day.id].phone : HERO_WORDS[day.id].desktop;
+      test.info().annotations.push({ type: `hero words on ${day.title} at ${isPhone ? 390 : 1440}`, description: String(counted.length) });
+      expect(counted.length, `visible hero words: ${counted.join(" ")}`).toBeLessThanOrEqual(budget);
+      // The guarded lines are never trimmed to fit.
+      await expect(home.tasteLine).toContainText("(a rank, not attendance)");
+      await expect(home.attribution).toHaveText("Selected and scored by this app’s index. A reading, not a verdict.");
     });
-    // Round 35 (R1): the lede gained the frame, so the budget moved from 120 and 117 to 125 and 122. Round 37 (AO2,
-    // NEXT.md 5.4): the desktop note (why this move, two sets, near 100) and the key's lock and dotted words move it to
-    // the count measured after the build, 160 at 1440 and 131 at 390, inside the decided caps of 170 and 131. Round 38
-    // (22 Oct 2026, owner-approved judge ask, lane H): the hero's three-rung ladder (CHARTER section 8, caps 175 and
-    // 145) moves it to the count measured after the build, 173 at 1440 and 144 at 390. Round 38 reconcile: from 1280 px
-    // the ladder is one line in the left column (CHARTER section 8 now caps 1440 at 168), measured 166 at 1440.
-    const budget = isPhone ? 144 : 166;
-    test.info().annotations.push({ type: `hero words at ${isPhone ? 390 : 1440}`, description: String(counted.length) });
-    expect(counted.length, `visible hero words: ${counted.join(" ")}`).toBeLessThanOrEqual(budget);
-    // The guarded lines are never trimmed to fit.
-    await expect(home.tasteLine).toContainText("(a rank, not attendance)");
-    await expect(home.attribution).toHaveText("Selected and scored by this app’s index. A reading, not a verdict.");
-  });
+  }
 
   test.describe("with motion allowed", () => {
     test.use({ reducedMotion: "no-preference" });

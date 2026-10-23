@@ -270,13 +270,21 @@ test.describe("timetable board", () => {
   });
 
   for (const day of Object.values(DAYS)) {
-    test(`on ${day.title}, the board's grid is one closed disclosure whose summary counts what it opens, and the caption, coverage, key and clash list stay open (round 37, L29 and L30)`, async ({ page, isPhone }) => {
+    test(`on ${day.title}, the board's grid is one disclosure (open on arrival from 1280 px, closed on a phone) whose summary counts what it opens, and the caption, coverage, key and clash list stay open (round 37, L29 and L30; round 39, W2)`, async ({ page, isPhone }) => {
       const home = new HomePage(page);
       await home.goto(day.id);
 
-      // Closed on arrival, its summary a 44 px control with the chevron.
+      // Round 39 (W2, D13): open on arrival at 1440 with the grid shown, closed on a phone. At 1440 a visitor's press
+      // closes it, and the rest runs on the closed board as before. Its summary is a 44 px control with the chevron.
       await expect(home.boardFold).toHaveCount(1);
-      expect(await home.boardOpen(), "closed on arrival").toBe(false);
+      if (isPhone) {
+        expect(await home.boardOpen(), "closed on arrival on a phone").toBe(false);
+      } else {
+        expect(await home.boardOpen(), "open on arrival at 1440").toBe(true);
+        await expect(home.board).toBeVisible();
+        await home.boardFoldSummary.click();
+        expect(await home.boardOpen(), "closed by a press").toBe(false);
+      }
       await expect(home.board).toBeHidden();
       const summaryBox = await home.boardFoldSummary.boundingBox();
       expect(summaryBox?.height ?? 0, "the summary is a 44 px control").toBeGreaterThanOrEqual(44);
@@ -432,6 +440,9 @@ test.describe("the board's disclosure opens where the visitor is (round 37 merge
   test("a press on its summary opens the board under the summary, and the summary stays where it was pressed", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
+    // Round 39 (W2): from 1280 px the board arrives open, so a visitor's press closes it first; on a phone it arrives
+    // closed and nothing is pressed.
+    await home.closeBoard();
     await home.boardFoldSummary.evaluate((summary) => window.scrollTo(0, summary.getBoundingClientRect().top + window.scrollY - 300));
     const top = () => home.boardFoldSummary.evaluate((summary) => summary.getBoundingClientRect().top);
     const before = await top();
@@ -482,6 +493,9 @@ test.describe("the board's disclosure opens where the visitor is (round 37 merge
   test("a tested place from Try a move opens the board above the section without moving the picked row on screen", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
+    // Round 39 (W2): from 1280 px the board arrives open, so a visitor's press closes it first (the case this test
+    // holds: the fold closed while the visitor is at Try a move); on a phone it arrives closed.
+    await home.closeBoard();
     expect(await home.boardOpen()).toBe(false);
     await home.tryAMove.scrollIntoViewIfNeeded();
     const row = home.tryAMove.locator("button[data-start-row]").nth(1);
@@ -491,6 +505,229 @@ test.describe("the board's disclosure opens where the visitor is (round 37 merge
     await expect(home.boardFold).toHaveAttribute("open", "", { timeout: 15_000 });
     await expect(home.tryAMove.getByText("Best tested place", { exact: true }).first()).toBeAttached();
     await expect.poll(async () => Math.abs((await top()) - before), { message: "the picked row's top against where it was pressed" }).toBeLessThanOrEqual(2);
+  });
+});
+
+/**
+ * Round 39 (W2, D13): the board's disclosure arrives open on a screen 1280 px wide or more, and closed below. The width
+ * is read once, as the interactive board is first drawn, so after arrival only a press (or a preview of the visitor's
+ * own) changes it, and the next festival day is drawn the way this one was left. The server's frame knows no width, so
+ * its fold is closed; the arrival open starts no transition (reduced-motion.spec.ts holds first paint with motion
+ * allowed).
+ */
+test.describe("the board's disclosure on arrival (round 39, W2, D13)", () => {
+  test.beforeEach(async ({ page }) => requireSavedDays(page));
+
+  /** The board's rail (the score and the costliest clashes) against the fold: rail bottom minus fold bottom, in px. */
+  async function railPastFold(home: HomePage): Promise<number | null> {
+    return home.boardFold.evaluate((fold, list) => {
+      const rail = fold.parentElement?.parentElement?.children[0];
+      if (!rail || !list || !rail.contains(list)) return null;
+      return rail.getBoundingClientRect().bottom - fold.getBoundingClientRect().bottom;
+    }, await home.costliest.elementHandle());
+  }
+
+  type Sample = { t: number; open: boolean | null; interactive: boolean; grid: boolean };
+  type BoardStore = { start: number; until: number; done: boolean; samples: Sample[]; shift: number; tick: () => void };
+
+  /**
+   * Samples the board every 50 ms from DOMContentLoaded for 5 s, and at least 2 s past the interactive board's first
+   * sample (on a busy dev server it can come late): whether the visible fold is open, whether it is the interactive
+   * board's (its caption is drawn only there) and whether its grid is drawn. Also sums layout shift with no recent
+   * input over the first 5 s.
+   */
+  async function sampleBoard(page: Page): Promise<void> {
+    await page.addInitScript(() => {
+      const store = { start: 0, until: 5_000, done: false, samples: [] as Sample[], shift: 0, tick: () => {} };
+      (window as unknown as { __board: typeof store }).__board = store;
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries() as unknown as { value: number; hadRecentInput: boolean; startTime: number }[]) {
+          if (!entry.hadRecentInput && (store.start === 0 || entry.startTime - store.start <= 5_000)) store.shift += entry.value;
+        }
+      }).observe({ type: "layout-shift", buffered: true });
+      store.tick = () => {
+        const t = performance.now() - store.start;
+        const fold = [...document.querySelectorAll<HTMLDetailsElement>("details[data-board-fold]")].find((element) => element.getClientRects().length > 0);
+        const interactive = document.querySelector("[data-board-caption]") !== null;
+        if (interactive && !store.samples.some((sample) => sample.interactive)) store.until = Math.max(store.until, t + 2_000);
+        store.samples.push({
+          t,
+          open: fold ? fold.open : null,
+          interactive,
+          grid: [...document.querySelectorAll('[role="group"][aria-label$="timetable. Use the arrow keys to move between sets."]')].some((element) => element.getClientRects().length > 0),
+        });
+        if (t < Math.min(store.until, 20_000)) window.setTimeout(store.tick, 50);
+        else store.done = true;
+      };
+      document.addEventListener("DOMContentLoaded", () => {
+        store.start = performance.now();
+        store.tick();
+      });
+    });
+  }
+
+  /** Keeps the sampler running for at least `ms` more, and returns the time now, in ms after DOMContentLoaded. */
+  async function sampleFor(page: Page, ms: number): Promise<number> {
+    return page.evaluate((more) => {
+      const store = (window as unknown as { __board: BoardStore }).__board;
+      const now = performance.now() - store.start;
+      store.until = Math.max(store.until, now + more);
+      if (store.done) {
+        store.done = false;
+        store.tick();
+      }
+      return now;
+    }, ms);
+  }
+
+  async function readBoard(page: Page): Promise<BoardStore> {
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __board: BoardStore }).__board.done), { timeout: 30_000, message: "the board's samples" }).toBe(true);
+    return page.evaluate(() => {
+      const { start, until, done, samples, shift } = (window as unknown as { __board: BoardStore }).__board;
+      return { start, until, done, samples, shift, tick: () => {} };
+    });
+  }
+
+  /** The fold's open state every 50 ms for `ms`, from now (a festival-day switch is not a new load). */
+  function watchFold(page: Page, ms: number): Promise<(boolean | null)[]> {
+    return page.evaluate(
+      (span) =>
+        new Promise<(boolean | null)[]>((resolve) => {
+          const out: (boolean | null)[] = [];
+          const started = performance.now();
+          const id = window.setInterval(() => {
+            const fold = [...document.querySelectorAll<HTMLDetailsElement>("details[data-board-fold]")].find((element) => element.getClientRects().length > 0);
+            out.push(fold ? fold.open : null);
+            if (performance.now() - started >= span) {
+              window.clearInterval(id);
+              resolve(out);
+            }
+          }, 50);
+        }),
+      ms,
+    );
+  }
+
+  for (const day of Object.values(DAYS)) {
+    test(`on ${day.title}, open with no click at 1440 x 900 and 1280 x 800 with the grid shown and no empty block beside the rail, closed at 1279 x 800, 1024 x 768 and 390 x 844; a press closes and a second opens, or on a closed board opens it`, async ({ page, isPhone }) => {
+      const home = new HomePage(page);
+      const sizes = isPhone
+        ? [{ width: 390, height: 844, wide: false }]
+        : [
+            { width: 1440, height: 900, wide: true },
+            { width: 1280, height: 800, wide: true },
+            { width: 1279, height: 800, wide: false },
+            { width: 1024, height: 768, wide: false },
+          ];
+      for (const size of sizes) {
+        const at = `${size.width} x ${size.height}`;
+        await page.setViewportSize({ width: size.width, height: size.height });
+        await home.goto(day.id);
+        if (size.wide) {
+          expect(await home.boardOpen(), `${at}: open on arrival, with no click`).toBe(true);
+          await expect(home.board, `${at}: the grid is shown`).toBeVisible();
+          // The rail beside the board ends at or above the fold's foot: no empty block beside it (was 589 px at 1440).
+          const gap = await railPastFold(home);
+          test.info().annotations.push({ type: `rail bottom minus fold bottom at ${at}`, description: `${gap?.toFixed(1)} px` });
+          expect(gap, `${at}: the rail is the fold's neighbour`).not.toBeNull();
+          expect(gap ?? Infinity, `${at}: rail bottom minus fold bottom`).toBeLessThanOrEqual(0);
+          await home.boardFoldSummary.click();
+          expect(await home.boardOpen(), `${at}: closed by a press`).toBe(false);
+          await expect(home.board, `${at}: the grid is hidden`).toBeHidden();
+          await home.boardFoldSummary.click();
+          expect(await home.boardOpen(), `${at}: opened by a second press`).toBe(true);
+          await expect(home.board).toBeVisible();
+        } else {
+          expect(await home.boardOpen(), `${at}: closed on arrival`).toBe(false);
+          await expect(home.board, `${at}: the grid is hidden`).toBeHidden();
+          await home.boardFoldSummary.click();
+          expect(await home.boardOpen(), `${at}: opened by a press`).toBe(true);
+          await expect(home.board).toBeVisible();
+        }
+      }
+    });
+  }
+
+  test("untouched, the next festival day's board arrives open; closed by a press, it stays closed on the next day (1440)", async ({ page, isPhone }) => {
+    test.skip(isPhone, "On a phone the board arrives closed on every day.");
+    const home = new HomePage(page);
+    await home.goto(DAYS.glastonbury.id);
+    expect(await home.boardOpen()).toBe(true);
+    const glastonbury = await home.boardFoldSummary.innerText();
+
+    // Untouched: the switch to Riot Fest draws its board open, and no sample reads it closed.
+    let watching = watchFold(page, 3_000);
+    await home.chooseDay(DAYS.riot.festival);
+    await expect(page.getByText(`Published timetable · ${DAYS.riot.title}`)).toBeVisible();
+    await expect(home.boardFoldSummary).not.toHaveText(glastonbury);
+    await expect(home.tile("Bowling for Soup"), "untouched: the next day's board is open").toBeVisible();
+    expect((await watching).filter((open) => open === false), "untouched: closed samples through the switch").toEqual([]);
+    const riot = await home.boardFoldSummary.innerText();
+
+    // Closed by a press, then the switch back: it stays closed, in every sample.
+    await home.closeBoard();
+    watching = watchFold(page, 3_000);
+    await home.chooseDay(DAYS.glastonbury.festival);
+    await expect(page.getByText(`Published timetable · ${DAYS.glastonbury.title}`)).toBeVisible();
+    await expect(home.boardFoldSummary).not.toHaveText(riot);
+    expect((await watching).filter((open) => open === true), "closed by a press: open samples through the switch").toEqual([]);
+    expect(await home.boardOpen(), "closed by a press: the next day's board stays closed").toBe(false);
+    await expect(home.board).toBeHidden();
+  });
+
+  test("open from the interactive board's first paint at 1440 and closed at 390, layout shift over 5 s from load at most 0.01, and a press as soon as the board takes one holds (condition 9)", async ({ page, isPhone }) => {
+    test.setTimeout(120_000);
+    const home = new HomePage(page);
+    // One load first, so the measured load is the page's own and not the dev server's first compile.
+    await home.goto(DAYS.glastonbury.id);
+    await sampleBoard(page);
+
+    // Untouched: every sample in which the interactive board is drawn reads open at 1440 (its grid drawn) and closed at
+    // 390, and layout shift over the first 5 s stays at most 0.01.
+    await page.goto(`/?preset=${DAYS.glastonbury.id}`, { waitUntil: "domcontentloaded" });
+    const untouched = await readBoard(page);
+    const drawn = untouched.samples.filter((sample) => sample.interactive && sample.open !== null);
+    test.info().annotations.push({
+      type: "untouched load",
+      description: `${drawn.length} of ${untouched.samples.length} samples on the interactive board, the first at ${Math.round(drawn[0]?.t ?? -1)} ms; layout shift ${untouched.shift.toFixed(5)}`,
+    });
+    expect(drawn.length, "samples on the interactive board").toBeGreaterThanOrEqual(10);
+    expect(drawn.filter((sample) => sample.open !== !isPhone), isPhone ? "every interactive sample closed at 390" : "every interactive sample open at 1440").toEqual([]);
+    if (!isPhone) expect(drawn.filter((sample) => !sample.grid), "the grid drawn in every interactive sample at 1440").toEqual([]);
+    expect(untouched.shift, "layout shift over 5 s from load").toBeLessThanOrEqual(0.01);
+
+    // A press as soon as the interactive board takes one (its caption is drawn only there): at 1440 it closes the
+    // board, at 390 it opens it, and that holds in every sample for 3 s after it, with no change without a press.
+    await page.goto(`/?preset=${DAYS.glastonbury.id}`, { waitUntil: "domcontentloaded" });
+    await expect(home.boardCaption).toBeVisible({ timeout: 30_000 });
+    await home.boardFoldSummary.click();
+    const pressedAt = await sampleFor(page, 3_000);
+    const pressed = await readBoard(page);
+    const after = pressed.samples.filter((sample) => sample.t > pressedAt + 100 && sample.interactive);
+    test.info().annotations.push({ type: "press", description: `pressed ${Math.round(pressedAt)} ms after DOMContentLoaded; ${after.length} samples after it` });
+    expect(after.length, "samples after the press").toBeGreaterThanOrEqual(10);
+    expect(after.filter((sample) => sample.open !== isPhone), isPhone ? "the press opened it, and it stays open" : "the press closed it, and it stays closed").toEqual([]);
+    expect(await home.boardOpen(), "the press's state at the end").toBe(isPhone);
+  });
+
+  test("a festival-day switch as soon as the picker takes a press arrives open at 1440, with no closed sample after the press, and closed at 390 (condition 9)", async ({ page, isPhone }) => {
+    test.setTimeout(120_000);
+    const home = new HomePage(page);
+    await home.goto(DAYS.glastonbury.id);
+    await sampleBoard(page);
+    await page.goto(`/?preset=${DAYS.glastonbury.id}`, { waitUntil: "domcontentloaded" });
+    // As soon as the interactive picker takes a press: the board's caption is drawn only by the interactive page.
+    await expect(home.boardCaption).toBeVisible({ timeout: 30_000 });
+    await home.chooseDay(DAYS.riot.festival);
+    const pressedAt = await sampleFor(page, 3_000);
+    await expect(page.getByText(`Published timetable · ${DAYS.riot.title}`)).toBeVisible({ timeout: 20_000 });
+    const switched = await readBoard(page);
+    const after = switched.samples.filter((sample) => sample.t > pressedAt && sample.interactive && sample.open !== null);
+    test.info().annotations.push({ type: "switch", description: `picked ${Math.round(pressedAt)} ms after DOMContentLoaded; ${after.length} samples after it` });
+    expect(after.length, "samples after the switch").toBeGreaterThanOrEqual(10);
+    expect(after.filter((sample) => sample.open !== !isPhone), isPhone ? "closed through the switch at 390" : "no closed sample after the switch at 1440").toEqual([]);
+    expect(await home.boardOpen(), "the new day's board, untouched").toBe(!isPhone);
+    if (!isPhone) await expect(home.tile("Bowling for Soup")).toBeVisible();
   });
 });
 

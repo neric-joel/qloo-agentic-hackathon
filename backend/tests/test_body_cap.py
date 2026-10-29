@@ -9,6 +9,7 @@ The real-socket tests need ``uvicorn``, which is not a project dependency: run t
 
 import asyncio
 import collections
+import http
 import json
 import random
 import socket
@@ -407,7 +408,8 @@ def test_a_3_mb_body_gets_a_readable_413_from_a_real_uvicorn_with_common_clients
         for name in ("httpx declared", "httpx chunked", "urllib"):
             assert seen[name] == {answer: 5}, (name, seen[name])
         for name in ("raw declared", "raw chunked"):
-            assert seen[name] == {"HTTP/1.1 413 Request Entity Too Large": 5}, (name, seen[name])
+            # Python's own reason phrase: "Request Entity Too Large" to 3.12, "Content Too Large" from 3.13
+            assert seen[name] == {f"HTTP/1.1 413 {http.HTTPStatus(413).phrase}": 5}, (name, seen[name])
         # the server still answers an ordinary request afterwards
         assert httpx.get(base + "/api/health", timeout=15).status_code == 200
     finally:

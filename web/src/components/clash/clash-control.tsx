@@ -40,7 +40,15 @@ import { ClashList, liveClashRow } from "./clash-list";
 import { CoverageMeter } from "./coverage-meter";
 import { DayGraph, DayGraphKey } from "./day-graph";
 import { builtDate, DecisionDetails, isHiddenDecision } from "./decision-card";
-import { HERO_CELL_MIN, HeroDecision, HeroDecisionSkeleton, HeroLadderRoom, HeroNote, heroNote } from "./hero-decision";
+import {
+  HERO_CELL_MIN,
+  HeroDecision,
+  HeroDecisionSkeleton,
+  HeroLadderRoom,
+  HeroNote,
+  heroNote,
+  INVENTED_HERO_CELL_MIN,
+} from "./hero-decision";
 import { HiddenWall, type HiddenDay } from "./hidden-wall";
 import { MoreDetails } from "./more-details";
 import { PresetSources } from "./preset-sources";
@@ -215,9 +223,9 @@ function ToggleRoom() {
  * under the taller column (8 px from 1280 px). Every track is minmax(0, ...) and every item min-w-0, so nothing pushes past the
  * page gutter on a phone. `busy` while another festival day is on its way to replace the one drawn. With
  * `reserve` (a decision group in any state) an empty room in the group's cell holds the settled group's height
- * from 1024 px (`HERO_CELL_MIN`). It comes second in the DOM, before the toggle and the drawing, so it is there
- * from the first painted bytes: the left column, which follows the taller column, never moves when the group
- * streams in after the drawing, or comes later still.
+ * from 1024 px (`HERO_CELL_MIN`, and `INVENTED_HERO_CELL_MIN` on the invented day, the `synthetic` one). It comes
+ * second in the DOM, before the toggle and the drawing, so it is there from the first painted bytes: the left column,
+ * which follows the taller column, never moves when the group streams in after the drawing, or comes later still.
  */
 function HeroLayout({
   intro,
@@ -228,6 +236,7 @@ function HeroLayout({
   graphKey,
   busy = false,
   reserve = false,
+  synthetic = false,
 }: {
   intro: ReactNode;
   day?: ReactNode;
@@ -237,6 +246,7 @@ function HeroLayout({
   graphKey?: ReactNode;
   busy?: boolean;
   reserve?: boolean;
+  synthetic?: boolean;
 }) {
   return (
     <section aria-labelledby="pitch-heading" aria-busy={busy || undefined}>
@@ -255,7 +265,13 @@ function HeroLayout({
           className="grid min-w-0 grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_26rem] lg:grid-rows-[auto_auto_1fr_auto_auto] lg:gap-x-12 lg:[grid-template-areas:'pitch_group'_'day_group'_'toggle_group'_'graph_graph'_'key_key'] xl:grid-cols-[minmax(0,1fr)_28rem]"
         >
           <div className="min-w-0 lg:[grid-area:pitch]">{intro}</div>
-          {reserve ? <div aria-hidden="true" data-hero-room="" className={cn("hidden lg:block lg:[grid-area:group]", HERO_CELL_MIN)} /> : null}
+          {reserve ? (
+            <div
+              aria-hidden="true"
+              data-hero-room=""
+              className={cn("hidden lg:block lg:[grid-area:group]", HERO_CELL_MIN, synthetic && INVENTED_HERO_CELL_MIN)}
+            />
+          ) : null}
           {day ? <div className="mt-2 min-w-0 lg:mt-6 xl:mt-4 lg:[grid-area:day]">{day}</div> : null}
           {toggle ? <div className="mt-2 min-w-0 lg:mt-6 xl:mt-2 lg:self-end lg:[grid-area:toggle]">{toggle}</div> : null}
           {graph ? (
@@ -766,13 +782,14 @@ function LoadingView({
             {decided ? (
               <HeroDecision model={model} copy={summary?.decision ?? null} view={model.move ? "moved" : "published"} pending />
             ) : (
-              <HeroDecisionSkeleton />
+              <HeroDecisionSkeleton synthetic={synthetic} />
             )}
             {status}
           </>
         }
         graphKey={model ? <DayGraphKey model={model} className={KEY_CLASS} /> : null}
         reserve
+        synthetic={synthetic}
       />
       <BoardFrame label="Timetable">
         {/* The day's score beside the clashes it adds up, where the interactive board puts its dial. */}
@@ -1535,7 +1552,7 @@ function PresetView({
     : undefined;
   const loadingDecision = decisionState.status === "loading";
   const heroGroup = loadingDecision ? (
-    <HeroDecisionSkeleton />
+    <HeroDecisionSkeleton synthetic={synthetic} />
   ) : model ? (
     <HeroDecision
       model={model}
@@ -1585,6 +1602,7 @@ function PresetView({
         graphKey={model ? <DayGraphKey model={model} className={KEY_CLASS} /> : null}
         busy={loading}
         reserve={heroGroup !== null}
+        synthetic={synthetic}
       />
 
       <JumpNav

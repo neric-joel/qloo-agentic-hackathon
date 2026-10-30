@@ -42,6 +42,8 @@ import {
   HeroLadderRoom,
   HeroNote,
   heroNote,
+  INVENTED_HERO_CELL_MIN,
+  INVENTED_TASTE_ROOM,
   KEPT_LABEL,
   LADDER_SCOPE,
   noticeTaken,
@@ -479,6 +481,24 @@ describe("one row geometry for every state the hero group can be painted in (rou
     });
   }
 
+  it("gives the invented day's taste row two lines from 1280 px in the settled group, the pending group and the skeleton", () => {
+    // Measured in the browser workflow's fallback (1440 x 900, invented day): the settled taste line took two 22 px
+    // lines, the skeleton's room one, so the group grew by 22 px when the decision came.
+    const { model, copy } = rowDay("new");
+    const invented: DayGraphModel = { ...model, synthetic: true };
+    const settled = renderToStaticMarkup(createElement(HeroDecision, { model: invented, copy, view: "moved", onOpenMove: () => null }));
+    const pending = renderToStaticMarkup(createElement(HeroDecision, { model: invented, copy: null, view: "moved", pending: true }));
+    const skeleton = renderToStaticMarkup(createElement(HeroDecisionSkeleton, { synthetic: true }));
+    expect(INVENTED_TASTE_ROOM).toBe("xl:min-h-11");
+    const inventedRows = expected.map((row) =>
+      row.name === "taste" ? { ...row, min: [...row.min.filter((name) => !name.startsWith("xl:")), INVENTED_TASTE_ROOM] } : row,
+    );
+    for (const html of [settled, pending, skeleton]) expect(rowsOf(html)).toEqual(inventedRows);
+    expect(text(rowMarkup(settled, "taste"))).toContain("on this invented bill");
+    // A published day's skeleton keeps the one-line room.
+    expect(rowsOf(renderToStaticMarkup(createElement(HeroDecisionSkeleton, { synthetic: false })))).toEqual(expected);
+  });
+
   it("holds every row, empty where it has nothing, when there is no move or no decision", () => {
     const noMove = hero({}, { decision: decisionFor({ move: null }) });
     const noDecision = hero({}, { decision: null });
@@ -519,8 +539,8 @@ describe("one row geometry for every state the hero group can be painted in (rou
       }
       return found;
     };
-    const total = (screens: readonly string[]) =>
-      HERO_ROWS.reduce((sum, row) => sum + at(row.space, screens, "mt") + Math.max(at(row.min, screens, "min-h"), 0), 0);
+    const total = (screens: readonly string[], rows: readonly { space: string; min: string }[] = HERO_ROWS) =>
+      rows.reduce((sum, row) => sum + at(row.space, screens, "mt") + Math.max(at(row.min, screens, "min-h"), 0), 0);
     // From 1024 px the paste sits beside Keep, so the actions row is Keep's 48 px and the notice cell under it.
     // Round 39 (W3): the ladder's 80 px room above Keep goes; from 1024 px the ladder shares the notice cell, whose
     // room rises from 40 to 48 px (the ladder's two 24 px lines in the 26rem group), so 434.8 becomes 362.8. From
@@ -541,6 +561,16 @@ describe("one row geometry for every state the hero group can be painted in (rou
     expect(HERO_CELL_MIN).toBe(
       `lg:min-h-[${rem(lg)}rem] xl:min-h-[${rem(xl)}rem] lg:${short}:min-h-[${rem(lgShort)}rem] xl:${short}:min-h-[${rem(xlShort)}rem]`,
     );
+    // On the invented day the taste row holds two lines from 1280 px (`INVENTED_TASTE_ROOM`), so the room is 22 px
+    // taller there (`INVENTED_HERO_CELL_MIN`, added after `HERO_CELL_MIN`) and unchanged below 1280 px.
+    const invented = HERO_ROWS.map((row) => (row.name === "taste" ? { ...row, min: `${row.min} ${INVENTED_TASTE_ROOM}` } : row));
+    expect(total(["", "sm", "md", "lg"], invented)).toBeCloseTo(lg, 5);
+    expect(total(["", "sm", "md", "lg", `lg:${short}`], invented)).toBeCloseTo(lgShort, 5);
+    const xlInvented = total(["", "sm", "md", "lg", "xl"], invented);
+    const xlShortInvented = total(["", "sm", "md", "lg", "xl", `lg:${short}`, `xl:${short}`], invented);
+    expect(xlInvented).toBeCloseTo(354.8, 5);
+    expect(xlShortInvented).toBeCloseTo(354.8 - 28, 5);
+    expect(INVENTED_HERO_CELL_MIN).toBe(`xl:min-h-[${rem(xlInvented)}rem] xl:${short}:min-h-[${rem(xlShortInvented)}rem]`);
     // The layout holds it in an empty room in the group's cell, second in the hero's DOM, right after the pitch:
     // before the dateline, the toggle, the drawing and the group, so it is there from the first bytes the browser
     // paints, whatever state the group streams in (a decision, or none and the skeleton).

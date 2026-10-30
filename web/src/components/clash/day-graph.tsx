@@ -610,8 +610,21 @@ export function DayGraph(props: {
       </p>
       {layouts.map((layout) => (
         <div key={layout} data-layout={layout} className={forced ? "relative" : LAYOUT_CLASS[layout]} style={{ height: drawingHeight(model, layout) }}>
+          {/* Each band is keyed by the model too (`modelKey`), so another model is drawn afresh in the band's unmoved box,
+              nothing carried over, as the state above already is. A day drawn before its decision has no move: a phone
+              shows the whole day, and a desktop places the names for no move. When the browser's own request brings
+              the move, a phone opens on the move's window instead (at least 150 minutes) and a desktop places the names
+              again; the same bars, times and names carried over and re-placed measured as layout shifts (0.0034 at
+              390 x 844 on the invented day, 0.0009 at 1024 x 768 on Riot Fest's Sunday). Within one model a slide or a
+              change of view keeps every mark, so it still glides. */}
           {plans[layout].map((plan, index) => (
-            <Drawing key={plan.reference} plan={plan} leaders={leaders[layout][index]} ctx={ctx} className={forced ? undefined : BAND_CLASS[plan.reference]} />
+            <Drawing
+              key={`${plan.reference}|${modelKey}`}
+              plan={plan}
+              leaders={leaders[layout][index]}
+              ctx={ctx}
+              className={forced ? undefined : BAND_CLASS[plan.reference]}
+            />
           ))}
         </div>
       ))}

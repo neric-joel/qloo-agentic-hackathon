@@ -60,7 +60,9 @@ export const KEPT_LABEL = "Kept in your plan";
  * px again. On a screen 790 px tall or less, from 1024 px, the spaces above the readout, the side effects, the
  * taste line and the attribution are 4 px, the space above Keep 8 px and the readout's words a 24 px line (28 px
  * less in all), so a 1366 x 768 screen holds the whole drawing; no text gets smaller. If a settled row is taller
- * than its room at some width, its room for that width is raised; the text is never shortened.
+ * than its room at some width, its room for that width is raised; the text is never shortened. The invented day's
+ * taste line, whose words are longer, takes two lines from 1280 px too, so its room there is raised on that day only
+ * (`INVENTED_TASTE_ROOM`).
  */
 export const HERO_ROWS = [
   { name: "lead", space: "", min: "lg:min-h-[1.625rem]" },
@@ -83,6 +85,23 @@ export type HeroRowName = (typeof HERO_ROWS)[number]["name"];
  */
 export const HERO_CELL_MIN =
   "lg:min-h-[22.675rem] xl:min-h-[20.8rem] lg:[@media(max-height:790px)]:min-h-[20.925rem] xl:[@media(max-height:790px)]:min-h-[19.05rem]";
+
+/**
+ * The same room's height from 1280 px on the invented day, added after `HERO_CELL_MIN`: its taste row holds two
+ * lines there (`INVENTED_TASTE_ROOM`), 22 px more (354.8 px, 326.8 px on a screen 790 px tall or less). Measured at
+ * 1440 x 900: with the published day's 332.8 px the room held a frame drawn before the group streamed in 22 px short,
+ * and the drawing moved down when the group came.
+ */
+export const INVENTED_HERO_CELL_MIN = "xl:min-h-[22.175rem] xl:[@media(max-height:790px)]:min-h-[20.425rem]";
+
+/**
+ * The taste row's room from 1280 px on the invented day: its longer words ("on this invented bill (an invented rank,
+ * not attendance)") and the Derived stamp take two 22 px lines in the 28rem group (44 px at 1280 x 800 and 1440 x 900),
+ * where a published day's take one. The settled group, the pending one and the skeleton all hold it on that day: a
+ * skeleton that held the published day's 22 px was 22 px short of the answer that replaced it, and moved the toggle
+ * and the drawing down by as much when the browser's own decision request brought it.
+ */
+export const INVENTED_TASTE_ROOM = "xl:min-h-11";
 
 /** A row's space and room (`HERO_ROWS`), then the classes of what it holds. */
 function rowClass(name: HeroRowName, ...rest: Parameters<typeof cn>): string {
@@ -581,7 +600,7 @@ export function HeroDecision({
 
       {/* Without the decision's pair (copy null) the taste row holds its room with nothing in it: no number
           and no qualifier. */}
-      <div data-hero-row="taste" aria-hidden={taste !== null ? undefined : true} className={rowClass("taste")}>
+      <div data-hero-row="taste" aria-hidden={taste !== null ? undefined : true} className={rowClass("taste", synthetic && INVENTED_TASTE_ROOM)}>
         {taste !== null ? (
           <p data-taste-line="" className="text-sm leading-5 lg:text-[0.9375rem] lg:leading-[1.375rem]">
             {tasteLineText(taste, synthetic)} <ProvenanceChip provenance="derived" synthetic={synthetic} className="rounded-sm" />
@@ -690,9 +709,10 @@ export function HeroDecision({
  * the side-effect and taste rows, the attribution, then Keep's place, its notice cell (the ladder's place below
  * 1280 px) and the paste's.
  * It shows no move and no pair, so it prints nothing: no text, no figure, no attribution, and nothing to press
- * or focus. Each row holds a quiet bar inside its room.
+ * or focus. Each row holds a quiet bar inside its room. `synthetic`: the day is the invented one, whose taste row
+ * holds two lines from 1280 px (`INVENTED_TASTE_ROOM`).
  */
-export function HeroDecisionSkeleton({ className }: { className?: string }) {
+export function HeroDecisionSkeleton({ className, synthetic = false }: { className?: string; synthetic?: boolean }) {
   const bar = "rounded-xs bg-muted";
   const lines = "flex flex-col justify-center gap-2";
   return (
@@ -707,7 +727,7 @@ export function HeroDecisionSkeleton({ className }: { className?: string }) {
       <div data-hero-row="side-effects" className={rowClass("side-effects", lines)}>
         <div className={cn(bar, "h-3 w-11/12")} />
       </div>
-      <div data-hero-row="taste" className={rowClass("taste", lines)}>
+      <div data-hero-row="taste" className={rowClass("taste", synthetic && INVENTED_TASTE_ROOM, lines)}>
         <div className={cn(bar, "h-3 w-4/5")} />
       </div>
       <div data-hero-row="attribution" className={rowClass("attribution", lines)}>

@@ -11,9 +11,9 @@ Qloo taste data used to schedule, not to recommend: for festival heads of progra
 ## Judge in 60 seconds
 
 1. Open [Glastonbury 2025, Sunday](https://clash-control.vercel.app/?preset=glastonbury-2025-sun). The drawing shows Sprints 15 minutes later, 45 → 30 min shared with Katy J Pearson, and its cost: "New 15 min overlap with Joy Crookes. Shortens 3 other overlaps by 15 min." Press **Keep this move** and read "Kept in your plan. Nothing moves until the acts’ teams agree." Scroll once to "Adding taste moves this pair from #18 to #1" and its limit, "This does not prove #1 is the right clash to move."
-2. On [Check a draft grid](https://clash-control.vercel.app/check), press **Check a published day: Glastonbury 2025, Sunday**, then **Compare audience overlap**. With no Qloo request it prints "Taste overlap changes the order of the 10 compared overlaps: Royel Otis × Djo moves from 10th to 1st." The pairs come from the app's own index: "a worked example, not a test."
+2. On [Check a draft grid](https://clash-control.vercel.app/check), press **Check a published day: Glastonbury 2025, Sunday**, then **Compare audience overlap**. With no Qloo request it prints "Taste overlap changes the order of the 10 compared overlaps: Royel Otis × Djo moves from 10th to 1st." The pairs are "the saved day's costliest by this app's index, which already includes taste overlap: a worked example, not a test."
 3. Open [the brief with that move kept](https://clash-control.vercel.app/brief?preset=glastonbury-2025-sun&day=0&moves=sprints~woodsies~0~1415): one printable page with a sign-off block.
-4. Back on Glastonbury 2025, Sunday, scroll to **Agent runs**. Press **Replay** on "Explain a hidden clash and find a move" (the first run listed), then **Skip to the answer** and **Qloo requests in this run: 1** to open "How Qloo was used": one GET `/v2/analysis/compare` with its request id, and "Live when recorded, 20 Oct 2026; replayed now, nothing fetched." On 20 Oct 2026 live questions were switched on for judging too, capped at 2 an hour and 3 a day per visitor and 15 a day in all; GET https://clash-control-api.vercel.app/api/health shows what is on now.
+4. Back on Glastonbury 2025, Sunday, press **Agent** in the section links and scroll to **Watch a recorded run**. Press **Replay** on "Explain a hidden clash and find a move" (the first run listed), then **Skip to the answer** and **Qloo requests in this run: 1** to open "How Qloo was used": one GET `/v2/analysis/compare` with its request id, and "Live when recorded, 20 Oct 2026; replayed now, nothing fetched." On 20 Oct 2026 live questions were switched on for judging too, capped at 2 an hour and 3 a day per visitor and 15 a day in all; GET https://clash-control-api.vercel.app/api/health shows what is on now.
 
 Taste overlap is a rank from 0 to 100 among the acts compared for one bill. It is not a share of people in common, an attendance estimate or a money figure. The Clash Budget Index is a unitless score: 100 is the average random valid timetable of the same lineup, and lower is better. It is a reading of one measure, not a verdict on a real festival's programming. Neither festival shown uses Clash Control.
 
@@ -102,14 +102,14 @@ For a frontend-only preview with a simulated event stream and no backend, run th
 
 ## Tests
 
-Run locally on the round-39 working tree on 23 Oct 2026: 2,323 vitest tests in 88 files, 773 pytest tests and 27 script tests passed. The full Playwright run on 23 Oct ran 830 tests across the desktop and phone projects: 788 passed, 1 passed on a retry, 40 skip by design on one project, and 1 failed: a timing test (late agent recordings move nothing on screen) that failed under four parallel workers and passed 3 of 3 run on its own. No test is marked to fail. CI on GitHub runs both jobs on every push and pull request to main; it was green on 867ee7e (23 Oct 2026). The two jobs are the web app's types, unit tests and lint, and the backend tests (`.github/workflows/ci.yml`). A second workflow, browser (invented day) (`.github/workflows/browser.yml`), runs a clean-clone journey on the invented day that fails if any test is skipped; it runs only when started by hand and has not run yet.
+Run locally on 30 Oct 2026, with the saved days present: 2,324 vitest tests in 88 files, 773 pytest tests and 27 script tests passed, and the full Playwright run (830 tests across the desktop and phone projects) had 790 passed, 40 skipped by design on one project, 0 failed and 0 retried. No test is marked to fail. On a clean clone, without the saved days, 16 vitest tests and 13 pytest tests that need them skip. CI on GitHub runs both jobs on every push and pull request to main: the web app's types, unit tests and lint, and the backend tests (`.github/workflows/ci.yml`). A second workflow, browser (invented day) (`.github/workflows/browser.yml`), runs only when started by hand: a clean-clone journey on the invented day that fails if any test is skipped, then a check that the first screen does not move when the server's decision arrives late.
 
 Run from the repository root; each line is its own subshell, so the block can be pasted as it is.
 
 ```bash
 (cd backend && uv sync --dev && uv run pytest -q && uv run ruff check . && uv run ruff format --check .)
 (cd web && npm ci && npm run lint && npm run typecheck && npm test)
-node --test scripts/*.test.mjs
+node --test scripts/*.test.mjs .github/scripts/*.test.mjs
 ```
 
 The backend tests use fakes and `httpx.MockTransport`; none calls Qloo or the agent's provider, and no test holds a Qloo value.

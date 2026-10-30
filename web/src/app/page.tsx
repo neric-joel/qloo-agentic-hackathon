@@ -5,7 +5,7 @@ import { ClashControl, ClashControlFallback, type HomeSummary } from "@/componen
 import { parsePreset } from "@/lib/preset";
 import { loadServerSummary } from "@/lib/server-summary";
 
-/** The lede on a published day: who it is for, the frame, the stake, then what to compare (owner-ordered closeout, round 37). */
+/** The lede on a published day: who it is for, the frame, the stake, then what to compare. */
 const LEDE =
   "For heads of programming: Qloo taste data used to schedule, not to recommend. Clashes make people choose. Compare time, popularity, taste.";
 
@@ -16,8 +16,8 @@ const INVENTED_LEDE =
 /**
  * The pitch. Static, so it paints before any festival data arrives: the question, then one lede that names who
  * it is for, the frame (Qloo taste data used to schedule, not to recommend; on the invented day "taste data",
- * with no Qloo word), the stake (clashes make people choose) and what to compare (time, popularity, taste; owner-ordered
- * closeout, round 37). The qualifier on taste overlap sits beside its number in the hero's taste line, where the rank is printed. The day, its drawing
+ * with no Qloo word), the stake (clashes make people choose) and what to compare (time, popularity, taste).
+ * The qualifier on taste overlap sits beside its number in the hero's taste line, where the rank is printed. The day, its drawing
  * and the decision that follow are drawn by the interactive page.
  */
 function Intro({ synthetic = false }: { synthetic?: boolean }) {

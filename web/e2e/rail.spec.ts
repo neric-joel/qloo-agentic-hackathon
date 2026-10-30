@@ -59,7 +59,7 @@ test.describe("section rail", () => {
   });
 
   test("the last link, Sources, becomes the current section too", async ({ page }) => {
-    // Was defect D1 (round 31): at 1440x900 the page cannot scroll far enough to lift Sources above the
+    // Was defect D1: at 1440x900 the page cannot scroll far enough to lift Sources above the
     // 40% line, so the rail now marks the last entry once the page is scrolled to its end.
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);

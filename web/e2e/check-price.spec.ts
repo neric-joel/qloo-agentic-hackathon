@@ -44,7 +44,7 @@ function recordPriceBodies(page: import("@playwright/test").Page): Body[] {
 }
 
 /**
- * The act names in a body's pairs, each once, in pair order. A saved request sends only these (round 33, C2), plus
+ * The act names in a body's pairs, each once, in pair order. A saved request sends only these, plus
  * the fewest other names the server needs to find the day, which none of the grids here need.
  */
 function namesInPairs(body: Body): string[] {
@@ -174,7 +174,7 @@ test.describe("compare audience overlap, from a saved day", () => {
 });
 
 test.describe("compare audience overlap, names no saved day has", () => {
-  // With the live comparison off (round 37, L86: the server's own words), the server answers a saved body no saved
+  // With the live comparison off (the server's own words), the server answers a saved body no saved
   // day holds with a 200 ("no_saved_day"), not a 422, so the browser logs no error (the suite's console watch fails
   // the test on any).
 
@@ -267,8 +267,8 @@ test.describe("compare audience overlap on a published day", () => {
       await fold.locator("summary").click();
       const items = fold.getByRole("listitem");
       for (const item of await items.all()) await expect(item).toContainText(/Not compared: \S.+\./);
-      // A pair with both sets locked is passed over before sending; every other one in the fold was sent. Round 37
-      // (L33): the line says whose lock it is, "both sets are marked locked in this grid, so neither can move".
+      // A pair with both sets locked is passed over before sending; every other one in the fold was sent. The line
+      // says whose lock it is, "both sets are marked locked in this grid, so neither can move".
       const lockedPairs = items.filter({ hasText: "both sets are marked locked in this grid, so neither can move" });
       // The published day's grid marks its last sets locked, so some pairs are passed over this way.
       expect(await lockedPairs.count(), "pairs passed over because both sets are marked locked in this grid").toBeGreaterThanOrEqual(1);
@@ -342,7 +342,7 @@ test.describe("compare audience overlap on a published day", () => {
   });
 });
 
-test.describe("compare audience overlap on a published day: the day strip (round 37, L68)", () => {
+test.describe("compare audience overlap on a published day: the day strip", () => {
   test("Check a published day, then Compare: a strip of the grid's stages numbers each compared pair by its taste rank, with its caption, and says the rank's scope once", async ({ page, isPhone }) => {
     await requireSavedDays(page);
     const check = new CheckPage(page);

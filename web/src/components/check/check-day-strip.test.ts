@@ -62,7 +62,7 @@ const PAIRS: PricedPair[] = [
 
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 
-describe("round 37: the published day's strip (L68)", () => {
+describe("the published day's strip", () => {
   const layout = stripLayout(report, { pairs: PAIRS });
   if (!layout) throw new Error("no layout");
   const html = renderToStaticMarkup(createElement(CheckDayStrip, { layout }));
@@ -195,7 +195,7 @@ describe("round 37: the published day's strip (L68)", () => {
   });
 });
 
-describe("round 37: the compare step shows the strip only for a published day's answer, with the qualifier moved beside it", () => {
+describe("the compare step shows the strip only for a published day's answer, with the qualifier moved beside it", () => {
   const ranking = {
     pairs: [
       { a: "Wren", b: "Crane" },
@@ -263,7 +263,7 @@ describe("round 37: the compare step shows the strip only for a published day's 
   });
 });
 
-describe("round 37 (fix pass 1): while a compare is pending, the step holds the room of what the press will bring", () => {
+describe("while a compare is pending, the step holds the room of what the press will bring", () => {
   const ranking = {
     pairs: [
       { a: "Wren", b: "Crane" },

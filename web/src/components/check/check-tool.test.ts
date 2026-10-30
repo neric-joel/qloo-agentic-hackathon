@@ -157,9 +157,9 @@ describe("the check tool's sheet", () => {
   });
 
   it("frames the sheet as a 14px editor panel, clipped, with an unfilled header, inset horizontal rules only and Clear alone on a quiet row under it", () => {
-    // A panel (round 34, one radius system): the card fill inside a 1px border-strong edge on all four sides and the
+    // A panel (one radius system): the card fill inside a 1px border-strong edge on all four sides and the
     // 14px panel corner (rounded-lg), overflow clipped so the gutter and the field end inside that corner; its focus
-    // outline kept, which follows the corner, for the text and (round 35) for the table that takes a paste.
+    // outline kept, which follows the corner, for the text and for the table that takes a paste.
     expect(html).toMatch(
       /<div class="overflow-hidden rounded-lg border border-border-strong bg-card has-\[textarea:focus-visible\]:outline-2 has-\[textarea:focus-visible\]:outline-offset-2 has-\[textarea:focus-visible\]:outline-ring has-\[\[data-paste-target\]:focus-visible\]:outline-2 has-\[\[data-paste-target\]:focus-visible\]:outline-offset-2 has-\[\[data-paste-target\]:focus-visible\]:outline-ring">/,
     );
@@ -282,7 +282,7 @@ describe("the sheet's header row", () => {
     // The only solid ink button in the header is the submit, and nothing is outlined.
     expect(header.match(/data-variant="(default|ink)"/g)).toHaveLength(1);
     expect(header).not.toContain('data-variant="outline"');
-    // (The frame's own edge is border-strong; inside it, no control is outlined. Round 34: the shared switch's thumb
+    // (The frame's own edge is border-strong; inside it, no control is outlined. The shared switch's thumb
     // carries its own 1px border-strong edge, pinned in segmented-control.test.ts, so the switch is left out here.)
     const bar = header.slice(header.indexOf(">") + 1);
     const outsideSwitch = bar.slice(0, bar.indexOf('<div role="radiogroup"')) + bar.slice(bar.indexOf("<button"));
@@ -304,8 +304,8 @@ describe("the sheet's header row", () => {
     const row =
       nameRow.match(/^<label[^>]*>Draft grid<\/label>(?:<span[^>]*>[^<]*<\/span>)?<\/div><div class="([^"]*)">(?:<span aria-hidden="true"[^>]*>[^<]*<\/span>)?<button/)?.[1] ?? "";
     // The 44px hit areas pulled 10px into the row above and below (its 12px foot keeps them clear of the frame),
-    // the last word's edge on the column's edge. Round 35: the group grows to fill its line and sets the actions
-    // right, so its own box never moves when the published day's action arrives (verify P9); below xl it has a
+    // the last word's edge on the column's edge. The group grows to fill its line and sets the actions
+    // right, so its own box never moves when the published day's action arrives; below xl it has a
     // line of its own, wide enough for all three.
     expect(row.split(" ")).toEqual(
       expect.arrayContaining(["flex", "min-w-0", "flex-[1_0_auto]", "flex-wrap", "items-center", "justify-end", "max-xl:basis-full", "max-sm:justify-start", "sm:-my-2.5", "sm:-mr-2"]),
@@ -456,7 +456,7 @@ describe("numbered rule breaks, tied to their rows", () => {
     // The right column's list carries the same numbers, in the same order.
     const list = html.slice(html.indexOf('aria-label="Rule breaks"'), html.indexOf("Sets that share time"));
     expect(discs(list)).toEqual([1, 2, 3, 4]);
-    // Discs are inline SVG circles, never a rounded-full box: ink with the number in paper (round 34: a rule break is
+    // Discs are inline SVG circles, never a rounded-full box: ink with the number in paper (a rule break is
     // ink, never the raspberry of shared time).
     expect(html).toMatch(/<circle[^>]*fill="var\(--foreground\)"/);
     const discMarks = html.match(/<svg aria-hidden="true"[^>]*data-break-disc="\d+"[^>]*>[\s\S]*?<\/svg>/g) ?? [];
@@ -844,7 +844,7 @@ describe("the table's row-number gutter, column gap and stage breaks", () => {
     const lines = SAMPLE_GRID.split("\n");
     for (const set of parsed.sets) expect(lines[set.row - 1].startsWith(`${set.act},${set.stage},`)).toBe(true);
     // The CSV gutter prints 1..N, one number per line of the text, so each set's line number is its table row.
-    // (Round 37: the numbers are hidden one by one, so a skipped line's mark can be a button the gutter does not hide.)
+    // (the numbers are hidden one by one, so a skipped line's mark can be a button the gutter does not hide.)
     const gutter = page.match(/<div data-gutter="" class="shrink-0 [^"]*w-10[^"]*">([\s\S]*?)<\/div><textarea/)?.[1] ?? "";
     const numbers = [...gutter.matchAll(/<div aria-hidden="true">(\d+)<\/div>/g)].map((m) => Number(m[1]));
     expect(numbers).toEqual(lines.map((_, at) => at + 1));
@@ -1087,7 +1087,7 @@ describe("a figure under each rule break of the invented sample", () => {
       ["Check an invented sample", "button"],
       ["Check the grid", "submit"],
     ]);
-    // Round 35: the template takes the 4px step too, since the published day's action now comes before it.
+    // The template takes the 4px step too, since the published day's action now comes before it.
     expect(buttons[0].classes.endsWith(" px-2 decoration-1 underline-offset-4 hover:bg-transparent hover:underline ml-1 max-sm:-ml-2")).toBe(true);
     expect(buttons[1].classes.endsWith(" px-2 decoration-1 underline-offset-4 hover:bg-transparent hover:underline ml-1 max-sm:-ml-2")).toBe(true);
     expect(buttons[2].classes.endsWith(" h-11 px-5 text-[0.9375rem] max-sm:w-full lg:px-4")).toBe(true);
@@ -1131,7 +1131,7 @@ describe("the first screen draws each finding under its rows", () => {
       expect(strips).toHaveLength(1);
       const [whole, rule, classes] = strips[0];
       expect(Number(rule)).toBe(report.breaks[index].rule);
-      // The R27 strip as built, set at the row lines' left edge: aria-hidden, print:hidden, 8px under the rows.
+      // The strip as built, set at the row lines' left edge: aria-hidden, print:hidden, 8px under the rows.
       expect(classes.split(" ")).toEqual(expect.arrayContaining(["mt-2", "print:hidden", "pl-7"]));
       expect(item.indexOf("data-break-strip")).toBeGreaterThan(item.lastIndexOf("</ul>", item.indexOf("data-break-strip")));
       expect(item.indexOf("</ul>")).toBeLessThan(item.indexOf("data-break-strip"));
@@ -1171,7 +1171,7 @@ describe("the first screen draws each finding under its rows", () => {
 });
 
 // ---------------------------------------------------------------------------------------------------
-// Round 31: the judge's own-data path (every name and number below is invented for the test)
+// The judge's own-data path (every name and number below is invented for the test)
 
 /** A fresh six-act grid that shares no name with the sample. */
 const FRESH = [
@@ -1184,7 +1184,7 @@ const FRESH = [
   "Flint Arcade,Barn,19:40,20:30",
 ].join("\n");
 
-describe("round 31: the first paste works (C1)", () => {
+describe("the first paste works", () => {
   it("drops the sample's rule when a fresh grid replaces the sample, and the grid is checked with no refusal", () => {
     // Before: the sample's rule against the fresh grid refuses, as the judges saw.
     expect(runCheck({ ...SAMPLE_INPUT_FOR_TEST, grid: FRESH }).ok).toBe(false);
@@ -1281,7 +1281,7 @@ describe("round 31: the first paste works (C1)", () => {
   });
 });
 
-describe("round 31: pairs whose two sets are both locked (C5)", () => {
+describe("pairs whose two sets are both locked", () => {
   const grid = [
     "act,stage,start,end,locked",
     "Pine Lantern,North,18:00,20:00,yes",
@@ -1322,7 +1322,7 @@ describe("round 31: pairs whose two sets are both locked (C5)", () => {
   });
 });
 
-describe("round 31: a review with nothing to review (C7)", () => {
+describe("a review with nothing to review", () => {
   const counts = { sets: 6, stages: 3, breaks: 0, breaksReviewed: 0, pairs: 4, pairsDecided: 0, kept: 0, notChanging: 0, changed: 0, openBreaks: 0, openPairs: 4 };
   const props = {
     counts,
@@ -1354,7 +1354,7 @@ describe("round 31: a review with nothing to review (C7)", () => {
   });
 });
 
-describe("round 31: the live offer only when the server prices live (C2, C3)", () => {
+describe("the live offer only when the server prices live", () => {
   const report = runCheck(SAMPLE_INPUT_FOR_TEST);
   if (!report.ok) throw new Error("refused");
   const request = priceRequest(report.report);
@@ -1379,7 +1379,7 @@ describe("round 31: the live offer only when the server prices live (C2, C3)", (
     expect(page.indexOf("a third party")).toBeLessThan(page.indexOf("Ask Qloo for these"));
   });
 
-  it("off, after the server's 200 answer: says why, offers the published day once, and the rail stops offering Compare (C4)", () => {
+  it("off, after the server's 200 answer: says why, offers the published day once, and the rail stops offering Compare", () => {
     const tries: string[] = [];
     const props = { ...base, state: notSaved, live: false, publishedTitle: "Harbor 2031, Friday", onTryPublished: () => tries.push("published") };
     const buttons = buttonsOf(CheckPrice(props));
@@ -1428,7 +1428,7 @@ function buttonsOf(node: unknown): { words: string; press: () => void }[] {
   return [...own, ...buttonsOf(props.children)];
 }
 
-describe("round 31: Check a published day (C8)", () => {
+describe("Check a published day", () => {
   // An invented published day in the route's shape: two stages, one locked set, its own rules.
   const day = {
     id: "brookfield-2030-sat",
@@ -1540,10 +1540,10 @@ describe("round 31: Check a published day (C8)", () => {
     expect(source).toMatch(/published: run\.published \?\? null/);
   });
 
-  it("keeps a line for the action until the API answers below lg (round 34: a phone's), with nothing to read or press, so the sheet never moves", () => {
+  it("keeps a line for the action until the API answers below lg (a phone's), with nothing to read or press, so the sheet never moves", () => {
     const html = renderToStaticMarkup(createElement(CheckTool, { startWithSample: true }));
     const nameRow = html.slice(html.indexOf("<label"), html.indexOf('<div class="overflow-hidden rounded-lg border border-border-strong bg-card'));
-    // In the action's own place, before the two utilities (round 35): one empty line, hidden from assistive
+    // In the action's own place, before the two utilities: one empty line, hidden from assistive
     // technology, the action's height (44px and the button's own padding, border and type) wherever the three
     // actions do not fit one line (below lg; a phone, 640 and 768 measured), and nothing from lg, where the action
     // takes room to the left of the pair and the pair stays put.
@@ -1562,7 +1562,7 @@ describe("round 31: Check a published day (C8)", () => {
   });
 });
 
-describe("the sample the page opens with is drawn in place (round 34: motion answers an action, never the first paint)", () => {
+describe("the sample the page opens with is drawn in place (motion answers an action, never the first paint)", () => {
   const sectionsOf = (html: string) => [...html.matchAll(/<section [^>]*aria-labelledby="(check-rules-heading|check-shared-heading)"[^>]*class="([^"]*)"/g)];
 
   it("opens with the sample's results and no reveal on either section", () => {
@@ -1588,7 +1588,7 @@ describe("the sample the page opens with is drawn in place (round 34: motion ans
   });
 });
 
-describe("round 32: a published day compares its own costliest clashes, values first (K1, K3, K5, K8)", () => {
+describe("a published day compares its own costliest clashes, values first", () => {
   // An invented published day in the route's shape, with an invented saved ranking: every name, count and
   // value here is invented for the test.
   const day = {
@@ -1651,7 +1651,7 @@ describe("round 32: a published day compares its own costliest clashes, values f
     expect(publishedDayInput({ ...day, report: undefined })?.ranking ?? null).toBeNull();
   });
 
-  it("says once how the overlaps found become the ranked ones, only when the counts add up (K5)", () => {
+  it("says once how the overlaps found become the ranked ones, only when the counts add up", () => {
     expect(outcome.report.shared).toHaveLength(8);
     expect(publishedPairsLine(outcome.report.shared.length, built.pairCounts)).toBe(
       "8 pairs share time; the timetable page ranks the 5 where both acts have a usable Qloo signal.",
@@ -1659,7 +1659,7 @@ describe("round 32: a published day compares its own costliest clashes, values f
     expect(publishedPairsLine(7, built.pairCounts)).toBeNull();
     expect(publishedPairsLine(5, { scored: 5, unscored: 0 })).toBeNull();
     expect(publishedPairsLine(8, null)).toBeNull();
-    // C5: one reason only. Here the 3 pairs the page leaves unranked are exactly the 3 overlaps with Echo Field,
+    // One reason only. Here the 3 pairs the page leaves unranked are exactly the 3 overlaps with Echo Field,
     // the act with no usable signal; were any other pair unranked, the line would need a second reason, so none.
     const quiet = outcome.report.shared.filter((pair) => [pair.a.act, pair.b.act].includes("Echo Field")).length;
     expect(quiet).toBe(3);
@@ -1667,7 +1667,7 @@ describe("round 32: a published day compares its own costliest clashes, values f
     expect(publishedPairsLine(8, built.pairCounts, 2)).toBeNull();
   });
 
-  it("compares the saved day's costliest clashes in its order, passing over both-locked and no-signal pairs (K1)", () => {
+  it("compares the saved day's costliest clashes in its order, passing over both-locked and no-signal pairs", () => {
     const request = priceRequest(outcome.report, built.ranking) as NonNullable<ReturnType<typeof priceRequest>>;
     expect(request.basis).toBe("saved_ranking");
     expect(request.overlaps.map((o) => `${o.a} × ${o.b}`)).toEqual([
@@ -1678,7 +1678,7 @@ describe("round 32: a published day compares its own costliest clashes, values f
     expect(request.skipped.map((o) => o.reason)).toEqual(["locked", "no_signal"]);
     const body = JSON.parse(priceBody(request, "saved")) as { acts: string[]; mode: string };
     expect(body.mode).toBe("saved");
-    // C2: only the names in the 3 pairs compared, never the day's sixth act.
+    // Only the names in the 3 pairs compared, never the day's sixth act.
     expect(body.acts).toEqual(["Brass Lantern", "Ash Meadow", "Flint Harbor", "Delta Choir", "Cedar Bloom"]);
     // The same grid pasted (no ranking) keeps its longest-first rule.
     expect(priceRequest(outcome.report)?.basis).toBe("longest");
@@ -1712,7 +1712,7 @@ describe("round 32: a published day compares its own costliest clashes, values f
     published: true,
   };
 
-  it("opens in this app's ranking, with how the pairs were chosen and the order sentence above the values (K3, C1)", () => {
+  it("opens in this app's ranking, with how the pairs were chosen and the order sentence above the values", () => {
     // The page opens a published day's answer in its default order: the order its pairs were chosen in.
     expect(defaultOrder(answer.basis)).toBe("selection");
     const html = renderToStaticMarkup(createElement(CheckPrice, { ...props, order: defaultOrder(answer.basis), state: { phase: "ready", answer } }));
@@ -1738,7 +1738,7 @@ describe("round 32: a published day compares its own costliest clashes, values f
     // The default sort is pressed; the other two stay, as 44px buttons with the focus ring.
     expect(html).toMatch(/<button type="button" aria-pressed="true" class="min-h-11 [^"]*focus-visible:outline-ring[^"]*">This app’s ranking<\/button>/);
     expect(html).toMatch(/aria-pressed="false" class="min-h-11[^"]*">Longest first<\/button>/);
-    // A pasted grid's answer keeps its round-32 choices, Longest first by default.
+    // A pasted grid's answer keeps its choices, Longest first by default.
     expect(defaultOrder("longest")).toBe("minutes");
     // No grey line before the first value.
     const head = html.slice(0, html.indexOf("Brass Lantern × Ash Meadow: 45 min"));
@@ -1789,7 +1789,7 @@ describe("round 32: a published day compares its own costliest clashes, values f
     expect(html).toMatch(/aria-pressed="true" class="min-h-11[^"]*">Longest first<\/button>/);
   });
 
-  it("says in one line when no pair sent got a value because none is one the day's page prints (C3)", () => {
+  it("says in one line when no pair sent got a value because none is one the day's page prints", () => {
     const unserved = parsePriceAnswer(
       { ...route, pairs: route.pairs.map((pair) => ({ ...pair, status: "unpriced", taste_overlap: null, pair_rank: null, reason: "not_ranked_on_saved_day" })) },
       request,
@@ -1845,7 +1845,7 @@ describe("round 32: a published day compares its own costliest clashes, values f
     expect(longest.indexOf("Flint Harbor × Delta Choir: 45 min shared.")).toBeLessThan(longest.indexOf("Brass Lantern × Ash Meadow: 45 min shared."));
   });
 
-  it("puts the line on 79 against 68 under the count of sets that share time, once, and only while it adds up (C5)", () => {
+  it("puts the line on 79 against 68 under the count of sets that share time, once, and only while it adds up", () => {
     const line = publishedPairsLine(outcome.report.shared.length, built.pairCounts) as string;
     const html = renderToStaticMarkup(
       createElement(CheckResults, {
@@ -1877,7 +1877,7 @@ describe("round 32: a published day compares its own costliest clashes, values f
     expect(source).toContain("{run.publishedLabel ?? run.published}");
   });
 
-  it("reads 0 for rule breaks with nothing to review, never 0 of 0 reviewed (K8)", () => {
+  it("reads 0 for rule breaks with nothing to review, never 0 of 0 reviewed", () => {
     const counts = { sets: 6, stages: 3, breaks: 0, breaksReviewed: 0, pairs: 8, pairsDecided: 0, kept: 0, notChanging: 0, changed: 0, openBreaks: 0, openPairs: 8 };
     expect(ruleBreaksValue(counts)).toBe("0");
     expect(ruleBreaksValue({ breaks: 3, breaksReviewed: 1 })).toBe("3 · 1 of 3 reviewed");
@@ -1905,7 +1905,7 @@ describe("round 32: a published day compares its own costliest clashes, values f
   });
 });
 
-describe("round 35: a real paste survives first contact", () => {
+describe("a real paste survives first contact", () => {
   // Every name is invented. Line 4's start is 25:70; one stage is written "Main   Stage".
   const MESSY = [
     "Tidal Fields,Main Stage,14:00,15:00",
@@ -1931,7 +1931,7 @@ describe("round 35: a real paste survives first contact", () => {
     expect(region).toContain('role="region"');
     expect(region).toContain('aria-label="Draft grid as a table. Paste a grid here to edit it as CSV."');
     expect(region).toContain('tabindex="0"');
-    // Its focus ring is the panel's (round 34's 14px corner), never a square ring of its own.
+    // Its focus ring is the panel's (its 14px corner), never a square ring of its own.
     expect(region).toContain('class="outline-none focus-visible:outline-none"');
     expect(source).toContain("onPaste={pasteOnTable}");
     const paste = source.slice(source.indexOf("function pasteOnTable("), source.indexOf("/** A rule break's row button"));
@@ -1984,7 +1984,7 @@ describe("round 35: a real paste survives first contact", () => {
     const html = tool(MESSY);
     const gutter = html.match(/<div data-gutter="" class="([^"]*)">([\s\S]*?)<\/div><textarea/);
     expect(gutter?.[1].split(" ")).toContain("w-24");
-    // Round 37 (L64): the mark is a button that selects the rejected value; its number in ink with the word stays.
+    // The mark is a button that selects the rejected value; its number in ink with the word stays.
     expect(gutter?.[2]).toContain(
       '<div><button type="button" data-skipped-line="4" aria-label="Select the rejected value on line 4" class="rounded-sm font-semibold whitespace-nowrap text-foreground decoration-1 underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">skipped 4</button></div>',
     );
@@ -2055,7 +2055,7 @@ describe("round 35: a real paste survives first contact", () => {
   });
 });
 
-describe("round 36: the rail splits rule breaks from overlaps, a published day's locks are this app's, a header is named", () => {
+describe("the rail splits rule breaks from overlaps, a published day's locks are this app's, a header is named", () => {
   const source = readFileSync(fileURLToPath(new URL("./check-tool.tsx", import.meta.url)), "utf8");
   const tool = (grid: string) =>
     renderToStaticMarkup(createElement(CheckTool, { initial: { grid, changeover: "", curfew: "", pairs: "" }, checkOnLoad: true }));
@@ -2170,7 +2170,7 @@ describe("round 36: the rail splits rule breaks from overlaps, a published day's
   });
 });
 
-describe("round 37: the rejected value in the editor, a paste with nothing focused, a late published day", () => {
+describe("the rejected value in the editor, a paste with nothing focused, a late published day", () => {
   const source = readFileSync(fileURLToPath(new URL("./check-tool.tsx", import.meta.url)), "utf8");
   // Every name is invented. Line 4's start is 25:70 (the guard's CHECK-SKIP grid).
   const MESSY = [
@@ -2201,7 +2201,7 @@ describe("round 37: the rejected value in the editor, a paste with nothing focus
 
   afterEach(() => vi.unstubAllGlobals());
 
-  it("L64: finds exactly the characters of the value a skipped line's message quotes, on that line", () => {
+  it("finds exactly the characters of the value a skipped line's message quotes, on that line", () => {
     const parsed = parseGrid(MESSY);
     if (!parsed.ok) throw new Error("the messy grid should read");
     const range = rejectedRange(MESSY, parsed.skipped[0]);
@@ -2227,7 +2227,7 @@ describe("round 37: the rejected value in the editor, a paste with nothing focus
     expect(selected(ranges)).toEqual([[2, "6pm until 7pm"]]);
   });
 
-  it("L64: reads quotes, tabs, semicolons, line breaks and a value the message cut, and claims nothing it cannot find", () => {
+  it("reads quotes, tabs, semicolons, line breaks and a value the message cut, and claims nothing it cannot find", () => {
     // A quoted field: the characters inside its quotes.
     expect(selected('Amber Kite,Main,18:00,19:00\n"Basalt Choir","Main","25:99","20:00"')).toEqual([[2, "25:99"]]);
     // Tabs, and semicolons from the first line.
@@ -2240,7 +2240,7 @@ describe("round 37: the rejected value in the editor, a paste with nothing focus
     const long = "Amber Kite,Main,18:00,19:00\nBasalt Choir,Main,half past six in the evening maybe,20:00";
     expect(parseGrid(long).skipped?.[0]?.message).toContain("…");
     expect(selected(long)).toEqual([[2, "half past six in the evening maybe"]]);
-    // Under a title line the grid's own separator is tried first (round 39): the tab grid below a title with no tab
+    // Under a title line the grid's own separator is tried first: the tab grid below a title with no tab
     // in it selects the start cell, not the tail of the end cell that repeats the value after a comma.
     const titled = "Glastonbury Sunday\nAnn Arbor\tMain\t18:00\t19:00\nBasalt Choir\tMain\t25:99\t20:00,25:99";
     expect(selected(titled)).toEqual([[3, "25:99"]]);
@@ -2253,7 +2253,7 @@ describe("round 37: the rejected value in the editor, a paste with nothing focus
     expect(rejectedRange("one line", item)).toBeNull();
   });
 
-  it("L64: the skipped line's mark is a button named for its line, and the results offer 'Show it in the grid' under the message", () => {
+  it("the skipped line's mark is a button named for its line, and the results offer 'Show it in the grid' under the message", () => {
     const html = tool(MESSY);
     const mark = html.match(/<button type="button" data-skipped-line="4"[^>]*>([^<]*)<\/button>/);
     expect(mark?.[0]).toContain('aria-label="Select the rejected value on line 4"');
@@ -2274,7 +2274,7 @@ describe("round 37: the rejected value in the editor, a paste with nothing focus
     expect(unquoted).not.toContain("Select the rejected value");
   });
 
-  it("L64: either control shows the text view, focuses the field with the value selected and brings its line into view", () => {
+  it("either control shows the text view, focuses the field with the value selected and brings its line into view", () => {
     expect(source).toMatch(/onClick=\{\(\) => showRejected\(line \+ 1\)\}/);
     expect(source).toMatch(/onClick=\{\(\) => showRejected\(firstRejected\)\}/);
     const show = source.slice(source.indexOf("function showRejected("), source.indexOf("/** A rule break's row button"));
@@ -2291,7 +2291,7 @@ describe("round 37: the rejected value in the editor, a paste with nothing focus
     expect(effect).toContain("rejectedDone.current = rejectedPick.nonce;");
   });
 
-  it("L65: a paste with nothing that takes typing focused goes into the editor; a paste into a field is left alone", () => {
+  it("a paste with nothing that takes typing focused goes into the editor; a paste into a field is left alone", () => {
     expect(takesPaste(null)).toBe(false);
     for (const tagName of ["BODY", "BUTTON", "A", "DIV"]) expect(takesPaste({ tagName, isContentEditable: false })).toBe(false);
     for (const tagName of ["INPUT", "TEXTAREA", "SELECT", "textarea"]) expect(takesPaste({ tagName, isContentEditable: false })).toBe(true);
@@ -2310,7 +2310,7 @@ describe("round 37: the rejected value in the editor, a paste with nothing focus
     expect(page).not.toMatch(/\bcheck\(|runCheck|requestPrice|fetch|localStorage|sessionStorage|history\.|location\./);
   });
 
-  // An invented published day in the route's shape, as round 31's test builds one.
+  // An invented published day in the route's shape, as the published-day tests build one.
   const day = {
     id: "brookfield-2030-sat",
     title: "Brookfield 2030, Saturday",
@@ -2347,7 +2347,7 @@ describe("round 37: the rejected value in the editor, a paste with nothing focus
     return { release: () => open(), calls };
   }
 
-  it("L70: a paste made while a published day loads stays, the late day is dropped, and the page says so once", async () => {
+  it("a paste made while a published day loads stays, the late day is dropped, and the page says so once", async () => {
     const { release, calls } = delayedFetch(day);
     // The page's count of presses and the editor's text, as the tool keeps them.
     const page = { latest: 1, grid: "" };
@@ -2368,7 +2368,7 @@ describe("round 37: the rejected value in the editor, a paste with nothing focus
     expect(source).toMatch(/useLayoutEffect\(\(\) => \{\s*gridNow\.current = input\.grid;\s*\}, \[input\.grid\]\);/);
   });
 
-  it("L70: with no paste the published day loads and is checked as before", async () => {
+  it("with no paste the published day loads and is checked as before", async () => {
     const { release } = delayedFetch(day);
     const pending = awaitPublishedDay(day.id, { n: 1, grid: "" }, () => ({ latest: 1, grid: "" }));
     release();
@@ -2380,7 +2380,7 @@ describe("round 37: the rejected value in the editor, a paste with nothing focus
     expect(load).toMatch(/const day = answer\.day;\s*setPublishedNote\(""\);[\s\S]*setInput\(day\.input\);[\s\S]*check\(day\.input, "Published timetable loaded\. "\);/);
   });
 
-  it("L70: a later press wins without a word, and a day that did not load leaves the fields alone", async () => {
+  it("a later press wins without a word, and a day that did not load leaves the fields alone", async () => {
     expect(publishedArrival({ n: 1, grid: "a" }, 2, "a")).toBe("later");
     expect(publishedArrival({ n: 1, grid: "a" }, 2, "b")).toBe("later");
     expect(publishedArrival({ n: 2, grid: "a" }, 2, "a")).toBe("load");
@@ -2398,7 +2398,7 @@ describe("round 37: the rejected value in the editor, a paste with nothing focus
   });
 });
 
-describe("round 39 W1: a title line above the pasted grid", () => {
+describe("a title line above the pasted grid", () => {
   const tool = (grid: string) =>
     renderToStaticMarkup(createElement(CheckTool, { initial: { grid, changeover: "", curfew: "", pairs: "" }, checkOnLoad: true }));
   const text = (html: string) => html.replace(/&quot;/g, '"');
@@ -2410,7 +2410,7 @@ describe("round 39 W1: a title line above the pasted grid", () => {
     expect(html).not.toContain("data-skipped");
     expect(html).not.toContain("line skipped and not checked");
     expect(html).toContain("Read 3 sets on 2 stages.");
-    // Once on screen, and once more in the printed draft's paper-only line (fix pass: paper says it too).
+    // Once on screen, and once more in the printed draft's paper-only line (paper says it too).
     const note = 'Skipped line 1 ("Glastonbury Sunday"): no times found, so it was read as a title.';
     expect(html.split(note).length - 1).toBe(2);
     expect(html.match(/<p data-brief-title-note="" class="[^"]*\bhidden\b[^"]*\bprint:block\b[^"]*">([^<]*)<\/p>/)?.[1]).toBe(note);

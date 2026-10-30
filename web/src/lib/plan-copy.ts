@@ -1,6 +1,6 @@
 /**
  * The words a plan of kept moves and the brief share, in one place so the plan card, the scale line
- * under every tested move and the printed brief can never drift apart (round-5 contract E).
+ * under every tested move and the printed brief can never drift apart.
  *
  * The scale is the baseline's 10th to 90th percentile: the middle 80% of random valid timetables of
  * this lineup, never "the range" of them. Every sentence compares the figures as the page prints

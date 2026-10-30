@@ -69,7 +69,7 @@ describe("the one-page brief", () => {
     expect(page).toContain(`Changes applied to a working copy (1) ${change.lines[0]} (was`);
     expect(page).toContain("Rule breaks (4)");
     expect(page).toContain("Your decisions (1) Saffron Season and Ivory Lights share 20 minutes: Kept on purpose. Contract.");
-    // A saved press sends only the names of the pairs it compares (C2): here the 7 acts of the 5 longest overlaps.
+    // A saved press sends only the names of the pairs it compares: here the 7 acts of the 5 longest overlaps.
     expect(request.acts).toHaveLength(7);
     expect(page).toContain(
       `Compared using the invented example day: its acts and affinities are invented, not Qloo data. No Qloo request was sent. ${request.acts.length} of ${request.acts.length} acts with a usable signal.`,
@@ -146,14 +146,14 @@ describe("the one-page brief", () => {
     expect(page).toContain(`Draft check, not a verdict ${label} Snapshot: the published timetable as checked.`);
     expect(snapshotLine({ sample: false, checkedAt: null, applied: 0, published: true })).toBe("Snapshot: the published timetable as checked.");
     expect(snapshotLine({ sample: false, checkedAt: null, applied: 0 })).toBe("Snapshot: the pasted grid as checked.");
-    // A published day was not pasted: its footer says where the figures came from (C7).
+    // A published day was not pasted: its footer says where the figures came from.
     expect(page).toContain(BRIEF_FOOTER_PUBLISHED);
     expect(page).not.toContain("from the pasted grid");
     expect(briefFooter(null, true)).toBe("Computed in your browser from the published timetable.");
   });
 });
 
-describe("round 35: a brief of a partial check says what it left out", () => {
+describe("a brief of a partial check says what it left out", () => {
   // Line 4's start is 25:70; Glass Harbour, on that line, is named by a pair rule.
   const grid = [
     "Tidal Fields,Main Stage,14:00,15:00",
@@ -167,7 +167,7 @@ describe("round 35: a brief of a partial check says what it left out", () => {
   const page = text(renderToStaticMarkup(createElement(CheckBrief, { report: outcome.report, applied: [], decisions: [], price: null })));
 
   it("prints the skipped sentence under its heading, and the pair rule it could not check", () => {
-    // Round 37: the skipped line is named by its act and the value the screen quotes, under the sentence.
+    // The skipped line is named by its act and the value the screen quotes, under the sentence.
     expect(page).toContain(
       "Draft check, not a verdict Snapshot: the pasted grid as checked. 1 line skipped and not checked: line 4. The other 4 sets were checked. Line 4 (Glass Harbour, start “25:70”) skipped and not checked. Pair line 1 not checked: Glass Harbour is on a skipped line. Read 4 sets on 3 stages.",
     );
@@ -188,7 +188,7 @@ describe("round 35: a brief of a partial check says what it left out", () => {
   });
 });
 
-describe("round 36: the printed draft has a heading, the day, the print date and a sign-off block", () => {
+describe("the printed draft has a heading, the day, the print date and a sign-off block", () => {
   const sample = runCheck({ grid: SAMPLE_GRID, ...SAMPLE_SETTINGS });
   if (!sample.ok) throw new Error("refused");
   const html = renderToStaticMarkup(createElement(CheckBrief, { report: sample.report, applied: [], decisions: [], price: null }));
@@ -232,8 +232,8 @@ describe("round 36: the printed draft has a heading, the day, the print date and
   });
 });
 
-describe("round 37: the printed draft lists its overlaps and names its skipped lines", () => {
-  // The messy 12-line paste of round 35 (invented acts; line 4 starts at 25:70; one stage written "Main   Stage").
+describe("the printed draft lists its overlaps and names its skipped lines", () => {
+  // A messy 12-line paste (invented acts; line 4 starts at 25:70; one stage written "Main   Stage").
   const MESSY = [
     "Tidal Fields,Main Stage,14:00,15:00",
     "Cobalt Rows,Side Stage,14:15,15:15",
@@ -292,7 +292,7 @@ describe("round 37: the printed draft lists its overlaps and names its skipped l
     expect(minutes[0]).toBe(Math.max(...shared.map((pair) => pair.minutes)));
     const leftOff = [...shared].sort((x, y) => y.minutes - x.minutes).slice(BRIEF_OVERLAPS);
     expect(Math.max(...leftOff.map((pair) => pair.minutes))).toBeLessThanOrEqual(minutes[BRIEF_OVERLAPS - 1]);
-    // The pairs left off are accounted for by length: their shortest, longest and summed minutes (L66).
+    // The pairs left off are accounted for by length: their shortest, longest and summed minutes.
     const leftMinutes = leftOff.map((pair) => pair.minutes);
     const rest = `They share ${Math.min(...leftMinutes)} to ${Math.max(...leftMinutes)} min each, ${leftMinutes.reduce((a, b) => a + b, 0)} min in all.`;
     expect(printed.more).toBe(`and 23 more overlaps not printed. ${rest}`);
@@ -382,9 +382,9 @@ describe("round 37: the printed draft lists its overlaps and names its skipped l
   });
 });
 
-// Round 39 fix pass: a title line the check left out is said on paper too, word for word as the screen's note,
+// A title line the check left out is said on paper too, word for word as the screen's note,
 // beside the counted no-breaks sentence; a grid with no title prints no such line.
-describe("round 39: the printed draft says a title line was left out", () => {
+describe("the printed draft says a title line was left out", () => {
   const NOTE = 'Skipped line 1 ("Glastonbury Sunday"): no times found, so it was read as a title.';
   const titled = runCheck({
     grid: "Glastonbury Sunday\nSprints\tWoodsies\t14:00\t14:45\nKaty J Pearson\tThe Park\t14:00\t15:00\nJoy Crookes\tWoodsies\t15:00\t16:00",

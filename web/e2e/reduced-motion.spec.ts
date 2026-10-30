@@ -179,7 +179,7 @@ test.describe("reduced motion", () => {
   });
 });
 
-test.describe("motion only from the visitor's hand (round 37, L39)", () => {
+test.describe("motion only from the visitor's hand", () => {
   test.use({ reducedMotion: "no-preference" });
   test.beforeEach(async ({ page }) => requireSavedDays(page));
 

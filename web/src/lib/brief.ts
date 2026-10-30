@@ -92,7 +92,7 @@ export function briefIntro(festival: string, synthetic: boolean): string {
     : `Scored by this app from the published timetable. ${festival} does not use Clash Control.`;
 }
 
-/** In place of the table when a day has no scored clash ("scored", as the index is, round 33). */
+/** In place of the table when a day has no scored clash ("scored", as the index is). */
 export function noPricedClashes(synthetic: boolean): string {
   return synthetic
     ? "No scored clashes on this day: no two scored acts play at the same time."
@@ -606,7 +606,7 @@ export function tableOnPaper(
 }
 
 /**
- * Which of the plan's extras the printed sheet keeps: the shared-minutes line, always (since round 37 it leads the
+ * Which of the plan's extras the printed sheet keeps: the shared-minutes line, always (it leads the
  * plan, above the index line, so it never leaves paper), and the per-step decision lines.
  */
 export type PaperExtras = { minutes: true; decisions: boolean };
@@ -635,13 +635,13 @@ const DECISIONS_PAPER_LINES = 8;
 
 /**
  * What a full sheet leaves off paper, so it stays one Letter and one A4 page without smaller type or a dropped
- * caveat. Never the shared-minutes line: it leads the plan (round 37). Only the decision lines, which the screen never
+ * caveat. Never the shared-minutes line: it leads the plan. Only the decision lines, which the screen never
  * shows. In one column a decision line sits beside its step's first line, so it costs no line for a single move and
  * one for a kept change, whose long first line wraps around it; that line is counted with the steps. In two columns
  * each takes two lines under its step. The decision lines print in one column for at most eight printed lines of
  * steps, and in two columns for at most four lines down each column (four single moves).
  *
- * Measured with headless Chrome on Letter and A4 (print media, 10 mm margins) at the round-37 type (running text
+ * Measured with headless Chrome on Letter and A4 (print media, 10 mm margins) at the current type (running text
  * 10 pt, the rest at least 9.5 pt), with the minutes line on every plan: 24 sheets on both published days, from no
  * kept step to eight kept moves, kept changes with moves, and the card's move with and without other steps. The
  * fullest, the card's single move with its comparison and the drawing, fills 97.0% of a Letter page.

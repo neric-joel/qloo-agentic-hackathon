@@ -184,7 +184,7 @@ export const WHY_STAKE =
 
 /**
  * How to use it and what not to decide with it, the second paragraph under the heading, the same on every kind of
- * day and with no Qloo word: that a clash can stay and where to keep it on purpose (owner-ordered closeout, round 37) (the decision "Kept on
+ * day and with no Qloo word: that a clash can stay and where to keep it on purpose (the decision "Kept on
  * purpose" on Check a draft grid), `DO_NOT_USE` word for word (the sentence /method and the brief print), what an act's team would see if a
  * festival used it (said as a condition: the brief is prepared for visitors and judges of this demo, and its
  * sign-off names the head of programming, so no act's team receives it today), and that the app writes no artist
@@ -531,7 +531,7 @@ export function WhyThisMatters({
             <Fold className="mt-2" summary={`How the lists lean (${complaints.pairsVerified} verified pairs)`}>
               <p className="pb-3">Press lists lean toward headliners, which flatters any taste-based method.</p>
             </Fold>
-            {/* Round 38: the wider public record, from the analysis of public pages on /method#asked. It counts
+            {/* The wider public record, from the analysis of public pages on /method#asked. It counts
                 pages, never people, and says so in the same paragraph; the link opens its sources, method and limits. */}
             <p data-why-public className="mt-4">
               {HOME_EVIDENCE}{" "}

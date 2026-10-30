@@ -21,7 +21,7 @@ const TWIN: Twin = {
   gap: 0.7,
 };
 
-describe("TwinCards motion (M9)", () => {
+describe("TwinCards motion", () => {
   it("holds the taste meters back so the draw meters fill first, and draws both final in the server HTML", () => {
     const html = renderToStaticMarkup(createElement(TwinCards, { twins: [TWIN], acts: ACTS }));
     expect(html).not.toContain("data-reveal");

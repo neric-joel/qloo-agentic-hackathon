@@ -277,7 +277,7 @@ describe("the first page's meta and Open Graph description", () => {
           : "For heads of programming: Qloo taste data used to schedule, not to recommend. Clashes make people choose. Compare time, popularity, taste.",
       );
       expect(lede).not.toContain("attendance");
-      // Owner-ordered closeout, round 37 (22 Oct 2026): the stake, then what to compare (L3, NEXT.md home-words C2).
+      // The stake, then what to compare.
       expect(lede).toContain("Clashes make people choose.");
       expect(lede).toContain("time");
       // The lede names popularity; it holds no number, no count of people and no "fans".
@@ -290,7 +290,7 @@ describe("the first page's meta and Open Graph description", () => {
       expect(words.trim().endsWith(invented ? "(an invented rank, not attendance)" : "(a rank, not attendance)")).toBe(true);
       expect(taste.slice(taste.indexOf("<span"))).toMatch(/^<span[^>]*data-provenance="derived"[^>]*>[\s\S]*Derived<\/span>$/);
       // The hero carries no stat sentence: its figures sit in Why this matters beside their qualifier.
-      // The attribute itself, not the prefix of round 37's `data-hero-state` (hero lane, NEXT.md 5.3).
+      // The attribute itself, not the prefix of `data-hero-state`.
       expect(html).not.toMatch(/data-hero-stat(?![\w-])/);
       expect(plain).not.toContain("Fans and press complained about");
       if (invented) {

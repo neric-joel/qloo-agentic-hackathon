@@ -12,7 +12,7 @@ import { TryAMove } from "./pages/try-a-move";
  * The index, its scale and the working sit in the index card under the hero.
  */
 
-/** The side-effect line of each published day's move, from the published times (DECISION.md 5.2, row 8). */
+/** The side-effect line of each published day's move, from the published times. */
 const SIDE_EFFECTS = {
   [DAYS.glastonbury.id]: "New 15 min overlap with Joy Crookes. Shortens 3 other overlaps by 15 min.",
   [DAYS.riot.id]: "Ends the 5 min overlap with Twin Peaks. No other overlap gets longer.",
@@ -51,7 +51,7 @@ async function heroBoxes(page: import("@playwright/test").Page): Promise<Record<
       paste: box(group ? [...group.querySelectorAll("a")].find((link) => /Paste your own draft grid/.test(link.textContent ?? "")) : null),
       key: box(document.querySelector("[data-day-graph-key]")),
       nav: box(document.querySelector('nav[aria-label="On this page"]')),
-      // Round 37: the decision group itself, which keeps its height in every state (L1, L20).
+      // The decision group itself, which keeps its height in every state.
       group: box(group),
     };
   });
@@ -124,7 +124,7 @@ test.describe("hero decision", () => {
     await home.railLink("What Qloo changes").click();
     await expect(page).toHaveURL(/#what-qloo-changes$/);
     await expect(home.whatQloo).toBeInViewport();
-    // Round 39 (W4, D18): the heading says whose ranks these are.
+    // The heading says whose ranks these are.
     await expect(home.whatQloo.getByRole("heading", { level: 2 })).toHaveText("Adding taste moves this pair from #18 to #1 in this app’s index");
     await expect(home.whatQloo).toContainText("Sprints × Katy J Pearson, 45 min shared, ranked three ways");
     await expect(home.whatQloo).toContainText("Time alone");
@@ -296,7 +296,7 @@ test.describe("hero decision", () => {
         await expect(offer.getByRole("button", { name: "Add to your plan" })).toBeFocused();
         const asked = await heroBoxes(page);
 
-        // Round 37 (L20): below 380 px Replace sits directly under Add, so the confirmation's room, which holds the offer's
+        // Below 380 px Replace sits directly under Add, so the confirmation's room, which holds the offer's
         // words, is the row under Replace, and the paste (not shown while the offer is open, as before) gives up its row;
         // the group keeps its box, so every other box holds.
         const narrow = size.width < 380;
@@ -431,7 +431,7 @@ test.describe("hero decision", () => {
     // The index carries its Derived stamp, and who scored it, in the index's own paragraph.
     await expect(home.indexBlock.getByText("Derived")).toBeVisible();
     await expect(home.indexBlock).toContainText("Selected and scored by this app’s index. A reading, not a verdict.");
-    // Round 39 (W5, D08): the index's own paragraph, word for word, says what a reading above 100 means beside the
+    // The index's own paragraph, word for word, says what a reading above 100 means beside the
     // guarded scale ("of this lineup" beside the 100 it qualifies), and "Lower is better" leaves the card: the dial
     // beside the board still says it, with no click (honesty.spec.ts pins its words).
     await expect(home.indexCard.locator("[data-index-scale]")).toHaveText(INDEX_PARAGRAPH);
@@ -448,7 +448,7 @@ test.describe("hero decision", () => {
     // The day's saved reading is dated in the hero's dateline (a date, not a figure), and called global: both saved
     // days were read with no location sent.
     await expect(home.dateline).toHaveText(`Sunday. Published timetable; saved global Qloo reading built 3 Oct 2026. ${HONESTY.neither}`);
-    // Round 37 (L19): the date's three parts are joined by no-break spaces, so a regular expression (matched against
+    // The date's three parts are joined by no-break spaces, so a regular expression (matched against
     // the raw text) names them.
     await expect(home.dateline).toHaveText(
       new RegExp(`^${DAYS.glastonbury.dayName}\\. Published timetable; saved global Qloo reading built \\d{1,2}\\u00a0[A-Z][a-z]{2}\\u00a0\\d{4}\\. ${literal(HONESTY.neither)}$`),
@@ -500,19 +500,17 @@ const MOVE_LEADS = {
 } as const;
 
 /**
- * The hero's desktop note under the dateline, word for word. Round 37 (AO2; L22 and L9) said why this move, that two
- * sets end the overlap and what near 100 means; round 39 (W6, D09) replaces it with one line on what every move keeps
- * and that a clash can be kept on purpose ("the latest published end" is the engine's curfew on a published day; the
+ * The hero's desktop note under the dateline, word for word: one line on what every move keeps and that a clash can be kept on purpose ("the latest published end" is the engine's curfew on a published day; the
  * locks are this app's). Why this move and the two-set change stay one click away, in the index card's "How this was
  * chosen". The same line on both published days. Desktop only.
  */
 const HERO_NOTE = "Moves keep stage hours, the latest published end, changeovers and this app’s locks; a clash can be kept on purpose.";
 
-/** The index card's paragraph (round 39, W5): the guarded scale, what above 100 means, who scored it, the caveat. */
+/** The index card's paragraph: the guarded scale, what above 100 means, who scored it, the caveat. */
 const INDEX_PARAGRAPH =
   "A score, not money: 100 = the average random valid timetable of this lineup. Above 100: costlier. Selected and scored by this app’s index. A reading, not a verdict.";
 
-/** A browser request for a day's decision, and for a day's preset (round 37, L1). */
+/** A browser request for a day's decision, and for a day's preset. */
 const DECISION_PATH = /^\/api\/presets\/[^/]+\/decision$/;
 const PRESET_PATH = /^\/api\/presets\/[^/]+$/;
 
@@ -527,12 +525,12 @@ function groupSizes(isPhone: boolean): { width: number; height: number }[] {
 }
 
 /**
- * Round 37, L1 (the owner's top row): the preset response carries the day's decision, so the server paints the hero
+ * The preset response carries the day's decision, so the server paints the hero
  * group whole (readout and Keep included) and the browser never asks for the decision on a published load; and when a
  * picker switch has to ask for it (an API without the seed), the group keeps one height while it waits. The CLS test in
  * day-graph.spec.ts holds the boxes; these hold the group and the requests.
  */
-test.describe("the hero group while a day's decision loads (round 37, L1)", () => {
+test.describe("the hero group while a day's decision loads", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
   // The other day's read-ahead can still be in flight through a test's routes when it ends; they let go then.
   test.afterEach(async ({ page }) => page.unrouteAll({ behavior: "ignoreErrors" }));
@@ -681,12 +679,12 @@ test.describe("the hero group while a day's decision loads (round 37, L1)", () =
 });
 
 /**
- * Round 37, verify-2 N2: a visitor who scrolled down the server's frame before the page mounted saw the page reorder
+ * A visitor who scrolled down the server's frame before the page mounted saw the page reorder
  * under them (CLS 0.23 at 1440 and 0.60 to 0.93 at 390): the footer, the one node that outlived the swap, was pushed
  * off the screen, then the sections before the board filled in above the unchanged scroll position. The frame now holds
  * the footer back while scripts run, and the page puts the board's summary back on the line it was on.
  */
-test.describe("the page keeps the visitor's place when it replaces the server's frame (round 37, verify-2 N2)", () => {
+test.describe("the page keeps the visitor's place when it replaces the server's frame", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
   test.afterEach(async ({ page }) => page.unrouteAll({ behavior: "ignoreErrors" }));
 
@@ -765,7 +763,7 @@ test.describe("the page keeps the visitor's place when it replaces the server's 
   });
 });
 
-test.describe("the hero's desktop note, the date and the keep offer (round 37: L22, L9, L19, L20)", () => {
+test.describe("the hero's desktop note, the date and the keep offer", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
 
   for (const day of Object.values(DAYS)) {
@@ -773,7 +771,7 @@ test.describe("the hero's desktop note, the date and the keep offer (round 37: L
       const home = new HomePage(page);
       const note = home.hero.locator("[data-hero-note]");
       if (isPhone) {
-        // L9 and L22 close on the desktop only: the phone's first screen has no room for the note.
+        // The note is desktop only: the phone's first screen has no room for the note.
         for (const size of [
           { width: 390, height: 844 },
           { width: 375, height: 667 },
@@ -798,20 +796,20 @@ test.describe("the hero's desktop note, the date and the keep offer (round 37: L
         const [noteBox, ladderBox, toggleBox] = [await note.boundingBox(), await ladder.boundingBox(), await home.viewToggle.boundingBox()];
         expect(noteBox, `${at}: the note is drawn`).not.toBeNull();
         test.info().annotations.push({ type: `note height at ${at}`, description: `${noteBox?.height.toFixed(1)} px` });
-        // One line of 20 px (round 39, W6: at most 21 px), wholly above the ladder and the toggle.
+        // One line of 20 px (at most 21 px), wholly above the ladder and the toggle.
         expect(noteBox?.height ?? Infinity, `${at}: one line`).toBeLessThanOrEqual(21);
         expect((noteBox?.y ?? 0) + (noteBox?.height ?? 0), `${at}: the note ends above the ladder`).toBeLessThanOrEqual(ladderBox?.y ?? 0);
         expect((noteBox?.y ?? 0) + (noteBox?.height ?? 0), `${at}: the note ends above the toggle`).toBeLessThanOrEqual(toggleBox?.y ?? 0);
         await expect(note, `${at}: on the first screen`).toBeInViewport({ ratio: 1 });
       }
-      // At 790 px tall or less the first screen keeps the drawing whole instead (L12 wins over the note).
+      // At 790 px tall or less the first screen keeps the drawing whole instead (the drawing wins over the note).
       await page.setViewportSize({ width: 1366, height: 768 });
       await home.goto(day.id);
       await expect(note, "1366 x 768: no note").toBeHidden();
     });
   }
 
-  test("the dateline's date stays on one line at every width: 1440 and 1024 on a desktop, 390, 360 and 320 on a phone (L19)", async ({ page, isPhone }) => {
+  test("the dateline's date stays on one line at every width: 1440 and 1024 on a desktop, 390, 360 and 320 on a phone", async ({ page, isPhone }) => {
     const home = new HomePage(page);
     const widths = isPhone ? [390, 360, 320] : [1440, 1024];
     for (const day of Object.values(DAYS)) {
@@ -838,7 +836,7 @@ test.describe("the hero's desktop note, the date and the keep offer (round 37: L
     }
   });
 
-  test("Keep this move's offer keeps Add and Replace together: one under the other at 360 on a phone, side by side at 1440 (L20)", async ({ page, isPhone }) => {
+  test("Keep this move's offer keeps Add and Replace together: one under the other at 360 on a phone, side by side at 1440", async ({ page, isPhone }) => {
     const home = new HomePage(page);
     const move = new TryAMove(page);
     await page.setViewportSize(isPhone ? { width: 360, height: 740 } : { width: 1440, height: 900 });
@@ -880,8 +878,7 @@ test.describe("the hero's desktop note, the date and the keep offer (round 37: L
 });
 
 /**
- * Round 38 (lanes H and reconcile) made the decision's clash ranked three ways a three-step ladder in the hero. Round 39
- * (W3, D11) makes it the hero's picture of what Qloo changes: one `[data-hero-ladder]` list with its ranks in the
+ * The decision's clash ranked three ways, as a three-step ladder: the hero's picture of what Qloo changes, one `[data-hero-ladder]` list with its ranks in the
  * numeral type (at least 20 px), the last rung's count, then whose ranks these are, "in this app’s index". From 1280 px
  * it is one row in the left column's room under the note; below 1280 px it shares the decision group's notice cell
  * under Keep with Keep's confirmation, overlapping, never stacked, and is hidden (keeping its box) once Keep is pressed.
@@ -935,7 +932,7 @@ test.describe("the hero's ladder", () => {
     );
   }
 
-  /** Each published day's ladder as the hero reads it (PLAN W3), and the hero section's foot at 1440 x 900 (round 39 baseline). */
+  /** Each published day's ladder as the hero reads it, and the hero section's foot at 1440 x 900. */
   const LADDERS = [
     {
       day: DAYS.glastonbury,
@@ -943,7 +940,7 @@ test.describe("the hero's ladder", () => {
       time: "Time alone #23",
       draw: "+ Qloo popularity #18",
       taste: "+ taste overlap #1 of 68",
-      // The section's foot before round 39 was 833.0 (833.5 with the plan's 0.5 px), so the ladder adds no net height.
+      // The section's foot without the ladder was 833.0 (833.5 with 0.5 px of slack), so the ladder adds no net height.
       heroBottom: 833.5,
     },
     {
@@ -952,7 +949,7 @@ test.describe("the hero's ladder", () => {
       time: "Time alone #5",
       draw: "+ Qloo popularity #1",
       taste: "+ taste overlap #1 of 47",
-      // Riot Fest's own foot before round 39: 852.8 (its key takes a second line), plus the same 0.5 px.
+      // Riot Fest's own foot without the ladder: 852.8 (its key takes a second line), plus the same 0.5 px.
       heroBottom: 853.3,
     },
   ] as const;
@@ -992,7 +989,7 @@ test.describe("the hero's ladder", () => {
           expect(room.box!.height, `${at}: the ladder fits its room's min-height (${read.roomMin} px)`).toBeLessThanOrEqual(read.roomMin + 0.5);
           expect(room.box!.right, `${at}: the ladder sits in the left column, clear of the group`).toBeLessThanOrEqual(read.group!.left);
           await expect(shown, `${at}: the ladder is on the first screen`).toBeInViewport({ ratio: 1 });
-          // No net hero height: the toggle, the drawing and the hero's foot stay where they were (round 39 baseline).
+          // No net hero height: the toggle, the drawing and the hero's foot stay where they were.
           const [toggle, drawing, hero] = await Promise.all([
             home.viewToggle.boundingBox(),
             home.graph.locator(":scope > [data-layout]").filter({ visible: true }).first().boundingBox(),
@@ -1027,7 +1024,7 @@ test.describe("the hero's ladder", () => {
         for (const size of read.cell!.sizes) expect(size, "390: a rank's size").toBeGreaterThanOrEqual(20);
         const keep = await home.keepMove.boundingBox();
         expect(read.cell!.box!.top, "390: the ladder sits under Keep").toBeGreaterThanOrEqual((keep?.y ?? 0) + (keep?.height ?? 0) - 0.5);
-        // Keep keeps its place on the first screen: at most 780.3 (779.8 before round 39; the guard's limit is 787).
+        // Keep keeps its place on the first screen: at most 780.3 (779.8 without the ladder; the guard's limit is 787).
         expect((keep?.y ?? 0) + (keep?.height ?? 0), "390: Keep's bottom").toBeLessThanOrEqual(780.3);
         await expect(inCell, "390: the ladder is wholly on the first screen").toBeInViewport({ ratio: 1 });
         expect(read.cell!.box!.bottom, "390: the ladder ends by 844").toBeLessThanOrEqual(844);

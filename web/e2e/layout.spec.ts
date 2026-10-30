@@ -35,7 +35,7 @@ test.describe("no horizontal scroll", () => {
         if (route.url.startsWith("/?")) await new HomePage(page).waitUntilReady();
         await scrollThrough(page);
         await expectNoHorizontalScroll(page);
-        // Round 37 (AO1): the board's grid is behind its disclosure; with it open, the page still does not scroll
+        // The board's grid is behind its disclosure; with it open, the page still does not scroll
         // sideways (the board scrolls inside its own frame on a phone).
         if (route.url.startsWith("/?")) {
           await new HomePage(page).openBoard();
@@ -117,7 +117,7 @@ test.describe("no horizontal scroll", () => {
   }
 
   for (const day of Object.values(DAYS)) {
-    test(`on ${day.title}, a 1366 x 768 screen shows the drawing whole on the first screen (round 37, L12); a phone's first screen holds Keep (L20)`, async ({ page, isPhone }) => {
+    test(`on ${day.title}, a 1366 x 768 screen shows the drawing whole on the first screen; a phone's first screen holds Keep`, async ({ page, isPhone }) => {
       await requireSavedDays(page);
       const home = new HomePage(page);
       const sizes = isPhone
@@ -132,7 +132,7 @@ test.describe("no horizontal scroll", () => {
         expect(await page.evaluate(() => window.scrollY)).toBe(0);
         const at = `${size.width} x ${size.height}`;
         if (size.keep === null) {
-          // The layout on show ends inside the first 768 px (it ended at 794.8 in round 36).
+          // The layout on show ends inside the first 768 px.
           const bottom = await home.graph.evaluate((graph) => {
             const layout = [...graph.querySelectorAll(":scope > [data-layout]")].find((element) => getComputedStyle(element).display !== "none");
             return layout ? layout.getBoundingClientRect().bottom : Number.POSITIVE_INFINITY;
@@ -147,7 +147,7 @@ test.describe("no horizontal scroll", () => {
   }
 
   for (const day of Object.values(DAYS)) {
-    test(`on ${day.title}, no text on the home page is under 12.5 px, every disclosure open, except the drawing's clock axis (round 37, L40)`, async ({ page, isPhone }) => {
+    test(`on ${day.title}, no text on the home page is under 12.5 px, every disclosure open, except the drawing's clock axis`, async ({ page, isPhone }) => {
       await requireSavedDays(page);
       const theme = isPhone ? "dark" : "light";
       await page.addInitScript((value) => localStorage.setItem("theme", value), theme);
@@ -158,8 +158,8 @@ test.describe("no horizontal scroll", () => {
       await page.evaluate(() => document.querySelectorAll("details").forEach((details) => (details.open = true)));
       await scrollThrough(page);
       // Every text node a visitor sees (not screen-reader text clipped to 1 px, not a box that is not drawn), with its
-      // computed size. The one exemption, by design (round-34 DECISION 2.2): the drawing's clock axis, [data-axis].
-      // The type floor's residuals that lane board named are all off the home page (/check's print sheet and results,
+      // computed size. The one exemption, by design: the drawing's clock axis, [data-axis].
+      // The type floor's known residuals are all off the home page (/check's print sheet and results,
       // the brief's print figure), so none is exempted here.
       const found = await page.evaluate(() => {
         const small: string[] = [];

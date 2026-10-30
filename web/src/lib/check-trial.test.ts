@@ -108,7 +108,7 @@ describe("the sample: each planted break gets a result", () => {
         /^\d+ (within 3 hours )?found, \d+ shown: each ends it, adds no rule break and makes none larger, ranked by total start-time minutes moved, with any that create a longer overlap than they end last\. [\d,]+ candidates? tested\./,
       );
       expect(result.changes).toHaveLength(Math.min(TRIAL_LIMITS.shown, result.found));
-      // The shown count adds the next same-stage changes listed after the first five (R32 K6).
+      // The shown count adds the next same-stage changes listed after the first five.
       const more = result.sameStageMore ?? [];
       for (const change of more) {
         expect(change.stageChanges).toBe(0);
@@ -226,7 +226,7 @@ describe("the sample: each planted break gets a result", () => {
           if (rise > net) expect(line).toContain(`the grid total rises by ${net} ${net === 1 ? "minute" : "minutes"}.`);
           if (named) expect(line).toContain(`${named}.`);
         } else if (rise > 0) {
-          // C6: the worst one named, never a summed "N minutes longer in all".
+          // The worst one named, never a summed "N minutes longer in all".
           expect(line).toBe(
             `${named}${grown.length > 1 ? ` (${grown.length} overlaps get longer)` : ""}; others get shorter, so the grid total ${net < 0 ? "falls" : "stays the same"}.`,
           );
@@ -250,7 +250,7 @@ describe("the sample: each planted break gets a result", () => {
     expect(sharedRiseLine({ ...change, sharedRise: 15 } as TrialChange)).toBe("Shared time elsewhere rises by 15 minutes.");
   });
 
-  it("names the worst overlap a change creates or lengthens, never a sum, when the grid total does not rise (C6)", () => {
+  it("names the worst overlap a change creates or lengthens, never a sum, when the grid total does not rise", () => {
     const base = {
       sharedRise: 345,
       pairBefore: null,

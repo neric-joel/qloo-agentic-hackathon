@@ -26,7 +26,7 @@ const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " "
 /** The text of each element that holds text directly. */
 const leaves = (html: string) => [...html.matchAll(/>([^<>]+)</g)].map((m) => m[1].trim()).filter(Boolean);
 
-describe("the phone's start-order list says whose lock it is (round 37, L33)", () => {
+describe("the phone's start-order list says whose lock it is", () => {
   it("names the owner on a locked card, on its own line under the time, and never shows a bare 'Locked'", () => {
     for (const synthetic of [false, true]) {
       const { views, html } = list(synthetic);

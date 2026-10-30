@@ -1714,7 +1714,7 @@ export function TryAMove({
   /**
    * The visitor pressed for a set's places (a starting row, the select, "Show every legal place", "Next"): heard in
    * the press itself, so the page can open the board for the tested place to come while the browser still counts
-   * the change as the visitor's own, instead of when a late answer lands (round 37).
+   * the change as the visitor's own, instead of when a late answer lands.
    */
   onPick?: () => void;
   /** A change previewed from "Keep two sets apart": two ghost slots, never part of the kept plan. */
@@ -1774,7 +1774,7 @@ export function TryAMove({
   const pickedName = sets.find((set) => set.actId === actId)?.name ?? null;
   const state = usePlan(preset.id, moves, actId);
   // While the plan's answer is out (after Keep this move, an undo or a new pick), its place holds room down past the
-  // screen's foot, so a plan that lands late, however long, moves nothing under it that a visitor sees (round 37).
+  // screen's foot, so a plan that lands late, however long, moves nothing under it that a visitor sees.
   useHeldRoom(planRef, state.status === "loading");
   const result = state.status === "ready" ? state.options : null;
   const choiceKey = `${encodeMoves(moves)}:${actId ?? ""}`;
@@ -2245,7 +2245,7 @@ export function TryAMove({
                   const besideSelected = selected || (i + 1 < starters.length && shown === starters[i + 1].actId);
                   return (
                     // Keyed by row, not by set: when a late plan answer changes which sets start the list, each row
-                    // keeps its place and only its words change, so no row moves under a visitor (round 37).
+                    // keeps its place and only its words change, so no row moves under a visitor.
                     <li
                       key={i}
                       data-start-rule

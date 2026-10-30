@@ -26,7 +26,7 @@ export function signedDelta(delta: number): string {
  * A tested move's Clash Budget Index, before and after: the two readings, a chip that says how
  * far it moved ("2.4 lower"), a Now and an After bar, and the day's scale line when it has one:
  * the middle 80% of random valid timetables (`rangeLead`), then the caller's verdict, if any.
- * With `stamp` (M7), each new result lands: the chip settles from 1.12x and the After figure is
+ * With `stamp`, each new result lands: the chip settles from 1.12x and the After figure is
  * underlined in the chip's colour. The underline stays, so the final frame is the one that shows.
  */
 export function BudgetMove({
@@ -41,7 +41,7 @@ export function BudgetMove({
   range: ScaleRange;
   /** A sentence that follows the scale line, such as where a plan sits against that range. */
   verdict?: string | null;
-  /** Marks each new result as it arrives (M7): a key for the result shown, so a new one plays again. */
+  /** Marks each new result as it arrives: a key for the result shown, so a new one plays again. */
   stamp?: string | null;
 }) {
   const delta = budgetDelta(before, after);

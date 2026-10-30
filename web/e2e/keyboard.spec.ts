@@ -142,7 +142,7 @@ test.describe("keyboard", () => {
   });
 
   test("focus stays on the day tabs after the day changes, so the next arrow key works", async ({ page }) => {
-    // Was defect D2 (round 31): choosing a day remounted the day view and dropped focus to <body>.
+    // Was defect D2: choosing a day remounted the day view and dropped focus to <body>.
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
@@ -193,7 +193,7 @@ test.describe("keyboard", () => {
     await page.keyboard.press("Home");
     expect(await focusedName()).toMatch(/^#1 of /);
 
-    // A line reached from the keyboard shows its note at once, in words (round 35: no press of Enter needed); Enter
+    // A line reached from the keyboard shows its note at once, in words (no press of Enter needed); Enter
     // pins it; Escape hides it and leaves focus on the line.
     const note = home.graph.locator('[data-thread-note="line"]').filter({ visible: true });
     await expect(note).toBeVisible();

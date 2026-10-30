@@ -46,12 +46,12 @@ test.describe("invented example day", () => {
     await expect(home.graphKey).toContainText("thicker means a higher invented taste overlap rank");
     await expect(home.graphKey).toContainText("Dashed: slot before the move or new overlap.");
 
-    // The index scale reads the same on the invented day (round 39, W5: what above 100 means follows the scale); "draw"
+    // The index scale reads the same on the invented day (what above 100 means follows the scale); "draw"
     // is glossed as invented popularity, and the card (with, from 1024 px, its lines beside it) names no saved Qloo
     // reading.
     await expect(home.indexCard).toContainText(HONESTY.reading);
     await expect(home.indexCard).toContainText("A score, not money: 100 = the average random valid timetable of this lineup. Above 100: costlier.");
-    // Round 39 (W6): the desktop note says what a move keeps on the invented day, with its invented hours, curfew and
+    // The desktop note says what a move keeps on the invented day, with its invented hours, curfew and
     // locks, and credits no Qloo; a phone draws no note.
     const note = home.hero.locator("[data-hero-note]");
     if (isPhone) await expect(note).toBeHidden();
@@ -64,7 +64,7 @@ test.describe("invented example day", () => {
     await expect(home.details.getByRole("button", { name: /^Re-check this pair with Qloo/ })).toHaveCount(0);
     await home.openBoard();
     await expect(home.board.getByRole("button")).toHaveCount(24);
-    // The hero shows the invented day's own move (round 37, seam S11). Where that decision came from depends on the
+    // The hero shows the invented day's own move. Where that decision came from depends on the
     // server: one that serves saved festival days (as here) drew another day, so the browser asked for the invented
     // day's decision itself; one that serves the invented day itself (a clean clone, CI's browser workflow) seeds the
     // decision in its preset answer with the same id, and the browser needs no /decision request. Either holds; neither
@@ -89,7 +89,7 @@ test.describe("invented example day", () => {
     await expect(home.board).not.toContainText("No priced signal");
     // Rendered words only: the server's serialized summary of the real day is not shown text.
     await expect(page.locator("body")).not.toContainText(/No priced signal|acts priced|not priced/, { useInnerText: true });
-    // The coverage line under the board (named for the invented day's own coverage, not Qloo's). Round 36: it counts sets.
+    // The coverage line under the board (named for the invented day's own coverage, not Qloo's). It counts sets.
     await expect(page.locator('section[aria-labelledby="coverage-heading"]')).toContainText(/\d+ of \d+ sets scored/);
   });
 
@@ -98,7 +98,7 @@ test.describe("invented example day", () => {
     const home = new HomePage(page);
     await home.goto();
 
-    // Round 36: on a published day the intro says "Sets this app locks stay put."; the invented day's locks are invented.
+    // On a published day the intro says "Sets this app locks stay put."; the invented day's locks are invented.
     await expect(home.tryAMove.getByText(/Keep a move to stack the next one\. Locked sets stay put\.$/)).toBeVisible();
     await expect(home.tryAMove).not.toContainText("Sets this app locks");
   });

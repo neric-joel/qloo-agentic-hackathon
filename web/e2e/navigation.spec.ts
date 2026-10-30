@@ -33,7 +33,7 @@ test.describe("site navigation", () => {
     await expect(chrome.footer).toContainText("Clash Control");
     await expect(chrome.footer.getByRole("link", { name: "How we know" })).toHaveAttribute("href", "/method");
     await expect(chrome.footer.getByRole("link", { name: "Check a draft grid" })).toHaveAttribute("href", "/check");
-    // Round 37 (R3, L78): what this app calculates is called scores, never prices.
+    // What this app calculates is called scores, never prices.
     await expect(chrome.footer).toContainText(
       "Popularity and audience comparisons are saved Qloo responses; taste overlap and clash scores are calculated by this app from them.",
     );
@@ -103,7 +103,7 @@ test.describe("the section nav under the hero", () => {
       await expect(page).toHaveURL(/#agent$/);
       await expect(home.agent).toBeInViewport();
       await expect(home.agent.getByRole("heading", { level: 2 })).toHaveText("Recorded agent runs");
-      // Round 36: the section's heading lands clear of the sticky bars, by at least 8 px.
+      // The section's heading lands clear of the sticky bars, by at least 8 px.
       const heading = home.agent.getByRole("heading", { level: 2 });
       await expect
         .poll(async () => ((await heading.boundingBox())?.y ?? 0) - (await stickyBarsFoot(page)), { message: "the heading's top against the bars' foot" })
@@ -116,8 +116,8 @@ test.describe("the section nav under the hero, D8 (fixed)", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
 
   /**
-   * D8 (round 37, found by lane e2e-sync; README "Known defects", closed): on Riot Fest at 1440 x 900 the drawing's key
-   * takes a second line (its round-37 lock and dotted sentences), which moved the section nav 20 px down, so its
+   * D8 (README "Known defects", closed): on Riot Fest at 1440 x 900 the drawing's key
+   * takes a second line (its lock and dotted sentences), which moved the section nav 20 px down, so its
    * "Agent runs" link ended at 914.8 px, under the first screen. The hero frame's foot from 1024 px is now 4 px (was
    * 24), so the link ends at 894.8 there and at 874.8 on Glastonbury. On a phone the link is not on the first screen by
    * design, and the test there holds what the phone promises.

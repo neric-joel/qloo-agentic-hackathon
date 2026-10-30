@@ -1,4 +1,4 @@
-"""Round-7 hardening of ``POST /whatif``: identical first requests are single-flight (one compute, one slot),
+"""Hardening of ``POST /whatif``: identical first requests are single-flight (one compute, one slot),
 a plan written two ways is one cache entry, a request over 16 KB is a 413 before it is read, and the answer
 still echoes the order the request used. Synthetic days only (the nine-set day of ``test_whatif_rule_steps``).
 """

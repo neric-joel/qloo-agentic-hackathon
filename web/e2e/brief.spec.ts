@@ -11,19 +11,19 @@ const PLAN = "moves=gurriers~woodsies~0~1215";
 const CARD_PLAN = "moves=sprints~woodsies~0~1415";
 
 /**
- * The brief's lock line (round 36, lib/locks.ts LOCK_RULE): printed once, under the published day's table, only when a
+ * The brief's lock line (lib/locks.ts LOCK_RULE): printed once, under the published day's table, only when a
  * row on show is marked "both locked"; on both published days the locked sets are exactly the last set on each stage.
  */
 const LOCK_RULE = "On the published days, the locked sets are the last set on each stage. This app keeps them in place; the festivals did not mark them.";
 
 /**
- * What a reading above 100 means (round 39, W5, D08; lib/brief.ts INDEX_MEANING), from /method's own reading of the
+ * What a reading above 100 means (lib/brief.ts INDEX_MEANING), from /method's own reading of the
  * index: in "The day", right after the band sentence, in the same paragraph.
  */
 const INDEX_MEANING =
   "Above 100, the day’s shared minutes cost more, by this reading, than in the average random valid timetable of this lineup: one kind of cost, not a verdict on how the festival was programmed.";
 
-/** The day's figure (round 36): under the title, its caption saying what is drawn, hatched and dashed. */
+/** The day's figure: under the title, its caption saying what is drawn, hatched and dashed. */
 function figureOf(page: import("@playwright/test").Page) {
   return page.getByRole("article").locator("[data-brief-figure]");
 }
@@ -67,10 +67,10 @@ test.describe("one-page brief", () => {
     await expect(article.getByRole("heading", { level: 1 })).toHaveText("Glastonbury Festival 2025 Sunday: where the clashes fall");
     await expect(article).toContainText("Scored by this app from the published timetable. Glastonbury Festival 2025 does not use Clash Control.");
     await expect(article.getByRole("region", { name: "The day" })).toContainText(/Clash Budget Index \d+\.\d\./);
-    // Round 39 (W5): what a reading above 100 means follows the band sentence, in the same paragraph.
+    // What a reading above 100 means follows the band sentence, in the same paragraph.
     await expect(article.getByRole("region", { name: "The day" })).toContainText(INDEX_MEANING);
     await expect(article.getByRole("region", { name: "The day" })).toContainText(/ that range\. Above 100, the day’s shared minutes cost more, by this reading,/);
-    // Round 36: "not scored", never "not priced".
+    // "not scored", never "not priced".
     await expect(article.getByRole("region", { name: "The day" })).toContainText("Taste overlap is scored for 36 of 39 sets; 3 have no usable Qloo signal and are not scored.");
 
     // Five clashes: a table on a desk, a list of cards on a phone (a table does not fit 390 px).
@@ -168,11 +168,11 @@ test.describe("one-page brief", () => {
   for (const [name, plan] of [["a plan", PLAN], ["the hero's move and its alternative", CARD_PLAN], ["no plan", ""]] as const) {
     test(`print media: the brief with ${name} fits one Letter page and one A4 page`, async ({ page }) => {
       const article = await open(page, `preset=${DAYS.glastonbury.id}&day=0${plan ? `&${plan}` : ""}`);
-      // Round 39 (W5): on screen "The day" says what above 100 means on every sheet.
+      // On screen "The day" says what above 100 means on every sheet.
       await expect(article.getByRole("region", { name: "The day" })).toContainText(INDEX_MEANING);
       await page.emulateMedia({ media: "print" });
       // On paper too, except on the fullest sheet (the hero's move beside its alternative), where it has no room on one
-      // page and stays on the screen (PLAN W5: never a caveat instead); "How to read this" prints on every sheet.
+      // page and stays on the screen (never a caveat instead); "How to read this" prints on every sheet.
       if (plan !== CARD_PLAN) await expect(article.getByRole("region", { name: "The day" })).toContainText("Above 100, the day’s shared minutes cost more", { useInnerText: true });
       await expect(article.getByRole("region", { name: "How to read this" })).toBeVisible();
       await expect(article.getByRole("region", { name: "How to read this" })).toContainText("a reading, not a verdict on the festival");
@@ -284,7 +284,7 @@ test.describe("one-page brief", () => {
     await expectNoHorizontalScroll(page);
   });
 
-  test("with the card's move kept, the minutes line comes before the index line, on the screen and on paper (round 37, R5, L74)", async ({ page }) => {
+  test("with the card's move kept, the minutes line comes before the index line, on the screen and on paper", async ({ page }) => {
     const article = await open(page, `preset=${DAYS.glastonbury.id}&day=0&${CARD_PLAN}`);
     const plan = article.getByRole("region", { name: "Your plan" });
     const minutes = plan.locator("[data-shared-minutes]");
@@ -308,7 +308,7 @@ test.describe("one-page brief", () => {
     ["Glastonbury's bare brief", `preset=${DAYS.glastonbury.id}&day=0`],
     ["Riot Fest's bare brief", `preset=${DAYS.riot.id}&day=0`],
   ] as const) {
-    test(`on paper, ${name} sets no text under 9.5 pt and its running text at 10 pt or more, on one Letter and one A4 page (round 37, L75; the drawing's own labels are read in the next test)`, async ({ page }) => {
+    test(`on paper, ${name} sets no text under 9.5 pt and its running text at 10 pt or more, on one Letter and one A4 page (the drawing's own labels are read in the next test)`, async ({ page }) => {
       await open(page, query);
       await page.emulateMedia({ media: "print" });
       const sizes = await page.getByRole("article").evaluate((article) => {
@@ -339,10 +339,10 @@ test.describe("one-page brief", () => {
     });
 
     /**
-     * Round 37, L75 (fix pass 2): the drawing's own labels printed at 7.5 pt. The sheet now prints the wide frame's labels
+     * The drawing's own labels printed at 7.5 pt. The sheet now prints the wide frame's labels
      * at 12.7 units, so on the narrower paper column (A4's 190 mm, 718 px) each renders at 9.5 pt (12.667 px) or more.
      */
-    test(`on paper at A4's printed column, ${name} prints the drawing's labels at 9.5 pt or more, on one page (round 37, L75, fix pass 2)`, async ({ page, isPhone }) => {
+    test(`on paper at A4's printed column, ${name} prints the drawing's labels at 9.5 pt or more, on one page`, async ({ page, isPhone }) => {
       test.skip(isPhone, "The desktop project sets the paper column's width.");
       // 210 mm less two 10 mm margins, at 96 px to the inch.
       await page.setViewportSize({ width: Math.floor((190 * 96) / 25.4), height: 1000 });

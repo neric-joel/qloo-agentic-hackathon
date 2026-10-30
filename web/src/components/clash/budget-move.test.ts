@@ -11,7 +11,7 @@ function html(props: Partial<Parameters<typeof BudgetMove>[0]> = {}): string {
   return renderToStaticMarkup(createElement(BudgetMove, { before: 110.4, after: 104.1, range: RANGE, ...props }));
 }
 
-describe("BudgetMove verdict stamp (M7)", () => {
+describe("BudgetMove verdict stamp", () => {
   it("marks the chip and underlines the After figure in the chip's colour when asked", () => {
     const lower = html({ stamp: "0-north-840" });
     expect(lower).toContain("cc-stamp ");

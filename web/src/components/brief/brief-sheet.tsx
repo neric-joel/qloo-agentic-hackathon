@@ -369,7 +369,7 @@ export function BriefScreen({
 // ------------------------------------------------------------------------------------ the sheet
 
 /**
- * The printed sheet's type (round 37): its running text (paragraphs, list lines, notes, caveats, the sign-off) at
+ * The printed sheet's type: its running text (paragraphs, list lines, notes, caveats, the sign-off) at
  * 10 pt and everything else at 9.5 pt or more. Each size carries its own leading, because `text-sm` and `text-xs` set a
  * screen line height that would otherwise print at 1.33 to 1.43 and push the sheet onto a second page.
  */
@@ -751,7 +751,7 @@ export function BriefContent({
     plan && withMoves ? (
       <>
         <Block title="Your plan">
-          {/* The plan leads with its minutes (round 37, R5): the timetable minutes the published day's ranked clashes
+          {/* The plan leads with its minutes: the timetable minutes the published day's ranked clashes
               share before and with the plan, and what it adds outside them, on the screen and on paper; then the
               index line and its band. */}
           {minutes ? (

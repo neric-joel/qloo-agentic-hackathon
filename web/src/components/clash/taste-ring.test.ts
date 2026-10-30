@@ -246,7 +246,7 @@ describe("the taste figure's drawing", () => {
     expect(html).toMatch(new RegExp(`<p id="${list[1]}" data-shared-label="true" class="text-\\[0\\.8125rem\\] leading-5 font-semibold[^"]*"><span>Audience tags in common, from Qloo: <span`));
     // 15 px medium ink on a 24 px rhythm. Below 1024 px two equal columns on the text column's left edge, inside the
     // bridge. From 1024 px one compact block of four columns, each as wide as its widest tag, 32 px apart, centred under
-    // the label (R25's four columns, no longer stretched to a set width).
+    // the label (four columns, no longer stretched to a set width).
     expect(list[0]).toMatch(
       /data-shared-tags="true" class="grid grid-cols-2 gap-x-6 gap-y-1 text-\[0\.9375rem\] leading-6 font-medium text-foreground lg:grid-cols-\[repeat\(4,max-content\)\] lg:justify-center lg:gap-x-8"/,
     );

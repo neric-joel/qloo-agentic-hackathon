@@ -2,7 +2,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 import { SiteChrome } from "./site-chrome";
 
-/** The printed draft brief's sign-off labels, the same three as the published-day brief's (round 36). */
+/** The printed draft brief's sign-off labels, the same three as the published-day brief's. */
 export const DRAFT_SIGN_OFF = ["Prepared by", "Reviewed by (head of programming)", "Date"];
 
 /** The printed draft brief's first line: its heading, then the print date (a grid with no day column names no day). */
@@ -38,7 +38,7 @@ export class CheckPage {
   /** What a screen reader hears after a check. */
   readonly announcement: Locator;
 
-  // Round 35: a real paste survives first contact.
+  // A real paste survives first contact.
   /** The Table view's paste target: a paste there lands in the CSV editor. */
   readonly pasteTarget: Locator;
   /** The pair rules, one per line ("Act A | Act B"), inside the rule settings. */
@@ -56,7 +56,6 @@ export class CheckPage {
   /** In the printed draft brief, under its title: the skipped sentence. */
   readonly briefSkipped: Locator;
 
-  // Round 36.
   /** After a check: "Read {n} sets on {s} stages", then what it says about locks (on screen; the sheet has its own). */
   readonly readLine: Locator;
   /** The printed draft brief's first line ("Draft grid check · printed {date}"), drawn in print only. */

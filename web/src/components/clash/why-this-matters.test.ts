@@ -37,7 +37,7 @@ const CONTACT_LINE = `Contact: ${PILOT_CONTACT}`;
 const CONTACT_FALLBACK = "Contact is on the Devpost page.";
 const escapeRe = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/** Words from the public statements block that round 34 (audit Y7) took off the page, with its limit sentence. */
+/** Words from the public statements block that are no longer on the page, with its limit sentence. */
 const VOICE_WORDS = [
   "What programmers have said in public",
   "(our summary)",
@@ -69,7 +69,7 @@ function withoutDisclosures(html: string): string {
 
 const FAILED =
   "Our test failed: taste overlap put 46.8% of complained-about clashes in the top quarter of their day, below our 60% bar. Popularity, also a Qloo field, did better. It reached 57.8%. The exploratory follow-up did not establish an advantage over popularity.";
-/** Round 33 (H4): the reading's place, named for what Qloo's data adds (draw is a Qloo field too). */
+/** The reading's place, named for what Qloo's data adds (draw is a Qloo field too). */
 const SECOND_OPINION =
   "So the taste reading is a second opinion beside time and draw: the part Qloo’s taste data adds to the index, never the verdict on its own.";
 
@@ -84,10 +84,10 @@ describe("FailedTestNote", () => {
     expect(html).toContain('href="/method#tested"');
     expect(plain).toContain(SECOND_OPINION);
     expect(plain).toMatch(/never the verdict on its own\. How we know$/);
-    // Round 32 (V3): the taste-removed check did not establish that taste adds to time and draw, so no
+    // The taste-removed check did not establish that taste adds to time and draw, so no
     // "Exploratory:" sentence about taste adding something is added here.
     expect(plain).not.toMatch(/Exploratory:|adds something|taste adds/);
-    // Round 31: the price does include taste, so the note no longer says it is kept out of a verdict.
+    // The price does include taste, so the note no longer says it is kept out of a verdict.
     expect(plain).not.toContain("never folded into a verdict");
     // Never "the part Qloo adds": draw is Qloo popularity too, so the part is Qloo's taste data.
     expect(plain).not.toContain("the part Qloo adds");
@@ -95,7 +95,7 @@ describe("FailedTestNote", () => {
     expect(html).not.toContain("<details");
   });
 
-  it("keeps every line the round-33 compression must keep, each in the open with no click", () => {
+  it("keeps every line the compressed section must keep, each in the open with no click", () => {
     const html = renderToStaticMarkup(createElement(FailedTestNote));
     const visible = text(withoutDisclosures(html));
     for (const line of [
@@ -114,7 +114,7 @@ describe("FailedTestNote", () => {
   });
 
   it("leaves the correlation with popularity to /method, which states it from the figures module (the home pin, moved)", () => {
-    // Round 33 (H4): "(r = 0.08)" left the home note because /method states it; the figure is never typed.
+    // "(r = 0.08)" is not in the home note because /method states it; the figure is never typed.
     const home = text(renderToStaticMarkup(createElement(FailedTestNote)));
     expect(home).not.toMatch(/\(r = |correlation/);
     const method = text(renderToStaticMarkup(createElement(MethodPage)));
@@ -130,14 +130,14 @@ describe("WhyThisMatters", () => {
     expect(html).toContain(`id="${WHY_THIS_MATTERS_ID}"`);
     expect(plain).toContain("Who has complained, and what nobody has tested");
     expect(plain).toContain("45 clashes that fans or the press complained about at 5 festivals");
-    // Round 34 (audit Y6): the fold is named for what it holds, with the pair count; the median left home with the
-    // range chart (audit Y5) and is stated on /method.
+    // The fold is named for what it holds, with the pair count; the median left home with the
+    // range chart and is stated on /method.
     expect(plain).toContain("How the lists lean (86 verified pairs)");
     expect(plain).not.toContain("86 pairs, median 50 minutes, and how the lists lean");
     expect(plain).not.toMatch(/median/i);
     expect(plain).toContain("Press lists lean toward headliners, which flatters any taste-based method.");
     expect(plain).not.toMatch(/\bAUC\b/);
-    // Round 34 (audit Y7): the statements and the sentence that limited them are gone; what is not known stays.
+    // The statements and the sentence that limited them are gone; what is not known stays.
     expect(plain).not.toContain("Whether programmers would use or pay for this has not been tested.");
     expect(plain).not.toContain("They do not show that anyone would use or pay for this.");
     expect(plain).toContain("Who would pay is not known.");
@@ -172,7 +172,7 @@ describe("WhyThisMatters", () => {
     expect(plain).not.toMatch(/found none that reads/);
   });
 
-  it("says the competitor search once, in the heading, scoped to the tool pages reviewed and to ranking a draft grid (round 39)", () => {
+  it("says the competitor search once, in the heading, scoped to the tool pages reviewed and to ranking a draft grid", () => {
     expect(TOOLS_ABSENCE).toBe(
       "None of the 13 tool pages we reviewed describes ranking a draft grid’s clashes by audience closeness",
     );
@@ -195,7 +195,7 @@ describe("WhyThisMatters", () => {
     expect(text(withoutDisclosures(html))).toContain(`${TOOLS_ABSENCE} Our search, October 2026: absence of evidence only.`);
   });
 
-  it("prints no public statements, paraphrases or their fold (round 34, audit Y7), and no quotation marks", () => {
+  it("prints no public statements, paraphrases or their fold, and no quotation marks", () => {
     const html = renderToStaticMarkup(createElement(WhyThisMatters));
     const plain = text(html);
     for (const words of VOICE_WORDS) expect(plain, words).not.toContain(words);
@@ -205,7 +205,7 @@ describe("WhyThisMatters", () => {
     expect(html).not.toContain('rel="noopener noreferrer"');
     for (const host of ["bbc.co.uk", "nme.com", "alpsinc.kr", "abc.net.au", "billboard.com"]) expect(html).not.toContain(host);
     expect(html).not.toMatch(/<summary[^>]*>(?:<span[^>]*>)*\w+ more statements?/);
-    // No quote glyph anywhere in the section, and no left bar. Round 37: the one exception is the name of the /check
+    // No quote glyph anywhere in the section, and no left bar. The one exception is the name of the /check
     // decision, \u201cKept on purpose\u201d, in the WHY_USE paragraph; no statement, paraphrase or reply is quoted.
     expect(html).not.toContain("&quot;");
     expect(html.replace(`<p data-why-use="true" class="mt-2 text-base leading-normal text-foreground">${WHY_USE}</p>`, "")).not.toMatch(/[\u201c\u201d]/);
@@ -217,13 +217,13 @@ describe("WhyThisMatters", () => {
 
   it("closes the last column with the pilot offer, no request arithmetic on the page, and the owner's contact, with the Devpost page as the fallback", () => {
     const plain = text(renderToStaticMarkup(createElement(WhyThisMatters)));
-    // Round 32 (V4): the label, then the offer, word for word. It offers only what costs no Qloo request: a walk
+    // The label, then the offer, word for word. It offers only what costs no Qloo request: a walk
     // through a published day's brief, and rule checks on the festival's own draft that run in the browser.
-    // Round 33 (H3): the success line closes on the caveat that left with the fold, "One answer is not a market."
+    // The success line closes on the caveat that left with the fold, "One answer is not a market."
     expect(plain).toContain("Pilot offer Walk through the Glastonbury 2025 Sunday brief with me and say where it matches how your team would set those times. Your own draft can go through Check a draft grid, whose rule checks run in your browser and send nothing. Success: you say which suggestion you would take or turn down, and why. One answer is not a market.");
     // No promise to price or brief a new bill.
     expect(plain).not.toMatch(/Send one day|I will price|send back a brief|up to \d+ bills/);
-    // Round 33 (H3): the request arithmetic read as contradicting the zero-quota offer, so it is not on the home
+    // The request arithmetic read as contradicting the zero-quota offer, so it is not on the home
     // page at all (the Devpost page carries it, from PILOT); no fold holds it.
     const html = renderToStaticMarkup(createElement(WhyThisMatters));
     expect(plain).not.toMatch(/About \d+ Qloo requests|Qloo requests per bill|Pricing a new bill is not offered|full-day reading/);
@@ -255,7 +255,7 @@ describe("WhyThisMatters", () => {
     // The chart is on /method only.
     expect(html).not.toContain("<figure");
     expect(html).not.toContain("data-bar-value");
-    // Round 32: the complaint test's shares are said once, in FailedTestNote (46.8% and popularity's 57.8%), which
+    // The complaint test's shares are said once, in FailedTestNote (46.8% and popularity's 57.8%), which
     // links to the full test; this section no longer repeats them in its fold.
     expect(html).not.toContain("data-test-line");
     expect(text(html)).not.toMatch(/57\.8%|46\.8%/);
@@ -266,7 +266,7 @@ describe("WhyThisMatters", () => {
   it("sets no all-caps kicker anywhere in the section: the problem opens on its finding, the other findings on an 18px semibold conclusion, the pilot's head 16px", () => {
     const html = renderToStaticMarkup(createElement(WhyThisMatters));
     expect(html).not.toContain("type-kicker");
-    // Round 33: the problem's column opens on the finding itself, set as its heading at 20px (the label that
+    // The problem's column opens on the finding itself, set as its heading at 20px (the label that
     // repeated it, "The problem is public", is gone).
     expect(html).toContain(
       '<h3 data-why-finding="true" class="text-xl leading-snug font-medium text-foreground">45 clashes that fans or the press complained about at 5 festivals had a verified overlap in time.</h3>',
@@ -319,7 +319,7 @@ describe("WhyThisMatters", () => {
     expect(FIGURE_TICKS).toEqual([0, 25, 50, 75]);
     expect(FIGURE_TICKS[FIGURE_TICKS.length - 1]).toBe(FIGURE_DOMAIN);
     expect(text(figure)).toMatch(/Random 26\.3% 0 25 50 75$/);
-    // Taste overlap 46.8 of 75. Round 34 (corners): every bar is a mark with the 6px mark corner at both ends
+    // Taste overlap 46.8 of 75. Every bar is a mark with the 6px mark corner at both ends
     // (rounded-bar), so no bar has one square end; the 6px baselines are clamped to a round end.
     expect(along(46.8)).toBe("62.4%");
     expect(figure).toContain(`style="width:${along(46.8)}"`);
@@ -348,7 +348,7 @@ describe("WhyThisMatters", () => {
     const bar = (label: string) => figure.match(new RegExp(`>${label}</span><span [^>]*><span [^>]*class="block shrink-0 rounded-bar ([^"]*)"`))![1];
     expect(bar("Taste overlap")).toBe("h-4 bg-foreground");
     expect(bar("Popularity")).toBe("h-4 bg-foreground");
-    // Round 27 (R25 held): the two Qloo measures share one fill and one thickness, so the losing measure is never
+    // The two Qloo measures share one fill and one thickness, so the losing measure is never
     // dimmed next to the product's own; taste overlap is told apart by its labels alone.
     expect(bar("Taste overlap")).toBe(bar("Popularity"));
     // Popularity's value, 57.8%, is regular ink: no weight, no softer tone.
@@ -383,7 +383,7 @@ describe("WhyThisMatters", () => {
     // top; the line still starts at the row's foot (top-6, above).
     expect(figure).toMatch(/<div class="relative h-6" style="[^"]*"><span data-target-label="true" class="absolute bottom-2\.5 text-xs leading-none whitespace-nowrap text-foreground" style="right:20%">Bar we set: /);
     expect(figure.indexOf("Bar we set")).toBeLessThan(figure.indexOf("data-bar-value"));
-    // Round 27: the label clears the taste overlap bar by at least 12px. Its foot is 10px (bottom-2.5) above the row
+    // The label clears the taste overlap bar by at least 12px. Its foot is 10px (bottom-2.5) above the row
     // foot, and the first bar (16px, h-4) is centred in its 28px lane (h-7), so its top is 6px under the row foot:
     // 10 + 6 = 16px clear. The clearance comes from the label row alone; no bar moves or shortens.
     const labelFoot = 2.5 * 4;
@@ -402,7 +402,7 @@ describe("WhyThisMatters", () => {
     // text, left-aligned and at most 68ch wide. No card, surface edge, radius or padding box.
     expect(pilot).toMatch(/^<div data-pilot="true" class="border-t border-border pt-6"><div data-pilot-offer="true" class="max-w-\[68ch\]">/);
     expect(pilot).not.toMatch(/rounded-lg|border-surface-edge|\bbg-card\b|\bp-6\b|border-l/);
-    // Round 34: from 1024px it sits in the findings' right columns, right under what is not known, so the offer reads
+    // From 1024px it sits in the findings' right columns, right under what is not known, so the offer reads
     // after "Who would pay is not known."; in reading order it comes last.
     expect(html).toMatch(/<div data-why-col="pilot" class="min-w-0 lg:col-span-7 lg:col-start-6 lg:row-start-2"><div data-pilot="true"/);
     expect(html.indexOf("<div data-pilot")).toBeGreaterThan(html.indexOf('data-why-col="unknown"'));
@@ -459,7 +459,7 @@ describe("WhyThisMatters", () => {
     expect(html).not.toContain("Check a draft grid now");
     const plain = text(html);
     expect(plain.indexOf("Check a draft grid")).toBeLessThan(plain.indexOf(CONTACT_LINE));
-    // Nothing follows the contact in the pilot: the request fold is gone (round 33, H3).
+    // Nothing follows the contact in the pilot: the request fold is gone.
     const pilot = text(html.slice(html.indexOf("<div data-pilot")));
     expect(pilot.endsWith(CONTACT_LINE)).toBe(true);
   });
@@ -482,8 +482,8 @@ describe("WhyThisMatters", () => {
 
   it("composes the findings on a 12-column grid from 1024px: the problem on the left (5), what is not known then the pilot on the right (7), one column below 1024px", () => {
     const html = renderToStaticMarkup(createElement(WhyThisMatters));
-    // Round 34: with the statements gone, two rows from 1024px: the problem spans both on the left; what is not known
-    // (row 1) then the pilot (row 2) on the right, 40px under it. 40px between blocks below 1024px. Round 35: 24px
+    // With the statements gone, two rows from 1024px: the problem spans both on the left; what is not known
+    // (row 1) then the pilot (row 2) on the right, 40px under it. 40px between blocks below 1024px. 24px
     // under the stake line, which opens the section.
     expect(html).toMatch(
       /class="mt-6 grid items-start gap-y-10 text-\[0\.9375rem\] leading-\[1\.55\] lg:grid-cols-12 lg:gap-x-12 lg:gap-y-6"/,
@@ -499,7 +499,7 @@ describe("WhyThisMatters", () => {
       /<h3 data-why-finding="true" class="text-xl leading-snug font-medium text-foreground">45 clashes that fans or the press complained about at 5 festivals had a verified overlap in time\.<\/h3>/,
     );
     // The scheduler limitation stays the first paragraph under its heading, at body size, in ink (no size or tone
-    // class of its own), and ends on "Who would pay is not known." (round 34, audit Y8: no guess after it).
+    // class of its own), and ends on "Who would pay is not known." (no guess after it).
     expect(html).toContain(
       "<h3 class=\"text-lg leading-snug font-semibold\">None of the 13 tool pages we reviewed describes ranking a draft grid’s clashes by audience closeness</h3><p class=\"mt-2\">Our search, October 2026: absence of evidence only. Who would pay is not known.</p>",
     );
@@ -524,7 +524,7 @@ describe("WhyThisMatters", () => {
       "When two sets clash, anyone who wants to see both has to choose. Clash Control is for the time after acts are booked and before set times go out.",
     );
     const html = renderToStaticMarkup(createElement(WhyThisMatters));
-    // Directly under the heading, before the grid of findings (round 37: with the WHY_USE paragraph between them).
+    // Directly under the heading, before the grid of findings (with the WHY_USE paragraph between them).
     expect(html).toContain(
       `Who has complained, and what nobody has tested</h2><p data-why-stake="true" class="mt-2 text-base leading-normal text-foreground">${WHY_STAKE}</p><p data-why-use="true" class="mt-2 text-base leading-normal text-foreground">${WHY_USE}</p><div class="mt-6 grid`,
     );
@@ -539,12 +539,12 @@ describe("WhyThisMatters", () => {
     expect(qlooCredits(WHY_STAKE)).toEqual([]);
   });
 
-  it("says, directly under the stake and in its type, how to keep a clash, what not to decide with this, and what the brief holds, as a condition (round 37)", () => {
+  it("says, directly under the stake and in its type, how to keep a clash, what not to decide with this, and what the brief holds, as a condition", () => {
     expect(WHY_USE).toBe(
       "A clash can stay: in Check a draft grid, choose “Kept on purpose”. Do not use this to set fees, billing order or an artist’s worth, or for crowd capacity, safety or attendance. If a festival used it, an act’s team would see the brief: the proposed time and the minutes shared before and after. This app writes no artist bios, images or messages.",
     );
     // It opens with where to keep a clash on purpose (CHARTER section 10, `WHY_USE` exactly).
-    expect(WHY_USE.startsWith("A clash can stay: in Check a draft grid, choose “Kept on purpose”.")).toBe(true); // owner-ordered closeout, round 37 (W1)
+    expect(WHY_USE.startsWith("A clash can stay: in Check a draft grid, choose “Kept on purpose”.")).toBe(true);
     // The middle sentence is DO_NOT_USE itself, byte for byte, as /method's limits and the brief print it.
     expect(WHY_USE).toContain(` ${DO_NOT_USE} `);
     expect(DO_NOT_USE).toBe(
@@ -605,7 +605,7 @@ describe("WhyThisMatters", () => {
   });
 });
 
-describe("the complaint figures on home (round 34, audit Y5)", () => {
+describe("the complaint figures on home", () => {
   it("draws no range chart: the finding, who the complaints come from and the fold stay, the median and the range go to /method", () => {
     const html = renderToStaticMarkup(createElement(WhyThisMatters));
     const { rangeMinutes } = METHOD_FIGURES.complaints;
@@ -693,8 +693,8 @@ describe("the failed test and why this matters, as the home page composes them",
   });
 });
 
-describe("forward-looking lines with no claim (round 31)", () => {
-  it("ends the paragraph on Who would pay is not known., in the open, before the pilot, with no guess after it (round 34, audit Y8)", () => {
+describe("forward-looking lines with no claim", () => {
+  it("ends the paragraph on Who would pay is not known., in the open, before the pilot, with no guess after it", () => {
     // The untested guess at who would pay left the page and the demand module with it.
     expect("PAYER_GUESS" in demandModule).toBe(false);
     const html = renderToStaticMarkup(createElement(WhyThisMatters));
@@ -729,14 +729,14 @@ describe("forward-looking lines with no claim (round 31)", () => {
     expect(visible).toContain(
       `45 clashes that fans or the press complained about at 5 festivals had a verified overlap in time. ${COMPLAINT_SOURCES} ${COMPLAINTS_ELSEWHERE}`,
     );
-    // Muted on paper, an existing pair, with no new kicker; round 33 sets it in the sources' own paragraph.
+    // Muted on paper, an existing pair, with no new kicker; it sits in the sources' own paragraph.
     expect(html).toContain(
       `<p data-why-sources="true" class="mt-2">${COMPLAINT_SOURCES} <span data-why-elsewhere="true" class="text-muted-foreground">${COMPLAINTS_ELSEWHERE}</span></p>`,
     );
   });
 });
 
-describe("the failed-test note on the invented day (round 31)", () => {
+describe("the failed-test note on the invented day", () => {
   const FAILED_QLOO_SENTENCE = "Popularity, also a Qloo field, did better.";
 
   it("names the index's taste part without crediting Qloo, from the prop or the page's shared flag", () => {
@@ -757,7 +757,7 @@ describe("the failed-test note on the invented day (round 31)", () => {
   });
 });
 
-describe("who the complaints come from (round 32, V5)", () => {
+describe("who the complaints come from", () => {
   it("names the mixed sources in one sentence true of every listed page, with no attendance or wish claim", () => {
     expect(COMPLAINT_SOURCES).toBe(
       "They come from four Reddit threads and six press articles (NME, Time Out, Vice, SF Chronicle, Lambgoat, EDM Identity).",

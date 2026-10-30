@@ -57,7 +57,7 @@ function RivalRow({
           value={rival.overlap}
           tone={synthetic ? "ink" : "qloo"}
           label={`Taste overlap with ${of}, ${formatOverlap(rival.overlap)} out of 100`}
-          // M9: when the card scrolls in, the Draw meters fill first and hold level, then these fill.
+          // When the card scrolls in, the Draw meters fill first and hold level, then these fill.
           className={draw !== null ? "cc-twin-taste mt-1.5" : "mt-1.5"}
         />
       </div>

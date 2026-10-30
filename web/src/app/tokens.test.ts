@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 /*
  * The colour tokens in globals.css, checked as a browser paints them: each oklch value goes to
  * oklab, then linear sRGB (clipped to the gamut), then the 8-bit sRGB hex, then WCAG 2 relative
- * luminance and contrast. Ported from the round-22 contrast script so the check lives with the code.
+ * luminance and contrast. Ported from the contrast script so the check lives with the code.
  */
 
 const css = readFileSync(fileURLToPath(new URL("./globals.css", import.meta.url)), "utf8");
@@ -94,8 +94,8 @@ function contrast(theme: Theme, fg: string, bg: string): number {
 }
 
 /**
- * The same ratio from the unrounded linear values, the way the round-34 decision (DECISION.md section
- * 2.3) computed its table; it differs from the painted 8-bit ratio by a few hundredths at most.
+ * The same ratio from the unrounded linear values, the way the contrast table
+ * was computed; it differs from the painted 8-bit ratio by a few hundredths at most.
  */
 function exactContrast(theme: Theme, fg: string, bg: string): number {
   const lum = (color: Oklch) => {
@@ -155,7 +155,7 @@ const PAIRS: readonly [string, string, number, string][] = [
   ["foreground", "accent", 3, "selected outline on the wash (graphic)"],
 ];
 
-/** DECISION.md section 2.3, row by row: [foreground, background, light, dark]. */
+/** The contrast table, row by row: [foreground, background, light, dark]. */
 const DECISION_RATIOS: readonly [string, string, number, number][] = [
   ["foreground", "background", 16.02, 16.66],
   ["foreground", "card", 17.72, 14.79],

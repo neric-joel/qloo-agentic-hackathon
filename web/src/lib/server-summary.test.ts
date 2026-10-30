@@ -199,7 +199,7 @@ describe("the decision card in the summary", () => {
   });
 });
 
-describe("the decision the preset response carries (round 37, L1)", () => {
+describe("the decision the preset response carries", () => {
   const LIST = [{ id: "tiny-fest-sat", title: "Tiny Fest, Saturday", city: null, sets: 3, stages: 2, scored_share: 0.67 }];
   const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
 

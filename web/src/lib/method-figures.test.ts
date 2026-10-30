@@ -77,11 +77,11 @@ function allowedNumerals(): Set<string> {
     else if (value && typeof value === "object") Object.values(value).forEach(walk);
   };
   walk(METHOD_FIGURES);
-  // The backtest figure's axis labels are scale ticks, not findings (round 24: one 0 to 75 axis).
+  // The backtest figure's axis labels are scale ticks, not findings (one 0 to 75 axis).
   FIGURE_TICKS.forEach(add);
-  // Round 35: the control acts' limit is the build's own, from the shared control-acts module, never typed on the page.
+  // The control acts' limit is the build's own, from the shared control-acts module, never typed on the page.
   add(CONTROL_RANK_LIMIT);
-  // Round 38: the analysis of public pages and the timing block print only what their own typed modules hold
+  // The analysis of public pages and the timing block print only what their own typed modules hold
   // (public-evidence.ts with its source rows, timing-figures.ts), each pinned word for word by public-evidence.test.ts.
   walk(Object.values(PUBLIC_EVIDENCE).filter((v) => typeof v !== "function"));
   walk(Object.values(TIMING_FIGURES).filter((v) => typeof v !== "function"));
@@ -187,7 +187,7 @@ describe("method figures", () => {
     expect(html).toContain(countsNote());
   });
 
-  it("pins the taste-inside-the-price figures as literals (round 32, exploratory)", () => {
+  it("pins the taste-inside-the-price figures as literals (exploratory)", () => {
     expect(METHOD_FIGURES.tasteInPrice).toEqual({
       fullPrice: { auc: 0.746, auc95: [0.675, 0.812] },
       popularity: 0.722,
@@ -217,7 +217,7 @@ describe("method figures", () => {
     });
   });
 
-  it("pins where taste overlap and popularity disagree, aggregate only, with the time-and-draw clause in the same sentence (round 33, E4)", () => {
+  it("pins where taste overlap and popularity disagree, aggregate only, with the time-and-draw clause in the same sentence", () => {
     const t = METHOD_FIGURES.tasteInPrice.tasteOverPopularity;
     expect(t).toEqual({ pairs: 4, ofPairs: 68, clusters: 2, alsoTopOnTimeAndDraw: 4 });
     expect(t.ofPairs).toBe(backtest.scoredPairs);
@@ -238,7 +238,7 @@ describe("method figures", () => {
     );
   });
 
-  it("pins the replication test's bills year and success line (round 33, E5)", () => {
+  it("pins the replication test's bills year and success line", () => {
     expect(METHOD_FIGURES.replication).toEqual({ billsYear: 2027, successAbove: 0 });
   });
 
@@ -407,7 +407,7 @@ describe("method figures", () => {
     expect(liveCheck).toEqual({ requests: 3 });
   });
 
-  it("pins the compare-tag cap and the saved pairs that fill it, counted by count-tag-cap.mjs on 21 Oct 2026 (round 37, L60)", () => {
+  it("pins the compare-tag cap and the saved pairs that fill it, counted by count-tag-cap.mjs on 21 Oct 2026", () => {
     // TAG_TAKE = 8 (backend/app/pair.py) and shared_taste(..., take=8) (backend/app/qloo/overlap.py); 22 distinct
     // saved pairs with tags over both published presets (Riot Fest saved none), 17 of them at the cap, none above it.
     expect(METHOD_FIGURES.compareTags).toEqual({ tagCap: 8, savedPairs: 22, fullPairs: 17 });
@@ -423,7 +423,7 @@ describe("method figures", () => {
     expect(pageText()).toContain(tagCapSentence());
   });
 
-  it("pins the acts with no usable Qloo signal on the published days and one overlap each, read from the presets on 21 Oct 2026 (round 37, L38)", () => {
+  it("pins the acts with no usable Qloo signal on the published days and one overlap each, read from the presets on 21 Oct 2026", () => {
     expect(METHOD_FIGURES.noSignal).toEqual([
       {
         festival: "Glastonbury",
@@ -550,7 +550,7 @@ describe("/method page", () => {
     const text = pageText();
     const label = text.indexOf("The Hidden label on the timetable uses a stricter line than this count");
     expect(label).toBeGreaterThan(text.indexOf("Hidden clashes are examples, not detections."));
-    // Round 32 (V6): the label's genre test is the engine's (backend/app/schedule/metrics.py, clash_label): the two
+    // The label's genre test is the engine's (backend/app/schedule/metrics.py, clash_label): the two
     // acts' main genre tags differ. The count above it still uses no shared genre tag.
     expect(text).toContain(
       "uses a stricter line than this count for taste overlap, the day's top tenth where the count above uses the top quarter, and a looser one for genre: the two acts' main genre tags differ.",
@@ -593,7 +593,7 @@ describe("/method page", () => {
     expect(section).toContain(
       "The brief page prints this day's costliest clashes, the day's Clash Budget Index and any moves you kept, using only figures the timetable page already shows.",
     );
-    // It agrees with the home page's pilot offer (round 32): a walk through a published day's brief, with the same limits.
+    // It agrees with the home page's pilot offer: a walk through a published day's brief, with the same limits.
     expect(section).toContain(
       "It is for evaluating this entry. The pilot on the home page walks a programmer through a published day's brief, with the same limits: no Qloo tags or identifiers, and not for redistribution.",
     );
@@ -601,17 +601,17 @@ describe("/method page", () => {
     expect(section.match(/\d/g)).toBeNull();
   });
 
-  it("opens with two short-version rows (the failed test with popularity and the moves check, what the measure is), round 34", () => {
+  it("opens with two short-version rows (the failed test with popularity and the moves check, what the measure is)", () => {
     const html = renderToStaticMarkup(createElement(MethodPage));
     const box = html.match(/<section aria-labelledby="short-heading"[\s\S]*?<\/section>/)?.[0] ?? "";
-    // Round 34 (audit M4): the row on what the same test showed duplicated "What it does show" in #tested, so the
+    // The row on what the same test showed duplicated "What it does show" in #tested, so the
     // short version drops it and the figures are said once, there.
     expect(box.match(/<li/g)).toHaveLength(2);
     const text = pageText();
     expect(text).toContain(
       "It ranks a day's clashes and tests moves against timetable rules. Taste overlap is a rank, not attendance.",
     );
-    // Round 32 (D7): the popularity result is said once in the short version, not repeated here.
+    // The popularity result is said once in the short version, not repeated here.
     expect(text).not.toContain("our check did not find complained-about clashes better than popularity");
     // The failed gate still comes first.
     expect(text.indexOf("The test we set before building failed.")).toBeLessThan(text.indexOf("It ranks a day's clashes"));
@@ -630,8 +630,8 @@ describe("/method page", () => {
     );
     // AUC can fall below 0.5, so the page never calls 0.5 its floor.
     expect(text).not.toMatch(/from 0\.5/);
-    // Each term's plain words come before (or with) its first bare use. Round 34: with the short version's duplicate
-    // line gone (audit M4) there is no exception: AUC's first use on the page carries its plain words.
+    // Each term's plain words come before (or with) its first bare use. With the short version's duplicate
+    // line gone there is no exception: AUC's first use on the page carries its plain words.
     expect(text).not.toContain("In the same test, taste overlap ranked");
     expect(text.indexOf("AUC")).toBeGreaterThan(-1);
     expect(text.indexOf("AUC")).toBe(text.indexOf("AUC (0.5 means"));
@@ -662,7 +662,7 @@ describe("/method page", () => {
   });
 
   it("uses the word that denies prediction exactly once", () => {
-    // Round 38: CrowdPredict is a product's name in the evidence sources, not a word about this result.
+    // CrowdPredict is a product's name in the evidence sources, not a word about this result.
     expect(pageText().replace(/CrowdPredict/g, "").match(/predict/gi)).toHaveLength(1);
   });
 });
@@ -699,7 +699,7 @@ describe("/method exploratory result", () => {
     expect(text).not.toContain("does not separate the measure from chance");
   });
 
-  it("names the failed pre-set test as the one stated above, in the same block as the exploratory result (round 33)", () => {
+  it("names the failed pre-set test as the one stated above, in the same block as the exploratory result", () => {
     const text = textOf(block());
     expect(text).toContain("Run after the failed test above, on the same saved pairs, so it is exploratory.");
     expect(text.indexOf("failed")).toBeLessThan(text.indexOf("What held"));
@@ -707,7 +707,7 @@ describe("/method exploratory result", () => {
     expect(text).not.toContain("46.8%");
   });
 
-  it("states the failed test once in the short version, popularity's result inside it, with a link to the full comparison (round 33)", () => {
+  it("states the failed test once in the short version, popularity's result inside it, with a link to the full comparison", () => {
     const html = renderToStaticMarkup(createElement(MethodPage));
     const box = html.match(/<section aria-labelledby="short-heading"[\s\S]*?<\/section>/)?.[0] ?? "";
     const text = textOf(box);
@@ -718,7 +718,7 @@ describe("/method exploratory result", () => {
     expect(text).not.toContain("exploratory");
     expect(pageText()).toContain("The exploratory follow-up did not establish an advantage over popularity.");
     // The test section below holds the full table and what the same test did show; the short version states no AUC
-    // (round 34, audit M4: its line on what the test showed repeated "What it does show").
+    // (its line on what the test showed repeated "What it does show").
     expect(text).not.toContain("In the same test, taste overlap ranked");
     expect(text).not.toContain("AUC");
     expect(text).not.toContain("correlation");

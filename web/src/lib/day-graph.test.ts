@@ -319,7 +319,7 @@ describe("buildDayGraph: the lines", () => {
     expect(model(makeDay({ clashes }), null).threads.map((thread) => thread.rank)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
   });
 
-  it("widens linearly with the taste rank, from 1px to 3px (round 37, L24: the lines stay quieter than the answer)", () => {
+  it("widens linearly with the taste rank, from 1px to 3px (the lines stay quieter than the answer)", () => {
     expect(threadWidth(0)).toBe(1);
     expect(threadWidth(100)).toBe(3);
     expect(threadWidth(50)).toBe(2);
@@ -1038,7 +1038,7 @@ describe("the keyboard note", () => {
 });
 
 // The leader test plans every band of both days (about 3.8 s alone); under a loaded runner it passed the 5-second
-// default (vitest flake, round 37), so this block allows 30 s. No assertion changes.
+// default (vitest flake), so this block allows 30 s. No assertion changes.
 describe("the leaders", { timeout: 30_000 }, () => {
   type Box = { x0: number; x1: number; y0: number; y1: number };
   type Point = { x: number; y: number };
@@ -1215,8 +1215,8 @@ describe("the leaders", { timeout: 30_000 }, () => {
         }
       }
     }
-    // The fixtures put names outside their bars at every width (fewer since a desktop's bars hold two lines: 222 in
-    // round 38, 300 and more before), and every one of them gets its leader.
+    // The fixtures put names outside their bars at every width (fewer since a desktop's bars hold two lines: 222 now,
+    // 300 and more before), and every one of them gets its leader.
     expect(drawn).toBeGreaterThan(200);
     expect(dropped).toBe(0);
   });

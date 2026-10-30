@@ -6,13 +6,13 @@ import { serveInventedDay } from "./invented-day";
 import { HomePage } from "./pages/home-page";
 
 /**
- * The hero's day drawn as a graph (DECISION.md sections 4 and 5): the server paints its final frame, nothing
+ * The hero's day drawn as a graph: the server paints its final frame, nothing
  * shifts after it, the first screen holds its budgets at 390 and 375 px, the toggle animates the move in 450 ms (and
  * not at all under reduced motion), the side-effect line is said in every state, the drawing's name says which view
  * it shows, and no colour on the first screen sits in the old orange band.
  */
 
-/** The side-effect line of each published day's move, from the published times (DECISION.md 5.2, row 8). */
+/** The side-effect line of each published day's move, from the published times. */
 const SIDE_EFFECTS = {
   [DAYS.glastonbury.id]: "New 15 min overlap with Joy Crookes. Shortens 3 other overlaps by 15 min.",
   [DAYS.riot.id]: "Ends the 5 min overlap with Twin Peaks. No other overlap gets longer.",
@@ -52,7 +52,7 @@ function drawingAnimations(page: Page): Promise<number[]> {
   });
 }
 
-/** What the names on the drawing look like in one view, in the band the visitor sees (round 35, day-graph lane). */
+/** What the names on the drawing look like in one view, in the band the visitor sees. */
 type Labels = {
   band: string;
   layout: string;
@@ -71,9 +71,9 @@ type Labels = {
   association: string[];
   /** Names that start left of the window: their first letter is cut. */
   cutAtLeft: string[];
-  /** Round 37 (L15): pairs of drawn lines less than 6 px apart whose spans overlap. */
+  /** Pairs of drawn lines less than 6 px apart whose spans overlap. */
   closeLines: string[];
-  /** Round 37 (L15): lines that run within 2 px of another set's bar edge for more than 4 px of that bar's height. */
+  /** Lines that run within 2 px of another set's bar edge for more than 4 px of that bar's height. */
   edgeRuns: string[];
 };
 
@@ -160,7 +160,7 @@ function measureLabels(names: Record<string, string>): Labels {
     if (count > 0) through.push(`${names[a] ?? a} × ${names[b] ?? b} through ${[...hit].join(", ")} (${count})`);
   }
   const cutAtLeft = labels.filter((item) => item.box.left < clip.left - 0.5).map((item) => item.text);
-  // Line spacing (round 37, L15): each drawn line's x and its span on the screen, then every pair whose spans overlap
+  // Line spacing: each drawn line's x and its span on the screen, then every pair whose spans overlap
   // and that stand less than 6 px apart, and every run within 2 px of another set's bar edge over more than 4 px.
   const drawn: { key: string; x: number; top: number; bottom: number }[] = [];
   for (const holder of band.querySelectorAll<HTMLElement>("[data-thread]")) {
@@ -195,13 +195,13 @@ function measureLabels(names: Record<string, string>): Labels {
   return { band: band.dataset.band ?? "", layout: band.dataset.layout ?? "", slots, notWhole, unnamed, shortEllipsis, strokeHits, through, association, cutAtLeft, closeLines, edgeRuns };
 }
 
-/** What the leaders look like in the band on show (round 36, day-graph lane). */
+/** What the leaders look like in the band on show. */
 type Leaders = {
   band: string;
   /** Names drawn outside their bar: slot b beside it, slot c on a plate above or below it. */
   outside: number;
   leaders: number;
-  /** Outside names with no leader, or with more than one, or marked dropped (the lane reported none dropped). */
+  /** Outside names with no leader, or with more than one, or marked dropped (none is dropped). */
   missing: string[];
   doubled: string[];
   dropped: string[];
@@ -213,13 +213,13 @@ type Leaders = {
   offBar: string[];
   /** The longest leader, in px. */
   longest: number;
-  /** The shortest leader, in px (round 37, L4: 6 px for a one-line name on a desktop, 4 px for a two-line plate, 3 px on a phone). */
+  /** The shortest leader, in px (6 px for a one-line name on a desktop, 4 px for a two-line plate, 3 px on a phone). */
   shortest: number;
-  /** Round 37 (L4): the shortest leader of a name on one line, and of a name on a two-line plate (Infinity when there is none). */
+  /** The shortest leader of a name on one line, and of a name on a two-line plate (Infinity when there is none). */
   shortestOne: number;
   shortestTwo: number;
   /**
-   * Round 37 (L4): outside names whose box is not at least twice as near its own bar as every other bar (and the
+   * Outside names whose box is not at least twice as near its own bar as every other bar (and the
    * published slot, for a name that is not the moved set's), boxes clipped to the band's window as the names test
    * clips them. `name` is the act's name; `detail` gives both distances.
    */
@@ -295,7 +295,7 @@ function measureLeaders(names: Record<string, string>): Leaders {
     const off = Math.min(...bars.map((bar) => toRoundedEdge(to.x, to.y, bar.getBoundingClientRect(), parseFloat(getComputedStyle(bar).borderTopLeftRadius) || 0)));
     if (!(off <= 1)) offBar.push(`${name(id)} (${Number.isFinite(off) ? off.toFixed(2) : "no bar"} px)`);
   }
-  // Round 37 (L4): each outside name at least twice as near its own bar as any other bar. Boxes are clipped to the
+  // Each outside name at least twice as near its own bar as any other bar. Boxes are clipped to the
   // band's window (its second child clips the time track), and the published slot counts as another bar for every
   // name but the moved set's, as in the names test's nearness rule.
   const clip = band.children[1].getBoundingClientRect();
@@ -348,12 +348,11 @@ function measureLeaders(names: Record<string, string>): Leaders {
 }
 
 /**
- * Where the leaders are measured, with the shortest leader each size holds (round 37, L4): on a desktop a one-line
- * name's leader at least 6 px and a two-line plate's at least 4 px, in the 1104 px band (1440 and 1280) and, from
- * round 37's fix pass 1, in the 944 and 848 bands (1200 x 800, 1024 x 768); on a phone at least 3 px at 390 x 844.
- * Fix pass 1 also measures the short phone's 140 px band (375 x 667, 320 x 568). Its leaders were 1 px there until the
- * drawing lane's fix pass 2 (15 px bars in the same 37 px rows, names 3 px off their bars), so this table now holds
- * L4's 3 px there too, and D9 (below) is down to its desktop half.
+ * Where the leaders are measured, with the shortest leader each size holds: on a desktop a one-line
+ * name's leader at least 6 px and a two-line plate's at least 4 px, in the 1104 px band (1440 and 1280) and in the
+ * 944 and 848 bands (1200 x 800, 1024 x 768); on a phone at least 3 px at 390 x 844 and in the short phone's 140 px
+ * band (375 x 667, 320 x 568), where 15 px bars in the same 37 px rows leave names 3 px off their bars. Known defect
+ * D9 (below) is desktop only.
  */
 const LEADER_SIZES = [
   { width: 1440, height: 900, oneLine: 6, twoLine: 4 },
@@ -367,9 +366,9 @@ const LEADER_SIZES = [
 
 /**
  * The names held out of the main leader test's 2:1 rule, by day and width. Abel Selaocoe & the Bantu Ensemble at
- * 1280 and up is the drawing lane's declared half of L4 (its plate stays 4 px over its own bar and 4.03 px from
+ * 1280 and up is a declared exception (its plate stays 4 px over its own bar and 4.03 px from
  * Cymande's corner, since lines #3 and #15 need the room beside it). The Brian Jonestown Massacre at 1024 x 768 is
- * known defect D9 (fix pass 1, both views): its plate stands 4 px from its own bar and 7 px from Goat's. D9's own test
+ * known defect D9 (both views): its plate stands 4 px from its own bar and 7 px from Goat's. D9's own test
  * holds the rule for every name there.
  */
 const HELD_TWICE: Record<string, { widths: number[]; names: string[] }[]> = {
@@ -380,12 +379,10 @@ const HELD_TWICE: Record<string, { widths: number[]; names: string[] }[]> = {
 };
 
 /**
- * Where the line notes are read by keyboard (round 37, L13): 1440 x 900, and from fix pass 1 the laptop first screens
- * 1366 x 768 and 1280 x 800, where the room under the drawing runs out and the note takes its place above (verify-1
- * found it there over up to 2 other names and 9 bars), the 944 and 848 bands at 1200 x 800 and 1024 x 768 (verify-1: up
- * to 4 names), and on a phone 390 x 844, 375 x 667 and 360 x 640. Each was clear after the drawing lane's fix pass (fix
- * pass 1 measurement: 0 other names, 0 other bars, none of its own, on both days). The phone at 320 px wide (320 x 640,
- * 320 x 568) is known defect D10.
+ * Where the line notes are read by keyboard: 1440 x 900, the laptop first screens 1366 x 768 and 1280 x 800,
+ * where the room under the drawing runs out and the note takes its place above, the 944 and 848 bands at 1200 x 800
+ * and 1024 x 768, and on a phone 390 x 844, 375 x 667 and 360 x 640. Each measures clear: 0 other names, 0 other bars,
+ * none of its own, on both days. The phone at 320 px wide (320 x 640, 320 x 568) has its own test below.
  */
 const NOTE_SIZES = [
   { width: 1440, height: 900 },
@@ -429,11 +426,11 @@ async function actNames(page: Page, id: string): Promise<Record<string, string>>
 }
 
 /**
- * The floors for the names on the drawing (round 35, NEXT.md day-graph acceptance), by width: how many sets may show
+ * The floors for the names on the drawing, by width: how many sets may show
  * a name that is not whole on each day (none at 1440 may show no name at all), and whether the painted-stroke and
- * first-letter checks apply there. Short ellipses and association hold at every width. Round 37: 1200 x 800 is the
- * 944 px band (L99), and 1100 x 800 the 848 band, where Riot Fest drew three sets with no name (L14); from 1024 px every
- * set in the window has its name drawn, and no two lines stand within 6 px or run along another set's bar edge (L15).
+ * first-letter checks apply there. Short ellipses and association hold at every width. 1200 x 800 is the
+ * 944 px band, and 1100 x 800 the 848 band, where Riot Fest drew three sets with no name; from 1024 px every
+ * set in the window has its name drawn, and no two lines stand within 6 px or run along another set's bar edge.
  */
 const LABEL_SIZES = [
   { width: 1440, height: 900, notWhole: { [DAYS.glastonbury.id]: 3, [DAYS.riot.id]: 8 }, allNamed: true, strokes: true, firstLetter: false, lines: true },
@@ -449,12 +446,12 @@ test.describe("the day graph's names", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
 
   /**
-   * Once known defect D7 (round 37, README "Known defects", closed): on Riot Fest at 1200 x 800 and 1024 x 768
+   * Once known defect D7 (README "Known defects", closed): on Riot Fest at 1200 x 800 and 1024 x 768
    * Sincere Engineer's two-line plate covered its own bar for 28.52 px of its 57.08 px width, 0.02 px short of half.
-   * After the drawing lane's fix pass 1 it covers 29.02 px, 0.48 px past half, in both views, on every load. The mark
+   * It now covers 29.02 px, 0.48 px past half, in both views, on every load. The mark
    * is off; the test stays to hold the plate rule where it once failed (the names test below holds it too).
    */
-  test("on Riot Fest at 1200 x 800 and 1024 x 768, in both views, every name on a plate covers its own bar for half its width (D7, fixed)", async ({ page, isPhone }) => {
+  test("on Riot Fest at 1200 x 800 and 1024 x 768, in both views, every name on a plate covers its own bar for half its width (fixed)", async ({ page, isPhone }) => {
     const names = await actNames(page, DAYS.riot.id);
     const home = new HomePage(page);
     // The once-failing sizes are desktop bands; on a phone the same rule holds at 390.
@@ -498,11 +495,11 @@ test.describe("the day graph's names", () => {
           // (iii) No line is painted through a name, a tag or a plate.
           if (size.strokes) expect(found.strokeHits, `${where}: lines painted through names: ${found.through.join("; ")}`).toBe(0);
           // (iv) A name beside its bar or on a plate in the row gap is nearer its own bar than any other, with no name
-          // held out (D7, the one name once held out at 1200 and 1024, is fixed: see the test above).
+          // held out (the one name once held out at 1200 and 1024 is fixed: see the test above).
           expect(found.association, `${where}: names nearer another bar`).toEqual([]);
           // (vi) On a phone's detail window, a set that starts before the window shows its first letter.
           if (size.firstLetter) expect(found.cutAtLeft, `${where}: names cut at the window's left`).toEqual([]);
-          // (vii) Round 37 (L15): lines stand apart, and none runs along another set's bar edge.
+          // (vii) Lines stand apart, and none runs along another set's bar edge.
           if (size.lines) {
             expect(found.closeLines, `${where}: lines within 6 px of each other`).toEqual([]);
             expect(found.edgeRuns, `${where}: lines along another set's bar edge`).toEqual([]);
@@ -532,19 +529,18 @@ test.describe("the day graph's names", () => {
           expect(found.outside, `${where}: names drawn outside their bar`).toBeGreaterThan(0);
           expect(found.missing, `${where}: outside names with no leader`).toEqual([]);
           expect(found.doubled, `${where}: names with more than one leader`).toEqual([]);
-          // The day-graph lane's dropped list is empty on both days at every width, in both views.
+          // The dropped list is empty on both days at every width, in both views.
           expect(found.dropped, `${where}: names whose leader was dropped`).toEqual([]);
           expect(found.orphans, `${where}: leaders with no outside name`).toEqual([]);
           expect(found.long, `${where}: leaders over 24 px`).toEqual([]);
           expect(found.offName, `${where}: leaders that do not start on their name`).toEqual([]);
           expect(found.offBar, `${where}: leaders that do not end within 1 px of their own bar's edge`).toEqual([]);
           expect(found.leaders, `${where}: one leader per outside name`).toBe(found.outside - found.dropped.length);
-          // Round 37 (L4): the leaders are long enough to read as leaders: on a desktop from 1024 to 1440, 6 px for a
-          // one-line name and 4 px for a two-line plate; 3 px on a phone at 390 (round 36: 3 to 4 px on a desktop, 1 px
-          // on a phone). From fix pass 2 the short phone holds L4's 3 px here as well.
+          // The leaders are long enough to read as leaders: on a desktop from 1024 to 1440, 6 px for a
+          // one-line name and 4 px for a two-line plate; 3 px on a phone at 390 and on the short phone.
           expect(found.shortestOne, `${where}: the shortest leader of a one-line name`).toBeGreaterThanOrEqual(size.oneLine - 0.01);
           expect(found.shortestTwo, `${where}: the shortest leader of a two-line plate`).toBeGreaterThanOrEqual(size.twoLine - 0.01);
-          // Round 37 (L4): each outside name at least twice as near its own bar as any other bar. Held out: the
+          // Each outside name at least twice as near its own bar as any other bar. Held out: the
           // declared Abel Selaocoe at 1280 and up, and D9's one name at 1024 (HELD_TWICE, above).
           const held = (HELD_TWICE[day.id] ?? []).filter((item) => item.widths.includes(size.width)).flatMap((item) => item.names);
           expect(
@@ -557,12 +553,10 @@ test.describe("the day graph's names", () => {
   }
 
   /**
-   * Known defect D9 (round 37 fix pass 1, from verify-1's L4 and N8; README "Known defects"): L4's leaders and 2:1 rule
-   * after the drawing lane's fix pass. The 944 and 848 bands (1200 x 800, 1024 x 768) now draw 6 px one-line leaders
+   * Known defect D9 (README "Known defects"): the leaders and 2:1 rule in the 944 and 848 bands. The 944 and 848 bands (1200 x 800, 1024 x 768) now draw 6 px one-line leaders
    * and 4 px plates, and every outside name stands twice as near its own bar but one: at 1024 x 768, Glastonbury's The
    * Brian Jonestown Massacre, 4 px from its bar and 7 px from Goat's. The short phone's half (375 x 667, 320 x 568,
-   * every leader 1 px against L4's 3 px) was fixed in the drawing lane's fix pass 2, so the phone project now runs
-   * this test as a plain pass. On the desktop it accepts only D9's recorded geometry (D9_HELD, below): any other
+   * where every leader was 1 px against 3 px) is fixed, so the phone project runs this test as a plain pass. On the desktop it accepts only D9's recorded geometry (D9_HELD, below): any other
    * name under 2:1, or that name at any other distance, day or width, fails. Remove the entry when the name is drawn.
    */
   /** D9's recorded geometry, the exact `detail` measureLeaders gives (Glastonbury, 1024 x 768, both views). */
@@ -623,7 +617,7 @@ test.describe("the day graph's names", () => {
   });
 
   for (const day of Object.values(DAYS)) {
-    test(`on ${day.title}, every line drawn shows its note, in words, and the note covers no other set's name or bar and none of its own (1440 x 900, 1366 x 768, 1280 x 800, 1200 x 800 and 1024 x 768 on a desktop; 390 x 844, 375 x 667 and 360 x 640 on a phone; round 37, L13)`, async ({ page, isPhone }) => {
+    test(`on ${day.title}, every line drawn shows its note, in words, and the note covers no other set's name or bar and none of its own (1440 x 900, 1366 x 768, 1280 x 800, 1200 x 800 and 1024 x 768 on a desktop; 390 x 844, 375 x 667 and 360 x 640 on a phone)`, async ({ page, isPhone }) => {
       test.setTimeout(150_000);
       const home = new HomePage(page);
       const note = home.graph.locator('[data-thread-note="line"]').filter({ visible: true });
@@ -657,13 +651,12 @@ test.describe("the day graph's names", () => {
   }
 
   /**
-   * Was known defect D10 (round 37 fix pass 1, found by lane e2e-sync while pinning L13; README "Known defects"): on a phone
+   * Was known defect D10 (README "Known defects"): on a phone
    * 320 px wide, a 288 px note in the 140 px short drawing finds no clear place for some lines. At 320 x 640,
    * Glastonbury's notes for lines #1 to #3 cover 2, 1 and 1 other names (Joy Crookes and Shaboozey; Katy J Pearson
    * twice), 0.67 a note on average; at 320 x 568, line #1's note covers Joy Crookes and Shaboozey. Riot Fest's one line
-   * is clear. The drawing lane measured the same and found no room inside its files (its fix pass 1 report, L13). This
-   * holds L13's acceptance (NEXT.md, lane drawing): no note over more than one other set's name or two other bars, at
-   * most half a name a note on average, none over its own two sets. Fixed in the drawing lane's fix pass 2: at 320 px a
+   * is clear. This holds the note rule: no note over more than one other set's name or two other bars, at
+   * most half a name a note on average, none over its own two sets. Fixed: at 320 px a
    * phone's note may stand up to 140 px above the drawing, over the dateline and the view toggle, and takes no press
    * (measured: 0 other names at 320 x 568, 1 for one line at 320 x 640). A desktop holds the same at 1920 x 1080.
    */
@@ -698,12 +691,12 @@ test.describe("the day graph's names", () => {
   });
 
   /**
-   * Round 37, verify-2 N1: a phone named only the sets of the detail window it opened on. After a tap on the overview
+   * A phone named only the sets of the detail window it opened on. After a tap on the overview
    * strip, or the arrow keys from one line to the next, the window slid and showed sets with no name (Glastonbury at
    * 390: 4 of 4 after a strip tap at 85%, 6 of 6 after ArrowRight to line #2), with "min" and "is" cut at its left edge.
-   * The drawing lane's fix pass 2 plans the phone's names again for each window it slides to.
+   * The phone now plans its names again for each window it slides to.
    */
-  test("a phone names every set its detail window shows after the window slides, by a tap on the overview strip or the arrow keys, and cuts no name or tag at the window's edge (round 37, verify-2 N1)", async ({ page, isPhone }) => {
+  test("a phone names every set its detail window shows after the window slides, by a tap on the overview strip or the arrow keys, and cuts no name or tag at the window's edge", async ({ page, isPhone }) => {
     test.skip(!isPhone, "Only a phone's drawing slides its detail window.");
     test.setTimeout(120_000);
     const home = new HomePage(page);
@@ -778,15 +771,14 @@ test.describe("the day graph's names", () => {
         .poll(settled, { message: `${day.title}, after Tab and ArrowRight: sets shown whole with no name, and names or tags cut at the edge` })
         .toEqual({ named: true, unnamed: [], cut: [] });
     }
-    // Glastonbury, where verify-2 found 6 of 6 sets unnamed after ArrowRight to line #2, takes the keyboard path.
+    // Glastonbury, where 6 of 6 sets were once unnamed after ArrowRight to line #2, takes the keyboard path.
     expect(arrowed, "days whose phone drawing took the arrow-key slide").toBeGreaterThan(0);
   });
 });
 
 /**
- * Where the phone tags are read (round 37, L17): 390 and 320 at 844 px tall (the 172 px band), and from fix pass 1 the
- * short phone's 140 px band at 375 x 667, 360 x 640, 320 x 640 and 320 x 568 (verify-1 found tags 1.5 px from the bars
- * there and two dropped at 320 px wide, before the drawing lane's fix pass).
+ * Where the phone tags are read: 390 and 320 at 844 px tall (the 172 px band), and the
+ * short phone's 140 px band at 375 x 667, 360 x 640, 320 x 640 and 320 x 568.
  */
 const PHONE_TAG_SIZES = [
   { width: 390, height: 844 },
@@ -829,7 +821,7 @@ test.describe("the day graph", () => {
       }, HERO_BOXES);
 
       // One load first warms the dev server and puts the webfont in this browser's cache, so the load measured here is
-      // the page's own frame. Round 37 (L1): the 0.0126 shift this test met under four workers was not the font. The
+      // the page's own frame. The 0.0126 shift this test met under four workers was not the font. The
       // server's own decision request timed out (4 s), so its frame held a pending hero group 46 px shorter than the
       // settled one, without the toggle, readout and Keep, and the toggle (339 -> 385) and the drawing (407 -> 453)
       // followed the group's height when the decision arrived; the streamed frame could also paint the drawing before
@@ -928,17 +920,11 @@ test.describe("the day graph", () => {
   });
 
   /**
-   * The hero's word budget by day. Round 35 (R1): the lede gained the frame, so the budget moved from 120 and 117 to 125
-   * and 122. Round 37 (AO2, NEXT.md 5.4): the desktop note (why this move, two sets, near 100) and the key's lock and
-   * dotted words move it to the count measured after the build, 160 at 1440 and 131 at 390, inside the decided caps of
-   * 170 and 131. Round 38 (22 Oct 2026, owner-approved judge ask, lane H): the hero's three-rung ladder (CHARTER section
-   * 8, caps 175 and 145) moves it to the count measured after the build, 173 at 1440 and 144 at 390. Round 38 reconcile:
-   * from 1280 px the ladder is one line in the left column (CHARTER section 8 now caps 1440 at 168), measured 166 at
-   * 1440. Round 39 (condition 4: never above 166 and 144): the W6 note (20 words for the old note's 26) and the ladder's
-   * "in this app’s index" (+4) at 1440, and taste's sentence leaving the ladder (-7) with the same +4 at 390, measured 164
-   * at 1440 and 141 at 390 on the published default (Glastonbury). Riot Fest is pinned too, at its count measured on the
+   * The hero's word budget by day: the lede, the frame, the desktop note, the key's lock and dotted words, and the
+   * three-rung ladder (one line in the left column from 1280 px), measured 164 at 1440 and 141 at 390 on the published
+   * default (Glastonbury), never above 166 and 144. Riot Fest is pinned too, at its count measured on the
    * same build (174 and 149: its key adds the 8-word "plus the overlap the move ends (not ranked)", a caveat), so it
-   * cannot grow unseen; the charter's caps are stated on the published default.
+   * cannot grow unseen; the caps are stated on the published default.
    */
   const HERO_WORDS = {
     [DAYS.glastonbury.id]: { desktop: 164, phone: 141 },
@@ -950,7 +936,7 @@ test.describe("the day graph", () => {
       const home = new HomePage(page);
       await home.goto(day.id);
 
-      // Counted as DECISION.md 4.3 says: visible text in the hero that holds a letter, not screen-reader text; inside
+      // Counted as: visible text in the hero that holds a letter, not screen-reader text; inside
       // the drawing only its tags count (act names, stage names and clock times are the drawing itself); numerals
       // are not words; the picker's and the toggle's group names are accessible names, not visible text.
       const counted = await page.locator("[data-hero]").evaluate((hero) => {
@@ -1008,7 +994,7 @@ test.describe("the day graph", () => {
       for (const duration of back) expect(Math.abs(duration - 450), `an animation of ${duration} ms`).toBeLessThanOrEqual(20);
       await expect.poll(() => drawingAnimations(page).then((all) => all.length), { timeout: 3_000 }).toBe(0);
       await expect(home.graph.locator("[data-ghost]").filter({ visible: true })).toHaveCount(1);
-      // Round 37 (L23): on a desktop the moved view's tag says the change ("45 → 30 min shared"); a phone keeps the
+      // On a desktop the moved view's tag says the change ("45 → 30 min shared"); a phone keeps the
       // short tag for its narrow window.
       await expect(home.graph.locator('[data-shared-tag="hatch"]').filter({ visible: true })).toHaveText(isPhone ? "30 min shared" : "45 → 30 min shared");
     });
@@ -1063,7 +1049,7 @@ test.describe("the day graph", () => {
   });
 
   for (const day of Object.values(DAYS)) {
-    test(`on ${day.title}, the key's lock and dotted words name marks the drawing draws: no-signal bars in a dotted edge, never dashed, and the chosen clash's window in a solid raspberry edge (round 37, L5, L24)`, async ({ page }) => {
+    test(`on ${day.title}, the key's lock and dotted words name marks the drawing draws: no-signal bars in a dotted edge, never dashed, and the chosen clash's window in a solid raspberry edge`, async ({ page }) => {
       const home = new HomePage(page);
       await home.goto(day.id);
 
@@ -1104,7 +1090,7 @@ test.describe("the day graph", () => {
     });
   }
 
-  test("the moved view's tags: on a desktop the chosen clash says before and after, clear of the bars; on a phone at 390 and 320, and on a short phone (375 x 667, 360 x 640, 320 x 640, 320 x 568), every tag is drawn and 2 px clear of the bars (round 37, L23, L17)", async ({ page, isPhone }) => {
+  test("the moved view's tags: on a desktop the chosen clash says before and after, clear of the bars; on a phone at 390 and 320, and on a short phone (375 x 667, 360 x 640, 320 x 640, 320 x 568), every tag is drawn and 2 px clear of the bars", async ({ page, isPhone }) => {
     test.setTimeout(120_000);
     const home = new HomePage(page);
     const tags = () => home.graph.locator("[data-shared-tag]").filter({ visible: true });
@@ -1139,7 +1125,7 @@ test.describe("the day graph", () => {
       await clear("Riot Fest, as published");
       return;
     }
-    // Round 37 fix pass 1 (verify-1 N8, L17): the short phone's 140 px band (heights up to about 667) is held as well.
+    // The short phone's 140 px band (heights up to about 667) is held as well.
     for (const size of PHONE_TAG_SIZES) {
       const at = `${size.width} x ${size.height}`;
       await page.setViewportSize(size);
@@ -1153,7 +1139,7 @@ test.describe("the day graph", () => {
     }
   });
 
-  test("the phone's overview strip: one mark per set, every line of the day solid in quiet ink, nothing dashed; a desktop draws no strip (round 37, L18)", async ({ page, isPhone }) => {
+  test("the phone's overview strip: one mark per set, every line of the day solid in quiet ink, nothing dashed; a desktop draws no strip", async ({ page, isPhone }) => {
     const home = new HomePage(page);
     const strip = home.graph.locator("[data-strip]").filter({ visible: true });
     if (!isPhone) {
@@ -1269,7 +1255,7 @@ test.describe("the day graph on the invented day", () => {
 });
 
 /**
- * Round 38 (lane D): names inside their own bars on the desktop's 32 px bars (70 px rows), one or two lines, and the
+ * Names inside their own bars on the desktop's 32 px bars (70 px rows), one or two lines, and the
  * sets with no Qloo signal drawn plainly: a dotted ink outline on the paper, the name in ink like every other.
  */
 const INSIDE_SIZES = [
@@ -1312,7 +1298,7 @@ function measureInside(names: Record<string, string>): { outside: string[]; leak
   return { outside, leaking, inside };
 }
 
-test.describe("the day graph's names inside their bars (round 38)", () => {
+test.describe("the day graph's names inside their bars", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
 
   for (const day of Object.values(DAYS)) {

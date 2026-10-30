@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { HELD_ROOM_LEAD, HELD_ROOM_SCREENS, heldRoomHeight, keepsHeldRoom, trimmedHeldRoom } from "./skeletons";
 
 /**
- * The room a place holds for a late answer (round 37 closeout: the agent section's recordings, the plan after Keep
+ * The room a place holds for a late answer (the agent section's recordings, the plan after Keep
  * this move). The browser half (CLS under 0.0005 with the answer held at CPU 4x) is pinned in recorded-runs.spec.ts
  * and try-a-move.spec.ts.
  */

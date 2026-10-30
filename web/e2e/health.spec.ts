@@ -101,7 +101,7 @@ test.describe("pages load clean", () => {
   });
 
   test("the footer's licence and source links follow the same rule as every other external link", async ({ page }) => {
-    // D4 (round 31, fixed): the footer's "MIT licence" and "Source code" links open in a new tab with rel="noopener".
+    // D4 (fixed): the footer's "MIT licence" and "Source code" links open in a new tab with rel="noopener".
     await requireSavedDays(page);
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);

@@ -117,7 +117,7 @@ test.describe("hidden clashes", () => {
     });
   }
 
-  test("the hero day's own Hidden pair is named before the sourced examples, on both days (round 37, L31)", async ({ page }) => {
+  test("the hero day's own Hidden pair is named before the sourced examples, on both days", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
     // Three or more Hidden clashes: the day line names the costliest by its rank.

@@ -84,7 +84,7 @@ describe("HiddenWall", () => {
   });
 });
 
-describe("HiddenWall motion (round 34: no scroll-in motion)", () => {
+describe("HiddenWall motion (no scroll-in motion)", () => {
   it("is drawn final in the server HTML, with the diamond and genre line printed on each card, nothing waiting to play, and no dashed perforation", () => {
     const html = renderToStaticMarkup(createElement(HiddenWall, { evidence: evidence(2, 2) }));
     expect(html).not.toContain("data-reveal");
@@ -98,7 +98,7 @@ describe("HiddenWall motion (round 34: no scroll-in motion)", () => {
   });
 });
 
-describe("HiddenWall corners (round 34)", () => {
+describe("HiddenWall corners", () => {
   it("prints each card as a 14px panel with a quiet edge, its tags as 6px labels, and no capsule or shadow", () => {
     const ev = evidence(2, 2);
     ev.hidden_wall[0] = { ...ev.hidden_wall[0], shared_tags: [tag("indie"), tag("punk")] };
@@ -392,7 +392,7 @@ describe("HiddenWall: one definition of Hidden, the day's count, no lift figure"
   });
 
   it("sets both definitions in one paragraph: the label's, the day's count, then the examples' rule and the link", () => {
-    // Round 33 (H5): the board definition and the sourced-examples definition were two paragraphs; now one.
+    // The board definition and the sourced-examples definition were two paragraphs; now one.
     const html = renderToStaticMarkup(createElement(HiddenWall, { evidence: evidence(8, 13), day: five }));
     const intro = html.slice(0, html.indexOf("data-ring-card"));
     const paragraphs = intro.match(/<p[^>]*>[\s\S]*?<\/p>/g) ?? [];
@@ -479,7 +479,7 @@ describe("HiddenWall: one definition of Hidden, the day's count, no lift figure"
   });
 
   it("labels another published day's examples with that day's title, as Riot Fest shows Glastonbury's", () => {
-    // Round 32's scope addition, kept in round 33 (H8): a published day with no examples of its own shows another
+    // A published day with no examples of its own shows another
     // published day's, labelled with the day they are saved with. The counts here are invented.
     const label = wallCount(8, 13, "Glastonbury 2025, Sunday");
     expect(label).toBe(

@@ -643,7 +643,7 @@ def test_extra_fields_are_refused_query_params_change_nothing_and_the_docs_stay_
     assert docs.status_code == 404
 
 
-# ------------------------------------------------------- safe to switch on: the five round-3 findings
+# ------------------------------------------------------- safe to switch on: five earlier findings
 
 PAUSED = {
     "detail": "Live checks are paused to protect this demo's monthly Qloo allowance. "
@@ -992,7 +992,7 @@ def test_hostile_bodies_are_refused_before_any_request_and_echo_nothing(tmp_path
     assert fake.seen == [] and slots(limiter) == 0
 
 
-# ------------------------------------- round 5: the reservation, the single probe lease, the visitor stamp
+# ------------------------------------- the reservation, the single probe lease, the visitor stamp
 
 
 class GatedQloo(FakeQloo):

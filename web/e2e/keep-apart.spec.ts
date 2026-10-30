@@ -83,7 +83,7 @@ test.describe("keep two sets apart", () => {
 
     await keep.find.click();
     await expect(keep.clear).toBeDisabled();
-    // Round 37 (AO1): the board's grid waits behind its closed disclosure until a preview needs it. Round 39 (W2): from
+    // The board's grid waits behind its closed disclosure until a preview needs it. From
     // 1280 px it arrives open, so a visitor's press closes it first; on a phone it arrives closed.
     await home.closeBoard();
     expect(await home.boardOpen(), "the board's disclosure is closed before the preview").toBe(false);

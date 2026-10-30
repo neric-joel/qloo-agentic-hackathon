@@ -1,6 +1,6 @@
 /**
- * The saved requests and values behind one clash, for the clash drawer's "Saved requests and values" block (round
- * 37, L85). Pure: it reads the preset the page already holds and fetches nothing.
+ * The saved requests and values behind one clash, for the clash drawer's "Saved requests and values" block.
+ * Pure: it reads the preset the page already holds and fetches nothing.
  *
  * Per act: its name, the /search request saved for it (matched on its query, as `requestsForActs` matches one), the
  * Qloo entity id this app used (`qloo_id`), its saved popularity and genre, and how many /v2/insights requests name

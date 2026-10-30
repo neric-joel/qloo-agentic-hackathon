@@ -255,8 +255,7 @@ function HeroLayout({
           1024 px the key sits 4 px above the section nav (whose 44 px row centres its links), so a key that takes a
           second line still leaves the nav on a 900 px first screen. Below 1280 px the ladder's two lines fill the
           group's notice cell, right above the drawing's right half, and a line's note keeps clear of them
-          (day-graph.tsx, `shownAbove`); that cell stood empty on arrival until round 39, so the drawing there starts 16
-          px lower than it did then, and the note keeps its room above the drawing's first names. From 1280 px (round 38, integrate) the drawing
+          (day-graph.tsx, `shownAbove`), and the note keeps its room above the drawing's first names. From 1280 px the drawing
           sits 8 px under the toggle at any height and the key right under the drawing (its last row keeps 19 px under
           its bars), which gives back the 28 px the taller 32/70 rows took, so the section nav still ends inside 900 px. */}
       <div className="container-page pt-4 pb-8 sm:pt-6 lg:pt-8 lg:pb-1 lg:[@media(max-height:790px)]:pt-4">
@@ -453,7 +452,7 @@ function keepPagePlace(place: PagePlace): void {
 }
 
 /**
- * Whether a board's fold starts open (round 39, W2): as the fold before it on the page was left (`report`: a press,
+ * Whether a board's fold starts open: as the fold before it on the page was left (`report`: a press,
  * or the open state that board was drawn in), else open on a screen of 1280 px or more (`wide`), where the board's
  * column would otherwise stand empty beside the rail, and closed below, where the home reaches Try a move sooner.
  */
@@ -1288,7 +1287,7 @@ function PresetView({
   const [planPreview, setPlanPreview] = useState<PlanPreview | null>(null);
   // A change from "Keep two sets apart", previewed as two ghosts. Separate from the plan above.
   const [rulePreview, setRulePreview] = useState<RulePreview | null>(null);
-  // The board's disclosure (round 39, W2). On arrival it is as the fold this board replaces was left (its report: a
+  // The board's disclosure. On arrival it is as the fold this board replaces was left (its report: a
   // press, also one made on the server's frame, or the open state the last festival day's board was drawn in), else
   // open on a screen of 1280 px or more and closed below (`boardStartsOpen`). That is read once, in this board's first
   // render, never in an effect: crossing 1280 px later opens or closes nothing. After that it opens on a press on its

@@ -11,7 +11,7 @@
  * link, builds the request, validates the answer and words it. Pure functions apart from
  * `fetchPlan`, so they are unit tested.
  *
- * T4's brief page and T5's grid import from here (round-4 contract D), so the exports below keep
+ * The brief page and the grid import from here, so the exports below keep
  * their names and shapes.
  */
 

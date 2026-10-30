@@ -20,7 +20,7 @@ const text = (part: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-/** The chain's steps on /method (round 37, L59), each as its text, the agent's branch left out. */
+/** The chain's steps on /method, each as its text, the agent's branch left out. */
 const CHAIN = [
   "act names Your timetable",
   "entity IDs Qloo /search",
@@ -53,7 +53,7 @@ function topLevelSteps(flow: string): string[] {
   return steps;
 }
 
-describe("the failed bar (M11)", () => {
+describe("the failed bar", () => {
   it("draws taste overlap's share short of the written-down bar, from the method figures, final in the server HTML", () => {
     const html = renderToStaticMarkup(createElement(MethodPage));
     const reached = methodRow("taste").topQuarterPct;
@@ -65,7 +65,7 @@ describe("the failed bar (M11)", () => {
     // spanning the bars (dashed means tested), labelled at its top.
     expect(FIGURE_DOMAIN).toBe(75);
     const at = (pct: number) => `${Math.round((pct / FIGURE_DOMAIN) * 100000) / 1000}%`;
-    // Round 34 (one radius system): each bar has the same 6px mark corner at both ends (rounded-bar, clamped to half
+    // One radius system: each bar has the same 6px mark corner at both ends (rounded-bar, clamped to half
     // the height on a thin baseline). Taste overlap and popularity are the same solid ink bar, so popularity's longer
     // bar shows it did better; genre tags and random are 6px muted baselines; no bar is raspberry.
     expect(html).toContain(`rounded-bar h-4 bg-foreground" style="width:${at(reached)}"`);
@@ -101,7 +101,7 @@ describe("the failed bar (M11)", () => {
   });
 });
 
-describe("the reading column and its folds (round 10)", () => {
+describe("the reading column and its folds", () => {
   const html = renderToStaticMarkup(createElement(MethodPage));
   const text = (part: string) =>
     part
@@ -164,8 +164,8 @@ describe("the reading column and its folds (round 10)", () => {
     expect(row).not.toMatch(/rounded|border|bg-|sticky/);
     for (const href of ["#price", "#tested", "#limits", "#the-rest"]) expect(row).toContain(`href="${href}"`);
     expect(html).toMatch(/<div class="mt-8 print:hidden"><nav aria-label="On this page">/);
-    // Nothing is shown or hidden by width but the short version's verdict (round 27), which is xl only, and the
-    // request flow's two places (round 28): the rail copy xl only, the body copy below xl. In that order.
+    // Nothing is shown or hidden by width but the short version's verdict, which is xl only, and the
+    // request flow's two places: the rail copy xl only, the body copy below xl. In that order.
     expect(html.match(/\bxl:(block|hidden)\b/g)).toEqual(["xl:block", "xl:block", "xl:hidden"]);
     expect(html).toMatch(/<div aria-hidden="true" data-short-verdict="true" class="[^"]*\bhidden xl:block\b/);
     expect(html).toMatch(/<div data-section-rail="true" class="[^"]*\bhidden xl:block\b[^"]*"><div data-flow-place="rail">/);
@@ -173,12 +173,12 @@ describe("the reading column and its folds (round 10)", () => {
   });
 });
 
-describe("the reading column's alignment and measure (round 10b)", () => {
+describe("the reading column's alignment and measure", () => {
   const html = renderToStaticMarkup(createElement(MethodPage));
 
   it("starts the column at the page container's left edge instead of centring it", () => {
     const columns = [...html.matchAll(/class="(max-w-\[52rem\][^"]*)"/g)].map((m) => m[1]);
-    // The header and each of the six sections share the one column (round 38: the evidence and timing sections).
+    // The header and each of the six sections share the one column (the evidence and timing sections).
     expect(columns.length).toBe(7);
     for (const column of columns) expect(column).not.toMatch(/\bmx-auto\b/);
     expect(html).not.toMatch(/class="[^"]*\bmx-auto\b[^"]*max-w-\[52rem\]/);
@@ -188,8 +188,8 @@ describe("the reading column's alignment and measure (round 10b)", () => {
     expect(html).not.toMatch(/\bsticky\b/);
     expect(html).not.toMatch(/class="absolute inset-y-0[^"]*\b(right-0|pr-6|pl-10)\b/);
     expect(html).toMatch(/^<article>/);
-    // 20rem is the short version's verdict only (its opening line, its two meters and its scale note; round 37 fix
-    // pass 1 took out the meter that drew the chart's taste bar again), never a rail beside the column.
+    // 20rem is the short version's verdict only (its opening line, its two meters and its scale note; no meter draws the
+    // chart's taste bar again), never a rail beside the column.
     const verdictAt = html.indexOf('<div aria-hidden="true" data-short-verdict="true"');
     const verdictEnd = html.indexOf("</div></section>", verdictAt);
     expect(verdictAt).toBeGreaterThan(-1);
@@ -212,7 +212,7 @@ describe("the reading column's alignment and measure (round 10b)", () => {
   });
 });
 
-describe("Qloo requests (lane A; cards and the request flow, round 20)", () => {
+describe("Qloo requests (cards and the request flow)", () => {
   const html = renderToStaticMarkup(createElement(MethodPage));
   const start = html.indexOf('id="qloo-calls"');
   const block = html.slice(start, html.indexOf('id="moving-sets"'));
@@ -233,7 +233,7 @@ describe("Qloo requests (lane A; cards and the request flow, round 20)", () => {
     for (const path of listed) expect(client).toContain(`"${path}"`);
   });
 
-  it("draws the chain from request to decision before the endpoints as a typed column: seven mono tokens joined by arrows, the two Qloo returns in teal, the agent a branch off the engine (round 37, L59)", () => {
+  it("draws the chain from request to decision before the endpoints as a typed column: seven mono tokens joined by arrows, the two Qloo returns in teal, the agent a branch off the engine", () => {
     const flow = block.match(/<ol aria-label="From your timetable to the index"[^>]*>[\s\S]*?<\/ol>/)?.[0] ?? "";
     // One column at every width (seven steps do not fit across), 8px between steps.
     expect(flow).toMatch(/^<ol aria-label="From your timetable to the index" class="my-6 grid gap-y-2">/);
@@ -253,7 +253,7 @@ describe("Qloo requests (lane A; cards and the request flow, round 20)", () => {
     expect(text(branch![1])).toBe(BRANCH);
     expect(text(steps[6])).not.toContain("compare");
     expect(text(steps[6])).toBe("Keep this move You Nothing moves until the acts' teams agree.");
-    // The tokens: 14px mono, all ink (round 37, L59 LATE: teal only for Qloo's endpoints), the Keep semibold.
+    // The tokens: 14px mono, all ink (teal only for Qloo's endpoints), the Keep semibold.
     const tokens = [...flow.matchAll(/<code data-flow-token="true" class="([^"]*)">([^<]+)<\/code>/g)].map((m) => [m[2], m[1]]);
     expect(tokens.map(([token]) => token.replace(/&#x27;|’/g, "'"))).toEqual([
       "act names",
@@ -317,7 +317,7 @@ describe("Qloo requests (lane A; cards and the request flow, round 20)", () => {
       expect(card).not.toMatch(/rounded|bg-card|tag /);
       // The endpoint heading is Qloo's, so teal on /method at all times (17px semibold mono), and wraps normally.
       expect(card).toMatch(/<h4 class="font-mono text-\[1\.0625rem\] leading-snug font-semibold text-prov-qloo">\//);
-      // The parameters (round 29): from 24rem of the endpoint's own width, two columns, the key in a fixed 11rem
+      // The parameters: from 24rem of the endpoint's own width, two columns, the key in a fixed 11rem
       // column and its meaning beside it, 16px apart, 8px between rows, one hairline above the group and one below and
       // none between rows. Narrower, key over meaning, each row closed by its hairline, as before.
       expect(card).toContain(
@@ -334,7 +334,7 @@ describe("Qloo requests (lane A; cards and the request flow, round 20)", () => {
       expect(card.slice(card.indexOf("<dl"), card.indexOf("</dl>"))).not.toMatch(/\b(sm|md|lg|xl):/);
       expect(card).not.toContain("grid-cols-[40%");
       // The live line stays word for word as the muted last row. It opens with "Sent live by", so it labels itself:
-      // no hidden "Sent live: " label before it, which a screen reader read as "Sent live: Sent live by ..." (round 36).
+      // no hidden "Sent live: " label before it, which a screen reader read as "Sent live: Sent live by ...".
       expect(text(card)).toMatch(/ We get back [^]* Sent live (only )?by [^]*\.$/);
       const liveRow = card.slice(card.lastIndexOf("<p "));
       expect(liveRow).toMatch(/^<p class="pt-2 text-\[0\.8125rem\] leading-snug text-muted-foreground">Sent live (only )?by [^<]*\.<\/p>$/);
@@ -371,7 +371,7 @@ describe("Qloo requests (lane A; cards and the request flow, round 20)", () => {
     expect(block).not.toContain("[overflow-wrap:anywhere]");
     expect(block.match(/<dd class="mt-1 min-w-0 text-\[0\.9375rem\] leading-snug @min-\[24rem\]:mt-0">/g)).toHaveLength(10);
     expect(block).toContain('<dd class="mt-1 min-w-0 text-[0.9375rem] leading-snug @min-[24rem]:mt-0"><code class="font-mono text-[0.8125rem]">urn:entity:artist</code></dd>');
-    // Round 31: no saved day was ranked with a location, so the row says so.
+    // No saved day was ranked with a location, so the row says so.
     expect(block).toContain(
       "Not sent: both saved days were ranked without a location, so their taste overlap is a global reading, not a local one.",
     );
@@ -393,7 +393,7 @@ describe("Qloo requests (lane A; cards and the request flow, round 20)", () => {
     expect(html.match(/Sent live (only )?by /g)).toHaveLength(3);
   });
 
-  it("says what each live path really sends: the clash agent asks Qloo only through compare, and /search's row claims no 'only' (round 36)", () => {
+  it("says what each live path really sends: the clash agent asks Qloo only through compare, and /search's row claims no 'only'", () => {
     // backend/app/agent/clash_tools.py: explain_clash is the clash agent's one Qloo request (/v2/analysis/compare);
     // the general explore tools are refused by backend/app/main.py unless allow_explore is switched on.
     const cards = [...block.matchAll(/<li data-endpoint="true" class="[^"]*">([\s\S]*?)<\/li>/g)].map((m) => m[1]);
@@ -413,7 +413,7 @@ describe("Qloo requests (lane A; cards and the request flow, round 20)", () => {
   });
 });
 
-describe("one rule per section, and plain claims (round 20)", () => {
+describe("one rule per section, and plain claims", () => {
   const html = renderToStaticMarkup(createElement(MethodPage));
 
   it("draws no closing rule at the end of a section, so the next section's top rule is the only one", () => {
@@ -437,7 +437,7 @@ describe("one rule per section, and plain claims (round 20)", () => {
   });
 });
 
-describe("the page's labels and short version (round 18)", () => {
+describe("the page's labels and short version", () => {
   const html = renderToStaticMarkup(createElement(MethodPage));
   const text = (part: string) => part.replace(/<[^>]+>/g, " ").replace(/&#x27;|&rsquo;|’/g, "'").replace(/\s+/g, " ").trim();
 
@@ -446,7 +446,7 @@ describe("the page's labels and short version (round 18)", () => {
     expect(html).toContain('<h2 id="short-heading" class="type-title break-words xl:col-span-4">The short version</h2>');
   });
 
-  it("keeps bold only on the failed pre-set test, and states the failed test, popularity's result and the moves check once, in one row (round 33)", () => {
+  it("keeps bold only on the failed pre-set test, and states the failed test, popularity's result and the moves check once, in one row", () => {
     const short = html.slice(html.indexOf('id="short-heading"'), html.indexOf("</section>", html.indexOf('id="short-heading"')));
     expect(short.match(/<strong/g)).toHaveLength(1);
     expect(short).toContain('<strong class="font-semibold">The test we set before building failed.</strong>');
@@ -458,7 +458,7 @@ describe("the page's labels and short version (round 18)", () => {
     );
     expect(text(short)).toContain("Taste overlap is a rank, not attendance.");
     // Each said once on the short version, and the failed test's figures are not restated anywhere else on the page
-    // outside the eye-only verdict (round 33, E2).
+    // outside the eye-only verdict.
     const once = (needle: RegExp) => (text(short).match(needle) ?? []).length;
     expect(once(/The test we set before building failed/g)).toBe(1);
     expect(once(/after the test failed/g)).toBe(0);
@@ -480,7 +480,7 @@ describe("the page's labels and short version (round 18)", () => {
   });
 });
 
-describe("the short version and the contents card (round 19)", () => {
+describe("the short version and the contents card", () => {
   const html = renderToStaticMarkup(createElement(MethodPage));
 
   it("sets no hairline above or between the short version's paragraphs: space alone opens it", () => {
@@ -492,7 +492,7 @@ describe("the short version and the contents card (round 19)", () => {
     const list = short.slice(short.indexOf("<ul"));
     // No edge of any kind (the link's decoration-border-strong underline is not an edge).
     expect(list).not.toMatch(/(?<![w-])border(-[tblrxy])?(?![w-])|divide-/);
-    // Round 34 (audit M4): two rows, the failed test and what the measure is; what the same test did show is said
+    // Two rows, the failed test and what the measure is; what the same test did show is said
     // once, in #tested.
     expect(list.match(/<li/g)).toHaveLength(2);
   });
@@ -528,8 +528,8 @@ describe("the short version and the contents card (round 19)", () => {
     // One horizontal sequence that wraps, entries 24px apart, with no surface, rule, stripe, capsule or tick.
     expect(order).toContain('<ol class="flex flex-wrap gap-x-6 text-sm">');
     expect(order).not.toMatch(/\bbg-|rounded|shadow|border|divide-|sticky|h-\[3px\]/);
-    // Each entry is one link holding the title alone, in the order of the four section headings (round 34, audit
-    // M7: no numeral, since the sections are not steps; the list's order is the page's order).
+    // Each entry is one link holding the title alone, in the order of the four section headings (no
+    // numeral, since the sections are not steps; the list's order is the page's order).
     const entries = [...order.matchAll(/<a href="#([a-z-]+)" class="([^"]*)"><span class="([^"]*)">([^<]+)<\/span><\/a>/g)];
     expect(entries).toHaveLength(6);
     expect(order.match(/<a /g)).toHaveLength(6);
@@ -563,7 +563,7 @@ describe("the short version and the contents card (round 19)", () => {
   });
 });
 
-describe("hanging heads from 1280px (round 26)", () => {
+describe("hanging heads from 1280px", () => {
   const html = renderToStaticMarkup(createElement(MethodPage));
   const classOf = (tag: string) => tag.match(/class="([^"]*)"/)?.[1] ?? "";
 
@@ -579,7 +579,7 @@ describe("hanging heads from 1280px (round 26)", () => {
       expect(grid, id).toContain("print:block");
       // The heading in columns 1 to 4, the body (and any footer) in columns 5 to 12.
       expect(section, id).toMatch(new RegExp(`<h2 id="${id}-heading" class="type-title break-words xl:col-span-4">`));
-      // The body follows the heading directly; only "How the rest works" has its rail between them (round 28).
+      // The body follows the heading directly; only "How the rest works" has its rail between them.
       const afterHead = section.slice(section.indexOf("</h2>") + 5);
       const bodyAt = afterHead.indexOf('<div class="mt-3 xl:mt-0 print:mt-3 ');
       expect(bodyAt, id).toBeGreaterThan(-1);
@@ -606,15 +606,15 @@ describe("hanging heads from 1280px (round 26)", () => {
 
   it("puts the measure on the running text from xl, so no figure wrapper carries 76ch there", () => {
     // Every wrapper at the 76ch measure below xl gives it up from xl, except the short version's chart and its
-    // paragraphs, which keep the R25 rule (the chart at the prose's measure and font).
+    // paragraphs, which keep the one rule (the chart at the prose's measure and font).
     const bare = [...html.matchAll(/class="([^"]*(?<![:\w])max-w-\[76ch\][^"]*)"/g)].map((m) => m[1]);
     const keep = bare.filter((cls) => !cls.includes("xl:max-w-none"));
     expect(keep).toEqual([
       "mt-3 min-w-0 max-w-[76ch] text-[0.9375rem] sm:text-base",
       "mt-5 max-w-[76ch] text-[0.9375rem] leading-[1.55] sm:text-base",
     ]);
-    // Each section and sub-block body measures its paragraphs, lists and folds from xl (round 35: two more sub-blocks,
-    // why Qloo and the control acts; round 38: two more sections, the evidence and the timing block).
+    // Each section and sub-block body measures its paragraphs, lists and folds from xl (two more sub-blocks,
+    // why Qloo and the control acts; and two more sections, the evidence and the timing block).
     const bodies = bare.filter((cls) => cls.includes("xl:max-w-none"));
     expect(bodies).toHaveLength(13);
     for (const cls of bodies) {
@@ -643,7 +643,7 @@ describe("hanging heads from 1280px (round 26)", () => {
 
   it("sets the title on the one display step every page title takes, with no size of its own, as /check does", () => {
     expect(html).toContain('<h1 class="type-poster xl:col-span-12">How we know</h1>');
-    // Round 34 (one display role, 52px wide and 30px on a phone, from type-poster alone): neither sub-page writes a
+    // One display role ( 52px wide and 30px on a phone, from type-poster alone): neither sub-page writes a
     // size of its own over it.
     const check = readFileSync(join(process.cwd(), "src", "app", "check", "page.tsx"), "utf-8");
     expect(check).toContain('<h1 className="type-poster break-words">');
@@ -653,7 +653,7 @@ describe("hanging heads from 1280px (round 26)", () => {
   });
 });
 
-describe("the short version's head and verdict (round 27)", () => {
+describe("the short version's head and verdict", () => {
   const html = renderToStaticMarkup(createElement(MethodPage));
   const start = html.indexOf('<section aria-labelledby="short-heading"');
   const short = html.slice(start, html.indexOf("</section>", start));
@@ -693,8 +693,8 @@ describe("the short version's head and verdict (round 27)", () => {
     // In the heading's columns, in the row under the heading; the body spans both rows, so their tops stay level.
     expect(cls).toMatch(/\bxl:col-span-4 xl:col-start-1 xl:row-start-2\b/);
     expect(short).toMatch(/<div class="min-w-0 xl:col-span-8 xl:col-start-5 xl:row-span-2 xl:row-start-1">/);
-    // No box, rule, fill, raspberry, softer tone or sticky, outside the meters (round 28; two of them from round 37
-    // fix pass 1), which draw only in ink and border-strong, and the one muted scale note.
+    // No box, rule, fill, raspberry, softer tone or sticky, outside the meters (two of them), which
+    // draw only in ink and border-strong, and the one muted scale note.
     expect(meter).not.toBeNull();
     expect(meters).toHaveLength(2);
     const note = verdict![0].match(/<p class="([^"]*)">([^<]*)<\/p>/g)?.find((p) => p.includes(SCALE_NOTE)) ?? "";
@@ -706,10 +706,10 @@ describe("the short version's head and verdict (round 27)", () => {
     }
   });
 
-  it("draws taste overlap's share once on the first screen: the chart's bar, with no meter, row label or bar line for it in the verdict (round 37 fix pass 1, L58)", () => {
+  it("draws taste overlap's share once on the first screen: the chart's bar, with no meter, row label or bar line for it in the verdict", () => {
     const [, , inner] = verdict!;
     // The chart draws it, once: its ink bar ends at taste overlap's share of the domain, under the one bar line
-    // labelled "Bar we set" (the failed bar test pins each); the sentence under the chart states the number (fix pass 2).
+    // labelled "Bar we set" (the failed bar test pins each); the sentence under the chart states the number.
     const chart = short.slice(short.indexOf("<figure"), short.indexOf("</figure>"));
     expect(chart).toContain(`rounded-bar h-4 bg-foreground" style="width:${at(reached)}"`);
     expect(text(chart).split("Bar we set:")).toHaveLength(2);
@@ -737,7 +737,7 @@ describe("the short version's head and verdict (round 27)", () => {
     expect(short.match(/data-verdict-meter/g)).toHaveLength(2);
   });
 
-  it("draws each miss as a meter: an ink capsule to its value, the chart's 1.5px ink bar rule, a border-strong start tick, and empty paper between (round 28)", () => {
+  it("draws each miss as a meter: an ink capsule to its value, the chart's 1.5px ink bar rule, a border-strong start tick, and empty paper between", () => {
     const [, meterCls, inner] = meter!;
     // Under its value line, at most the rail figure's 20rem, with no display numeral anywhere in the verdict.
     expect(meterCls).toBe("relative mt-1 h-5 max-w-[20rem]");
@@ -774,7 +774,7 @@ describe("the short version's head and verdict (round 27)", () => {
     expect(source).toMatch(/import \{ BacktestBars, FIGURE_DOMAIN, along \} from "@\/components\/clash\/why-this-matters";/);
   });
 
-  it("draws the two pre-set checks the chart does not draw as meters on their own scales, both bar rules at the chart's bar fraction (round 29)", () => {
+  it("draws the two pre-set checks the chart does not draw as meters on their own scales, both bar rules at the chart's bar fraction", () => {
     const [lead, movesMeter] = meters.map((m) => ({ cls: m[1], marks: marksOf(m[2]) }));
     // Called twice, with the figures module's values: the lead over genre tags against its bar, the moves against
     // theirs, each on 0 to bar x (FIGURE_DOMAIN / the chart's bar), so each bar sits at the chart's bar fraction.
@@ -832,7 +832,7 @@ describe("the short version's head and verdict (round 27)", () => {
     expect(inner).toContain(`${mono(moves.measuredPoints)} index points · bar ${mono(moves.barPoints)}`);
     // The scale note sits right after the second meter.
     expect(inner.indexOf(SCALE_NOTE)).toBeGreaterThan(inner.lastIndexOf("data-verdict-meter"));
-    // No display numeral and no restated share (round 37, L58): the chart beside the verdict draws taste overlap's
+    // No display numeral and no restated share: the chart beside the verdict draws taste overlap's
     // share and prints it, so the verdict neither draws nor states it. Never a stat strip.
     expect(inner).not.toContain("type-numeral");
     expect(text(inner)).not.toContain(`${reached.toFixed(1)}%`);
@@ -858,7 +858,7 @@ describe("the short version's head and verdict (round 27)", () => {
   });
 });
 
-describe("the request flow in the rail of How the rest works (round 28)", () => {
+describe("the request flow in the rail of How the rest works", () => {
   const html = renderToStaticMarkup(createElement(MethodPage));
   const start = html.indexOf('<section id="the-rest"');
   const rest = html.slice(start, html.indexOf("</section>", start));
@@ -895,7 +895,7 @@ describe("the request flow in the rail of How the rest works (round 28)", () => 
     expect(rest).not.toMatch(/\bsticky\b/);
   });
 
-  it("draws the rail copy as the body copy is drawn, words, tokens and paths unchanged (round 37: one column at every width)", () => {
+  it("draws the rail copy as the body copy is drawn, words, tokens and paths unchanged (one column at every width)", () => {
     const [rail, body] = [flows.find((f) => f.includes('class="grid gap-y-2"'))!, flows.find((f) => f.includes('class="my-6 grid gap-y-2"'))!];
     expect(rail).toBeDefined();
     expect(body).toBeDefined();
@@ -929,7 +929,7 @@ describe("the request flow in the rail of How the rest works (round 28)", () => 
   });
 });
 
-describe("true sentences about location, the test that held, the brief and its limits (round 31)", () => {
+describe("true sentences about location, the test that held, the brief and its limits", () => {
   const html = renderToStaticMarkup(createElement(MethodPage));
   const plain = text(html);
   const { backtest, scale } = METHOD_FIGURES;
@@ -937,7 +937,7 @@ describe("true sentences about location, the test that held, the brief and its l
   const genre = methodRow("genre");
   const popularity = methodRow("popularity");
 
-  it("says what the same test did show once, in #tested ('What it does show'), every figure from METHOD_FIGURES; the short version no longer repeats it (round 34, audit M4)", () => {
+  it("says what the same test did show once, in #tested ('What it does show'), every figure from METHOD_FIGURES; the short version no longer repeats it", () => {
     const [low, high] = taste.auc95!;
     // The same figures the short version's duplicate line carried: taste overlap's AUC against genre tags', the
     // overlapping intervals, and the correlation with popularity, in the test's own section.
@@ -958,7 +958,7 @@ describe("true sentences about location, the test that held, the brief and its l
     expect(table).toContain(`${taste.auc.toFixed(3)} (${low.toFixed(3)} to ${high.toFixed(3)})`);
     expect(plain).toContain(`AUC (${scale.auc.chance} means no better than chance;`);
     expect(low).toBeGreaterThan(scale.auc.chance);
-    // Popularity's result is said once in the short version's first row (round 32).
+    // Popularity's result is said once in the short version's first row.
     expect(popularity.auc).toBe(0.722);
     const shortAt = html.indexOf('<section aria-labelledby="short-heading"');
     const short = html.slice(shortAt, html.indexOf("</section>", shortAt));
@@ -987,7 +987,7 @@ describe("true sentences about location, the test that held, the brief and its l
       "It is for evaluating this entry. The pilot on the home page walks a programmer through a published day's brief, with the same limits: no Qloo tags or identifiers, and not for redistribution.",
     );
     expect(plain).not.toContain("it is not offered to festivals");
-    // The pilot no longer offers a brief for a new bill (round 32, V4).
+    // The pilot no longer offers a brief for a new bill.
     expect(plain).not.toMatch(/sends one back|sends its bill/);
     const start = html.indexOf('<section id="limits"');
     const limits = text(html.slice(start, html.indexOf("</section>", start)));
@@ -1003,13 +1003,13 @@ describe("true sentences about location, the test that held, the brief and its l
     expect(print).toMatch(/^@media print \{\s*:root\.dark \{/);
     expect(print.slice(0, print.indexOf("}"))).toContain("--foreground: oklch(0.21 0.018 262);");
     // Paper is light in either theme: in the same block, an important rule outranks the theme script's inline
-    // color-scheme (round 34 moved it out of :root.dark for that reason).
+    // color-scheme (it is kept out of :root.dark for that reason).
     const block = print.slice(0, print.indexOf("\n}\n"));
     expect(block).toMatch(/:root \{\s*color-scheme: light !important;\s*\}/);
   });
 });
 
-describe("taste inside the pair score, the second exploratory follow-up (round 32, V2; round 37 score words)", () => {
+describe("taste inside the pair score, the second exploratory follow-up, in the score's words", () => {
   const html = renderToStaticMarkup(createElement(MethodPage));
   const visible = text(html.replace(/<details(?![^>]*\bopen\b)[^>]*>[\s\S]*?<\/details>/g, " "));
   const start = html.indexOf('id="taste-in-price"');
@@ -1028,7 +1028,7 @@ describe("taste inside the pair score, the second exploratory follow-up (round 3
   });
 
   it("prints every figure from METHOD_FIGURES and says it did not establish an advantage over popularity", () => {
-    // The index's pair score, named with its factors once, in its own clause (round 33, E1; round 37, R3: "pair
+    // The index's pair score, named with its factors once, in its own clause ("pair
     // score" in place of the backtest's "full price").
     expect(blockText).toContain(
       "Run after the failed test above, on the same 68 complained-about pairs, so it is exploratory. The pair score (taste overlap × shared time × Qloo popularity) scored AUC 0.746 (interval 0.675 to 0.812); popularity alone scored 0.722. The difference is +0.024 (interval -0.074 to +0.136), so the pair score did not establish an advantage over popularity.",
@@ -1061,7 +1061,7 @@ describe("taste inside the pair score, the second exploratory follow-up (round 3
     expect(blockText).toContain("AUC by festival, exploratory (0.5 means no better than chance)");
   });
 
-  it("states each sample's result with its sign, interval, size and source, then a labelled hypothesis with its confound (round 33, E3)", () => {
+  it("states each sample's result with its sign, interval, size and source, then a labelled hypothesis with its confound", () => {
     expect(blockText).toContain(
       "On the Glastonbury 2025 complaints (14 complaint pairs in 8 clusters, all from one NME clash guide about mid-card acts), adding taste raised the pair score's AUC by 0.201 (interval +0.111 to +0.277, resampled by complaint). On the four US festivals (54 complaint pairs in 34 clusters, press complaints that mostly named the day's biggest acts, which popularity already ranks well), adding taste lowered it by 0.065 (interval -0.163 to +0.025, includes 0).",
     );
@@ -1079,14 +1079,14 @@ describe("taste inside the pair score, the second exploratory follow-up (round 3
     expect(blockText).not.toMatch(/\bbeats?\b|better than popularity|predicts|validated|proves|pre-registered|What taste adds/i);
   });
 
-  it("states the disagreement count once, aggregate only, with no pair named (round 33, E4)", () => {
+  it("states the disagreement count once, aggregate only, with no pair named", () => {
     expect(blockText).toContain(
       "Complained-about clashes that taste overlap put in their day's top quarter while popularity put them in the bottom half: 4 of 68, from 2 complaint clusters; all 4 were also in the top quarter on time and draw.",
     );
     expect(text(html).match(/4 of 68/g)).toHaveLength(1);
   });
 
-  it("describes a replication test that has not been run, with its threshold stated before any data and no result promised (round 33, E5)", () => {
+  it("describes a replication test that has not been run, with its threshold stated before any data and no result promised", () => {
     expect(blockText).toContain(
       "A replication test we have not run. It needs data that does not exist yet: the 2027 bills of the same five festivals, scored when their set times are published and before any complaint is collected. The scoring would be fixed and written down before that data arrives, and complaints collected the same way as here. On the same complained-about pairs, the pair score would be compared with the same score with taste held constant, as a paired difference, counted a success only if that difference's 95% interval lies above 0. Both arms keep Qloo's popularity; a baseline with no Qloo data has not been tested.",
     );
@@ -1101,7 +1101,7 @@ describe("taste inside the pair score, the second exploratory follow-up (round 3
   });
 });
 
-describe("the Hidden label's definition (round 32, V6)", () => {
+describe("the Hidden label's definition", () => {
   const plain = text(renderToStaticMarkup(createElement(MethodPage)));
 
   it("says the label's genre test is that main genre tags differ, and keeps the count line and its caveats", () => {
@@ -1116,18 +1116,18 @@ describe("the Hidden label's definition (round 32, V6)", () => {
   });
 });
 
-describe("the lede and the index's words (round 33, E1)", () => {
+describe("the lede and the index's words", () => {
   const html = renderToStaticMarkup(createElement(MethodPage));
   const plain = text(html);
 
-  it("opens with 'scores', as the home page does, and leaves no money word for the index anywhere on the page, folds included (round 37, R3)", () => {
+  it("opens with 'scores', as the home page does, and leaves no money word for the index anywhere on the page, folds included", () => {
     expect(plain).toContain("Clash Control scores set-time clashes with a number it derives from Qloo data.");
-    // Round 34 (audit M2): the lede is that one sentence; the self-describing second sentence is cut.
+    // The lede is that one sentence; the self-describing second sentence is cut.
     const lede = text(html.match(/<p class="mt-4 max-w-2xl [^"]*xl:col-span-12">([\s\S]*?)<\/p>/)?.[1] ?? "");
     expect(lede).toBe("Clash Control scores set-time clashes with a number it derives from Qloo data.");
     expect(plain).not.toContain("This page says what that number is");
     expect(plain).not.toMatch(/Clash Control prices/);
-    // The page says score or index everywhere, the anchor id kept for links (round 37, R3: nothing is excused; the
+    // The page says score or index everywhere, the anchor id kept for links (nothing is excused; the
     // backtest's "full price" is the pair score, and formulaNote says "the printed score" inside the closed fold).
     const words = plain.match(/\b(price|prices|priced|unpriced|pricing)\b/gi) ?? [];
     expect(words).toEqual([]);
@@ -1137,7 +1137,7 @@ describe("the lede and the index's words (round 33, E1)", () => {
   });
 });
 
-describe("the complaint median stays on /method (round 34, guardian S2)", () => {
+describe("the complaint median stays on /method", () => {
   const html = renderToStaticMarkup(createElement(MethodPage));
   const { complaints } = METHOD_FIGURES;
 
@@ -1162,7 +1162,7 @@ describe("the complaint median stays on /method (round 34, guardian S2)", () => 
   });
 });
 
-describe("why Qloo, the control acts, the backtest's pairs, the legend and the global reading (round 35)", () => {
+describe("why Qloo, the control acts, the backtest's pairs, the legend and the global reading", () => {
   const html = renderToStaticMarkup(createElement(MethodPage));
   /** What a reader sees with no click: the page with every closed disclosure taken out. */
   const visible = text(html.replace(/<details(?![^>]*\bopen\b)[^>]*>[\s\S]*?<\/details>/g, " "));
@@ -1201,7 +1201,7 @@ describe("why Qloo, the control acts, the backtest's pairs, the legend and the g
     expect(controls).toMatch(
       /^<div id="controls" class="scroll-mt-24 pt-8 first:pt-0"><h3 id="controls-heading" class="text-lg leading-snug font-semibold break-words">Four control acts<\/h3>/,
     );
-    // Round 36: the control acts are candidates in every act's /v2/insights row (backend/app/qloo/overlap.py), so the
+    // The control acts are candidates in every act's /v2/insights row (backend/app/qloo/overlap.py), so the
     // block says they count in its percentiles: the mechanism only, nothing on how much a value moves.
     const said =
       "Each build also looks up four acts chosen to be unrelated to a festival bill: Vienna Philharmonic, Raffi, Frankie Yankovic and Mormon Tabernacle Choir. If their audiences do not rank near the bottom of the bill (a mean percentile of 0.35 or lower), the build says the signal does not separate audiences on that bill. On both saved days their mean percentile was 0.35 or lower. They are also in each act's ranked list, so they count in its percentiles. This does not test whether the clash rankings are useful. Their lookups are marked as control acts in How Qloo was used.";
@@ -1267,7 +1267,7 @@ describe("why Qloo, the control acts, the backtest's pairs, the legend and the g
     expect(text(limits)).not.toContain("347");
   });
 
-  it("says under its limits, once and in the shared words, that the published days' locks are this app's (round 36)", () => {
+  it("says under its limits, once and in the shared words, that the published days' locks are this app's", () => {
     const start = html.indexOf('<section id="limits"');
     const limits = html.slice(start, html.indexOf("</section>", start));
     expect(LOCK_RULE).toBe(
@@ -1284,14 +1284,14 @@ describe("why Qloo, the control acts, the backtest's pairs, the legend and the g
   });
 });
 
-describe("round 37: one 46.8% on the first screen, the tag cap and the no-signal acts (L58, L60, L38)", () => {
+describe("one 46.8% on the first screen, the tag cap and the no-signal acts", () => {
   const html = renderToStaticMarkup(createElement(MethodPage));
   /** What a reader sees with no click: the page with every closed disclosure taken out. */
   const visible = text(html.replace(/<details(?![^>]*\bopen\b)[^>]*>[\s\S]*?<\/details>/g, " "));
   const { compareTags, noSignal } = METHOD_FIGURES;
   const reached = `${methodRow("taste").topQuarterPct.toFixed(1)}%`;
 
-  it("states taste overlap's share once above the fold: in the failed test's sentence, with the chart's bar and no value label beside it, and not in the verdict (L58)", () => {
+  it("states taste overlap's share once above the fold: in the failed test's sentence, with the chart's bar and no value label beside it, and not in the verdict", () => {
     // Fix pass 2: the failed test's sentence states it (CHARTER 2.1). The chart keeps the bar drawn short of 60 and
     // its accessible name, and still writes all four value labels (the failed bar test pins them), but the figure
     // hides the label after the one bar whose name starts "Taste". The verdict neither draws nor states it (fix
@@ -1326,7 +1326,7 @@ describe("round 37: one 46.8% on the first screen, the tag cap and the no-signal
     expect(text(short.slice(short.indexOf("<li"), short.indexOf("</li>")))).toContain(`Taste overlap put ${reached} of complained-about clashes`);
   });
 
-  it("says what the number of compare tags means, with the cap and the counts from the figures, after the endpoint cards (L60)", () => {
+  it("says what the number of compare tags means, with the cap and the counts from the figures, after the endpoint cards", () => {
     expect(compareTags).toEqual({ tagCap: 8, savedPairs: 22, fullPairs: 17 });
     const sentence = `This app keeps at most ${compareTags.tagCap} shared genre, subgenre or theme tags per compared pair, and ${compareTags.fullPairs} of the ${compareTags.savedPairs} saved pairs fill all ${compareTags.tagCap}, so the number of tags is not a measure of overlap; read them as examples.`;
     expect(sentence).toBe(
@@ -1342,7 +1342,7 @@ describe("round 37: one 46.8% on the first screen, the tag cap and the no-signal
     expect(text(html)).not.toMatch(/median of \d+ tags|typical pair|tags a typical/i);
   });
 
-  it("names the acts with no Qloo signal on each published day under #limits, and says their overlaps are left out and drawn with no line, with no claim about where they play (L38)", () => {
+  it("names the acts with no Qloo signal on each published day under #limits, and says their overlaps are left out and drawn with no line, with no claim about where they play", () => {
     expect(noSignal).toEqual([
       {
         festival: "Glastonbury",
@@ -1370,7 +1370,7 @@ describe("round 37: one 46.8% on the first screen, the tag cap and the no-signal
     expect(text(limits)).not.toMatch(/\bopen(s|ing|er|ers)?\b/i);
   });
 
-  it("says the chain's steps and the agent's branch in the open, in both copies, and resolves every anchor other pages link to (L59, L57)", () => {
+  it("says the chain's steps and the agent's branch in the open, in both copies, and resolves every anchor other pages link to", () => {
     for (const id of ["price", "tested", "limits", "labels", "brief", "moving-sets", "live-check", "controls", "why-qloo", "qloo-calls", "taste-in-price"]) {
       expect(html).toContain(`id="${id}"`);
     }
@@ -1380,7 +1380,7 @@ describe("round 37: one 46.8% on the first screen, the tag cap and the no-signal
   });
 });
 
-describe("what an index above 100 means (round 37, a judge's question)", () => {
+describe("what an index above 100 means (a judge's question)", () => {
   it("says it in one plain sentence beside the index's definition, as a reading and not a verdict", () => {
     const plain = text(renderToStaticMarkup(createElement(MethodPage)));
     const sentence =

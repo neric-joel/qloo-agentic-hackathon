@@ -246,10 +246,9 @@ export const METHOD_FIGURES = {
     requests: 3,
   },
   /**
-   * What the number of compare tags means (round 37, L60). This app keeps at most `tagCap` shared tags per compared
+   * What the number of compare tags means. This app keeps at most `tagCap` shared tags per compared
    * pair, after keeping only genre, subgenre and theme tags (`TAG_TAKE = 8` in backend/app/pair.py;
-   * `shared_taste(..., take=8)` in backend/app/qloo/overlap.py). Counted on 21 Oct 2026 by count-tag-cap.mjs (lane
-   * evidence, round 37; kept in the entry's private critique folder, _private/critique/round-37/build/evidence/, not
+   * `shared_taste(..., take=8)` in backend/app/qloo/overlap.py). Counted on 21 Oct 2026 by count-tag-cap.mjs (not
    * in this repository), GET only against the local API, over both published presets' saved compare tags, each
    * unordered pair of Qloo entity ids counted once: `savedPairs` distinct pairs hold at least one tag and `fullPairs`
    * of them hold all 8; none holds more. The samples, named as they are: the Glastonbury 2025 Sunday receipts (14
@@ -260,7 +259,7 @@ export const METHOD_FIGURES = {
    */
   compareTags: { tagCap: 8, savedPairs: 22, fullPairs: 17 },
   /**
-   * The acts Qloo has no usable signal for on the two published days (round 37, L38), read with GET from
+   * The acts Qloo has no usable signal for on the two published days, read with GET from
    * /api/presets/glastonbury-2025-sun and /api/presets/riot-fest-2026-sun on 21 Oct 2026 (`report.coverage.unscored`,
    * reason `no_signal`: each was searched, status 200, and no entity was kept). For each day, one of their overlaps
    * with a set on another stage, the longest (Glastonbury has two of 60 min; this is the one the ledger names).
@@ -412,7 +411,7 @@ export function disagreementSentence(
 }
 
 /**
- * What the number of compare tags means (round 37, L60), in the round's words, with the cap and the counts from the
+ * What the number of compare tags means, in the page's words, with the cap and the counts from the
  * figures: "This app keeps at most 8 shared genre, subgenre or theme tags per compared pair, and 17 of the 22 saved
  * pairs fill all 8, so the number of tags is not a measure of overlap; read them as examples."
  */
@@ -436,7 +435,7 @@ type NoSignalDay = {
 };
 
 /**
- * The acts with no usable Qloo signal on the published days, and what happens to their overlaps (round 37, L38):
+ * The acts with no usable Qloo signal on the published days, and what happens to their overlaps:
  * names, one example overlap per day and the minutes from the figures; no claim about where they sit in the day.
  */
 export function noSignalSentence(days: readonly NoSignalDay[] = METHOD_FIGURES.noSignal): string {

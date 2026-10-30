@@ -41,7 +41,7 @@ test.describe("how we know (/method)", () => {
     await expect(failed).toContainText("It missed the bar. Popularity did better: another Qloo field, it reached 57.8%.");
     await expect(failed).toContainText(/The check on suggested moves missed its bar too \(\d+(\.\d+)? index points against 10\)\./);
     await expect(failed.getByRole("link", { name: "See the full comparison below" })).toHaveAttribute("href", "#tested");
-    // The exploratory follow-ups' finding for the pair score is stated where they are reported, in the test's section (round 37, R3: "full price" became "pair score").
+    // The exploratory follow-ups' finding for the pair score is stated where they are reported, in the test's section ("full price" became "pair score").
     const tested = article.getByRole("region", { name: "What we tested it against" });
     await expect(tested).toContainText("The exploratory follow-up did not establish an advantage over popularity.");
     await expect(tested).toContainText("so the pair score did not establish an advantage over popularity.");
@@ -142,13 +142,13 @@ test.describe("how we know (/method)", () => {
     await expect(rest).toContainText("Each was saved when the day was built; each card says where it is also sent live.");
     // Live use is a short, named list, each limited per visitor.
     await expect(rest).toContainText("Live calls come only from the re-check route, the pasted-grid route in live mode and the agent route, each limited per visitor");
-    // The path from a timetable to the index (round 37, L59): seven steps, and inside the engine's step one branch.
+    // The path from a timetable to the index: seven steps, and inside the engine's step one branch.
     const chain = rest.getByRole("list", { name: "From your timetable to the index" });
     await expect(chain.locator(":scope > li")).toHaveCount(7);
     await expect(chain.getByRole("listitem")).toHaveCount(8);
   });
 
-  test("draws the chain from request to decision in order, with the agent as a branch off the engine, never a step of its own (round 37, L59)", async ({ page }) => {
+  test("draws the chain from request to decision in order, with the agent as a branch off the engine, never a step of its own", async ({ page }) => {
     const rest = page.getByRole("region", { name: "How the rest works" });
     const chain = rest.getByRole("list", { name: "From your timetable to the index" });
     const steps = chain.locator(":scope > li");
@@ -181,7 +181,7 @@ test.describe("how we know (/method)", () => {
     expect((branchBox?.y ?? 0) + (branchBox?.height ?? 0), "the branch ends above the Keep").toBeLessThanOrEqual(keepBox?.y ?? 0);
   });
 
-  test("states the tag cap and how many saved pairs fill it, and names the six acts with no Qloo signal, with no click (round 37, L60 and L38)", async ({ page }) => {
+  test("states the tag cap and how many saved pairs fill it, and names the six acts with no Qloo signal, with no click", async ({ page }) => {
     const calls = page.locator("#qloo-calls");
     const cap = calls.getByText(
       "This app keeps at most 8 shared genre, subgenre or theme tags per compared pair, and 17 of the 22 saved pairs fill all 8, so the number of tags is not a measure of overlap; read them as examples.",
@@ -201,7 +201,7 @@ test.describe("how we know (/method)", () => {
     await expect(limits).not.toContainText(/\bopen(er|ers|ing)?\b/i);
   });
 
-  test("at the top of the page 46.8% is said once: in the failed test's sentence, with the chart's bar and no value label (round 37, L58, fix pass 2)", async ({ page, isPhone }) => {
+  test("at the top of the page 46.8% is said once: in the failed test's sentence, with the chart's bar and no value label", async ({ page, isPhone }) => {
     const fold = isPhone ? 844 : 900;
     const leaves = await page.evaluate((foot) => {
       const found: { tag: string; top: number }[] = [];
@@ -228,12 +228,12 @@ test.describe("how we know (/method)", () => {
     const shownValues = page.locator('figure [data-bar-value]:not([role="img"][aria-label^="Taste"] + [data-bar-value])');
     await expect(shownValues).toHaveText(["57.8%", "39.0%", "26.3%"]);
     for (const value of await shownValues.all()) await expect(value).toBeVisible();
-    // The failed test's sentence still carries the figure beside its bar (CHARTER 2.1).
+    // The failed test's sentence still carries the figure beside its bar.
     await expect(page.getByRole("region", { name: "The short version" })).toContainText("Taste overlap put 46.8% of complained-about clashes");
   });
 
   test("says what each live path really sends: no card names the agent's general tools, /search has no \"only\", and the page says the explore tools are refused", async ({ page }) => {
-    // Round 36: the clash agent asks Qloo only through compare, when it explains a clash; its general explore tools are
+    // The clash agent asks Qloo only through compare, when it explains a clash; its general explore tools are
     // never offered by the page and refused by the API unless the deployment switches them on.
     const rest = page.getByRole("region", { name: "How the rest works" });
     const endpoints = rest.getByRole("list", { name: /^The three Qloo endpoints this product calls/ }).getByRole("listitem");
@@ -251,7 +251,7 @@ test.describe("how we know (/method)", () => {
   });
 
   test("states under its limits, with no click and in the shared words, whose locks they are", async ({ page }) => {
-    // Round 36 (lib/locks.ts LOCK_RULE): on both published days the locked sets are exactly the last set on each stage.
+    // lib/locks.ts LOCK_RULE: on both published days the locked sets are exactly the last set on each stage.
     const rule = "On the published days, the locked sets are the last set on each stage. This app keeps them in place; the festivals did not mark them.";
     const items = page.locator("#limits li");
     await expect(items.filter({ hasText: rule })).toHaveCount(1);
@@ -310,7 +310,7 @@ test.describe("how we know (/method)", () => {
     const controls = page.locator("#controls");
     await expect(controls.getByRole("heading", { level: 3 })).toHaveText("Four control acts");
     await expect(controls.getByRole("heading", { level: 3 })).toHaveAttribute("id", "controls-heading");
-    // Round 36: one sentence says how the control acts enter the percentiles (the mechanism, nothing more).
+    // One sentence says how the control acts enter the percentiles (the mechanism, nothing more).
     await expect(controls.locator("p")).toHaveText(
       "Each build also looks up four acts chosen to be unrelated to a festival bill: Vienna Philharmonic, Raffi, Frankie Yankovic and Mormon Tabernacle Choir. If their audiences do not rank near the bottom of the bill (a mean percentile of 0.35 or lower), the build says the signal does not separate audiences on that bill. On both saved days their mean percentile was 0.35 or lower. They are also in each act’s ranked list, so they count in its percentiles. This does not test whether the clash rankings are useful. Their lookups are marked as control acts in How Qloo was used.",
     );
@@ -386,7 +386,7 @@ test.describe("how we know (/method)", () => {
     await expect(page.getByRole("region", { name: "Which clash is worth moving?" })).toContainText(HONESTY.neither);
   });
 
-  test("what people ask about clashes: counts pages, not people, with the three claims, the questions as closed disclosures and the sources behind one click (round 38)", async ({ page }) => {
+  test("what people ask about clashes: counts pages, not people, with the three claims, the questions as closed disclosures and the sources behind one click", async ({ page }) => {
     const asked = page.locator("#asked");
     await expect(asked.getByRole("heading", { level: 2, name: "What people ask about clashes" })).toBeVisible();
     const intro = asked.locator("[data-evidence-intro]");
@@ -396,7 +396,7 @@ test.describe("how we know (/method)", () => {
     const claims = asked.locator("[data-evidence-claims] > li");
     await expect(claims).toHaveCount(3);
     await expect(asked.locator("[data-evidence-claims]")).toBeVisible();
-    // Round 39 (W8): claim 1 counts pairs once per festival and year, never as distinct pairs; claim 2 counts accounts
+    // Claim 1 counts pairs once per festival and year, never as distinct pairs; claim 2 counts accounts
     // of programming practice, says one is second-hand, and says what none of them describes.
     await expect(claims.nth(0)).toContainText("pairs of acts when counted separately for each festival and year");
     await expect(claims.nth(0)).not.toContainText("distinct pairs");
@@ -420,13 +420,13 @@ test.describe("how we know (/method)", () => {
     await expect(sources).toHaveJSProperty("open", false);
     await sources.locator("summary").click();
     await expect(sources.getByRole("link")).toHaveCount(113);
-    // The accounts are counted in one unit, the group's title the claim's own (round 39, W8).
+    // The accounts are counted in one unit, the group's title the claim's own.
     await expect(sources).toContainText("Accounts of programming practice (21)");
     await expect(sources.getByRole("link").first()).toHaveAttribute("target", "_blank");
     await expect(asked).not.toContainText(/survey|poll|people we asked|respondents/i);
   });
 
-  test("how long this takes: the by-hand route is estimated, not measured; Clash Control's steps are machine time measured on production; never a survey or a time saved (round 38)", async ({ page }) => {
+  test("how long this takes: the by-hand route is estimated, not measured; Clash Control's steps are machine time measured on production; never a survey or a time saved", async ({ page }) => {
     const timing = page.locator("#how-long");
     await expect(timing.getByRole("heading", { level: 2, name: "How long this takes" })).toBeVisible();
     const manual = timing.locator("[data-timing-manual]");
@@ -443,7 +443,7 @@ test.describe("how we know (/method)", () => {
       await expect(machine.nth(i)).toContainText("Machine time on production");
       await expect(machine.nth(i)).toHaveText(/: \d\.\d s\.$/);
     }
-    // The steps the timing script measured, by the names a visitor sees (round 39, W8: the print step opens the
+    // The steps the timing script measured, by the names a visitor sees (the print step opens the
     // printable brief; nothing is printed).
     for (const [i, step] of ["Load the day", "Open the costliest clash", "Show the tested move", "Keep this move", "Open the printable brief"].entries()) {
       await expect(machine.nth(i)).toHaveText(new RegExp(`^${step}\\. Machine time on production: \\d\\.\\d s\\.$`));

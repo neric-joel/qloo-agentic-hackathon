@@ -144,7 +144,7 @@ export type PriceAnswer = {
     acts: number;
     priced: number;
     unpriced: string[];
-    /** Round 9b, null from a route that does not send them: acts found as exactly one act. */
+    /** Null from a route that does not send them: acts found as exactly one act. */
     matched: number | null;
     /** Matched acts with no usable signal, and names that matched more than one act (never guessed). */
     noSignal: string[] | null;

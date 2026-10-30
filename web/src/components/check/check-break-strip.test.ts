@@ -207,7 +207,7 @@ describe("BreakStrip markup", () => {
     expect(html).toContain("<pattern ");
   });
 
-  it("draws no square rect: every rect has its 6px corner or sits inside a bar's rounded clip (round 34)", () => {
+  it("draws no square rect: every rect has its 6px corner or sits inside a bar's rounded clip", () => {
     for (const [rule, report] of cases) {
       const html = draw(only(report, rule).item, report);
       // The rects a rounded clip contains: the shared span's fill and hatch, inside each bar's clip group.
@@ -221,7 +221,7 @@ describe("BreakStrip markup", () => {
     }
   });
 
-  it("brackets shared minutes in raspberry and a gap or a curfew in ink, the changeover in muted and the curfew rule in border-strong (round 34)", () => {
+  it("brackets shared minutes in raspberry and a gap or a curfew in ink, the changeover in muted and the curfew rule in border-strong", () => {
     const cost = (html: string) => html.match(/<g data-strip-cost="">[\s\S]*?<\/g>/)?.[0] ?? "";
     // Rules 1, 2 and 5 are shared minutes: the bracket and its minutes in raspberry, nothing in ink.
     for (const [rule, report] of [
@@ -257,7 +257,7 @@ describe("BreakStrip markup", () => {
   });
 });
 
-describe("a rule break's numbered disc (round 34)", () => {
+describe("a rule break's numbered disc", () => {
   it("is ink with its number in paper, never the raspberry of shared time, at both sizes", () => {
     for (const size of [20, 16] as const) {
       const html = renderToStaticMarkup(createElement(BreakDisc, { n: 3, size }));

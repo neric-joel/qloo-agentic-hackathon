@@ -179,7 +179,7 @@ describe("the page and its results", () => {
   it("offers pricing under the results with the exact words, and no live button before the saved attempt", () => {
     expect(page).toContain("Compare audience overlap (optional)");
     expect(page).not.toContain("Add audience overlap");
-    // C2: a saved press sends only the 7 names of the 5 pairs it compares, never the grid's other 17 acts.
+    // A saved press sends only the 7 names of the 5 pairs it compares, never the grid's other 17 acts.
     expect(page).toContain(
       "Rule checks used no Qloo data. Compare sends this site’s server the 5 longest movable overlaps and their 7 act names, never times, stages or rules; names are not stored or logged. With no saved day, nothing is compared: live Qloo comparison is off here.",
     );
@@ -218,7 +218,7 @@ describe("the page and its results", () => {
     expect(edited).not.toContain(SAMPLE_LABEL);
 
     // The label belongs to the checked snapshot: it is set where a check runs, from what that check
-    // read, and no field edit touches it (round-9 regression: an edit used to strip it from a result
+    // read, and no field edit touches it (a regression: an edit used to strip it from a result
     // still on show and from its print).
     const source = readFileSync(join(SRC, "components/check/check-tool.tsx"), "utf8");
     expect(source).not.toMatch(/setSampleActive|sampleActive/);
@@ -708,7 +708,7 @@ describe("the check route holds no network call", () => {
   });
 });
 
-describe("round-9 workspace: decisions, recovery, order and review", () => {
+describe("the workspace: decisions, recovery, order and review", () => {
   const outcome = runCheck(SAMPLE);
   if (!outcome.ok) throw new Error("sample refused");
   const report = outcome.report;
@@ -730,7 +730,7 @@ describe("round-9 workspace: decisions, recovery, order and review", () => {
         trial,
       }),
     );
-    // Round-9 regression: marking a finding used to hide its search.
+    // Regression: marking a finding used to hide its search.
     expect((html.match(/data-find-change=""/g) ?? []).length).toBe(4 + SHARED_SHOWN);
     expect(text(html)).toContain(`${item.text} Kept on purpose · Production Edit : your decision on ${item.text} Find a change`);
     expect(text(html)).toContain("“Two crews.”");
@@ -922,7 +922,7 @@ describe("round-9 workspace: decisions, recovery, order and review", () => {
   });
 });
 
-describe("round 35: a skipped line is never sent, never scored and never passed silently", () => {
+describe("a skipped line is never sent, never scored and never passed silently", () => {
   // Every name is invented. "Secret Skipped Act" sits on line 3, whose start does not read; it overlaps no one
   // only because it was not read at all.
   const grid = [

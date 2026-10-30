@@ -66,8 +66,8 @@ export class HomePage {
   // The board.
   readonly boardHeading: Locator;
   /**
-   * Round 37 (AO1): the board's grid sits in one disclosure whose summary says what it shows ("Show 39 sets on 5
-   * stages"). The legend, the coverage line, the caption and the clash list stay outside it. Round 39 (W2, D13): the
+   * The board's grid sits in one disclosure whose summary says what it shows ("Show 39 sets on 5
+   * stages"). The legend, the coverage line, the caption and the clash list stay outside it. The
    * interactive board's disclosure arrives open from 1280 px wide and closed below (the server's frame is closed at
    * every width); after that only a visitor's press, or a preview of their own, changes it.
    */
@@ -186,8 +186,8 @@ export class HomePage {
   async waitUntilReady(): Promise<void> {
     await expect(this.heading).toBeVisible({ timeout: READY_TIMEOUT });
     await expect(this.boardHeading).toBeVisible({ timeout: READY_TIMEOUT });
-    // Round 37: the grid is behind the board's disclosure, so readiness is the interactive board's caption (the
-    // server's frame draws the fold over a skeleton and no caption) and its one fold: open from 1280 px (round 39, W2),
+    // The grid is behind the board's disclosure, so readiness is the interactive board's caption (the
+    // server's frame draws the fold over a skeleton and no caption) and its one fold: open from 1280 px,
     // closed below.
     await expect(this.boardCaption).toBeVisible({ timeout: READY_TIMEOUT });
     await expect(this.boardFold).toHaveCount(1, { timeout: READY_TIMEOUT });
@@ -196,7 +196,7 @@ export class HomePage {
     await expect(this.whatQloo.getByRole("heading", { level: 2 })).toHaveText(/^Adding taste (moves|leaves) this pair/, {
       timeout: READY_TIMEOUT,
     });
-    // Round 37: and the webfont. On a dev server busy with four workers it can land seconds after the page is drawn,
+    // And the webfont. On a dev server busy with four workers it can land seconds after the page is drawn,
     // and its swap from the fallback face changes text widths by up to 4%, so a spec that compares two states' boxes
     // or a name plate's half-width rule would compare one face with the other.
     await this.page.evaluate(() => document.fonts.ready.then(() => undefined));
@@ -247,8 +247,8 @@ export class HomePage {
 
   /**
    * Opens the board's disclosure as a visitor does, by pressing its summary, unless it is open, and waits until the
-   * grid shows. Every spec that reads the board's tiles, badges or grid calls this first (round 37, AO1). From 1280 px
-   * the board arrives open (round 39, W2), so there it presses nothing.
+   * grid shows. Every spec that reads the board's tiles, badges or grid calls this first. From 1280 px
+   * the board arrives open, so there it presses nothing.
    */
   async openBoard(): Promise<void> {
     await expect(this.boardCaption).toBeVisible({ timeout: READY_TIMEOUT });
@@ -259,7 +259,7 @@ export class HomePage {
 
   /**
    * Closes the board's disclosure as a visitor does, by pressing its summary, unless it is closed, and waits until the
-   * grid is hidden. A spec that needs the closed board at 1280 px or wider (where it arrives open, round 39, W2) calls
+   * grid is hidden. A spec that needs the closed board at 1280 px or wider (where it arrives open) calls
    * this first: the press is the visitor's, so nothing reopens the board but another press or a preview.
    */
   async closeBoard(): Promise<void> {

@@ -177,7 +177,7 @@ function SubBlock({ id, title, children }: { id: string; title: ReactNode; child
  * (so 76ch resolves in the same metrics), and its last axis number ends at the prose's right edge. The sentences
  * that say so follow the figure directly. Drawn final.
  *
- * Taste overlap's own value label is not shown (round 37 fix pass 2, L58): the failed test's sentence directly under
+ * Taste overlap's own value label is not shown: the failed test's sentence directly under
  * the chart states the share (CHARTER 2.1), so the first screen says the number once. Its bar stays, and its accessible
  * name still carries the share and the bar. BacktestBars always writes a label beside each bar, so the figure hides
  * the one that follows the bar named by `describe` below (TASTE_VALUE_HIDDEN).
@@ -252,7 +252,7 @@ const RAIL_SCALE = FIGURE_DOMAIN / backtest.bar.topQuarterPct;
 
 /**
  * The verdict in the short version's rail, from 1280px only: the two checks we set before building that the chart
- * beside it does not draw, and how each was missed. Round 37 (L58, fix pass 1): taste overlap's share is drawn once
+ * beside it does not draw, and how each was missed. Taste overlap's share is drawn once
  * on the first screen, by the chart's bar with its value label and the chart's bar line; the rail draws no meter, label
  * or bar line for it, so nothing on the first screen restates that bar. One 13px line names what follows; then the
  * lead over genre tags and the suggested moves against popularity-only, each as a 13px label, its value and its bar,
@@ -312,7 +312,7 @@ function ShortVersion() {
       <div className={`${BODY_CELL} xl:row-span-2 xl:row-start-1`}>
         <MethodsDiagram />
         <ul className={`mt-5 max-w-[76ch] text-[0.9375rem] ${LEADING} sm:text-base`}>
-          {/* The failed test, said once on the page with its numbers (round 33): every later mention on the page
+          {/* The failed test, said once on the page with its numbers: every later mention on the page
               points back here or sits in the test's own section. */}
           <li className="pb-4 text-base font-medium sm:text-lg sm:leading-[1.5]">
             <strong className="font-semibold">The test we set before building failed.</strong>{" "}
@@ -471,8 +471,8 @@ const QLOO_CALLS: readonly {
 ];
 
 /**
- * The chain from a timetable to a decision (round 37, L59), as seven typed steps: what each step hands on, who makes
- * it, and Qloo's endpoint where it has one. Drawn as the chain's diagram (round 37, L59 LATE): every token in ink, the
+ * The chain from a timetable to a decision, as seven typed steps: what each step hands on, who makes
+ * it, and Qloo's endpoint where it has one. Drawn as the chain's diagram: every token in ink, the
  * last, the visitor's Keep, semibold, and teal only for Qloo's endpoints (/search, /v2/insights and the branch's
  * /v2/analysis/compare), as the endpoint cards below set them. Each step was
  * checked against the code: /search and /v2/insights in backend/app/qloo/overlap.py, the percentile ranks and taste
@@ -670,8 +670,8 @@ function QlooCalls() {
 }
 
 /**
- * The exploratory result that followed the failed pre-set test, which it names as the test stated above (round 33:
- * the failed test is stated once, in the short version). Closed until opened; the line above it on the page says
+ * The exploratory result that followed the failed pre-set test, which it names as the test stated above (the
+ * failed test is stated once, in the short version). Closed until opened; the line above it on the page says
  * what it did not establish.
  */
 function Exploratory() {
@@ -729,7 +729,7 @@ const TASTE_ADDS_NOT_ESTABLISHED = "This check did not establish that taste adds
  * Taste inside the pair score, the second exploratory follow-up, in the open under its own heading: the pair score
  * against popularity, against the same score with taste overlap held the same for every pair (time and draw only),
  * and against shuffled taste values; then the same by festival, Glastonbury against the four US festivals; then
- * (round 33) what that split may mean for use, labelled a hypothesis, where taste overlap and popularity disagree,
+ * what that split may mean for use, labelled a hypothesis, where taste overlap and popularity disagree,
  * what a location would cost, and a replication test that has not been run. Every
  * figure is read from `METHOD_FIGURES.tasteInPrice`, and what each interval says is read from the figures
  * (`tasteInPriceReading`), so the words can never contradict the numbers. The heading is neutral: it names what was
@@ -779,7 +779,7 @@ function TasteInPrice() {
 }
 
 /**
- * What the split by festival may mean for use, under the per-festival table (round 33): each sample's result with its
+ * What the split by festival may mean for use, under the per-festival table: each sample's result with its
  * sign and interval, its size and its source inline, then a hypothesis labelled as one, with the confound that the
  * two samples differ in more than act size. Every figure from `METHOD_FIGURES`; whether the US interval holds zero is
  * read from the figures.
@@ -811,7 +811,7 @@ function ScopedReading() {
 }
 
 /**
- * The replication test that has not been run (round 33), as one paragraph with a plain bold lead, no kicker: held-out
+ * The replication test that has not been run, as one paragraph with a plain bold lead, no kicker: held-out
  * bills that do not exist yet, scoring fixed in advance, complaints gathered the same way, a paired comparison on the
  * same pairs and a success threshold stated before any data. It promises no date beyond the bills' year and no result.
  */
@@ -1087,7 +1087,7 @@ export default function MethodPage() {
           </p>
         </MoreDetails>
         <BacktestTable />
-        {/* The failed test is stated once, in the short version; here it is referred to, not restated (round 33). */}
+        {/* The failed test is stated once, in the short version; here it is referred to, not restated. */}
         <p>
           The failed test above is this table read against the bar we set before running it, for taste
           overlap alone. So the test does not show that taste overlap predicts the clashes people complain
@@ -1145,7 +1145,7 @@ export default function MethodPage() {
               .join(" and ")}
             . Where there is none, the app leaves the clash out of the score and says so.
           </li>
-          {/* Round 37 (L38): which acts the published days have no signal for, and what happens to their overlaps,
+          {/* Which acts the published days have no signal for, and what happens to their overlaps,
               from METHOD_FIGURES.noSignal; no claim about where those acts sit in the day. */}
           <li>{noSignalSentence()}</li>
           <li>
@@ -1159,7 +1159,7 @@ export default function MethodPage() {
         </ul>
       </Section>
 
-      {/* Round 38: the analysis of public pages (what people ask, how the app helps and where it does not, the
+      {/* The analysis of public pages (what people ask, how the app helps and where it does not, the
           method, the limits and every source), then the timing block. Data in lib/public-evidence.ts and
           lib/timing-figures.ts. */}
       <Section id={EVIDENCE_ID} title={EVIDENCE_TITLE}>
@@ -1190,7 +1190,7 @@ export default function MethodPage() {
       >
         <SubBlock id="qloo-calls" title="Qloo requests">
           <QlooCalls />
-          {/* What the number of compare tags means (round 37, L60): the cap is this app's, and most saved pairs fill
+          {/* What the number of compare tags means: the cap is this app's, and most saved pairs fill
               it, so the count is not a measure of overlap. Every figure from METHOD_FIGURES.compareTags. */}
           <p>{tagCapSentence()}</p>
           <p>

@@ -67,7 +67,7 @@ const ALL_COPY = [
   MACHINE_NOTE,
 ];
 
-describe("the verified claims (round 38, evidence lane)", () => {
+describe("the verified claims", () => {
   it("prints each of the three claims exactly as verified", () => {
     expect(EVIDENCE_CLAIMS.map((claim) => claim.sentence)).toEqual([
       "In 70 public press articles, fan-post summaries and one artist statement from 17 festivals (2015-2026) that we read, 325 set-time clashes are named, covering 538 pairs of acts when counted separately for each festival and year, at 43 festival-years; they come from 10 of the 12 years (none from 2020-21), and one reader coded 22 of the 70 pages as presenting the acts in at least one named clash as different in genre, style or audience.",
@@ -101,7 +101,7 @@ describe("the verified claims (round 38, evidence lane)", () => {
   });
 });
 
-describe("the home sentence (round 38)", () => {
+describe("the home sentence", () => {
   it("states the first claim as an analysis of public pages, with what it counts, and links its sources on /method", () => {
     expect(HOME_EVIDENCE).toBe(
       "Our analysis of 70 public press articles, fan-post summaries and one artist statement from 17 festivals (2015 to 2026) found 325 named set-time clashes, covering 538 pairs of acts when counted separately for each festival and year. It counts pages, not people, so it shows the complaint keeps coming back, not how many people mind.",
@@ -131,7 +131,7 @@ describe("the home sentence (round 38)", () => {
   });
 });
 
-describe("What people ask about clashes on /method (round 38)", () => {
+describe("What people ask about clashes on /method", () => {
   const html = renderToStaticMarkup(createElement(MethodPage));
   const section = html.slice(html.indexOf(`<section id="${EVIDENCE_ID}"`), html.indexOf(`<section id="${TIMING_ID}"`));
 
@@ -287,7 +287,7 @@ describe("What people ask about clashes on /method (round 38)", () => {
   });
 });
 
-describe("How long this takes on /method (round 38)", () => {
+describe("How long this takes on /method", () => {
   const html = renderToStaticMarkup(createElement(MethodPage));
   const start = html.indexOf(`<section id="${TIMING_ID}"`);
   const section = html.slice(start, html.indexOf("</section>", start));
@@ -389,7 +389,7 @@ describe("How long this takes on /method (round 38)", () => {
   });
 });
 
-describe("the evidence copy's words (round 38)", () => {
+describe("the evidence copy's words", () => {
   it("never calls the analysis a survey, poll or study of people, and claims no saving of time", () => {
     for (const line of ALL_COPY) {
       expect(line, line.slice(0, 50)).not.toMatch(PEOPLE_WORDS);

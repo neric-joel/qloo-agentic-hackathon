@@ -98,7 +98,7 @@ describe("a bare /brief", () => {
   });
 });
 
-describe("what a reading above 100 means, in the day's own paragraph (round 39, W5)", () => {
+describe("what a reading above 100 means, in the day's own paragraph", () => {
   /** The day block's first paragraph, as the sheet draws it: the index sentence, the band, then the meaning. */
   const dayParagraph = (html: string) =>
     html.match(/<p class="print:inline"><strong class="font-semibold">Clash Budget Index[\s\S]*?<\/p>/)?.[0] ?? "";
@@ -168,13 +168,13 @@ describe("the notices", () => {
       const html = screen(state);
       expect(h1s(html), state.status).toHaveLength(1);
     }
-    // The words in one element; still while loading (round 34: no spinner, nothing moves that the visitor did not cause).
+    // The words in one element; still while loading (no spinner, nothing moves that the visitor did not cause).
     expect(screen({ status: "loading" })).toMatch(/<p role="status"[^>]*><span>Loading the brief\.<\/span><\/p>/);
     expect(screen({ status: "loading" })).not.toMatch(/<svg|animate-/);
     expect(text(screen({ status: "error" }))).toContain("Could not load this brief.");
   });
 
-  it("holds a screen's height while loading, in the page's first paint and in the sheet's own notice, so the sheet arriving moves nothing in view (round 34)", () => {
+  it("holds a screen's height while loading, in the page's first paint and in the sheet's own notice, so the sheet arriving moves nothing in view", () => {
     // The sheet's notice: a screen tall while loading; the final notices (error, unavailable) keep their own height.
     const container = (html: string) => (html.match(/^<div class="([^"]*)">/)?.[1] ?? "").split(" ");
     expect(container(screen({ status: "loading" }))).toContain("min-h-svh");
@@ -241,7 +241,7 @@ describe("the sheet's limits and sign-off (screen and print)", () => {
   });
 });
 
-describe("the candidate to keep and the decision lines (round 33)", () => {
+describe("the candidate to keep and the decision lines", () => {
   // Invented rankings of the tiny day: the one pair falls from #1 on time and draw to #3 with taste.
   const lenses: Lenses = {
     day: 0,
@@ -297,7 +297,7 @@ describe("the candidate to keep and the decision lines (round 33)", () => {
   });
 });
 
-describe("the table's caption (round 32, V7)", () => {
+describe("the table's caption", () => {
   it("says costliest first only when the table orders two rows or more", () => {
     const html = renderToStaticMarkup(createElement(BriefContent, { preset: published(), day: 0, plan: null }));
     const caption = html.match(/<p id="brief-clashes-caption" class="sr-only">([^<]*)<\/p>/)?.[1] ?? "";
@@ -308,7 +308,7 @@ describe("the table's caption (round 32, V7)", () => {
   });
 });
 
-describe("the Hidden mark (round 34, R3)", () => {
+describe("the Hidden mark", () => {
   it("prints Hidden as plain ink text in the table and the stacked rows: no ring, chip, fill or corner", () => {
     const html = renderToStaticMarkup(createElement(BriefContent, { preset: published(), day: 0, plan: null }));
     const marks = [...html.matchAll(/<span class="([^"]*)">Hidden<\/span>/g)].map((m) => m[1]);
@@ -318,7 +318,7 @@ describe("the Hidden mark (round 34, R3)", () => {
       expect(cls).toBe("font-semibold whitespace-nowrap text-foreground print:text-[9.5pt]");
       expect(cls.split(" ").filter((name) => /^(tag|ring|bg-|border|rounded|shadow)/.test(name))).toEqual([]);
     }
-    // No hidden-clash ring glyph and no chip beside it: raspberry stays on shared minutes. Since round 36 the sheet
+    // No hidden-clash ring glyph and no chip beside it: raspberry stays on shared minutes. The sheet
     // draws the day, whose hatch over shared minutes is the one raspberry on the sheet: none outside the drawing, and
     // inside it only the hatch's pattern colour and the wash under it.
     expect(html).not.toContain('data-mark="hidden"');
@@ -344,7 +344,7 @@ describe("the Hidden mark (round 34, R3)", () => {
   });
 });
 
-describe("the new overlap on paper (round 34, pass 1; round 37, R5)", () => {
+describe("the new overlap on paper", () => {
   function step(actId: string, act: string, stage: string, stageId: string, start: string, end: string, budgetAfter: number) {
     return { act, actId, move: `${act}: moved`, stage, stageId, day: 0, start, end, budgetAfter };
   }

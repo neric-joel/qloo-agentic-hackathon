@@ -454,7 +454,7 @@ function AgentText({ text }: { text: string }) {
 }
 
 /**
- * What the agent did, one line per tool call, so the answer can be checked against its steps. M10: the
+ * What the agent did, one line per tool call, so the answer can be checked against its steps. The
  * exchange's left rule fills beside the steps one step at a time as each finishes, so it follows the
  * stream (live or replayed) rather than a timer.
  *
@@ -1539,7 +1539,7 @@ function RecordedTranscript({
 
 /**
  * The least height (px) the agent section holds at a width (`width`, px) while its recorded runs are still out: above
- * the tallest settled section measured on the published days (round 37, F3; with the recordings of 21 Oct 2026,
+ * the tallest settled section measured on the published days (with the recordings of 21 Oct 2026,
  * Glastonbury's is the taller: 1,819 px at 320, 1,588 at 390, 1,217 from 640 to 1,023, 1,004 at 1,024 and 879 from
  * 1,280; Riot Fest's 1,360, 1,168, 994, 653 and 611). Room the runs do not fill stays under them only while it is on
  * screen (`useHeldRoom`).
@@ -1608,7 +1608,7 @@ export function AgentPanel({
   const off = mode === "off" || mode === "off-recorded";
   // While the agent's state or this day's recorded runs are still out, the section holds the room the settled panel
   // takes at its width (`agentRoomFloor`) and reaches past the screen's foot while it is on screen, so the runs land
-  // without moving the sources or the footer under it, even for a visitor at the page's foot (round 37, F3). The heading and the can/cannot list are drawn as they will settle, so nothing above the run moves.
+  // without moving the sources or the footer under it, even for a visitor at the page's foot. The heading and the can/cannot list are drawn as they will settle, so nothing above the run moves.
   const sectionRef = useRef<HTMLElement | null>(null);
   useHeldRoom(sectionRef, mode === "checking" || recordings.status === "loading", agentRoomFloor);
   const range = useMemo<ScaleRange>(() => scaleRange(preset.report.baseline), [preset]);

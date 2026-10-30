@@ -44,12 +44,12 @@ test.describe("recorded agent runs", () => {
 
     // What the agent can and cannot do, open with no click, with the run's caps.
     await expect(home.agent.getByRole("heading", { level: 3, name: "What the agent can and cannot do" })).toBeVisible();
-    // Round 37: one act, one name (AO4, L34: "Keep this move", as the hero says), and the run's turns are the agent's (R4, L50).
+    // One act, one name ("Keep this move", as the hero says), and the run's turns are the agent's.
     await expect(home.agent).toContainText("It can test a move, but it never changes your timetable unless you press Keep this move.");
     await expect(home.agent).toContainText("At most 12 Qloo requests and 6 agent turns per run.");
     await expect(home.agent).not.toContainText("Keep this place");
     await expect(home.agent).not.toContainText("model turns");
-    // Round 37 (L53): what to ask it, right after what it does, visible with no click.
+    // What to ask it, right after what it does, visible with no click.
     await expect(home.agent).toContainText(
       "The agent tests a move against every rule and scores it before it answers. Ask it to set rules, find and test a move, then explain the result. Saved runs on this day replay with no live Qloo or model call.",
     );
@@ -91,7 +91,7 @@ test.describe("recorded agent runs", () => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
 
-    // Runs that end with a place to keep come first, the one that asked Qloo first among them (round 37, R2: the first
+    // Runs that end with a place to keep come first, the one that asked Qloo first among them (the first
     // is the default replay); the run the rules refuse is last.
     const runs = home.agent.getByRole("list", { name: "Recorded runs" }).getByRole("listitem");
     await expect(runs).toHaveCount(4);
@@ -147,7 +147,7 @@ test.describe("recorded agent runs", () => {
     const question = await home.agent.getByRole("list", { name: "Conversation" }).getByRole("listitem").first().boundingBox();
     test.info().annotations.push({ type: `after the replay at ${isPhone ? 390 : 1440}`, description: `bars end ${foot}; heading top ${heading?.y}; question top ${question?.y}` });
     if (!isPhone) {
-      // Round 36 (agent lane): the section lands where the "Agent runs" jump lands it, the question beside the heading.
+      // The section lands where the "Agent runs" jump lands it, the question beside the heading.
       expect(heading?.y ?? 0, "the heading's top against the bars' foot + 8").toBeGreaterThanOrEqual(foot + 8);
       expect((question?.y ?? 0) + 1, "the run's question is on the screen").toBeLessThan(page.viewportSize()?.height ?? 0);
       // At the page's end the sticky run picker's label stays clear of the bars too.
@@ -210,7 +210,7 @@ test.describe("recorded agent runs", () => {
     // With an empty plan there is nothing to add to or replace: one button keeps the place.
     await expect(home.agent.getByRole("button", { name: /^(Add to|Replace) your plan$/ })).toHaveCount(0);
 
-    // Round 37 (AO4): the agent's Keep has the hero's name; it is found inside #agent, so the hero's own Keep is not it.
+    // The agent's Keep has the hero's name; it is found inside #agent, so the hero's own Keep is not it.
     await expect(home.agent.getByRole("button", { name: "Keep this place" })).toHaveCount(0);
     await home.agent.getByRole("button", { name: "Keep this move" }).click();
     const kept = home.agent.getByRole("status").filter({ hasText: "Kept in your plan." });
@@ -303,7 +303,7 @@ test.describe("recorded agent runs", () => {
     await expect(conversation).toContainText(
       "This run looked for a place for Parcels that lowers the index; the move at the top of the page works on the day’s costliest clash that a move can lower, so their index changes differ.",
     );
-    // Nothing on the page names the "decision card" round 34 removed, with every disclosure open.
+    // Nothing on the page names the removed "decision card", with every disclosure open.
     await page.evaluate(() => document.querySelectorAll("details").forEach((details) => (details.open = true)));
     expect(await page.locator("body").innerText()).not.toMatch(/decision card/i);
   });
@@ -450,7 +450,7 @@ test.describe("recorded agent runs", () => {
   } as const;
 
   for (const day of Object.values(DAYS)) {
-    test(`on ${day.title}, the run listed first asked Qloo, and after its replay one ink line under its question says so and opens its trace; on a phone the run's card lands clear of the bars (round 37, R2, L49, L51, L52)`, async ({ page, isPhone, guard }) => {
+    test(`on ${day.title}, the run listed first asked Qloo, and after its replay one ink line under its question says so and opens its trace; on a phone the run's card lands clear of the bars`, async ({ page, isPhone, guard }) => {
       const home = new HomePage(page);
       await home.goto(day.id);
 
@@ -498,13 +498,13 @@ test.describe("recorded agent runs", () => {
 });
 
 /**
- * Round 37 closeout, F3: the agent section's pending state was much shorter than the settled panel, so when Riot
+ * The agent section's pending state was much shorter than the settled panel, so when Riot
  * Fest's recordings answered late the section grew under a visitor already there (270 -> 611 px at 1440, 403 -> 1,168
  * at 390; 0.19 and 0.73 at CPU 4x) and pushed the sources and the footer off the screen. The section now holds the
  * settled panel's room while the runs are out. Here the recordings are held 2.5 s with the CPU slowed 4x, and every
  * layout shift after the visitor reaches the section, or the page's foot, must stay under 0.0005.
  */
-test.describe("recorded agent runs that answer late (round 37 closeout, F3)", () => {
+test.describe("recorded agent runs that answer late", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
 
   test("late recordings move nothing on screen, at the section and at the page's foot, on both days", async ({ page, isPhone }) => {
@@ -570,14 +570,14 @@ test.describe("recorded agent runs that answer late (round 37 closeout, F3)", ()
 });
 
 /**
- * Round 39 (W7, D04): with the live agent on, the note under the question box names the per-visitor limit and the daily
+ * With the live agent on, the note under the question box names the per-visitor limit and the daily
  * total, and says the recorded runs in the section make no live call, so they still play when the day's questions are
  * used up. No numbers: the caps can change, and /api/health and the README give them. This server runs with the agent
  * off, so only this browser's /api/health answer is changed (`llm_configured: true`, every other field the server's
  * own). Nothing is typed and nothing is pressed in the agent: no question is asked, and the fixture fails the test if
  * any request could reach the agent route.
  */
-test.describe("the agent's note on its limits (round 39, W7, D04)", () => {
+test.describe("the agent's note on its limits", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
 
   const ASK_NOTE =

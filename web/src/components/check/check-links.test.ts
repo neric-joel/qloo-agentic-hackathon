@@ -14,7 +14,7 @@ async function render(live: boolean): Promise<{ header: string; footer: string; 
   const { parsePreset } = await import("@/lib/preset");
   const { parseDecision } = await import("@/lib/decision");
   const { rawTinyPreset } = await import("@/lib/fixtures/tiny-preset");
-  // The hero's group answers only with the day's decision in hand (round 37, L1; without it the server draws the
+  // The hero's group answers only with the day's decision in hand (without it the server draws the
   // group's skeleton, with nothing to press), so the hero is rendered with one. Every name and figure is invented.
   const decision = parseDecision({
     kind: "decision",

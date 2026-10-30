@@ -129,7 +129,7 @@ function rawDay({
 
 const day = (options?: Parameters<typeof rawDay>[0]): Preset => parsePreset(rawDay(options));
 
-describe("requestChain: the saved requests and values behind a pair, read from the preset only (round 37, L85)", () => {
+describe("requestChain: the saved requests and values behind a pair, read from the preset only", () => {
   it("counts an act's /v2/insights requests by signal.interests.entities only: one per act, not one per request on the bill", () => {
     const preset = day();
     const chain = requestChain(preset, "sprints", "katy")!;
@@ -216,7 +216,7 @@ describe("requestChain: the saved requests and values behind a pair, read from t
   });
 });
 
-describe("the block's words (round 37, L85)", () => {
+describe("the block's words", () => {
   it("words each line as the round's brief gives it", () => {
     expect(CHAIN_TITLE).toBe("Saved requests and values");
     expect(CHAIN_INVENTED).toBe("Invented day: no Qloo request was made; the acts and figures are invented.");
@@ -254,7 +254,7 @@ const headlineIds = (raw: Record<string, unknown>) =>
       .replaceAll("BBBB2222-0000-4000-8000-000000000002", "3F1B7EC6-EB80-4DD1-A342-EF02D61D0918"),
   ) as Record<string, unknown>;
 
-describe("Qloo's matched names from the saved reading (round 37, L85 enrichment)", () => {
+describe("Qloo's matched names from the saved reading", () => {
   it("parses matched_names leniently: keeps non-empty strings, drops anything else, and reads a missing field as empty", () => {
     expect(parsePreset(rawDay()).matched_names).toEqual({});
     expect(parsePreset({ ...rawDay(), matched_names: ["Sprints"] }).matched_names).toEqual({});

@@ -1201,7 +1201,7 @@ describe("planDrawing: featured names are always whole", () => {
       expect(spot?.height).toBe(NAME_LINE[layout]);
       expect((spot?.top ?? 0) + (spot?.height ?? 0)).toBe(LAYOUT[layout].axis + 3 * LAYOUT[layout].row + LAYOUT[layout].foot);
     }
-    // Round 37 fix pass 2 (L4): a phone's row gap holds a one-line plate 3px off its own bar and twice that from the bar
+    // A phone's row gap holds a one-line plate 3px off its own bar and twice that from the bar
     // across the gap, and so does a short phone's, with its thinner 15px bars and its names' 13px line box (it held 1px
     // and 2px before).
     expect(LABEL_GAP).toMatchObject({ phone: 3, short: 3 });
@@ -1382,13 +1382,13 @@ describe("planDrawing: names first, featured first, then the lines", () => {
   });
 });
 
-describe("round 37 fix pass 1: every desktop band, short phones' tags and the notes above the drawing", () => {
+describe("every desktop band, short phones' tags and the notes above the drawing", () => {
   const fixtures: [string, DayGraphModel][] = [
     ["the fixture day", model(LATER, false, [...CROWDED, YARROW, LONG])],
     ["the hatch day", underTheHatch()],
   ];
 
-  it("sets names 6px off their bars on one line and 4px on two, twice as near their own bar where there is room, at every desktop band (L4)", () => {
+  it("sets names 6px off their bars on one line and 4px on two, twice as near their own bar where there is room, at every desktop band", () => {
     for (const band of BANDS.desktop) {
       expect(labelRoom("desktop", band.track, 5), `${band.from}px`).toMatchObject({ gap: WIDE_GAP, gapTwo: WIDE_GAP_TWO, beside: WIDE_GAP, ratio: OWN_RATIO });
     }
@@ -1414,7 +1414,7 @@ describe("round 37 fix pass 1: every desktop band, short phones' tags and the no
     }
   });
 
-  it("keeps every name on a plate over its own bar for half its width and half a pixel more, so the page's rounding never leaves it under half (D7)", () => {
+  it("keeps every name on a plate over its own bar for half its width and half a pixel more, so the page's rounding never leaves it under half", () => {
     expect(PLATE_OVER).toBe(0.5);
     for (const [label, m] of fixtures) {
       for (const layout of ["desktop", "phone", "short"] as const) {
@@ -1437,7 +1437,7 @@ describe("round 37 fix pass 1: every desktop band, short phones' tags and the no
     }
   });
 
-  it("sets a short phone's tags in a 13px line box, in its 22px row gap at least 2.5px clear of every bar (L17)", () => {
+  it("sets a short phone's tags in a 13px line box, in its 22px row gap at least 2.5px clear of every bar", () => {
     expect(TAG_LINE).toEqual({ desktop: 15, phone: 15, short: 13 });
     expect(TAG_BAR_CLEAR.short).toBe(2.5);
     expect(LAYOUT.short.row - LAYOUT.short.bar).toBe(22);
@@ -1463,7 +1463,7 @@ describe("round 37 fix pass 1: every desktop band, short phones' tags and the no
     }
   });
 
-  it("reaches above the drawing for a note, beside what the page shows there and never over it, when every place inside covers names (L13)", () => {
+  it("reaches above the drawing for a note, beside what the page shows there and never over it, when every place inside covers names", () => {
     const column = { width: 800, height: 200 };
     const marks: Box[] = [{ x0: 396, x1: 404, y0: 40, y1: 160 }];
     // Names every 20px down the drawing, and no room under it: any place inside covers at least two.
@@ -1494,7 +1494,7 @@ describe("round 37 fix pass 1: every desktop band, short phones' tags and the no
   });
 });
 
-describe("round 37 fix pass 2: a phone names the window it slides to, and a short phone's leaders", () => {
+describe("a phone names the window it slides to, and a short phone's leaders", () => {
   const fixtures: [string, DayGraphModel][] = [
     ["the fixture day", model(LATER, false, [...CROWDED, YARROW, LONG])],
     ["the hatch day", underTheHatch()],
@@ -1528,7 +1528,7 @@ describe("round 37 fix pass 2: a phone names the window it slides to, and a shor
     }
   });
 
-  it("names every set the window it slides to shows whole, draws every name, tag and leader inside that window, and none of the opening window's names past it (N1)", () => {
+  it("names every set the window it slides to shows whole, draws every name, tag and leader inside that window, and none of the opening window's names past it", () => {
     for (const [label, m] of fixtures) {
       for (const layout of phones) {
         for (const band of BANDS[layout]) {
@@ -1571,7 +1571,7 @@ describe("round 37 fix pass 2: a phone names the window it slides to, and a shor
     }
   });
 
-  it("sets a short phone's names 3px off their bars, each twice as near its own bar as any other, as a phone's (L4)", () => {
+  it("sets a short phone's names 3px off their bars, each twice as near its own bar as any other, as a phone's", () => {
     expect(labelRoom("short", BANDS.short[0].track, 3)).toMatchObject({ gap: 3, gapTwo: 3, ratio: OWN_RATIO });
     expect(labelRoom("phone", BANDS.phone[0].track, 3)).toMatchObject({ gap: 3, gapTwo: 3, ratio: OWN_RATIO });
     for (const [label, m] of fixtures) {

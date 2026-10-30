@@ -163,7 +163,7 @@ describe("the home page's order", () => {
     for (const element of ["<TasteSection", "<HiddenWall", "<WhyThisMatters", "<BoardFrame", "<TryAMove", "<AgentPanel", "<PresetSources"]) {
       expect(view, element).toContain(element);
     }
-    // Round 33 (H1): Keep two sets apart is no home section of its own; it lives inside Try a move.
+    // Keep two sets apart is no home section of its own; it lives inside Try a move.
     expect(view).not.toContain("<KeepApart");
     expect(HOME_ORDER).not.toContain("apart" as never);
   });
@@ -195,7 +195,7 @@ describe("the home page's order", () => {
   });
 });
 
-describe("hidden-clash examples borrowed from another published day (round 32 scope, kept)", () => {
+describe("hidden-clash examples borrowed from another published day (kept)", () => {
   const evidence = (n: number): Evidence => ({
     hidden_wall: Array.from({ length: n }, (_, i) => ({
       festival: "test-fest-2025",
@@ -354,7 +354,7 @@ describe("the board behind one disclosure", () => {
     );
   });
 
-  it("starts open from 1280 px or as the last fold was left, opens on a press and in the same render as the visitor's own preview, never in an effect, and never closes itself (round 39, W2)", () => {
+  it("starts open from 1280 px or as the last fold was left, opens on a press and in the same render as the visitor's own preview, never in an effect, and never closes itself", () => {
     expect(boardSection).toContain("open={boardOpen}");
     expect(boardSection).toContain("onToggle={toggleBoard}");
     // The arrival state is read in the board's first render, by useState's initializer: the last fold's report, else
@@ -366,7 +366,7 @@ describe("the board behind one disclosure", () => {
     // The old start (a plain boolean that was always false on arrival) is gone.
     expect(source).not.toContain("useState(boardOpenAtStart)");
     // Nothing else sets it, so it never closes on its own: the latch only opens, the press for a set's places in Try a
-    // move only opens (round 37 closeout), and the one other setter passes on the disclosure's own toggle (a press, or
+    // move only opens, and the one other setter passes on the disclosure's own toggle (a press, or
     // the browser's report of the open state the board was drawn in, which sets what it already holds), wired nowhere
     // but its `onToggle`.
     expect(source.match(/setBoardOpen\(/g)).toHaveLength(3);
@@ -380,7 +380,7 @@ describe("the board behind one disclosure", () => {
     expect(carry).not.toMatch(/onToggle\??\.?\((?!true\))/);
   });
 
-  it("opens where it is pressed: what is drawn after the board but sits before it in the source is never the scroll anchor (round 37 merge)", () => {
+  it("opens where it is pressed: what is drawn after the board but sits before it in the source is never the scroll anchor", () => {
     // Below 1280 px the score is drawn after the board (order-3), and below 768 px so is the list (order-2), though
     // both come before it in the source; out of anchor selection there, a press opens the board under its summary.
     expect(boardSection).toMatch(/<Scorecard className="order-3 [^"]*max-xl:\[overflow-anchor:none\][^"]*xl:order-1/);
@@ -390,7 +390,7 @@ describe("the board behind one disclosure", () => {
     expect(boardSection.indexOf("max-xl:[overflow-anchor:none]")).toBeLessThan(boardSection.indexOf("<BoardFold"));
   });
 
-  it("keeps Try a move where the visitor is when a tested place opens the fold above it, and never opens or closes the fold to do so (round 37 merge)", () => {
+  it("keeps Try a move where the visitor is when a tested place opens the fold above it, and never opens or closes the fold to do so", () => {
     expect(source).toContain("onPlanChange={changePlan}");
     expect(source).not.toContain("onPlanChange={setPlanPreview}");
     const change = source.slice(source.indexOf("const holdPlace = useCallback("), source.indexOf("// A press for a set's places in Try a"));
@@ -408,7 +408,7 @@ describe("the board behind one disclosure", () => {
     expect(change).not.toMatch(/setBoardOpen|toggleBoard|\.open = /);
   });
 
-  it("opens the fold in the press for a set's places, holding Try a move where it is, so a late answer opens nothing above it (round 37 closeout)", () => {
+  it("opens the fold in the press for a set's places, holding Try a move where it is, so a late answer opens nothing above it", () => {
     expect(source).toContain("onPick={pickPress}");
     const press = source.slice(source.indexOf("const pickPress = useCallback("), source.indexOf("useLayoutEffect(() => {", source.indexOf("const pickPress = useCallback(")));
     expect(press).toMatch(/^const pickPress = useCallback\(\(\) => \{\s*holdPlace\(true\);\s*setBoardOpen\(true\);\s*setPlaceComing\(true\);\s*\}, \[holdPlace\]\);/);
@@ -438,7 +438,7 @@ function screenOf(width: number) {
   return { window: { matchMedia, addEventListener: (type: string) => listened.push(`window ${type}`), removeEventListener: () => {} }, asked, listened };
 }
 
-describe("the board's fold on arrival: open from 1280 px, closed below (round 39, W2)", () => {
+describe("the board's fold on arrival: open from 1280 px, closed below", () => {
   const source = readFileSync(join(__dirname, "clash-control.tsx"), "utf8");
   const view = source.slice(source.indexOf("function PresetView("), source.indexOf("<ClashDrawer"));
 
@@ -544,7 +544,7 @@ function foldStandIn(open: boolean) {
   return { node, summary, focused, page };
 }
 
-describe("a press on the board's fold is never undone when the page swaps folds (round 37, N2)", () => {
+describe("a press on the board's fold is never undone when the page swaps folds", () => {
   const source = readFileSync(join(__dirname, "clash-control.tsx"), "utf8");
 
   it("reports a press made on the server's frame before the page was interactive, once the page takes the frame over", () => {
@@ -633,7 +633,7 @@ describe("a press on the board's fold is never undone when the page swaps folds 
 
   it("wires one carrier and one reported state through the server's frame, the interactive board and every festival day", () => {
     const control = source.slice(source.indexOf("export function ClashControl("), source.indexOf("/** The festival-day tabs' group name"));
-    // No report before a fold has made one (round 39, W2): the first board then starts from the width.
+    // No report before a fold has made one: the first board then starts from the width.
     expect(control).toContain("const [foldReport, setFoldReport] = useState<boolean | null>(null);");
     expect(control).not.toMatch(/useState\(false\)/);
     expect(control).toContain("const foldCarryRef = useRef<BoardFoldCarry | null>(null);");
@@ -681,7 +681,7 @@ describe("a press on the board's fold is never undone when the page swaps folds 
   });
 });
 
-describe("a visitor who scrolls on the server's frame keeps their place when the page replaces it (round 37, verify-2 N2)", () => {
+describe("a visitor who scrolls on the server's frame keeps their place when the page replaces it", () => {
   const source = readFileSync(join(__dirname, "clash-control.tsx"), "utf8");
   // A 1440 x 900 screen, scrolled on the frame (the hero, then the board; 1,504 px tall with the footer held back).
   const view = { innerHeight: 900, scrollY: 604, scrollHeight: 1504 };

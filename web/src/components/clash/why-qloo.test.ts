@@ -168,7 +168,7 @@ describe("threeReadings", () => {
     expect(readings.taste).toEqual({ rank: 2, of: 40 });
     expect(readings.draw).toEqual({ rank: 2, of: 40 });
     // A finding, not a shrug, said of taste alone: minutes alone may rank the pair elsewhere (#2 of 4 here, and on a
-    // published day #5 against #1), so nothing says time alone agrees. Round 39 (W4): the rank is this app's index's,
+    // published day #5 against #1), so nothing says time alone agrees. The rank is this app's index's,
     // and the sentence says so in full.
     expect(tasteVerdict(readings)).toBe("Adding taste leaves this pair at #2 in this app’s index.");
     expect(tasteVerdict(readings)).not.toMatch(/agrees|either way/);
@@ -234,7 +234,7 @@ describe("tasteHeading", () => {
   const STILL = { time: { rank: 5, of: 47, tied: 3 }, draw: { rank: 1, of: 47 }, taste: { rank: 1, of: 47 } };
 
   it("says what adding taste did in this app’s index, from the popularity rung to the taste rung, never from minutes alone", () => {
-    // Round 39 (W4): both sentences name whose rank it is, "in this app’s index", in full.
+    // Both sentences name whose rank it is, "in this app’s index", in full.
     expect(tasteHeading(MOVED)).toBe("Adding taste moves this pair from #18 to #1 in this app’s index");
     // Draw made the first step (time alone puts the pair 23rd, popularity 18th), so the heading never credits taste with it.
     expect(tasteHeading(MOVED)).not.toContain("#23");
@@ -364,7 +364,7 @@ describe("WhatQlooChanges", () => {
       if (i > 0) expect(at).toBeGreaterThan(order[i - 1]);
     });
     expect(QLOO_CHANGES_LINE).toBe("This does not prove #1 is the right clash to move.");
-    // No kicker over the heading (round 34): the jump link keeps the block's name.
+    // No kicker over the heading: the jump link keeps the block's name.
     expect(plain).not.toContain("What Qloo changes");
     // The claim carries its own limit, so the caption is not repeated; no invented-day words on a real day.
     expect(plain).not.toContain(READINGS_CAPTION);
@@ -624,7 +624,7 @@ describe("TasteSection", () => {
     );
   }
 
-  /** The other-half line for the fixture's falling pair, in round 34's words (row 26). */
+  /** The other-half line for the fixture's falling pair, in its own words. */
   const OTHER_HALF =
     "Taste also lowers some clashes: Act Seven × Act Eight ranks #1 on time and draw but #19 with taste: by this index, a candidate to keep.";
 
@@ -815,7 +815,7 @@ describe("TasteSection", () => {
     expect(card).toMatch(/<button[^>]*class="[^"]*\blg:hidden\b[^"]*"[^>]*>Keep the two-set change/);
     expect(card).toMatch(/<button[^>]*class="[^"]*\blg:hidden\b[^"]*"[^>]*>Open a hidden clash/);
     expect(card).toMatch(/<div data-decision-actions="" class="mt-1 lg:hidden">/);
-    // Round 39 (W5, the index card's own lane): "Lower is better." left the card for the dial; the paragraph says what
+    // "Lower is better." is on the dial, not the card; the paragraph says what
     // a reading above 100 means instead, with the guarded first sentence byte for byte.
     expect(text(card)).toContain("A score, not money: 100 = the average random valid timetable of this lineup. Above 100: costlier. Selected and scored by this app’s index. A reading, not a verdict.");
     expect(card).toMatch(/<p data-index-scale="" class="(?![^"]*hidden)[^"]*">/);
@@ -845,7 +845,7 @@ describe("TasteSection", () => {
   });
 
   it("keeps the clash taste lowers after the readings, their limit or caption, and the failed test, whether or not taste moves the card's pair", () => {
-    // Round 34: one order on both kinds of day. The heading carries the finding when taste leaves the pair where it
+    // One order on both kinds of day. The heading carries the finding when taste leaves the pair where it
     // was (Riot Fest's case, invented here), so the readings follow it and the clash taste lowers comes after them.
     const line = OTHER_HALF;
     const still = text(withoutDisclosures(render({ clash: { ...CLASH, aId: "three", bId: "four" } })));
@@ -862,7 +862,7 @@ describe("TasteSection", () => {
     for (const plain of [still, moved]) expect(plain.split(line).length - 1).toBe(1);
   });
 
-  it("keeps every line of the failed test the round-33 compression must keep outside any disclosure", () => {
+  it("keeps every line of the failed test the compressed card must keep outside any disclosure", () => {
     for (const props of [{}, { clash: { ...CLASH, aId: "three", bId: "four" } }, { clash: null, lenses: null, twins: [] }]) {
       const html = render(props);
       const open = withoutDisclosures(html);

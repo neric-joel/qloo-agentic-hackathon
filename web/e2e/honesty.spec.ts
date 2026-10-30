@@ -35,7 +35,7 @@ test.describe("honesty lines", () => {
       if (day.id === DAYS.glastonbury.id) {
         await expect(home.dateline).toHaveText(`Sunday. Published timetable; saved global Qloo reading built 3 Oct 2026. ${HONESTY.neither}`);
       } else {
-        // Round 37 (L19): the date's three parts are joined by no-break spaces, which a regular expression names.
+        // The date's three parts are joined by no-break spaces, which a regular expression names.
         await expect(home.dateline).toHaveText(
           new RegExp(`^${day.dayName}\\. Published timetable; saved global Qloo reading built \\d{1,2}\\u00a0[A-Z][a-z]{2}\\u00a0\\d{4}\\. ${literal(HONESTY.neither)}$`),
         );
@@ -129,15 +129,14 @@ test.describe("honesty lines", () => {
   });
 
   /**
-   * The price words (round 36, NEXT.md 8.4; round 37, R3 and L78). Every index is "a score, not money", so the pages say
-   * "score". Round 36 kept "price" in the footer's sources line, in /method's "full price" family (its table header
-   * included) and in formulaNote's "the printed price"; round 37's R3 renamed all of them ("clash scores", "pair score",
-   * "the printed score"), so nothing is kept by name any more: no page says a price word. Pages as opened, every
+   * The price words. Every index is "a score, not money", so the pages say "score": the footer's sources line,
+   * /method's "pair score" family (its table header included) and formulaNote's "the printed score". No page says a
+   * price word. Pages as opened, every
    * disclosure open, no Replay and no live press.
    */
   const PRICE_WORD = /\bpric(e|ed|es|ing)\b/gi;
   const FOOTER_SOURCES = "Popularity and audience comparisons are saved Qloo responses; taste overlap and clash scores are calculated by this app from them.";
-  /** Round 36's kept strings, which R3 renamed: none of them is on any page now. */
+  /** Older price strings, since renamed: none of them is on any page now. */
   const ROUND_36_KEPT = [/\bfull price\b/gi, /\bthe printed price\b/gi, /taste overlap and prices are calculated/gi] as const;
   /** Lock words no page says: the old ones, and one that would claim to know what the festival did. */
   const NOT_SAID = /not by the festival|which cannot move|Locked set: fixed slot|this set stays put/;
@@ -158,12 +157,12 @@ test.describe("honesty lines", () => {
       await scrollThrough(page);
       // The board's reading of its key is a view change, not a disclosure; open it too where it is a button.
       if (url.startsWith("/?") && !isPhone) await page.getByRole("button", { name: "How to read the board" }).click();
-      // Every disclosure open, the board's fold included (round 37), so its tiles are read too.
+      // Every disclosure open, the board's fold included, so its tiles are read too.
       await page.evaluate(() => document.querySelectorAll("details").forEach((details) => (details.open = true)));
       if (url.startsWith("/?")) await expect(new HomePage(page).board).toBeVisible();
       const text = (await page.locator("body").innerText()).replace(/\s+/g, " ");
 
-      // The footer's sources line: once, in its round-37 words.
+      // The footer's sources line: once, in its current words.
       expect(text.split(FOOTER_SOURCES).length - 1, "the footer's sources line").toBe(1);
       for (const kept of ROUND_36_KEPT) expect(text.match(kept)?.length ?? 0, `${name}: ${kept}`).toBe(0);
       if (url === "/method") {
@@ -180,8 +179,7 @@ test.describe("honesty lines", () => {
   test("the footer on every page says the festivals shown do not use Clash Control, with its licence line", async ({ page }) => {
     for (const url of ["/", "/method", "/check", "/brief"]) {
       await page.goto(url, { waitUntil: "domcontentloaded" });
-      // On "/" the footer shows with the page: the server's frame holds it back while scripts run (round 37, verify-2
-      // N2), so it can take as long as the page's own mount on a busy dev server.
+      // On "/" the footer shows with the page: the server's frame holds it back while scripts run, so it can take as long as the page's own mount on a busy dev server.
       await expect(page.getByRole("contentinfo"), url).toContainText("The festivals shown do not use Clash Control", { timeout: READY_TIMEOUT });
       // One line with the licence, the source code and who the entry is not.
       const legal = page.getByRole("contentinfo").getByText(/^Independent entry: not endorsed by Qloo/);

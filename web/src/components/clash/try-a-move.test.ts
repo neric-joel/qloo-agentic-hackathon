@@ -231,7 +231,7 @@ describe("the tested place's verdict before Keep this move", () => {
   });
 });
 
-describe("the tested-move card's actions and its drawing (round 37, L21)", () => {
+describe("the tested-move card's actions and its drawing", () => {
   // Every name, time and figure here is invented (the tiny fixture festival): Bo Diddly Squat plays Side 20:30–22:00
   // and shares 60 min with Ann Arbor (Main 20:00–21:30), the day's one ranked clash.
   const tiny = parsePreset(rawTinyPreset())!;
@@ -722,7 +722,7 @@ describe("the clashes line tells a shorter clash from an unchanged one", () => {
   });
 });
 
-describe("the rules a legal place was checked against, with the shown day's own values (round 37, L8)", () => {
+describe("the rules a legal place was checked against, with the shown day's own values", () => {
   // An invented day in the shape backend/app/lineups/timetable.py gives a published one: each stage's hours run
   // from its first published start to its last published end, the closing set of each stage is locked, and every
   // set carries a start window of its published start ± 120 minutes and the stages within one place of its own.
@@ -760,7 +760,7 @@ describe("the rules a legal place was checked against, with the shown day's own 
     const day = publishedShape();
     expect(dayRules(day.festival, 0)).toEqual({ curfew: 1395, changeover: 15, publishedHours: true, reach: true });
     expect(rulesChecked(day, 0)).toBe(PUBLISHED);
-    // Every kind of rule the round-35 sentence named stays named.
+    // Every kind of rule the sentence names stays named.
     for (const kind of ["hours", "nothing after", "between sets on a stage", "locks", "pairs that must never overlap"]) {
       expect(rulesChecked(day, 0)).toContain(kind);
     }
@@ -861,7 +861,7 @@ describe("the rules a legal place was checked against, with the shown day's own 
     expect(source.match(/<RulesLine rules=\{rules\}/g)).toHaveLength(2);
     expect(source).not.toContain("RULES_CHECKED");
     // The tested place, the best tested place and the full list each take the day's sentence, and so does the full
-    // list's room while it loads (round 37 fix pass 2), so its rules' room is laid out from the same day's words.
+    // list's room while it loads, so its rules' room is laid out from the same day's words.
     expect(source.match(/^\s+rules=\{rules\}$/gm)).toHaveLength(5);
   });
 });
@@ -1497,7 +1497,7 @@ describe("after a set is picked, the right column is never empty from 1024 px", 
   });
 });
 
-describe("a late answer holds its room, so it moves nothing on screen (round 37, fix pass 2, F1)", () => {
+describe("a late answer holds its room, so it moves nothing on screen", () => {
   // Every name and figure here is invented (the tiny fixture festival).
   const tiny = parsePreset(rawTinyPreset())!;
   const picked: MovesResult = {
@@ -1918,7 +1918,7 @@ describe("Keep two sets apart: a stage change says it needs sign-off", () => {
   });
 });
 
-describe("the lock words: this app's locks on a published day, the invented day's own (round 36)", () => {
+describe("the lock words: this app's locks on a published day, the invented day's own", () => {
   type Raw = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
   // The tiny day: Main's one set (Ann Arbor) is locked; Side's last set (Bo Diddly Squat, 20:30) is not, so its
   // locks are not exactly the last set on each stage. Locking Bo Diddly Squat makes them exactly that.
@@ -1971,7 +1971,7 @@ describe("the lock words: this app's locks on a published day, the invented day'
     // The old words, which read as the festival's own fact, are gone.
     expect(legend(day(false, true))).not.toContain("Locked set: fixed slot");
     // The key's row spells the lock's words in full beside its lock swatch, so whose lock it is needs no click
-    // (round 36 fix pass: the short name alone said it only after "How to read the board").
+    // (the short name alone said it only after "How to read the board").
     const html = renderToStaticMarkup(createElement(TimetableLegend, { synthetic: false, holds: true }));
     expect(html).toContain(`<span data-legend-item="locked">${LOCK_SHORT}</span>`);
     expect(html).not.toContain('<span data-legend-item="locked">Locked</span>');

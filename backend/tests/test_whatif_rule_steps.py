@@ -1,10 +1,10 @@
 """A rule change kept as one step of a what-if plan: ``{"rule": {"a", "b"}, "moves": [one or two moves]}``.
 
-Pinned here: bodies of single kept moves answer byte-identically to the round-6 code (recorded output on a
+Pinned here: bodies of single kept moves answer byte-identically to the earlier code (recorded output on a
 synthetic day in ``tests/golden``); a change ``rule_fixes`` lists is accepted as a step and priced as the
 search priced it; a step is judged after the whole step, never move by move; the receipt
 (``rule_holds_after``, ``new_breaks``) is read on the whole plan; the caps and the memory of illegal plans
-work as in round 5; hostile bodies are 422 and echo nothing. Synthetic days only.
+work as before; hostile bodies are 422 and echo nothing. Synthetic days only.
 """
 
 import json
@@ -43,7 +43,7 @@ MOVED_KEYS = {"act", "act_id", "move", "stage", "stage_id", "day", "start", "end
 # ------------------------------------------------------------------------------------------- the pins
 
 
-def test_bodies_of_single_moves_answer_byte_identically_to_round_6(legacy_day):  # noqa: F811
+def test_bodies_of_single_moves_answer_byte_identically_to_the_recorded_plans(legacy_day):  # noqa: F811
     recorded = json.loads(GOLDEN.read_text(encoding="utf-8"))
     assert len(recorded) >= 7
     with TestClient(app) as client:

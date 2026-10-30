@@ -549,7 +549,7 @@ describe("the index scale in the card", () => {
     for (const html of states) {
       const outside = text(working(html).outside);
       expect(outside.match(/above 100: costlier/gi)).toHaveLength(1);
-      // "Lower is better." left the card in round 39; the dial's scorecard says it, outside every fold.
+      // "Lower is better." is not on the card; the dial's scorecard says it, outside every fold.
       expect(outside).not.toMatch(/lower is better/i);
       // The guarded first sentence, byte for byte, with "of this lineup" beside the 100 it qualifies.
       expect(outside).toContain("A score, not money: 100 = the average random valid timetable of this lineup.");
@@ -562,7 +562,7 @@ describe("the index scale in the card", () => {
     }
   });
 
-  it("keeps the paragraph inside its own budget: 29 words and 164 characters, so it adds no line (round 39, W5)", () => {
+  it("keeps the paragraph inside its own budget: 29 words and 164 characters, so it adds no line", () => {
     const paragraph = `${INDEX_SCALE} ${ATTRIBUTION}. A reading, not a verdict.`;
     expect(paragraph).toBe(
       "A score, not money: 100 = the average random valid timetable of this lineup. Above 100: costlier. Selected and scored by this app’s index. A reading, not a verdict.",
@@ -772,7 +772,7 @@ describe("the saved reading and the live re-check in the working", () => {
   });
 });
 
-describe("the card's two parts in the section on what taste changes (round 35)", () => {
+describe("the card's two parts in the section on what taste changes", () => {
   const twoSet = () => copy({ rule: RULE_RAW });
   const props = {
     onTryRule: () => {},

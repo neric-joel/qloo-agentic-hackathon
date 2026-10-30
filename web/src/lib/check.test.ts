@@ -531,7 +531,7 @@ describe("copy", () => {
   });
 });
 
-// Round 9: the paste a head of programming made first, which the page refused. Tabs, a header with a
+// The paste a head of programming made first, which the page refused. Tabs, a header with a
 // day column and a notes column, 12-hour times from a spreadsheet, a short name in a pair rule.
 const PROGRAMMER_GRID = [
   ["Day", "Artist", "Stage", "Start time", "End time", "Notes"],
@@ -585,7 +585,7 @@ describe("pastes from spreadsheets and other tools", () => {
   });
 
   it("moves each endpoint past midnight once: a 12:30 AM start with a 24:45 end reads 24:30 to 24:45", () => {
-    // Round-9 regression: the early-morning shift added a day to an end already written as 24:45.
+    // Regression: the early-morning shift added a day to an end already written as 24:45.
     const r = report("Evening,Main,22:00,23:30\nNight,Other,12:30 AM,24:45");
     expect(r.sets[1]).toMatchObject({ start: 1470, end: 1485 });
     expect(r.shared).toHaveLength(0);
@@ -666,7 +666,7 @@ describe("pastes from spreadsheets and other tools", () => {
   });
 });
 
-describe("round 31: a pair rule's fixes never swap in an unrelated act", () => {
+describe("a pair rule's fixes never swap in an unrelated act", () => {
   it("calls a name close only when it is a typo of the whole name, its start or one of its words", () => {
     expect(isCloseName("Marlwe", "Marlowe & The Tides")).toBe(true);
     expect(isCloseName("Amber Kyte", "Amber Kite")).toBe(true);
@@ -688,7 +688,7 @@ describe("round 31: a pair rule's fixes never swap in an unrelated act", () => {
   });
 });
 
-// Round 35: one bad line no longer stops the check. Faults of one line skip that line (listed by its line in
+// One bad line does not stop the check. Faults of one line skip that line (listed by its line in
 // the paste, counting the header and blank lines); faults of the whole input still stop it.
 
 /** A 12-line paste like a programmer's: line 4's start is 25:70, one stage is written "Main   Stage". */
@@ -707,7 +707,7 @@ const MESSY_LINES = [
   "Ember Coast,Side Stage,18:45,19:45",
 ];
 
-describe("round 35: a bad line is skipped and listed, and the rest is checked", () => {
+describe("a bad line is skipped and listed, and the rest is checked", () => {
   const LINE_4 = 'Line 4 (Glass Harbour): the start time "25:70" is not a time such as 18:00, 18.00, 1800, 24:30, 6:00 PM or 6pm.';
 
   it("checks the 11 readable sets of the messy paste and lists line 4 with its message", () => {
@@ -871,7 +871,7 @@ describe("round 35: a bad line is skipped and listed, and the rest is checked", 
     expect(outcome.errors).toHaveLength(6);
     expect(outcome.errors[0]).toBe("Line 2: the header has 4 columns, but this line has 1 field.");
     // Without a header, a comma first line over eleven lines that use semicolons: the lines that split into four
-    // fields decide (round 39), so the eleven are read by semicolons and line 1, which holds times, is skipped as a
+    // fields decide, so the eleven are read by semicolons and line 1, which holds times, is skipped as a
     // line. The hint stays for a grid read by commas (below), where the semicolon lines cannot be read.
     const mixed = report([MESSY_LINES[0], ...MESSY_LINES.slice(1).map(semi)].join("\n"));
     expect(mixed.sets.map((s) => s.act)).not.toContain("Tidal Fields");
@@ -909,9 +909,9 @@ describe("round 35: a bad line is skipped and listed, and the rest is checked", 
   });
 });
 
-// Round 36: a real spreadsheet survives the first paste. Header words, one time-range column, dotted and
+// A real spreadsheet survives the first paste. Header words, one time-range column, dotted and
 // compact times; a header it cannot read is named in one message; a skip names the act and quotes the value.
-describe("round 36: real headers and times, and what was not read", () => {
+describe("real headers and times, and what was not read", () => {
   const FORMS = "18:00, 18.00, 1800, 24:30, 6:00 PM or 6pm";
 
   it("reads every header word for each column, in any case and with underscores for spaces", () => {
@@ -1001,7 +1001,7 @@ describe("round 36: real headers and times, and what was not read", () => {
   });
 
   it("treats a first line as a header only when two or more of its cells name a column", () => {
-    // One column word in a title line: the line is no header. Round 39: it holds no time, so it is read as a title
+    // One column word in a title line: the line is no header. It holds no time, so it is read as a title
     // (not skipped, and said so in one note), and the grid under it is read.
     const r = report("Running order,Stage\nA,Main,18:00,19:00\nB,Side,18:30,19:30");
     expect(r.sets).toHaveLength(2);
@@ -1044,7 +1044,7 @@ describe("round 36: real headers and times, and what was not read", () => {
     const r = report("Tidal Fields,Main,18:00,19:00\nCobalt Rows,Side,18:30,19:30\nPaper Lanterns,Tent,19:00,20:00\nMystery Booking TBC,Tent,25:99,26:30");
     expect(skippedOf(r)).toEqual([`Line 4 (Mystery Booking TBC): the start time "25:99" is not a time such as ${FORMS}.`]);
     expect(r.skipped?.map((item) => [item.line, item.act])).toEqual([[4, "Mystery Booking TBC"]]);
-    // The guard's grid (the round-35 messy paste): line 4's message, word for word.
+    // The guard's grid (the messy paste): line 4's message, word for word.
     expect(skippedOf(report(MESSY_LINES.join("\n")))[0]).toBe(
       'Line 4 (Glass Harbour): the start time "25:70" is not a time such as 18:00, 18.00, 1800, 24:30, 6:00 PM or 6pm.',
     );
@@ -1095,7 +1095,7 @@ describe("round 36: real headers and times, and what was not read", () => {
   });
 });
 
-describe("round 37 N7: punctuation at the end of a header cell", () => {
+describe("punctuation at the end of a header cell", () => {
   it("reads a “Fixed?” header as the lock column, so a Y locks its set and no column is said to be ignored", () => {
     const r = report(
       "﻿Performer\tVenue\tFrom\tTo\tFixed?\r\nVelvet Static\tMain Stage\t17:00\t18:00\tY\r\nAmber Kite\tSide Stage\t17:30\t18:30\t",
@@ -1149,10 +1149,10 @@ describe("round 37 N7: punctuation at the end of a header cell", () => {
   });
 });
 
-// Round 39 W1: a title above the grid ("Glastonbury Sunday") no longer refuses the whole paste. The separator is
+// A title above the grid ("Glastonbury Sunday") does not refuse the whole paste. The separator is
 // decided by the lines that split into four fields (a header or title line first), and a first line with no time
 // in it that cannot be a row is read as a title: not checked, not a skipped line, said so in one note.
-describe("round 39 W1: a title line above the grid", () => {
+describe("a title line above the grid", () => {
   const note = (line: number, text: string) => `Skipped line ${line} ("${text}"): no times found, so it was read as a title.`;
   const TAB_ROWS = "Sprints\tWoodsies\t14:00\t14:45\nKaty J Pearson\tThe Park\t14:00\t15:00\nJoy Crookes\tWoodsies\t15:00\t16:00";
 
@@ -1239,7 +1239,7 @@ describe("round 39 W1: a title line above the grid", () => {
     expect(r.notes).toEqual([]);
   });
 
-  it("prints the counted no-breaks line after a title, never the bare sentence (R6)", () => {
+  it("prints the counted no-breaks line after a title, never the bare sentence", () => {
     // Two fields and no time, over two clean comma rows: a title, and a clean result on part of a paste.
     const r = report("Sprints,Woodsies\nA,Main,18:00,19:00\nB,Side,18:30,19:30");
     expect(r.title).toEqual({ line: 1, text: "Sprints,Woodsies" });

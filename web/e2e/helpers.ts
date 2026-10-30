@@ -217,7 +217,7 @@ export function pdfPages(pdf: Buffer): number {
 }
 
 /**
- * A pasted draft grid with one line that cannot be read (round 35): twelve invented acts, line 4 starting at 25:70,
+ * A pasted draft grid with one line that cannot be read: twelve invented acts, line 4 starting at 25:70,
  * and one stage written "Main   Stage". The check reads the other eleven lines and lists line 4 as skipped.
  */
 export const MESSY_GRID = [
@@ -239,5 +239,5 @@ export const MESSY_GRID = [
 export const MESSY_SKIPPED = "1 line skipped and not checked: line 4. The other 11 sets were checked.";
 export const MESSY_NO_BREAKS = "No rule breaks found among the 11 sets checked, against the settings above.";
 
-/** Why MESSY_GRID's line 4 was skipped (round 36): the act on the line, and the value it could not read, quoted. */
+/** Why MESSY_GRID's line 4 was skipped: the act on the line, and the value it could not read, quoted. */
 export const MESSY_LINE_4 = 'Line 4 (Glass Harbour): the start time "25:70" is not a time such as 18:00, 18.00, 1800, 24:30, 6:00 PM or 6pm.';

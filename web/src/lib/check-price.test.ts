@@ -103,7 +103,7 @@ function pairNames(overlaps: readonly { a: string; b: string }[]): string[] {
 }
 
 describe("what a press sends", () => {
-  it("compares the sample's 5 longest overlaps, one per pair of acts, and sends only their act names (C2)", () => {
+  it("compares the sample's 5 longest overlaps, one per pair of acts, and sends only their act names", () => {
     const report = sample();
     const request = priceRequest(report);
     expect(request).not.toBeNull();
@@ -155,7 +155,7 @@ describe("what a press sends", () => {
     expect(full).toMatchObject({ total: 60, omitted: 0, liveOmitted: 35 });
   });
 
-  it("sends only the compared pairs' names in saved mode and up to 25 in live mode, with the same pairs (C2)", () => {
+  it("sends only the compared pairs' names in saved mode and up to 25 in live mode, with the same pairs", () => {
     const many = Array.from({ length: 40 }, (_, i) => `Act ${i},Stage ${i % 8},${10 + Math.floor(i / 8) * 2}:00,${11 + Math.floor(i / 8) * 2}:30`).join("\n");
     const request = priceRequest(reportOf(many)) as PriceRequest;
     const saved = JSON.parse(priceBody(request, "saved")) as { acts: string[]; pairs: string[][] };
@@ -269,7 +269,7 @@ describe("the one request", () => {
     expect(await requestPrice(request, "live")).toMatchObject({ status: "refused" });
   });
 
-  it("reads the 200 no-saved-day answer (live off on the server) as not saved, with nothing to offer (C4)", async () => {
+  it("reads the 200 no-saved-day answer (live off on the server) as not saved, with nothing to offer", async () => {
     const request = priceRequest(sample()) as PriceRequest;
     const answer = {
       mode: "saved",
@@ -333,7 +333,7 @@ describe("the words of an answer", () => {
     );
     expect(pairLine(last, { ...answer, source: "saved_day" })).toContain(`Not compared: ${last.b} has no usable Qloo signal.`);
     expect(coverageLine(answer)).toBe(`${request.acts.length - 1} of ${request.acts.length} acts with a usable signal`);
-    // C3: the licence guardrail, true and specific.
+    // The licence guardrail, true and specific.
     const notRanked = { ...last, reason: "not_ranked_on_saved_day" as const };
     expect(pairLine(notRanked, answer)).toBe(
       `${last.a} × ${last.b}: ${last.minutes} min shared. Not served: this site serves saved Qloo values only for the pairs its timetable page prints. Shown by minutes only.`,
@@ -373,7 +373,7 @@ describe("the words of an answer", () => {
   });
 });
 
-describe("round-9 regressions: order, rank scope and recovery", () => {
+describe("regressions: order, rank scope and recovery", () => {
   it("never claims a reorder when the priced pairs keep their order: an unpriced longest pair is described apart", () => {
     const request = priceRequest(sample()) as PriceRequest;
     // The longest pair has no reading; the next two are already in descending audience overlap.
@@ -457,7 +457,7 @@ describe("round-9 regressions: order, rank scope and recovery", () => {
   });
 });
 
-describe("round-9b coverage: matched, priced, no signal, ambiguous, and the comparator", () => {
+describe("coverage: matched, priced, no signal, ambiguous, and the comparator", () => {
   const request = priceRequest(sample()) as PriceRequest;
   const [p0, p1, p2, p3, p4] = request.overlaps;
   // A live answer as the 9b route words it: one ambiguous name, one matched act without a signal, one not found.
@@ -532,7 +532,7 @@ describe("round-9b coverage: matched, priced, no signal, ambiguous, and the comp
   });
 });
 
-describe("round 31: one name and one scale (C4)", () => {
+describe("one name and one scale", () => {
   const request = priceRequest(sample()) as PriceRequest;
 
   it("prints every value as taste overlap NN / 100, never as a 0 to 1 decimal", () => {
@@ -571,7 +571,7 @@ describe("round 31: one name and one scale (C4)", () => {
   });
 });
 
-describe("round 31: the live offer reads the server first (C2, C3)", () => {
+describe("the live offer reads the server first", () => {
   it("reads price_grid_live from the health answer: on, off and unknown (unknown is off)", async () => {
     vi.stubGlobal("fetch", respond(200, { status: "ok", price_grid_live: true }));
     expect(await priceGridLive()).toBe(true);
@@ -615,7 +615,7 @@ describe("round 31: the live offer reads the server first (C2, C3)", () => {
   });
 });
 
-describe("round 31: pairs a programmer could move (C5) and reasons in words (C9)", () => {
+describe("pairs a programmer could move and reasons in words", () => {
   const grid = [
     "act,stage,start,end,locked",
     "Pine Lantern,North,18:00,20:00,yes",
@@ -668,7 +668,7 @@ describe("round 31: pairs a programmer could move (C5) and reasons in words (C9)
     expect(unpricedReason({ a: "Pine Lantern", b: "Tin Orchard", reason: "ambiguous" }, saved)).toBe(
       "Tin Orchard matched more than one act of that name, so none was picked",
     );
-    // K4, C3: true to the server, which answers only the pairs the timetable page prints (pair.py taste_pairs).
+    // True to the server, which answers only the pairs the timetable page prints (pair.py taste_pairs).
     expect(unpricedReason({ a: "Pine Lantern", b: "Quill Harbor", reason: "not_ranked_on_saved_day" }, saved)).toBe(
       "not served: this site serves saved Qloo values only for the pairs its timetable page prints",
     );
@@ -679,7 +679,7 @@ describe("round 31: pairs a programmer could move (C5) and reasons in words (C9)
   });
 });
 
-describe("round 31: a published day to check (C8)", () => {
+describe("a published day to check", () => {
   // An invented list in the route's shape.
   const list = [
     { id: "synthetic-day", title: "Invented day", sets: 25, stages: 4, synthetic: true },
@@ -712,7 +712,7 @@ describe("round 31: a published day to check (C8)", () => {
     expect(await loadPublishedDay()).toBeNull();
   });
 
-  it("round 36: lists every published day in the API's order for the offer, with one bodiless GET, and none when there is none", async () => {
+  it("lists every published day in the API's order for the offer, with one bodiless GET, and none when there is none", async () => {
     const days = [
       { id: "brookfield-2030-sat", title: "Brookfield 2030, Saturday" },
       { id: "other-2030-sun", title: "Other 2030, Sunday" },
@@ -736,7 +736,7 @@ describe("round 31: a published day to check (C8)", () => {
   });
 });
 
-describe("round 32: a published day compares its saved day's own costliest clashes (K1, K3)", () => {
+describe("a published day compares its saved day's own costliest clashes", () => {
   // An invented published day: every name and every value below is invented for the test.
   const grid = [
     "act,stage,start,end,locked",
@@ -775,7 +775,7 @@ describe("round 32: a published day compares its saved day's own costliest clash
       ["Cobalt Fern", "Dune Parade", "locked"],
       ["Gale Rooms", "Amber Coast", "no_signal"],
     ]);
-    // C2: only the names in the pairs compared are sent in saved mode, never the grid's other acts.
+    // Only the names in the pairs compared are sent in saved mode, never the grid's other acts.
     expect(request.acts).toEqual(["Birch Lane", "Amber Coast", "Elm Signal", "Fox Harbour"]);
     expect(JSON.parse(priceBody(request, "saved")).acts).toEqual(request.acts);
   });
@@ -828,7 +828,7 @@ describe("round 32: a published day compares its saved day's own costliest clash
     expect(orderLine(flat)).toBe("Taste overlap does not change the order of the 3 compared overlaps.");
   });
 
-  it("puts the values first, then one count line and every reason in words (K3)", () => {
+  it("puts the values first, then one count line and every reason in words", () => {
     const request = priceRequest(report, ranking) as PriceRequest;
     const answer = parsePriceAnswer(answerFor(request, "saved_day", [0.2, 0.9, null]), request, "saved") as PriceAnswer;
     const items = notCompared(request.skipped, answer);
@@ -847,8 +847,8 @@ describe("round 32: a published day compares its saved day's own costliest clash
   });
 });
 
-describe("round 33: a published day opens in this app's ranking (C1)", () => {
-  // The round-32 invented day above, again: its ranking chooses the pairs, costliest first.
+describe("a published day opens in this app's ranking", () => {
+  // The invented day above, again: its ranking chooses the pairs, costliest first.
   const grid = [
     "act,stage,start,end,locked",
     "Amber Coast,North,18:00,19:00,",
@@ -898,7 +898,7 @@ describe("round 33: a published day opens in this app's ranking (C1)", () => {
   });
 });
 
-describe("round 33: a pasted grid on a published day compares pairs the saved server serves (C3)", () => {
+describe("a pasted grid on a published day compares pairs the saved server serves", () => {
   // An invented published day in the route's shape: every name, id and count is invented for the test.
   const scheduled = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"];
   const names = new Map([
@@ -1022,7 +1022,7 @@ describe("round 33: a pasted grid on a published day compares pairs the saved se
     expect(request.overlaps.some((o) => [o.a, o.b].sort().join("|") === "Cobble Lane|Dove Harbor")).toBe(false);
     expect(request.skipped.filter((o) => o.reason === "locked").map((o) => [o.a, o.b].sort().join(" × "))).toEqual(["Cobble Lane × Dove Harbor"]);
     expect(request.skipped.filter((o) => o.reason === "no_signal")).toHaveLength(6);
-    // C2: only the names of the pairs sent, and the day still holds 80% of them.
+    // Only the names of the pairs sent, and the day still holds 80% of them.
     expect(request.acts).toEqual(pairNames(request.overlaps));
     expect(matchServableDay(request.acts, [served])).toBe(served);
     // The live request is the pasted rule as it always was.
@@ -1121,7 +1121,7 @@ describe("round 33: a pasted grid on a published day compares pairs the saved se
   });
 });
 
-describe("round 33: the rank scope never says \"acts you pasted\" for a published day (C7)", () => {
+describe("the rank scope never says \"acts you pasted\" for a published day", () => {
   it("leaves the pasted clause out for a published day loaded here, and keeps it for a paste", () => {
     const base = { source: "saved_day" as const, sent: 16, omitted: 0, comparator: { kind: "saved_day" as const, acts: 36 } };
     expect(rankScope({ ...base, basis: "saved_ranking" })).toBe(
@@ -1134,7 +1134,7 @@ describe("round 33: the rank scope never says \"acts you pasted\" for a publishe
   });
 });
 
-describe("round 33: the intro is short and keeps every true clause (C2)", () => {
+describe("the intro is short and keeps every true clause", () => {
   const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
   const variants = [
     PRICE_COPY.intro(5, 10),
@@ -1164,7 +1164,7 @@ describe("round 33: the intro is short and keeps every true clause (C2)", () => 
   });
 });
 
-describe("round 33: Find a change scored on a published day's index (C6)", () => {
+describe("Find a change scored on a published day's index", () => {
   // Ids of an invented published day: the grid's acts and stages by normalised name.
   const report = reportOf("Aster Vale,North,18:00,19:00\nBasil Rowe,South,18:30,19:30\nCobble Lane,North,20:00,21:00\nDove Harbor,South,20:15,21:00");
   const ids = {

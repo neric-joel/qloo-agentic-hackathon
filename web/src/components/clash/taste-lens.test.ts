@@ -168,7 +168,7 @@ describe("TasteLens", () => {
     );
   });
 
-  it("sets the pairs that price at zero as one 10px inset block with a quiet edge on all sides, embedded or not (round 34, corners)", () => {
+  it("sets the pairs that price at zero as one 10px inset block with a quiet edge on all sides, embedded or not (corners)", () => {
     const value = lenses({ apart: [{ a: "Act Nine", b: "Act Ten", a_id: "nine", b_id: "ten" }] });
     for (const embedded of [false, true]) {
       const html = renderToStaticMarkup(createElement(TasteLens, { lenses: value, ranked: [], onOpen: () => {}, embedded }));
@@ -202,7 +202,7 @@ describe("TasteLens", () => {
   });
 });
 
-describe("TasteLens motion (round 34: no scroll-in motion)", () => {
+describe("TasteLens motion (no scroll-in motion)", () => {
   it("is drawn final in the server HTML with nothing to play: no reveal phase, stagger or rising rows", () => {
     const html = renderToStaticMarkup(createElement(TasteLens, { lenses: lenses(), ranked: [], onOpen: () => {} }));
     expect(html).not.toContain("data-reveal");
@@ -240,7 +240,7 @@ describe("otherHalfPair", () => {
 describe("otherHalfLine", () => {
   it("says where the pair ranks, with its taste overlap only when given, and names no source on the invented day", () => {
     const pair = { a: "Act Seven", b: "Act Eight", from: 1, to: 17 };
-    // Round 34 (row 26): the hedge is cut, and the reading stays attributed to this index.
+    // The hedge is cut, and the reading stays attributed to this index.
     expect(otherHalfLine(pair, null)).toBe(
       "Taste also lowers some clashes: Act Seven × Act Eight ranks #1 on time and draw but #17 with taste: by this index, a candidate to keep.",
     );

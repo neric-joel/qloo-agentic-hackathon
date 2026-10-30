@@ -9,7 +9,7 @@ import { minutes, parsePlace, TryAMove } from "./pages/try-a-move";
  */
 
 /**
- * Said after "Adds no rule break." for every legal place: the rules the place was checked against. Round 37 (L8): the
+ * Said after "Adds no rule break." for every legal place: the rules the place was checked against. The
  * sentence gives the shown day's own values, read from its published timetable by the rules this app builds its
  * constraints with; on Glastonbury the day's latest published end is 23:15 and the changeover 15 min.
  */
@@ -52,7 +52,7 @@ test.describe("try a move", () => {
     test(`on ${day.title}, the intro says whose locks keep sets in place: this app's`, async ({ page }) => {
       const home = new HomePage(page);
       await home.goto(day.id);
-      // Round 36: the published days' locks are this app's (the festivals marked none), in the short form that keeps
+      // The published days' locks are this app's (the festivals marked none), in the short form that keeps
       // the intro's height; the last-set rule itself is stated in the board's key, on /method and in the brief.
       await expect(home.tryAMove.getByText(/Keep a move to stack the next one\. Sets this app locks stay put\.$/)).toBeVisible();
       await expect(home.tryAMove).not.toContainText("Locked sets stay put.");
@@ -135,7 +135,7 @@ test.describe("try a move", () => {
     expect(await move.section.innerText()).not.toMatch(/\bpric(e|ed|es|ing)\b/i);
   });
 
-  test("on Riot Fest the rules sentence gives that day's own latest published end (round 37, L8)", async ({ page }) => {
+  test("on Riot Fest the rules sentence gives that day's own latest published end", async ({ page }) => {
     const home = new HomePage(page);
     const move = new TryAMove(page);
     await home.goto(DAYS.riot.id);
@@ -143,19 +143,19 @@ test.describe("try a move", () => {
     const tested = move.section.locator("[data-tested-card]");
     await expect(tested).toContainText("Tested place");
     await expect(tested).toContainText(`Adds no rule break. ${RULES_CHECKED_RIOT}`);
-    // The round-35 sentence, with no values, is gone.
+    // The older sentence, with no values, is gone.
     await expect(move.section).not.toContainText("Checked against the stage’s hours");
   });
 
   /**
-   * Round 37, verify-2 N3 (F1): when a pick's answer landed after the browser's 500 ms input window, the answer was
+   * When a pick's answer landed after the browser's 500 ms input window, the answer was
    * taller than its pending frame and pushed the rest of the page down (Glastonbury: 0.0143 at 1440, 0.1541 at 768,
    * 0.1165 at 390). The pending frames now hold the answer's room. Every shift counts, the board fold's included: the
    * fold above the section used to open when the late answer landed, and the slice of the opened board that entered
-   * the top of the screen read 0.0011 to 0.0013 at 1440 (round 37 closeout). It now opens in the press itself, with the
+   * the top of the screen read 0.0011 to 0.0013 at 1440. It now opens in the press itself, with the
    * key's tested-slot row, so the answer adds nothing above the section.
    */
-  test("a late answer to a pick moves nothing on screen: no layout shift at all, the board's fold included, at 1440, 1280, 768 and 390, on both days (round 37, verify-2 N3)", async ({ page, isPhone }) => {
+  test("a late answer to a pick moves nothing on screen: no layout shift at all, the board's fold included, at 1440, 1280, 768 and 390, on both days", async ({ page, isPhone }) => {
     test.skip(isPhone, "The desktop project sets each width.");
     test.setTimeout(180_000);
     // The places answer for a picked set is held 1.5 s, past the browser's input window.
@@ -225,12 +225,12 @@ test.describe("try a move", () => {
   });
 
   /**
-   * Round 37 closeout: a plan answer that landed after Keep this move replaced the 128 px "Scoring your tested moves"
+   * A plan answer that landed after Keep this move replaced the 128 px "Scoring your tested moves"
    * box with the plan and pushed everything under it down (0.58 to 0.65 at 390). While the answer is out, the plan's
    * place now holds room past the screen's foot, and the "Start with" rows keep their places when the plan changes
    * which sets start the list. The plan answer is held 1.5 s, past the browser's input window, with the CPU slowed 4x.
    */
-  test("a late plan answer after Keep this move moves nothing on screen at 1440, 1024, 390 and 375 x 667, on both days (round 37 closeout)", async ({ page, isPhone }) => {
+  test("a late plan answer after Keep this move moves nothing on screen at 1440, 1024, 390 and 375 x 667, on both days", async ({ page, isPhone }) => {
     test.skip(isPhone, "The desktop project sets each width.");
     test.setTimeout(240_000);
     let holdPlan = false;
@@ -303,12 +303,12 @@ test.describe("try a move", () => {
     }
   });
 
-  test("testing a place opens the board's disclosure in the same step, with the place's ghost on the board (round 37, AO1)", async ({ page }) => {
+  test("testing a place opens the board's disclosure in the same step, with the place's ghost on the board", async ({ page }) => {
     const home = new HomePage(page);
     const move = new TryAMove(page);
     await home.goto(DAYS.glastonbury.id);
 
-    // Round 39 (W2): from 1280 px the board arrives open, so a visitor's press closes it first; on a phone it arrives
+    // From 1280 px the board arrives open, so a visitor's press closes it first; on a phone it arrives
     // closed. A tested place then opens it, whichever way it was left.
     await home.closeBoard();
     expect(await home.boardOpen(), "closed before the pick").toBe(false);
@@ -455,7 +455,7 @@ test.describe("try a move", () => {
     const move = new TryAMove(page);
     await home.goto(DAYS.glastonbury.id);
 
-    // Round 37 (L33): the option says whose lock it is.
+    // The option says whose lock it is.
     await expect(move.select.locator("option").filter({ hasText: /Olivia Rodrigo \(locked by this app\)/ })).toBeDisabled();
     await expect(move.starters).not.toContainText("Olivia Rodrigo");
 

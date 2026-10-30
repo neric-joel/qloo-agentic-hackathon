@@ -7,7 +7,7 @@ import { HomePage } from "./pages/home-page";
 import { TryAMove } from "./pages/try-a-move";
 
 /**
- * One radius system (owner order, DECISION.md section 2.6): 6 px for marks in a drawing and small labels, 10 px for
+ * One radius system: 6 px for marks in a drawing and small labels, 10 px for
  * controls, tiles, inset blocks and notes (every button), 14 px for cards and panels, full round only for dots and
  * discs. Measured as computed `border-radius` or SVG `rx`, at 1440 x 900 in the light theme (desktop project) and
  * 390 x 844 in the dark (phone project), and in print for /brief and /check. No box is sharp, in light, dark or
@@ -23,7 +23,7 @@ type Sweep = { sharp: string[]; rects: string[]; pills: string[]; svgPills: stri
  * less across (rules, axes, hairlines), a top-and-bottom rule pair on an unfilled element, a fill equal to what it
  * sits on (a knockout plate), a fill clipped by a rounded ancestor whose edge it touches, table cells, and sheets
  * (measured on their own). SVG: every painted rect has an rx unless a clip contains it. Pills: a box taller than
- * 12 px whose corner is half its height or more and that is not a disc. Round 37 (L100): the same pill rule for SVG
+ * 12 px whose corner is half its height or more and that is not a disc. The same pill rule for SVG
  * marks, so a capsule bar drawn in an SVG fails too: a painted rect taller than 12 px on the screen whose rx (or ry)
  * is half its own height or more, in its own units, and that is not a disc (no wider than 1.15 times its height).
  */
@@ -208,7 +208,7 @@ test.describe("corners: one radius system", () => {
       expect(found.pills, "pill-shaped boxes").toEqual([]);
       expect(found.svgPills, "pill-shaped SVG marks").toEqual([]);
 
-      // Round 37 (AO1): the board's grid is behind its disclosure, so the home is swept again with the board shown.
+      // The board's grid is behind its disclosure, so the home is swept again with the board shown.
       if (route.home) {
         const home = new HomePage(page);
         await home.openBoard();
@@ -232,7 +232,7 @@ test.describe("corners: one radius system", () => {
     });
   }
 
-  test("the SVG pill rule fails a capsule mark and passes the drawing's 6 px marks (round 37, L100)", async ({ page, isPhone }) => {
+  test("the SVG pill rule fails a capsule mark and passes the drawing's 6 px marks", async ({ page, isPhone }) => {
     await useSeatTheme(page, isPhone);
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);

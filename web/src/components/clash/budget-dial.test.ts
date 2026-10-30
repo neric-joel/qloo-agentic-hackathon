@@ -48,7 +48,7 @@ describe("the dial's reading", () => {
     expect(published).toContain(
       "By this index, the published timetable scores 116.7, where 100 is the average random valid timetable and higher means more clash cost.",
     );
-    // Round 33: the hero's scale line says the random timetables are of this lineup, so the caption gives the
+    // The hero's scale line says the random timetables are of this lineup, so the caption gives the
     // direction and the cost's parts.
     expect(published).toContain("Lower is better. It counts only what clashes cost");
     // The timetable and its average are named once, in the sentence, not again in the explanation.

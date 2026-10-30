@@ -35,8 +35,8 @@ test.describe("what Qloo changes", () => {
     // Time alone shows its tie, on the full axis.
     await expect(ranks.nth(0)).toContainText(/tied with \d+ others?/);
 
-    // The heading credits taste with its own step only: from the time-and-popularity rank to the taste rank. Round 39
-    // (W4, D18): it says whose ranks these are, "in this app’s index".
+    // The heading credits taste with its own step only: from the time-and-popularity rank to the taste rank.
+    // It says whose ranks these are, "in this app’s index".
     const heading = home.whatQloo.getByRole("heading", { level: 2 });
     await expect(heading).toHaveText("Adding taste moves this pair from #18 to #1 in this app’s index");
     const [, from, to] = /from #(\d+) to #(\d+) in this app’s index$/.exec(await heading.innerText()) ?? [];
@@ -119,11 +119,9 @@ test.describe("what Qloo changes: its height and the index card's lines beside i
   test.beforeEach(async ({ page }) => requireSavedDays(page));
 
   /**
-   * The section's ceilings: 760 px at 1440 light and 1,500 px at 390 dark until round 39. Round 39 (condition 13, the
-   * integrator's 4.3 rule): W4's " in this app’s index" adds one heading line on Glastonbury, measured 749.7 -> 791.4 px
-   * at 1440 light (+41.7) and 1,492.2 -> 1,520.8 px at 390 dark (+28.6), and Riot Fest +0; W5's index paragraph adds no
-   * line. Each ceiling rises by the measured growth rounded up to the next pixel (caps +45 and +30), never by trimming a
-   * guarded line.
+   * The section's ceilings: 760 px at 1440 light and 1,500 px at 390 dark, plus the heading's " in this app’s index"
+   * line on Glastonbury (measured +41.7 px at 1440 light and +28.6 px at 390 dark; Riot Fest +0), rounded up (+45 and
+   * +30). The index paragraph adds no line. A ceiling rises only by measured growth, never by trimming a guarded line.
    */
   const CEILING = { desktop: 802, phone: 1_529 } as const;
 
@@ -161,7 +159,7 @@ test.describe("what Qloo changes: its height and the index card's lines beside i
 test.describe("who has complained, and what nobody has tested", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
 
-  test("says what the public pages show, that it counts pages and not people, with no click, and links to the sources on /method (round 38)", async ({ page }) => {
+  test("says what the public pages show, that it counts pages and not people, with no click, and links to the sources on /method", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
     const claim = home.whyThisMatters.locator("[data-why-public]");
@@ -170,7 +168,7 @@ test.describe("who has complained, and what nobody has tested", () => {
     await expect(claim).toContainText(
       "Our analysis of 70 public press articles, fan-post summaries and one artist statement from 17 festivals (2015 to 2026) found 325 named set-time clashes, covering 538 pairs of acts when counted separately for each festival and year.",
     );
-    // Round 39 (W8): the pairs are counted once per festival and year, never called distinct.
+    // The pairs are counted once per festival and year, never called distinct.
     await expect(claim).not.toContainText("distinct pairs");
     await expect(claim).toContainText("It counts pages, not people, so it shows the complaint keeps coming back, not how many people mind.");
     await expect(claim).not.toContainText(/survey|poll|people we asked|respondents/i);
@@ -201,7 +199,7 @@ test.describe("who has complained, and what nobody has tested", () => {
   });
 
   for (const day of Object.values(DAYS)) {
-    test(`on ${day.title}, right after the stake, one paragraph says how to keep a clash on purpose, what not to decide with this, what an act's team would see if a festival used it, and that no artist content is written (round 37, L35, L36, L37)`, async ({ page }) => {
+    test(`on ${day.title}, right after the stake, one paragraph says how to keep a clash on purpose, what not to decide with this, what an act's team would see if a festival used it, and that no artist content is written`, async ({ page }) => {
       const home = new HomePage(page);
       await home.goto(day.id);
 
@@ -252,7 +250,7 @@ test.describe("who has complained, and what nobody has tested", () => {
     await home.goto(DAYS.glastonbury.id);
 
     const section = home.whyThisMatters;
-    // Round 39 (W8): the conclusion is scoped to the tool pages reviewed, and said once, as the heading, with the
+    // The conclusion is scoped to the tool pages reviewed, and said once, as the heading, with the
     // search's date and "absence of evidence only" directly under it.
     const heading = section.getByRole("heading", { level: 3, name: "None of the 13 tool pages we reviewed describes ranking a draft grid’s clashes by audience closeness" });
     await expect(heading).toBeVisible();
@@ -270,7 +268,7 @@ test.describe("who has complained, and what nobody has tested", () => {
     await expect(schedulers).toContainText("Both check double bookings and changeovers. Setline sells organisers clash analysis from attendee interest once set times are live.");
     await expect(schedulers).not.toContainText("We found none that reads audience overlap");
     // The pilot's success line says one answer is not a market, in the open. The pilot offers nothing that costs a
-    // Qloo request, so the request arithmetic is not on the page (round 33 R1.9: it is on the Devpost page).
+    // Qloo request, so the request arithmetic is not on the page (it is on the Devpost page).
     await expect(section).toContainText("Success: you say which suggestion you would take or turn down, and why. One answer is not a market.");
     await expect(section.locator("summary", { hasText: /Qloo requests/ })).toHaveCount(0);
     await expect(section).not.toContainText("Pricing a new bill is not offered");

@@ -8,7 +8,7 @@ import { HomePage } from "./pages/home-page";
 /** The board: every stage and set drawn, the key that explains its marks, the costliest clashes, and the clash drawer. */
 
 /**
- * A lock's words in the board's key (round 36, lib/locks.ts). The published days' locks are this app's: the festivals
+ * A lock's words in the board's key (lib/locks.ts). The published days' locks are this app's: the festivals
  * marked no set as fixed, and on both days the locked sets are exactly the last set on each stage, so the key states
  * that rule. The invented day's locks are part of the invented day.
  */
@@ -18,7 +18,7 @@ const LOCK_INVENTED = "Locked: an invented fixed slot.";
 /** The costliest clashes' locked share on a published day: whose locks they are, and that no move is suggested there. */
 const LOCKED_SHARE = /\d+% of the day’s cost sits between two sets this app locks, so it suggests no move there\./;
 
-/** Lock words the page no longer says (round 35's), and one it must never say. */
+/** Lock words the page no longer says, and one it must never say. */
 const OLD_LOCK_WORDS = /Locked set: fixed slot|which cannot move|this set stays put|not by the festival/;
 
 /** Opens the board's key as a visitor does: "How to read the board" from 640 px, its fold on a phone. */
@@ -42,13 +42,13 @@ test.describe("timetable board", () => {
     for (const stage of ["Other", "West Holts", "Woodsies", "The Park"]) {
       await expect(tiles.filter({ hasText: new RegExp(`, ${stage}\\.`) }), stage).toHaveCount(8);
     }
-    // Round 37 (L33): a locked tile says whose lock it is ("Locked set." said no owner).
+    // A locked tile says whose lock it is ("Locked set." said no owner).
     await expect(tiles.filter({ hasText: /Locked by this app: kept in place\./ })).toHaveCount(5);
     await expect(tiles.filter({ hasText: /Locked set\./ })).toHaveCount(0);
     await expect(home.tile("The Prodigy")).toHaveAccessibleName(
       /Draw \d+\.\s+Locked by this app: kept in place\. In \d+ ranked clash(es)?; press Enter to open the costliest, number \d+, with .+\.$/,
     );
-    // The three sets with no Qloo signal say so to a screen reader as "not scored" (round 35: never "priced").
+    // The three sets with no Qloo signal say so to a screen reader as "not scored" (never "priced").
     const unscored = tiles.filter({ hasText: /not scored/ });
     await expect(unscored).toHaveCount(3);
     await expect(unscored.filter({ hasText: /^Thandii/ })).toHaveCount(1);
@@ -71,7 +71,7 @@ test.describe("timetable board", () => {
     await home.goto(DAYS.glastonbury.id);
 
     const coverage = page.getByRole("region", { name: "Qloo coverage" });
-    // Round 36: the count is of sets, as the board draws them.
+    // The count is of sets, as the board draws them.
     await expect(coverage).toContainText("36 of 39 sets scored");
     await expect(coverage).not.toContainText("priced");
     await coverage.getByRole("button", { name: /3 left out, not scored as zero/ }).click();
@@ -85,10 +85,10 @@ test.describe("timetable board", () => {
     await home.goto(DAYS.glastonbury.id);
 
     const key = page.getByRole("list", { name: "Timetable key" });
-    // Round 36 fix pass: the key row spells whose lock it is with no click.
+    // The key row spells whose lock it is with no click.
     await expect(key.getByRole("listitem")).toHaveText([LOCK_SHORT, "No Qloo signal", "Clash", "Hidden clash"]);
     await page.getByRole("button", { name: "How to read the board" }).click();
-    // The key is drawn once per width band; the one on show is the one that counts. Round 36: the lock says whose it is.
+    // The key is drawn once per width band; the one on show is the one that counts. The lock says whose it is.
     for (const meaning of [
       LOCK_SHORT,
       "No Qloo signal: left out, not scored as zero",
@@ -121,7 +121,7 @@ test.describe("timetable board", () => {
 
     const summary = page.getByText(/^How to read the board \(\d+ symbols?\)$/);
     await expect(summary).toBeVisible();
-    // The scroll hint, the scroller and the start-order list are inside the board's disclosure (round 37).
+    // The scroll hint, the scroller and the start-order list are inside the board's disclosure.
     await home.openBoard();
     await expect(page.getByText("Scroll sideways to see every stage.")).toBeVisible();
     // The start-order list is behind its own summary and lists the same sets.
@@ -158,7 +158,7 @@ test.describe("timetable board", () => {
     await expect(home.drawer.getByRole("heading", { level: 2 })).toHaveText("The Brian Jonestown Massacre × St. Vincent");
     await expect(home.drawer).toContainText("Clash 2 of 15");
     await expect(home.drawer).toContainText("Taste overlap is not attendance.");
-    // Round 36: the section is "The score", and the drawer says no price word.
+    // The section is "The score", and the drawer says no price word.
     await expect(home.drawer.getByRole("heading", { name: "The score" })).toBeVisible();
     await expect(home.drawer).not.toContainText(/\bpric(e|ed|es|ing)\b/i);
     for (const factor of ["Taste overlap", "Time shared", "Combined draw", "Share of day's cost"]) {
@@ -270,11 +270,11 @@ test.describe("timetable board", () => {
   });
 
   for (const day of Object.values(DAYS)) {
-    test(`on ${day.title}, the board's grid is one disclosure (open on arrival from 1280 px, closed on a phone) whose summary counts what it opens, and the caption, coverage, key and clash list stay open (round 37, L29 and L30; round 39, W2)`, async ({ page, isPhone }) => {
+    test(`on ${day.title}, the board's grid is one disclosure (open on arrival from 1280 px, closed on a phone) whose summary counts what it opens, and the caption, coverage, key and clash list stay open`, async ({ page, isPhone }) => {
       const home = new HomePage(page);
       await home.goto(day.id);
 
-      // Round 39 (W2, D13): open on arrival at 1440 with the grid shown, closed on a phone. At 1440 a visitor's press
+      // Open on arrival at 1440 with the grid shown, closed on a phone. At 1440 a visitor's press
       // closes it, and the rest runs on the closed board as before. Its summary is a 44 px control with the chevron.
       await expect(home.boardFold).toHaveCount(1);
       if (isPhone) {
@@ -325,7 +325,7 @@ test.describe("timetable board", () => {
   }
 
   /**
-   * The clash drawer's "Saved requests and values" (round 37, L85), on each day's clash 1, every line from the saved
+   * The clash drawer's "Saved requests and values", on each day's clash 1, every line from the saved
    * preset: each act's /search and the 3 candidates it asked for, the entity this app used (first 8 characters, the
    * whole id in its title), its saved popularity and its one ranked /v2/insights request; the overlap with its
    * qualifier; the compare line as the request ledger has it; Qloo's search match for each act from the saved reading,
@@ -346,7 +346,7 @@ test.describe("timetable board", () => {
   } as const;
 
   for (const day of Object.values(DAYS)) {
-    test(`on ${day.title}, clash 1's drawer lists the saved requests and values behind it, each from the saved day, with nothing fetched (L85)`, async ({ page, guard }) => {
+    test(`on ${day.title}, clash 1's drawer lists the saved requests and values behind it, each from the saved day, with nothing fetched`, async ({ page, guard }) => {
       const want = CHAIN[day.id];
       const preset = (await (await page.request.get(`/api/presets/${day.id}`)).json()) as {
         festival: { acts: { id: string; name: string; qloo_id: string | null; popularity: number | null }[] };
@@ -428,7 +428,7 @@ test.describe("timetable board on the invented day", () => {
   });
 });
 
-test.describe("the board's disclosure opens where the visitor is (round 37 merge)", () => {
+test.describe("the board's disclosure opens where the visitor is", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
 
   /**
@@ -440,7 +440,7 @@ test.describe("the board's disclosure opens where the visitor is (round 37 merge
   test("a press on its summary opens the board under the summary, and the summary stays where it was pressed", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
-    // Round 39 (W2): from 1280 px the board arrives open, so a visitor's press closes it first; on a phone it arrives
+    // From 1280 px the board arrives open, so a visitor's press closes it first; on a phone it arrives
     // closed and nothing is pressed.
     await home.closeBoard();
     await home.boardFoldSummary.evaluate((summary) => window.scrollTo(0, summary.getBoundingClientRect().top + window.scrollY - 300));
@@ -456,11 +456,11 @@ test.describe("the board's disclosure opens where the visitor is (round 37 merge
   });
 
   /**
-   * Round 37, verify-2 N4: at 768 px the board's inline key gained "Weak Qloo signal" only once the fold opened (the
+   * At 768 px the board's inline key gained "Weak Qloo signal" only once the fold opened (the
    * board was never measured while shut), so the key wrapped to a second line and a press moved the summary 28 px. The
    * key's count now comes from the width the board opens to, so its items are the same shut and open.
    */
-  test("at 768 px the board's key shows the same items with the fold shut and open, so a press leaves the summary where it was (round 37, verify-2 N4)", async ({ page, isPhone }) => {
+  test("at 768 px the board's key shows the same items with the fold shut and open, so a press leaves the summary where it was", async ({ page, isPhone }) => {
     test.skip(isPhone, "The desktop project sets the 768 px width.");
     await page.setViewportSize({ width: 768, height: 1024 });
     const home = new HomePage(page);
@@ -493,7 +493,7 @@ test.describe("the board's disclosure opens where the visitor is (round 37 merge
   test("a tested place from Try a move opens the board above the section without moving the picked row on screen", async ({ page }) => {
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
-    // Round 39 (W2): from 1280 px the board arrives open, so a visitor's press closes it first (the case this test
+    // From 1280 px the board arrives open, so a visitor's press closes it first (the case this test
     // holds: the fold closed while the visitor is at Try a move); on a phone it arrives closed.
     await home.closeBoard();
     expect(await home.boardOpen()).toBe(false);
@@ -509,13 +509,13 @@ test.describe("the board's disclosure opens where the visitor is (round 37 merge
 });
 
 /**
- * Round 39 (W2, D13): the board's disclosure arrives open on a screen 1280 px wide or more, and closed below. The width
+ * The board's disclosure arrives open on a screen 1280 px wide or more, and closed below. The width
  * is read once, as the interactive board is first drawn, so after arrival only a press (or a preview of the visitor's
  * own) changes it, and the next festival day is drawn the way this one was left. The server's frame knows no width, so
  * its fold is closed; the arrival open starts no transition (reduced-motion.spec.ts holds first paint with motion
  * allowed).
  */
-test.describe("the board's disclosure on arrival (round 39, W2, D13)", () => {
+test.describe("the board's disclosure on arrival", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
 
   /** The board's rail (the score and the costliest clashes) against the fold: rail bottom minus fold bottom, in px. */
@@ -675,7 +675,7 @@ test.describe("the board's disclosure on arrival (round 39, W2, D13)", () => {
     await expect(home.board).toBeHidden();
   });
 
-  test("open from the interactive board's first paint at 1440 and closed at 390, layout shift over 5 s from load at most 0.01, and a press as soon as the board takes one holds (condition 9)", async ({ page, isPhone }) => {
+  test("open from the interactive board's first paint at 1440 and closed at 390, layout shift over 5 s from load at most 0.01, and a press as soon as the board takes one holds", async ({ page, isPhone }) => {
     test.setTimeout(120_000);
     const home = new HomePage(page);
     // One load first, so the measured load is the page's own and not the dev server's first compile.
@@ -710,7 +710,7 @@ test.describe("the board's disclosure on arrival (round 39, W2, D13)", () => {
     expect(await home.boardOpen(), "the press's state at the end").toBe(isPhone);
   });
 
-  test("a festival-day switch as soon as the picker takes a press arrives open at 1440, with no closed sample after the press, and closed at 390 (condition 9)", async ({ page, isPhone }) => {
+  test("a festival-day switch as soon as the picker takes a press arrives open at 1440, with no closed sample after the press, and closed at 390", async ({ page, isPhone }) => {
     test.setTimeout(120_000);
     const home = new HomePage(page);
     await home.goto(DAYS.glastonbury.id);
@@ -731,7 +731,7 @@ test.describe("the board's disclosure on arrival (round 39, W2, D13)", () => {
   });
 });
 
-test.describe("every lock word on a published day says whose lock it is (round 37, L33, merge)", () => {
+test.describe("every lock word on a published day says whose lock it is", () => {
   test.beforeEach(async ({ page }) => requireSavedDays(page));
 
   for (const day of [DAYS.glastonbury, DAYS.riot]) {

@@ -36,7 +36,7 @@ const textsOf = (svg: string, data: string) => [...svg.matchAll(new RegExp(`<tex
 /** The corner a frame gives every mark: a third of its bar's height or a little less (lib/brief.ts FIGURE_FRAMES). */
 const radiusOf = (svg: string) => String(FIGURE_FRAMES[attr(svg, "data-frame") as keyof typeof FIGURE_FRAMES].radius);
 
-describe("the brief's day figure (round 36)", () => {
+describe("the brief's day figure", () => {
   it("draws two frames of the same static SVG, wide from 640px and on paper, narrow on a phone, at full text width", () => {
     const html = render(keptFigure());
     expect(html.startsWith('<figure data-brief-figure="" class="break-inside-avoid">')).toBe(true);
@@ -157,7 +157,7 @@ describe("the brief's day figure (round 36)", () => {
     }
   });
 
-  it("sets its names at 10 units in the wide frame, in ink, with its caption's own print size at 9 pt (the brief sheet prints both at 9.5 pt, round 37 L75)", () => {
+  it("sets its names at 10 units in the wide frame, in ink, with its caption's own print size at 9 pt (the brief sheet prints both at 9.5 pt)", () => {
     const html = render(keptFigure());
     const [wide = ""] = svgs(html);
     expect(attr(wide, "font-size")).toBe("10");

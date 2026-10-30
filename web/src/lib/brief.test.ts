@@ -301,7 +301,7 @@ describe("the day's figures", () => {
     expect(formatIndex(91)).toBe("91.0");
   });
 
-  it("says how many sets are scored, with and without unscored acts (round 33: 'scored', as the index is; round 36: 'not scored')", () => {
+  it("says how many sets are scored, with and without unscored acts ('scored', as the index is; 'not scored')", () => {
     expect(coverageSentence(dayFigures(makePreset()))).toBe(
       "Taste overlap is scored for 7 of 8 sets; 1 has no usable Qloo signal and is not scored.",
     );
@@ -309,7 +309,7 @@ describe("the day's figures", () => {
       "Taste overlap is scored for 36 of 39 sets; 3 have no usable Qloo signal and are not scored.",
     );
     expect(coverageSentence({ scored: 12, total: 12, unpriced: 0 })).toBe("Taste overlap is scored for all 12 sets.");
-    // The invented day's variant, in the same words (round 36).
+    // The invented day's variant, in the same words.
     expect(coverageSentence({ scored: 2, total: 3, unpriced: 1 }, true)).toBe("Taste overlap is invented for 2 of 3 sets; 1 is not scored.");
     expect(coverageSentence({ scored: 1, total: 3, unpriced: 2 }, true)).toBe("Taste overlap is invented for 1 of 3 sets; 2 are not scored.");
     for (const synthetic of [false, true]) {
@@ -331,7 +331,7 @@ describe("the day's figures", () => {
     expect(bandSentence(100, null)).toBeNull();
   });
 
-  it("says what a reading above 100 means in one constant, from /method's reading of the index, and never as a verdict (round 39, W5)", () => {
+  it("says what a reading above 100 means in one constant, from /method's reading of the index, and never as a verdict", () => {
     expect(INDEX_MEANING).toBe(
       "Above 100, the day’s shared minutes cost more, by this reading, than in the average random valid timetable of this lineup: one kind of cost, not a verdict on how the festival was programmed.",
     );
@@ -537,7 +537,7 @@ describe("the brief sheet", () => {
     expect(text).toContain("Timetable sources: example.com, times.example.org.");
   });
 
-  it("prints what a reading above 100 means in the day's own paragraph, right after the band sentence, and before the coverage sentence (round 39, W5)", () => {
+  it("prints what a reading above 100 means in the day's own paragraph, right after the band sentence, and before the coverage sentence", () => {
     const band =
       "The middle 80% of random valid timetables of this lineup score 92 to 109; the published timetable reads above that range.";
     for (const plan of [null, PLAN]) {
@@ -554,7 +554,7 @@ describe("the brief sheet", () => {
     expect(qlooCredits(invented)).toEqual([]);
   });
 
-  it("prints it only when the day has an index, and straight after the index sentence when the day has no range (round 39, W5)", () => {
+  it("prints it only when the day has an index, and straight after the index sentence when the day has no range", () => {
     const preset = makePreset();
     const noIndex = makePreset({
       report: { ...preset.report, baseline: null, metrics: { ...preset.report.metrics, clash_budget_index: null } },
@@ -610,7 +610,7 @@ describe("the brief sheet", () => {
     expect(sheetText(makePreset(), null)).not.toContain("To decide");
   });
 
-  it("prints no type under 9.5 pt, its running text at 10 pt, and one column of steps up to three moves (round 37)", () => {
+  it("prints no type under 9.5 pt, its running text at 10 pt, and one column of steps up to three moves", () => {
     const html = renderToStaticMarkup(createElement(BriefContent, { preset: makePreset(), day: 0, plan: PLAN }));
     const sizes = printSizes(html);
     expect(sizes.length).toBeGreaterThan(5);
@@ -621,7 +621,7 @@ describe("the brief sheet", () => {
     expect(html).toMatch(/<figure data-brief-figure="" class="[^"]*print:\[&amp;_figcaption\]:text-\[9\.5pt\]/);
     // The drawing's labels print at the wide frame's printFont, set from the sheet: at least 9.5 pt on the A4 column
     // (190 mm) the frame is drawn for, and 3% more on Letter. The stage names move down to stay centred on their bars,
-    // 0.35 of each unit they grow, as the drawing centres them (round 37, L75).
+    // 0.35 of each unit they grow, as the drawing centres them.
     const figureClass = html.match(/<figure data-brief-figure="" class="([^"]*)"/)?.[1].replace(/&amp;/g, "&").split(" ") ?? [];
     const { font, printFont, width } = FIGURE_FRAMES.wide;
     expect(figureClass).toContain(`print:[&_svg[data-frame=wide]]:text-[${printFont}px]`);
@@ -771,7 +771,7 @@ describe("kept changes in the brief", () => {
     expect(sheetText(makePreset(), broken)).toContain("After this plan they share no time, but the plan adds 2 rule breaks.");
   });
 
-  it("keeps print type at 9.5 pt or more with four moves and two kept changes (round 37)", () => {
+  it("keeps print type at 9.5 pt or more with four moves and two kept changes", () => {
     const html = renderToStaticMarkup(createElement(BriefContent, { preset: makePreset(), day: 0, plan: MIXED_PLAN }));
     expect(Math.min(...printSizes(html))).toBeGreaterThanOrEqual(9.5);
     expect(html).toContain("print:columns-2");
@@ -908,7 +908,7 @@ describe("the brief's trade-off", () => {
     expect(briefSteps(preset, two, one.moveReceipt)[0]).toMatchObject({ receipt: null });
   });
 
-  it("prints no stage-fit row, since the brief does not weigh stage fit; the card's own table keeps it (round 31)", () => {
+  it("prints no stage-fit row, since the brief does not weigh stage fit; the card's own table keeps it", () => {
     const preset = makePreset();
     const decision = parseDecision(decisionRaw());
     const card = buildDecisionCopy(preset, decision)?.tradeoff;
@@ -947,7 +947,7 @@ describe("the brief's trade-off", () => {
     expect(plain.indexOf("Weigh this reading")).toBeGreaterThan(plain.indexOf("Costliest clash after"));
     // The heading is kept on paper when the table is tested alone; the plan summary is the larger type.
     expect(html).toMatch(/<h3[^>]*print:text-\[9pt\][^>]*>The two changes, tested alone/);
-    // On this sheet the comparison prints at the sheet's sizes (round 37): its sentences and heading at 10 pt, its
+    // On this sheet the comparison prints at the sheet's sizes: its sentences and heading at 10 pt, its
     // table at 9.5 pt, set on the comparison from the sheet.
     const compare = html.match(/<section aria-labelledby="[^"]*" class="([^"]*)"><h3/)?.[1].replace(/&amp;/g, "&").split(" ") ?? [];
     for (const name of ["print:[&_p]:text-[10pt]", "print:[&_h3]:text-[10pt]", "print:[&_table]:text-[9.5pt]", "print:[&_th]:text-[9.5pt]", "print:[&_td]:text-[9.5pt]"]) {
@@ -1065,7 +1065,7 @@ describe("the printed baseline", () => {
   });
 });
 
-describe("the brief's table caption and stage changes (round 32, V7)", () => {
+describe("the brief's table caption and stage changes", () => {
   it("says costliest first only when there are two rows or more to order", () => {
     expect(clashesCaption(5)).toBe("The five costliest clashes on this day, costliest first");
     expect(clashesCaption(2, true)).toBe("The two costliest clashes on the published day, before these moves, costliest first");
@@ -1109,7 +1109,7 @@ describe("the brief's table caption and stage changes (round 32, V7)", () => {
   });
 });
 
-// ------------------------------------------------------------------------------------ round 33 (E6)
+// ------------------------------------------------------------------------------------ titles, candidates and plans
 
 /** The day's two rankings, invented: Act Four and Act Six fall furthest once taste counts (#2 to #6). */
 function lensesFor(day = 0, overrides: Partial<Lenses> = {}): Lenses {
@@ -1152,7 +1152,7 @@ function plainOf(html: string): string {
     .trim();
 }
 
-describe("the brief's title and the index's words (round 33)", () => {
+describe("the brief's title and the index's words", () => {
   it("says where the clashes fall, with no money word", () => {
     expect(BRIEF_HEADING_TAIL).toBe("where the clashes fall");
     for (const plan of [null, PLAN]) {
@@ -1170,7 +1170,7 @@ describe("the brief's title and the index's words (round 33)", () => {
   });
 });
 
-describe("the candidate to keep (round 33)", () => {
+describe("the candidate to keep", () => {
   const LINE = "Taste also lowers: Act Four × Act Six ranks #2 on time and draw, #6 with taste: a candidate to keep.";
 
   it("words the pair taste overlap lowers furthest by its two ranks, and only ranks", () => {
@@ -1218,7 +1218,7 @@ describe("the candidate to keep (round 33)", () => {
   });
 });
 
-describe("the decision line beside each kept step (round 33)", () => {
+describe("the decision line beside each kept step", () => {
   it("is the head of programming's choice to circle and a line for initials, on paper only", () => {
     expect(DECISION_CHOICES).toBe("Decision: move / keep as published / kept on purpose");
     expect(DECISION_INITIALS).toBe("Initials:");
@@ -1256,7 +1256,7 @@ describe("the decision line beside each kept step (round 33)", () => {
   });
 });
 
-describe("the shared minutes of a plan (round 33)", () => {
+describe("the shared minutes of a plan", () => {
   const preset = makePreset();
 
   it("counts one fixed set, the published day's ranked clashes, before and with the plan", () => {
@@ -1306,7 +1306,7 @@ describe("the shared minutes of a plan (round 33)", () => {
     for (const sentence of sentences) expect(sentence).not.toMatch(/attend|people|fans|crowd|audience|revenue|money|\$|£/i);
   });
 
-  it("is printed with a plan, directly above its summary (round 37, R5), and never without one", () => {
+  it("is printed with a plan, directly above its summary, and never without one", () => {
     const text = sheetText(makePreset(), PLAN);
     const line = "Shared minutes in the published day’s 6 ranked clashes: 210 → 240 with your plan. Outside them, no overlap gets longer.";
     expect(text).toContain(line);
@@ -1318,8 +1318,8 @@ describe("the shared minutes of a plan (round 33)", () => {
     expect(sheetText(makePreset(), { ...PLAN, steps: [{ ...PLAN.steps[0], end: "later" }] })).not.toContain("Shared minutes");
   });
 
-  it("leaves what a reading above 100 means off paper only on the fullest sheet, the card's single move with the comparison, and keeps it on the screen (round 39, W5)", () => {
-    // Measured with headless Chrome on Letter (print media, round 39): that sheet has 12 to 13 px of room without the
+  it("leaves what a reading above 100 means off paper only on the fullest sheet, the card's single move with the comparison, and keeps it on the screen", () => {
+    // Measured with headless Chrome on Letter (print media): that sheet has 12 to 13 px of room without the
     // sentence, less than its one 10 pt line (15.3 px), so it printed two pages. Every other sheet measured (no plan,
     // two to eight kept moves, the hero's move with the two-set change, the invented day) has 79 px or more.
     const meaning = (html: string) => new RegExp(`<span( class="([^"]*)")?> ${INDEX_MEANING}</span>`).exec(html);
@@ -1339,7 +1339,7 @@ describe("the shared minutes of a plan (round 33)", () => {
     expect(plainOf(fullest)).toContain(INDEX_MEANING);
   });
 
-  it("stays on paper and on the screen even when the sheet is full, since it leads the plan (round 37, R5)", () => {
+  it("stays on paper and on the screen even when the sheet is full, since it leads the plan", () => {
     // Three moves in one column: on paper.
     expect(sheetHtml(makePreset(), PLAN)).toMatch(/<p data-shared-minutes="true" class="mb-1 print:mb-\[1pt\]">/);
     // The card's single move with the comparison and the drawing, the fullest sheet: on paper too.
@@ -1353,7 +1353,7 @@ describe("the shared minutes of a plan (round 33)", () => {
   });
 });
 
-describe("what a full sheet leaves off paper (round 33; round 37, R5: never the minutes line)", () => {
+describe("what a full sheet leaves off paper (never the minutes line)", () => {
   const move = (n: number): BriefStep => ({ n, act: "A", place: "P", shift: "s", before: "1.0", after: "0.9", raises: false, receipt: null });
   const change = (n: number): BriefStep => ({ n, line: "L", before: "1.0", after: "0.9", raises: false, receipt: "r" });
   const moves = (count: number) => Array.from({ length: count }, (_, i) => move(i + 1));
@@ -1366,7 +1366,7 @@ describe("what a full sheet leaves off paper (round 33; round 37, R5: never the 
     expect(onPaper([change(1), move(2)], 1)).toEqual({ minutes: true, decisions: true });
   });
 
-  it("keeps the minutes line on paper: beside the comparison and the drawing, and past six lines of steps (round 37, R5)", () => {
+  it("keeps the minutes line on paper: beside the comparison and the drawing, and past six lines of steps", () => {
     // The Devpost's single kept move with the comparison.
     expect(onPaper(moves(1), 1)).toEqual({ minutes: true, decisions: true });
     // A kept change and two moves: seven lines, and one more for the change's decision line.
@@ -1382,9 +1382,9 @@ describe("what a full sheet leaves off paper (round 33; round 37, R5: never the 
   });
 });
 
-// ------------------------------------------------------------------------------------ the locks (round 36)
+// ------------------------------------------------------------------------------------ the locks
 
-describe("the lock line under the table (round 36)", () => {
+describe("the lock line under the table", () => {
   /** Day 0 with Act Three, the only set on The Barn, locked too: every stage's last set is then locked. */
   function allLastLocked(): Preset {
     const preset = makePreset();
@@ -1433,9 +1433,9 @@ describe("the lock line under the table (round 36)", () => {
   });
 });
 
-// ------------------------------------------------------------------------------------ the day, drawn (round 36)
+// ------------------------------------------------------------------------------------ the day, drawn
 
-describe("the day, drawn (round 36)", () => {
+describe("the day, drawn", () => {
   const preset = makePreset();
   const pair = { aId: "act-one", bId: "act-two" };
   /** The card's move: Act Two from South Tent 14:15-15:15 to The Barn at 14:30. */
@@ -1555,14 +1555,14 @@ describe("the day, drawn (round 36)", () => {
       expect(layout.ticks[0].label).toBe("14:00");
     }
     // Five stages (both published days have five) stay under 135 printed px on Letter (the wide frame prints 3% larger),
-    // and eight under 205, with the labels at their printed 9.5 pt (round 37, L75; the sheet's one page is measured in
+    // and eight under 205, with the labels at their printed 9.5 pt (the sheet's one page is measured in
     // the browser).
     const widePitch = FIGURE_FRAMES.wide.gap + FIGURE_FRAMES.wide.bar;
     expect((FIGURE_FRAMES.wide.axis + 5 * widePitch) * (740 / 718)).toBeLessThan(135);
     expect((FIGURE_FRAMES.wide.axis + 8 * widePitch) * (740 / 718)).toBeLessThan(205);
   });
 
-  it("labels every hour clear of the next and inside the top edge, at the screen size and the printed one (round 37, L75)", () => {
+  it("labels every hour clear of the next and inside the top edge, at the screen size and the printed one", () => {
     const figure = figureOf(cardPlan, { pair, minutes: sharedMinutes(preset, 0, cardPlan) });
     for (const frame of [FIGURE_FRAMES.wide, FIGURE_FRAMES.narrow]) {
       const labelled = layoutFigure(figure, frame).ticks.filter((tick) => tick.label !== null);
@@ -1580,11 +1580,11 @@ describe("the day, drawn (round 36)", () => {
     }
   });
 
-  it("keeps each name in the gap over its own bar, clear of that bar's edge and of the bar above, and nearer its own (round 36 fix)", () => {
+  it("keeps each name in the gap over its own bar, clear of that bar's edge and of the bar above, and nearer its own", () => {
     const figure = figureOf(cardPlan, { pair, minutes: sharedMinutes(preset, 0, cardPlan) });
     // The site's sans, measured: ink rises 0.73 em over the baseline and falls 0.19 em under it. A named bar's edge
     // is 1.5 units wide, so it reaches 0.75 out of the bar; a plain bar's reaches 0.375. Checked at the screen size
-    // and at the printed one (the wide frame prints its labels at printFont; round 37, L75).
+    // and at the printed one (the wide frame prints its labels at printFont).
     const [ascent, descent] = [0.73, 0.19];
     for (const frame of [FIGURE_FRAMES.wide, FIGURE_FRAMES.narrow]) {
       const layout = layoutFigure(figure, frame);
@@ -1605,7 +1605,7 @@ describe("the day, drawn (round 36)", () => {
     }
   });
 
-  it("draws every set as a rounded rectangle, never a capsule: a corner about a third of the bar's height (round 36 fix)", () => {
+  it("draws every set as a rounded rectangle, never a capsule: a corner about a third of the bar's height", () => {
     for (const frame of [FIGURE_FRAMES.wide, FIGURE_FRAMES.narrow]) {
       expect(frame.radius).toBeGreaterThan(0);
       expect(frame.radius).toBeLessThan(frame.bar / 2);
@@ -1635,7 +1635,7 @@ describe("the day, drawn (round 36)", () => {
   });
 });
 
-describe("where the drawing prints (round 36)", () => {
+describe("where the drawing prints", () => {
   const move = (n: number): BriefStep => ({ n, act: "A", place: "P", shift: "s", before: "1.0", after: "0.9", raises: false, receipt: null });
   const change = (n: number): BriefStep => ({ n, line: "L", before: "1.0", after: "0.9", raises: false, receipt: "r" });
 
@@ -1649,7 +1649,7 @@ describe("where the drawing prints (round 36)", () => {
     expect(figureOnPaper([move(1), move(2), move(3), move(4)], 2, true)).toBe(false);
   });
 
-  it("takes the one-row table's room beside the comparison, and keeps the minutes line on paper there (round 37, R5)", () => {
+  it("takes the one-row table's room beside the comparison, and keeps the minutes line on paper there", () => {
     expect(tableOnPaper([move(1)], 1, true, true)).toBe(false);
     expect(tableOnPaper([move(1)], 1, true, false)).toBe(true);
     expect(tableOnPaper([move(1)], 1, false, true)).toBe(true);

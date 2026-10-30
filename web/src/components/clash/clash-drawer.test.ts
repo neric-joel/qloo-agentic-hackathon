@@ -124,7 +124,7 @@ function render(day: Preset) {
   return { html, block, text: text(block), all: text(html) };
 }
 
-describe("the clash drawer's Saved requests and values (round 37, L85)", () => {
+describe("the clash drawer's Saved requests and values", () => {
   it("walks clash #1 on a published day with a saved comparison: both acts' searches, the entity ids, one ranked row each, the compare line, what was not retained and the saved date", () => {
     const { html, block, text } = render(preset({ compare: true, evidence: true }));
     expect(block).not.toBe("");

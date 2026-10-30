@@ -123,7 +123,7 @@ describe("ClashControlFallback", () => {
     expect(html).not.toContain("data-taste-line");
     expect(text(html)).not.toContain("Keep this move");
     expect(text(html)).not.toContain("See one decision");
-    // Round 37 (L1): the group's skeleton holds the settled group's rows until the browser has the decision,
+    // The group's skeleton holds the settled group's rows until the browser has the decision,
     // never the no-decision words, so nothing moves when it comes; it names no pair and prints nothing.
     const from = html.indexOf('<div aria-hidden="true" data-hero-skeleton="" data-hero-group="" data-hero-state="skeleton"');
     const group = html.slice(from, html.lastIndexOf("<", html.indexOf("data-day-graph-key", from)));

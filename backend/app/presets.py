@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 # Presets change only on redeploy, so let the CDN serve them.
 CACHE_CONTROL = "public, s-maxage=3600, stale-while-revalidate=86400"
 # Decimals of Qloo popularity in the served copy. The page prints it as a whole number out of 100; at 3
-# decimals one saved act would round to a different whole number (round-5 parity check), so 4.
+# decimals one saved act would round to a different whole number (parity check), so 4.
 POPULARITY_DECIMALS = 4
 
 

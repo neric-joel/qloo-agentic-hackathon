@@ -421,7 +421,7 @@ describe("the agent section while the live agent is off", () => {
     expect(words).toContain("What the agent can and cannot do");
   });
 
-  it("says under the question box that questions are limited per visitor and in total per day, and that the recorded runs still play when the day's questions are used up (W7)", () => {
+  it("says under the question box that questions are limited per visitor and in total per day, and that the recorded runs still play when the day's questions are used up", () => {
     const html = panel(tiny, "on");
     // The note, in full and in its own paragraph: the disclosure of who writes the answers, then both limits,
     // then what the recorded runs in this section do. It names no number: the caps can change.
@@ -441,7 +441,7 @@ describe("the agent section while the live agent is off", () => {
   });
 });
 
-describe("the agent section's two columns (A1)", () => {
+describe("the agent section's two columns", () => {
   beforeEach(() => {
     served.runs = [recorded("a", FIND_MOVES), recorded("b", {}), recorded("c", FIND_MOVES)];
   });
@@ -603,7 +603,7 @@ const REFUSED: ToolData = {
   call_try: { kind: "what_if", move: "Bo Diddly Squat -> Main 20:00", allowed: false, problems: ["That slot is taken."] },
 };
 
-describe("the agent run's Qloo label (A2)", () => {
+describe("the agent run's Qloo label", () => {
   it("labels a recorded run that sent no Qloo request with its count, and says where its prices' taste came from", () => {
     const run = recorded("zero", FIND_MOVES);
     const { reply } = finished(run);
@@ -768,7 +768,7 @@ describe("a replayed run's Qloo request line sits in its header, under its quest
   });
 });
 
-describe("the run against the move at the top of the page (A3)", () => {
+describe("the run against the move at the top of the page", () => {
   it("says why their index changes differ when the run moved another set", () => {
     const place = keepableMove(liveResults(FIND_MOVES), tiny.festival, 0);
     expect(runVersusCard(place, "ann")).toBe(
@@ -792,7 +792,7 @@ const READY: PlanAnswer = {
 /** A move the plan already holds: another set (Cy Twombly), on this day. */
 const HELD: StackMove = { actId: "cy", stageId: "side", day: 0, start: "16:00" };
 
-describe("Keep this move with a plan that already holds a move (A4)", () => {
+describe("Keep this move with a plan that already holds a move", () => {
   const shapes: [string, () => AgentPlace][] = [
     ["a replayed run", () => keepableMove(replayFinalState(recorded("find", FIND_MOVES)).results, tiny.festival, 0) as AgentPlace],
     ["a live run", () => keepableMove(liveResults(FIND_MOVES), tiny.festival, 0) as AgentPlace],
@@ -891,7 +891,7 @@ describe("Keep this move with a plan that already holds a move (A4)", () => {
   });
 });
 
-describe("a place kept from a recorded run says so in the plan (P9)", () => {
+describe("a place kept from a recorded run says so in the plan", () => {
   /** The engine's plan holding the run's place, as the plan card prints it (invented figures). */
   const plan: Plan = {
     publishedBudget: 104.2,
@@ -957,7 +957,7 @@ describe("a place kept from a recorded run says so in the plan (P9)", () => {
   });
 });
 
-describe("the trace ledger's missing request ids (A8)", () => {
+describe("the trace ledger's missing request ids", () => {
   const row = (record: Partial<QlooRequestRecord>, synthetic = false) =>
     text(
       renderToStaticMarkup(
@@ -1015,7 +1015,7 @@ describe("the trace ledger's missing request ids (A8)", () => {
   });
 });
 
-describe("the agent section while its recorded runs are still out (round 37 closeout, F3)", () => {
+describe("the agent section while its recorded runs are still out", () => {
   beforeEach(() => {
     served.runs = [recorded("a", FIND_MOVES), recorded("b", {}), recorded("c", FIND_MOVES)];
     served.otherDays = new Map();
@@ -1047,7 +1047,7 @@ describe("the agent section while its recorded runs are still out (round 37 clos
   });
 
   it.each(["on", "unknown"] as const)(
-    "keeps everything above the run unchanged when /api/health settles from checking to %s (F3 residual)",
+    "keeps everything above the run unchanged when /api/health settles from checking to %s",
     (status) => {
       const checking = render(true, "checking");
       expect(checking.html).toContain("Checking whether the live agent is on.");

@@ -240,7 +240,7 @@ describe("the hero's answer", () => {
     const empty = hero({ kept: { move: false, change: false } });
     const notice = /<div role="status" aria-live="polite" data-kept-notice="" class="([^"]*)"><\/div>/.exec(empty);
     expect(notice).not.toBeNull();
-    // Round 39 (W3): the notice row holds the room (three 18 px lines on a phone, 54 px; two from 640 px; the
+    // The notice row holds the room (three 18 px lines on a phone, 54 px; two from 640 px; the
     // ladder's two 24 px lines from 1024 px, 48 px; two 20 px lines from 1280 px, 40 px), so nothing moves when it
     // fills; the confirmation itself keeps its type and the row's one cell, and no min-height of its own.
     expect(notice?.[1].split(" ")).toEqual(
@@ -371,7 +371,7 @@ describe("the hero's answer", () => {
   });
 });
 
-describe("one row geometry for every state the hero group can be painted in (round 37, L1)", () => {
+describe("one row geometry for every state the hero group can be painted in", () => {
   /**
    * Two days built here from the tiny preset: Bo Diddly Squat moved to Main at 15:25, which starts a new 15 min
    * overlap with Cy Twombly; and, with Cy Twombly at Main 21:55 (5 min shared with Bo Diddly Squat), Bo Diddly Squat
@@ -451,7 +451,7 @@ describe("one row geometry for every state the hero group can be painted in (rou
       const skeleton = renderToStaticMarkup(createElement(HeroDecisionSkeleton));
 
       // One ordered list of rows, with the same rooms and the same space above each, in all three.
-      // Round 39 (W3): the ladder's own row is gone; below 1280 px the ladder shares the notice row's one cell.
+      // The ladder's own row is gone; below 1280 px the ladder shares the notice row's one cell.
       expect(HERO_ROWS.map((row) => row.name)).toEqual(["lead", "readout", "side-effects", "taste", "attribution", "actions", "notice"]);
       for (const html of [settled, pending, skeleton]) expect(rowsOf(html)).toEqual(expected);
       // Every room is a min-height, never a fixed height that could clip a longer line.
@@ -522,7 +522,7 @@ describe("one row geometry for every state the hero group can be painted in (rou
   });
 
   // The test imports clash-control cold (its whole module graph); under a loaded runner that alone passed the
-  // 5-second default (vitest flake, round 37), so it allows 30 s, as check-links.test.ts does.
+  // 5-second default (vitest flake), so it allows 30 s, as check-links.test.ts does.
   it("reserves the settled group's height in the layout's group cell from 1024 px, the sum of the rows", async () => {
     // The rows' space and room at a breakpoint, mobile first, in px (Tailwind's 4 px spacing scale and rem values).
     const px = (token: string) => {
@@ -542,7 +542,7 @@ describe("one row geometry for every state the hero group can be painted in (rou
     const total = (screens: readonly string[], rows: readonly { space: string; min: string }[] = HERO_ROWS) =>
       rows.reduce((sum, row) => sum + at(row.space, screens, "mt") + Math.max(at(row.min, screens, "min-h"), 0), 0);
     // From 1024 px the paste sits beside Keep, so the actions row is Keep's 48 px and the notice cell under it.
-    // Round 39 (W3): the ladder's 80 px room above Keep goes; from 1024 px the ladder shares the notice cell, whose
+    // The ladder's 80 px room above Keep goes; from 1024 px the ladder shares the notice cell, whose
     // room rises from 40 to 48 px (the ladder's two 24 px lines in the 26rem group), so 434.8 becomes 362.8. From
     // 1280 px the ladder is one line in the left column (`HeroLadderRoom`) and the cell is the confirmation's 40 px;
     // on a screen 790 px tall or less, from 1024 px, the spaces above the readout, the side effects, the taste line and
@@ -653,7 +653,7 @@ describe("Keep this move, confirmed in place", () => {
   });
 });
 
-describe("Keep this move on a plan that already holds steps (P1)", () => {
+describe("Keep this move on a plan that already holds steps", () => {
   // The decision's own move (Bo Diddly Squat to Side 21:30) and another kept move (invented).
   const move = day().copy?.seedMove as StackMove;
   const other: StackMove = { actId: "cy", stageId: "main", day: 0, start: "16:00" };
@@ -745,7 +745,7 @@ describe("Keep this move on a plan that already holds steps (P1)", () => {
 
   it("draws the offer where Keep, its room and the paste are, holding their places unseen, so nothing moves", () => {
     const source = readFileSync(join(__dirname, "hero-decision.tsx"), "utf8");
-    // The actions grid has no row of its own for the offer, and none for the ladder (round 39: it shares the notice cell).
+    // The actions grid has no row of its own for the offer, and none for the ladder (it shares the notice cell).
     expect(source).toContain("[grid-template-areas:'keep'_'notice'_'paste']");
     expect(source).toContain("lg:[grid-template-areas:'keep_paste'_'notice_notice']");
     expect(source).not.toMatch(/grid-area:ladder|_'ladder'|ladder_ladder|LADDER_CELL/);
@@ -997,7 +997,7 @@ describe("the hero's layout (server fallback, the interactive hero's final frame
     expect(text(heroHtml)).not.toMatch(/as published|Published timetable/);
   });
 
-  it("draws the toggle, the readout and Keep in the server's frame from a complete seed, with no second request (round 37, L1)", async () => {
+  it("draws the toggle, the readout and Keep in the server's frame from a complete seed, with no second request", async () => {
     const { ClashControlFallback } = await import("./clash-control");
     const { loadServerSummary } = await import("@/lib/server-summary");
     const render = async (decision: unknown) => {
@@ -1082,7 +1082,7 @@ describe("the index card's clash action", () => {
   });
 });
 
-describe("the desktop note under the dateline (round 39, W6)", () => {
+describe("the desktop note under the dateline", () => {
   /** A rule answer for the clash's pair whose first change moves two sets and leaves 0 minutes shared. */
   const twoSetRule = {
     kind: "rule_fixes",
@@ -1139,7 +1139,7 @@ describe("the desktop note under the dateline (round 39, W6)", () => {
       expect(qlooCredits(note)).toEqual([]);
     }
     expect(HERO_NOTE_INVENTED).not.toMatch(/published|this app/);
-    // The round-37 sentences are gone from the hero (S1 and S2 live in the index card's "How this was chosen").
+    // The index's explanatory sentences are not in the hero (they live in the index card's "How this was chosen").
     const source = readFileSync(join(__dirname, "hero-decision.tsx"), "utf8");
     expect(source).not.toMatch(/NOTE_LOWEST|NOTE_TIED|NOTE_TWO_SETS|NOTE_NEAR_100|Near 100 means|Of the legal moves checked/);
   });
@@ -1159,7 +1159,7 @@ describe("the desktop note under the dateline (round 39, W6)", () => {
   });
 });
 
-describe("the hero's ladder (round 39, W3): the decision's clash ranked three ways, the hero's picture of what Qloo changes", () => {
+describe("the hero's ladder: the decision's clash ranked three ways, the hero's picture of what Qloo changes", () => {
   const moved: ThreeReadings = { time: { rank: 23, of: 68, tied: 18 }, draw: { rank: 18, of: 68 }, taste: { rank: 1, of: 68 } };
   const unmoved: ThreeReadings = { time: { rank: 5, of: 47 }, draw: { rank: 1, of: 47 }, taste: { rank: 1, of: 47 } };
   const ladder = (readings: ThreeReadings, synthetic = false) => renderToStaticMarkup(createElement(HeroLadder, { readings, synthetic }));

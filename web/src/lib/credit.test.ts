@@ -339,7 +339,7 @@ describe("the invented day: the pieces that used to credit Qloo", () => {
     const method = text(renderToStaticMarkup(wrap(true, createElement(MethodPage))));
     expect(method).toContain("a number it calculates from taste-overlap and draw figures");
     expect(method).not.toContain("a number it derives from Qloo data");
-    // The opening paragraph, to the end of its invented-day sentence (round 34 cut the sentence that followed it).
+    // The opening paragraph, to the end of its invented-day sentence.
     const end = "no Qloo request was made for it.";
     const opening = method.slice(method.indexOf("Clash Control scores set-time clashes"), method.indexOf(end) + end.length);
     expect(opening).toContain("a number it calculates from taste-overlap and draw figures");

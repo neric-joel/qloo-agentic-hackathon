@@ -16,7 +16,7 @@ const FRESH = [
 
 const settings = { changeover: "", curfew: "" };
 
-describe("round 37: a sample pair rule whose act is on a skipped line is kept, not dropped", () => {
+describe("a sample pair rule whose act is on a skipped line is kept, not dropped", () => {
   it("keeps the rule when one act is on a skipped line and the other is read, and the check lists it as not checked", () => {
     // Saffron Season's line cannot be read (its start is 25:70); Ivory Lights' line is read.
     const grid = `${FRESH}\nSaffron Season,Barn,25:70,22:00\nIvory Lights,Hill,21:00,22:00`;
@@ -27,7 +27,7 @@ describe("round 37: a sample pair rule whose act is on a skipped line is kept, n
     if (!outcome.ok) return;
     expect(replacesSample(outcome.report.sets)).toBe(true);
     expect(outcome.report.skipped?.map((item) => item.line)).toEqual([7]);
-    // Round 35 R6's wording, never "neither act is in this grid".
+    // The skipped-line wording, never "neither act is in this grid".
     expect(outcome.report.uncheckedPairs).toEqual(["Pair line 1 not checked: Saffron Season is on a skipped line."]);
     expect(outcome.report.settings.pairs).toEqual([]);
   });
@@ -78,7 +78,7 @@ describe("round 37: a sample pair rule whose act is on a skipped line is kept, n
   });
 });
 
-describe("round 37 (fix pass 1): which saved compare the invented sample gets", () => {
+describe("which saved compare the invented sample gets", () => {
   // The sample's own act names, read from its grid (the invented example day's lineup).
   const sampleActs = [
     ...new Set(

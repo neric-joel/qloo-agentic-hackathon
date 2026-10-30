@@ -275,7 +275,7 @@ function ChainActLine({ act }: { act: ChainAct }) {
 }
 
 /**
- * "Saved requests and values" (round 37, L85): the walk from the saved requests to the score for this pair, read
+ * "Saved requests and values": the walk from the saved requests to the score for this pair, read
  * from the preset the page holds (`requestChain`); nothing is fetched. Per act its line (ChainActLine); then the
  * taste overlap on to the pair score and the index; what the ledger holds for the pair's comparison; Qloo's search
  * match for each act from the saved reading (or, on a preset that holds none, that the names were not retained);
@@ -353,7 +353,7 @@ type ClashDetailsProps = {
 
 /**
  * The body of the drawer for one clash: the opening sentence, both acts, the live re-check, the price and
- * its formula, the saved requests and values behind it (round 37), the label and confidence, the pair's tags and where the figures came from. Exported apart
+ * its formula, the saved requests and values behind it, the label and confidence, the pair's tags and where the figures came from. Exported apart
  * from the sheet so it can be rendered on its own; on an invented day (`preset.synthetic`) every line that
  * would credit Qloo says the figure is invented instead.
  */

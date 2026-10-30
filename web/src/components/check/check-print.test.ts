@@ -14,7 +14,7 @@ const read = (path: string) => readFileSync(join(SRC, path), "utf8");
 /** The retired warm print palette (ink, muted and rule). */
 const WARM = ["#1a1714", "#f1efeb", "#c9c4bc", "#4d4843", "#6f6962", "#f3d75a"];
 /**
- * True for a warm, saturated hex (hue 15 to 75): the retired red-orange accent family (round 34). Shared time is
+ * True for a warm, saturated hex (hue 15 to 75): the retired red-orange accent family. Shared time is
  * raspberry and a rule break is ink, on paper as on screen, so no print colour may fall in it.
  */
 function warmAccent(hex: string): boolean {
@@ -80,7 +80,7 @@ describe("print tokens: cool ink on white", () => {
   });
 });
 
-describe("round 37: the printed overlap list and the named skipped lines", () => {
+describe("the printed overlap list and the named skipped lines", () => {
   // Invented acts: fourteen sets in seven pairs of two stages, each pair sharing a different number of minutes,
   // and one line whose start cannot be read.
   const grid = [

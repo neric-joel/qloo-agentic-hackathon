@@ -310,7 +310,7 @@ describe("DayGraph: the server frame", () => {
     expect(visible("published")).toContain("45 min shared");
   });
 
-  it("sets a short phone's tags in a 13px line box and every other layout's at the label's 15px (round 37, L17)", () => {
+  it("sets a short phone's tags in a 13px line box and every other layout's at the label's 15px", () => {
     const layoutOf = (html: string, layout: string) => html.split(/(?=<div data-layout=")/).filter((part) => part.startsWith(`<div data-layout="${layout}"`)).join("");
     const tagStyles = (html: string) => [...html.matchAll(/<span data-shared-tag="[^"]*"[^>]*style="([^"]*)"/g)].map((match) => match[1]);
     for (const view of ["moved", "published"] as const) {
@@ -680,7 +680,7 @@ describe("DayGraph: geometry and motion constants", () => {
     expect(html).toContain(`translateX(-${Math.round(trackPct(plan.track, moved.focus.start) * 10000) / 10000}%)`);
   });
 
-  it("names the phone's opening window in the server frame, and plans a phone's bands again for each window it slides to (round 37 fix pass 2, N1)", () => {
+  it("names the phone's opening window in the server frame, and plans a phone's bands again for each window it slides to", () => {
     const moved = model();
     const html = render(moved, "moved");
     // The server frame draws the opening window's names: each phone band's names are its plan's for that window.

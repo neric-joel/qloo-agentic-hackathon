@@ -26,7 +26,7 @@ function text(html: string): string {
 const footer = (synthetic: boolean) =>
   renderToStaticMarkup(createElement(SyntheticContext.Provider, { value: synthetic }, createElement(SiteFooter, { synthetic })));
 
-describe("the footer's licence, source and independence line (round 31)", () => {
+describe("the footer's licence, source and independence line", () => {
   it("links the MIT licence and the source code, then says the entry is independent, on a published day", () => {
     const html = footer(false);
     const plain = text(html);
@@ -51,7 +51,7 @@ describe("the footer's licence, source and independence line (round 31)", () => 
     expect(qlooCredits(plain)).toEqual([]);
   });
 
-  it("calls what this app calculates scores, never prices, on both kinds of day (round 37)", () => {
+  it("calls what this app calculates scores, never prices, on both kinds of day", () => {
     expect(FOOTER_SOURCES).toContain("taste overlap and clash scores are calculated by this app from them");
     expect(FOOTER_SYNTHETIC).toContain("Scores are calculated by this app from the invented figures.");
     expect(text(footer(false))).toContain("taste overlap and clash scores are calculated by this app from them");

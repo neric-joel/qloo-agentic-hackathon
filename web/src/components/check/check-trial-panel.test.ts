@@ -47,7 +47,7 @@ function drawn(changes: TrialChange[], kept: ReadonlySet<string> = new Set(), mo
   return renderToStaticMarkup(createElement(TrialResult, { target, ui }));
 }
 
-describe("a change that moves a set to another stage (C11, R32 K6)", () => {
+describe("a change that moves a set to another stage", () => {
   const [first] = found.changes;
   if (!first) throw new Error("the sample's first break should have a change");
   const sameStage: TrialChange = { ...first, stageChanges: 0, lines: ["Same Stage → Grove Stage 12:00–13:00"] };
@@ -103,7 +103,7 @@ describe("a change that moves a set to another stage (C11, R32 K6)", () => {
   });
 });
 
-describe("a change that ends a clash you kept on purpose (R32 K7)", () => {
+describe("a change that ends a clash you kept on purpose", () => {
   const [first] = found.changes;
   const keptId = "pair:kept-pair";
   const ends: TrialChange = { ...first, stageChanges: 0, ends: [keptId], lines: ["Ender → Grove Stage 12:00–13:00"] };
@@ -161,7 +161,7 @@ describe("a change that ends a clash you kept on purpose (R32 K7)", () => {
   });
 });
 
-describe("the first changes listed, scored on a published day's index (C6)", () => {
+describe("the first changes listed, scored on a published day's index", () => {
   const changes = found.changes.slice(0, 4);
   if (changes.length < 4) throw new Error("the sample's first break should list four changes");
 

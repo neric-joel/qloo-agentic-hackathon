@@ -62,12 +62,12 @@ const THEME_CHANGE_EVENT = "theme-change";
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 
 /** Holds the choice when storage is blocked, so the toggle still works until the page reloads. */
-let memoryTheme: Theme = "system";
+let memoryTheme: Theme = "light";
 
 function readStoredTheme(): Theme {
   try {
     const value = window.localStorage.getItem(THEME_STORAGE_KEY);
-    return value === "light" || value === "dark" ? value : "system";
+    return value === "dark" || value === "system" ? value : "light";
   } catch {
     return memoryTheme;
   }
@@ -107,7 +107,7 @@ function subscribeToSystemTheme(onChange: () => void): () => void {
 const noSubscription = () => () => undefined;
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const theme = useSyncExternalStore<Theme>(subscribeToStoredTheme, readStoredTheme, () => "system");
+  const theme = useSyncExternalStore<Theme>(subscribeToStoredTheme, readStoredTheme, () => "light");
   const prefersDark = useSyncExternalStore(subscribeToSystemTheme, systemPrefersDark, () => false);
   const ready = useSyncExternalStore(noSubscription, () => true, () => false);
   const resolvedTheme = theme === "system" ? (prefersDark ? "dark" : "light") : theme;
@@ -131,8 +131,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       committed = true;
       memoryTheme = next;
       try {
-        if (next === "system") window.localStorage.removeItem(THEME_STORAGE_KEY);
-        else window.localStorage.setItem(THEME_STORAGE_KEY, next);
+        window.localStorage.setItem(THEME_STORAGE_KEY, next);
       } catch {
         // Storage unavailable: the choice lasts until the page is reloaded.
       }

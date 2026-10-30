@@ -4,22 +4,26 @@ import { expect, test } from "./fixtures";
 import { luminance, rgbOf } from "./helpers";
 import { SiteChrome } from "./pages/site-chrome";
 
-/** The theme control: light, dark, or follow the device; remembered, applied before first paint, and on every page. */
+/** The theme control: light by default, dark, or follow the device; remembered, applied before first paint, and on every page. */
 
 const ground = async (page: Page) => luminance(await rgbOf(page, "body", "backgroundColor"));
 
 test.describe("theme toggle", () => {
-  test("follows the device by default, and the button says which theme is chosen", async ({ page }) => {
-    await page.emulateMedia({ colorScheme: "light" });
+  test("is light by default even on a dark device, and System then follows the device", async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "dark" });
     await page.goto("/method", { waitUntil: "domcontentloaded" });
     const chrome = new SiteChrome(page);
-    await expect(chrome.themeButton).toHaveAccessibleName("Color theme: System");
+    await expect(chrome.themeButton).toHaveAccessibleName("Color theme: Light");
     expect(await chrome.appliedTheme()).toBe("light");
 
-    await page.emulateMedia({ colorScheme: "dark" });
-    await expect.poll(() => chrome.appliedTheme(), "System follows the device live").toBe("dark");
+    await chrome.chooseTheme("System");
+    await expect(chrome.themeButton).toHaveAccessibleName("Color theme: System");
+    expect(await page.evaluate(() => localStorage.getItem("theme"))).toBe("system");
+    await expect.poll(() => chrome.appliedTheme(), "System takes the device's dark").toBe("dark");
     await page.emulateMedia({ colorScheme: "light" });
-    await expect.poll(() => chrome.appliedTheme()).toBe("light");
+    await expect.poll(() => chrome.appliedTheme(), "System follows the device live").toBe("light");
+    await page.emulateMedia({ colorScheme: "dark" });
+    await expect.poll(() => chrome.appliedTheme()).toBe("dark");
   });
 
   test("Dark and Light apply at once and change the page's ground", async ({ page }) => {
@@ -86,7 +90,7 @@ test.describe("theme toggle", () => {
     const group = page.getByRole("group", { name: "Color theme" });
     await expect(group.getByRole("radio")).toHaveCount(3);
     // Focus moves into the group, on the chosen option.
-    await expect(group.getByRole("radio", { name: "System" })).toBeFocused();
+    await expect(group.getByRole("radio", { name: "Light" })).toBeFocused();
     if (!isPhone) {
       // The arrow keys move the choice inside the open group without closing it.
       await page.keyboard.press("ArrowDown");

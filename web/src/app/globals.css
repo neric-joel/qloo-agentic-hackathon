@@ -227,14 +227,14 @@
 
 @theme inline {
   --font-sans: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
-  /* Monospace is retired (round 34): the old font-mono utility now sets the text face with tabular
+  /* Monospace is retired: the old font-mono utility now sets the text face with tabular
      lining figures. Drop the class when a file is next touched. */
   --font-mono: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
   --font-mono--font-feature-settings: "tnum" 1, "lnum" 1;
   --font-heading: var(--font-sans);
 
   /* The type floor: the smallest text role is 13px, on the 16px line the 12px role had, so a one-line label
-     keeps its box. The drawing's clock axis keeps its own size (round-34 DECISION 2.2), the one exemption. */
+     keeps its box. The drawing's clock axis keeps its own size, the one exemption. */
   --text-xs: 0.8125rem;
   --text-xs--line-height: 1rem;
 
